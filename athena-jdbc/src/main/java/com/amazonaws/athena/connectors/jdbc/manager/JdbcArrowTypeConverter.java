@@ -35,6 +35,7 @@ import java.util.Optional;
 public final class JdbcArrowTypeConverter
 {
     public static final int DEFAULT_PRECISION = 38;
+    public static final String DEFAULT_SCALE_KEY = "default_scale";
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcArrowTypeConverter.class);
 
     private JdbcArrowTypeConverter() {}
@@ -49,7 +50,7 @@ public final class JdbcArrowTypeConverter
      */
     public static Optional<ArrowType> toArrowType(final int jdbcType, final int precision, final int scale, java.util.Map<String, String> configOptions)
     {
-        int defaultScale = Integer.parseInt(configOptions.getOrDefault("default_scale", "0"));
+        int defaultScale = Integer.parseInt(configOptions.getOrDefault(DEFAULT_SCALE_KEY, "0"));
         int resolvedPrecision = precision;
         int resolvedScale = scale;
         boolean needsResolving = jdbcType == Types.NUMERIC && (precision == 0 && scale <= 0);

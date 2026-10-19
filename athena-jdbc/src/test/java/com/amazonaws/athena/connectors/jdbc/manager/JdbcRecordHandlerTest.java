@@ -20,6 +20,7 @@
 package com.amazonaws.athena.connectors.jdbc.manager;
 
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
+import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
@@ -50,11 +51,20 @@ import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
 import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
 import com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
+import com.amazonaws.athena.connector.lambda.records.RecordResponse;
+import com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse;
+import com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto;
+import com.amazonaws.athena.connector.lambda.security.EncryptionKey;
 import com.amazonaws.athena.connector.lambda.security.FederatedIdentity;
+import com.amazonaws.athena.connector.lambda.security.LocalKeyFactory;
 import com.amazonaws.athena.connectors.jdbc.TestBase;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
+import com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough;
 import com.amazonaws.athena.connector.credentials.CredentialsProvider;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.io.ByteStreams;
+import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.holders.NullableBigIntHolder;
 import org.apache.arrow.vector.holders.NullableBitHolder;
 import org.apache.arrow.vector.holders.NullableDateDayHolder;
@@ -64,6 +74,8 @@ import org.apache.arrow.vector.holders.NullableFloat8Holder;
 import org.apache.arrow.vector.holders.NullableIntHolder;
 import org.apache.arrow.vector.holders.NullableSmallIntHolder;
 import org.apache.arrow.vector.holders.NullableTinyIntHolder;
+import org.apache.arrow.vector.ipc.ReadChannel;
+import org.apache.arrow.vector.ipc.message.MessageSerializer;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.Assert;
@@ -82,19 +94,26 @@ import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueReques
 import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.Date;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -562,5 +581,119 @@ public class JdbcRecordHandlerTest
         Connection mockConnection = Mockito.mock(Connection.class);
         boolean result = jdbcRecordHandler.disableCaseSensitivelyLookUpSession(mockConnection);
         Assert.assertFalse(result); // Default implementation returns false
+    }
+
+    /**
+     * The {@link JdbcRecordHandler#EXPORT_SCHEMA} path spills to {@code <spillKey>.N}, writes a {@code <spillKey>.schema}
+     * sidecar that is not a spill location, and returns the ResultSet schema rather than request.getSchema().
+     */
+    @Test
+    public void testDoReadRecordsDirectQueryUsesSpillerAndReturnsLocations() throws Exception {
+        Class.forName("org.h2.Driver");
+        Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqspill;DB_CLOSE_DELAY=-1");
+        try (Statement st = h2.createStatement()) {
+            st.execute("CREATE TABLE v (created_on TIMESTAMP, name VARCHAR(255))");
+            st.execute("INSERT INTO v VALUES (TIMESTAMP '2021-01-01 00:00:00', 'orders_view')");
+            st.execute("INSERT INTO v VALUES (TIMESTAMP '2021-02-02 12:30:00', 'customers_view')");
+        }
+        EncryptionKey key = new LocalKeyFactory().create();
+        Map<String, byte[]> written = new ConcurrentHashMap<>();
+        RemoteReadRecordsResponse remote = runExport(h2, key, written, "SELECT created_on, name FROM v ORDER BY name");
+
+        String spillKey = exportSpillLocation().getKey();
+        Assert.assertEquals(1, remote.getRemoteBlocks().size());
+        Assert.assertEquals(spillKey + ".0", ((S3SpillLocation) remote.getRemoteBlocks().get(0)).getKey());
+
+        // The response schema is the ResultSet-derived schema (2 columns), not request.getSchema() (1 column).
+        Assert.assertEquals(2, remote.getSchema().getFields().size());
+        Assert.assertTrue(written.containsKey(spillKey + ".0"));
+        Assert.assertTrue(written.containsKey(spillKey + ".schema"));
+
+        // Read the objects back as S3BlockSpillReader does.
+        AesGcmBlockCrypto crypto = new AesGcmBlockCrypto(new BlockAllocatorImpl());
+        Schema schema = readSidecarSchema(crypto, key, written.get(spillKey + ".schema"));
+        Assert.assertEquals(2, schema.getFields().size());
+        Block block = crypto.decrypt(key, written.get(spillKey + ".0"), schema);
+        Assert.assertEquals(2, block.getRowCount());
+        VarCharVector nameVec = (VarCharVector) block.getFieldVector("NAME");
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < block.getRowCount(); i++) {
+            names.add(new String(nameVec.get(i), StandardCharsets.UTF_8));
+        }
+        Assert.assertTrue(names.contains("orders_view"));
+        Assert.assertTrue(names.contains("customers_view"));
+    }
+
+    @Test
+    public void testDoReadRecordsDirectQueryKeepsDuplicateColumnLabels() throws Exception {
+        Class.forName("org.h2.Driver");
+        Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqdup;DB_CLOSE_DELAY=-1");
+        try (Statement st = h2.createStatement()) {
+            st.execute("CREATE TABLE a (id INT)");
+            st.execute("CREATE TABLE b (id INT)");
+            st.execute("INSERT INTO a VALUES (1)");
+            st.execute("INSERT INTO b VALUES (2)");
+        }
+        EncryptionKey key = new LocalKeyFactory().create();
+        Map<String, byte[]> written = new ConcurrentHashMap<>();
+        RemoteReadRecordsResponse remote = runExport(h2, key, written, "SELECT a.id, b.id FROM a CROSS JOIN b");
+
+        S3SpillLocation dataLoc = (S3SpillLocation) remote.getRemoteBlocks().get(0);
+        AesGcmBlockCrypto crypto = new AesGcmBlockCrypto(new BlockAllocatorImpl());
+        Block block = crypto.decrypt(key, written.get(dataLoc.getKey()), remote.getSchema());
+        Assert.assertEquals(1, block.getFieldVectors().get(0).getObject(0));
+        Assert.assertEquals(2, block.getFieldVectors().get(1).getObject(0));
+    }
+
+    private RemoteReadRecordsResponse runExport(Connection h2, EncryptionKey key, Map<String, byte[]> written, String query)
+            throws Exception
+    {
+        JdbcConnectionFactory h2Factory = Mockito.mock(JdbcConnectionFactory.class);
+        when(h2Factory.getConnection(nullable(CredentialsProvider.class))).thenReturn(h2);
+        S3Client mockS3 = Mockito.mock(S3Client.class);
+        when(mockS3.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenAnswer((InvocationOnMock inv) -> {
+            PutObjectRequest req = (PutObjectRequest) inv.getArguments()[0];
+            RequestBody body = (RequestBody) inv.getArguments()[1];
+            written.put(req.key(), ByteStreams.toByteArray(body.contentStreamProvider().newStream()));
+            return PutObjectResponse.builder().build();
+        });
+        DatabaseConnectionConfig cfg = new DatabaseConnectionConfig(TEST_CATALOG, "fakedatabase", CONNECTION_STRING, TEST_SECRET);
+        JdbcRecordHandler handler = new JdbcRecordHandler(mockS3, this.secretsManager, this.athena, cfg, h2Factory, ImmutableMap.of())
+        {
+            @Override
+            public PreparedStatement buildSplitSql(Connection c, String cat, TableName t, Schema s, Constraints con, Split sp)
+            {
+                throw new UnsupportedOperationException("export query must not call buildSplitSql");
+            }
+        };
+
+        Split split = Split.newBuilder(exportSpillLocation(), key).build();
+
+        // request.getSchema() is a mismatching single-column schema to prove it is not used.
+        Map<String, String> qptArgs = new HashMap<>();
+        qptArgs.put(JdbcRecordHandler.EXPORT_SCHEMA, "true");
+        qptArgs.put(JdbcQueryPassthrough.QUERY, query);
+        ReadRecordsRequest request = new ReadRecordsRequest(this.federatedIdentity, TEST_CATALOG, TEST_QUERY_ID,
+                new TableName(TEST_SCHEMA, TEST_TABLE), SchemaBuilder.newBuilder().addStringField("name").build(), split,
+                new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(),
+                        Constraints.DEFAULT_NO_LIMIT, qptArgs, null),
+                100_000_000_000L, 100_000_000_000L);
+
+        RecordResponse response = handler.doReadRecords(new BlockAllocatorImpl(), request);
+        Assert.assertTrue(response instanceof RemoteReadRecordsResponse);
+        return (RemoteReadRecordsResponse) response;
+    }
+
+    private static S3SpillLocation exportSpillLocation()
+    {
+        return S3SpillLocation.newBuilder()
+                .withBucket("test-bucket").withPrefix("prefix").withQueryId("q1").withSplitId("split1").withIsDirectory(true).build();
+    }
+
+    private static Schema readSidecarSchema(AesGcmBlockCrypto crypto, EncryptionKey key, byte[] encrypted)
+            throws IOException
+    {
+        byte[] clearSchema = crypto.decrypt(key, encrypted);
+        return MessageSerializer.deserializeSchema(new ReadChannel(Channels.newChannel(new ByteArrayInputStream(clearSchema))));
     }
 }

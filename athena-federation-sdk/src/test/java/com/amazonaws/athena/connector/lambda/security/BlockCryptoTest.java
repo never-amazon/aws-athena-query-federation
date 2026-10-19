@@ -31,6 +31,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.Assert.*;
 
 public class BlockCryptoTest
@@ -72,6 +74,16 @@ public class BlockCryptoTest
         byte[] cypher = crypto.encrypt(key, expected);
         Block actual = crypto.decrypt(key, cypher, schema);
         assertEquals(expected, actual);
+    }
+
+    @Test
+    public void encryptRawBytesRoundTrip()
+    {
+        byte[] plain = "hello spill".getBytes(StandardCharsets.UTF_8);
+
+        byte[] encrypted = crypto.encrypt(key, plain);
+        assertEquals(plain.length + 16, encrypted.length); // AES-GCM appends a 16-byte tag
+        assertArrayEquals(plain, crypto.decrypt(key, encrypted));
     }
 
     @Test

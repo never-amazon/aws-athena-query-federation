@@ -78,6 +78,18 @@ public class NoOpBlockCryptoTest {
     }
 
     @Test
+    public void encryptBytesPassthrough() {
+        byte[] inputBytes = new byte[]{1, 2, 3, 4, 5};
+
+        assertArrayEquals(inputBytes, noOpBlockCrypto.encrypt(null, inputBytes));
+    }
+
+    @Test(expected = AthenaConnectorException.class)
+    public void encryptBytesWithNonNullKeyThrowsException() {
+        noOpBlockCrypto.encrypt(encryptionKey, new byte[]{1});
+    }
+
+    @Test
     public void decryptBytesPassthrough() {
         byte[] inputBytes = new byte[]{1, 2, 3, 4, 5};
 

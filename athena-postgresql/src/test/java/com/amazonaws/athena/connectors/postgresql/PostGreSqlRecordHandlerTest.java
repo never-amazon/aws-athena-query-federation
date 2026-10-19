@@ -1284,4 +1284,49 @@ public class PostGreSqlRecordHandlerTest extends TestBase
 
         Assert.assertEquals(expectedSql, sqlCaptor.getValue());
     }
+
+    @Test
+    public void testPrepareExportStatementSetsFetchSize()
+            throws SQLException
+    {
+        PreparedStatement preparedStatement = Mockito.mock(PreparedStatement.class);
+        Mockito.when(this.connection.prepareStatement("SELECT 1")).thenReturn(preparedStatement);
+
+        Assert.assertSame(preparedStatement, this.postGreSqlRecordHandler.prepareExportStatement(this.connection, "SELECT 1"));
+        Mockito.verify(preparedStatement).setFetchSize(1000);
+    }
+
+    @Test
+    public void testDeriveExportSchemaMapsPostgresTypes()
+            throws SQLException
+    {
+        // label, JDBC type, precision, scale, as pgjdbc 42.7 reports them on PostgreSQL 16.
+        Object[][] columns = {
+                {"int4_col", java.sql.Types.INTEGER, 10, 0},
+                {"numeric_col", java.sql.Types.NUMERIC, 0, 0},
+                {"numeric_10_2_col", java.sql.Types.NUMERIC, 10, 2},
+                {"timestamptz_col", java.sql.Types.TIMESTAMP, 35, 6},
+                {"time_col", java.sql.Types.TIME, 15, 6},
+                {"uuid_col", java.sql.Types.OTHER, Integer.MAX_VALUE, 0},
+                {"array_col", java.sql.Types.ARRAY, 10, 0}};
+        java.sql.ResultSetMetaData metadata = Mockito.mock(java.sql.ResultSetMetaData.class);
+        Mockito.when(metadata.getColumnCount()).thenReturn(columns.length);
+        for (int i = 0; i < columns.length; i++) {
+            int column = i + 1;
+            Mockito.when(metadata.getColumnLabel(column)).thenReturn((String) columns[i][0]);
+            Mockito.when(metadata.getColumnType(column)).thenReturn((Integer) columns[i][1]);
+            Mockito.when(metadata.getPrecision(column)).thenReturn((Integer) columns[i][2]);
+            Mockito.when(metadata.getScale(column)).thenReturn((Integer) columns[i][3]);
+        }
+
+        Schema schema = this.postGreSqlRecordHandler.deriveExportSchema(metadata);
+
+        Assert.assertEquals(Types.MinorType.INT.getType(), schema.findField("int4_col").getType());
+        Assert.assertEquals(new ArrowType.Decimal(38, 0, 128), schema.findField("numeric_col").getType());
+        Assert.assertEquals(new ArrowType.Decimal(10, 2, 128), schema.findField("numeric_10_2_col").getType());
+        Assert.assertEquals(Types.MinorType.TIMESTAMPMILLITZ, Types.getMinorTypeForArrowType(schema.findField("timestamptz_col").getType()));
+        Assert.assertEquals(ArrowType.Utf8.INSTANCE, schema.findField("time_col").getType());
+        Assert.assertEquals(ArrowType.Utf8.INSTANCE, schema.findField("uuid_col").getType());
+        Assert.assertEquals(ArrowType.Utf8.INSTANCE, schema.findField("array_col").getType());
+    }
 }

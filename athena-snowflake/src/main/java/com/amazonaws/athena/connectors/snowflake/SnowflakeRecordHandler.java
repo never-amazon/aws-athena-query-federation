@@ -22,10 +22,16 @@ package com.amazonaws.athena.connectors.snowflake;
 import com.amazonaws.athena.connector.credentials.CredentialsProvider;
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.Block;
+import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.S3BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.SpillConfig;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation;
 import com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
@@ -71,6 +77,7 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
@@ -196,6 +203,63 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
             throws Exception
     {
       super.readWithConstraint(spiller, recordsRequest, queryStatusChecker);
+    }
+
+    /**
+     * Re-spills the Parquet that {@code COPY INTO} already exported, with its own schema. Falls back to the
+     * JDBC path when S3 export is off or the export is empty.
+     */
+    @Override
+    protected Schema exportResultSetToSpill(ReadRecordsRequest request, BlockAllocator allocator, List<SpillLocation> spillLocations,
+            QueryStatusChecker queryStatusChecker)
+            throws Exception
+    {
+        if (!SnowflakeConstants.isS3ExportEnabled(configOptions)) {
+            return super.exportResultSetToSpill(request, allocator, spillLocations, queryStatusChecker);
+        }
+
+        Split split = request.getSplit();
+        String exportBucket = split.getProperty(SNOWFLAKE_SPLIT_EXPORT_BUCKET);
+        String s3ObjectKey = split.getProperty(SNOWFLAKE_SPLIT_OBJECT_KEY);
+        if (s3ObjectKey == null || s3ObjectKey.isEmpty()) {
+            return super.exportResultSetToSpill(request, allocator, spillLocations, queryStatusChecker);
+        }
+
+        S3SpillLocation spillLocation = (S3SpillLocation) split.getSpillLocation();
+        S3Client s3Client = resolveScopedS3Client(request);
+        SpillConfig spillConfig = buildExportSpillConfig(request);
+        String s3path = constructS3Uri(exportBucket, s3ObjectKey);
+        LOGGER.info("exportResultSetToSpill(S3 export): reading exported Parquet {} and re-spilling as Arrow", s3path);
+
+        Schema derivedSchema = inspectParquetSchema(s3path);
+
+        try (ArrowReader reader = constructArrowReader(s3path, derivedSchema);
+                ConstraintEvaluator evaluator = new ConstraintEvaluator(allocator, derivedSchema, request.getConstraints());
+                S3BlockSpiller spiller = new S3BlockSpiller(s3Client, spillConfig, allocator, derivedSchema, evaluator, configOptions)) {
+            VectorSchemaRoot root = reader.getVectorSchemaRoot();
+            while (reader.loadNextBatch() && queryStatusChecker.isQueryRunning()) {
+                spiller.writeRows((Block block, int startRowNum) -> {
+                    for (Field field : root.getSchema().getFields()) {
+                        FieldVector src = root.getVector(field.getName());
+                        VectorAppender appender = new VectorAppender(block.getFieldVector(field.getName()));
+                        src.accept(appender, null);
+                    }
+                    return root.getRowCount();
+                });
+            }
+            if (spiller.spilled()) {
+                spillLocations.addAll(spiller.getSpillLocations());
+            }
+            writeSchemaSidecar(s3Client, spillLocation, split.getEncryptionKey(), derivedSchema, allocator);
+        }
+        return derivedSchema;
+    }
+
+    @VisibleForTesting
+    protected Schema inspectParquetSchema(String uri)
+    {
+        DatasetFactory datasetFactory = new FileSystemDatasetFactory(new RootAllocator(), NativeMemoryPool.getDefault(), FileFormat.PARQUET, uri);
+        return datasetFactory.inspect();
     }
 
     @VisibleForTesting

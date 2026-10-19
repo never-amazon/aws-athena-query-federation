@@ -20,10 +20,14 @@
 package com.amazonaws.athena.connectors.jdbc.manager;
 
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
+import com.amazonaws.athena.connector.lambda.ThrottlingInvoker;
 import com.amazonaws.athena.connector.lambda.data.Block;
+import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.BlockUtils;
 import com.amazonaws.athena.connector.lambda.data.FieldResolver;
+import com.amazonaws.athena.connector.lambda.data.S3BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.SpillConfig;
 import com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter;
 import com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor;
 import com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor;
@@ -45,15 +49,25 @@ import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBin
 import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation;
 import com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
+import com.amazonaws.athena.connector.lambda.records.RecordResponse;
+import com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse;
+import com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto;
+import com.amazonaws.athena.connector.lambda.security.BlockCrypto;
+import com.amazonaws.athena.connector.lambda.security.EncryptionKey;
+import com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto;
 import com.amazonaws.athena.connector.substrait.SubstraitSqlUtils;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
 import com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough;
+import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils;
 import org.apache.arrow.util.VisibleForTesting;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.holders.NullableBigIntHolder;
@@ -74,23 +88,30 @@ import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.glue.model.ErrorDetails;
 import software.amazon.awssdk.services.glue.model.FederationSourceErrorCode;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TimeZone;
+
+import static com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter.ATHENA_EXCEPTION_FILTER;
 
 /**
  * Abstracts JDBC record handler and provides common reusable split records handling.
@@ -102,7 +123,15 @@ public abstract class JdbcRecordHandler
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcRecordHandler.class);
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private final DatabaseConnectionConfig databaseConnectionConfig;
+    // The base RecordHandler keeps these private; the export path needs them as getS3Client/getAthenaClient defaults.
+    private final S3Client amazonS3Client;
+    private final AthenaClient athenaClient;
+    private final ThrottlingInvoker athenaInvoker;
     private static final String CLICKHOUSE_DB = "clickhouse";
+    // Query-passthrough marker argument that selects the export path (see exportResultSetToSpill).
+    public static final String EXPORT_SCHEMA = "ExportSchema";
+    // Suffix for the sidecar object that carries the ResultSet-derived Arrow schema for pass through query spills.
+    private static final String SCHEMA_SUFFIX = ".schema";
 
     protected final JdbcQueryPassthrough queryPassthrough = new JdbcQueryPassthrough();
 
@@ -114,6 +143,9 @@ public abstract class JdbcRecordHandler
         super(sourceType, configOptions);
         this.jdbcConnectionFactory = null;
         this.databaseConnectionConfig = null;
+        this.amazonS3Client = null;
+        this.athenaClient = null;
+        this.athenaInvoker = ThrottlingInvoker.newDefaultBuilder(ATHENA_EXCEPTION_FILTER, configOptions).build();
     }
 
     protected JdbcRecordHandler(
@@ -127,6 +159,9 @@ public abstract class JdbcRecordHandler
         super(amazonS3, secretsManager, athena, databaseConnectionConfig.getEngine(), configOptions);
         this.jdbcConnectionFactory = Validate.notNull(jdbcConnectionFactory, "jdbcConnectionFactory must not be null");
         this.databaseConnectionConfig = Validate.notNull(databaseConnectionConfig, "databaseConnectionConfig must not be null");
+        this.amazonS3Client = amazonS3;
+        this.athenaClient = athena;
+        this.athenaInvoker = ThrottlingInvoker.newDefaultBuilder(ATHENA_EXCEPTION_FILTER, configOptions).build();
     }
 
     protected JdbcConnectionFactory getJdbcConnectionFactory()
@@ -147,6 +182,38 @@ public abstract class JdbcRecordHandler
             return databaseConnectionConfig.getSecret();
         }
         return null;
+    }
+
+    /**
+     * Routes {@link #EXPORT_SCHEMA} pass-through reads to {@link #exportResultSetToSpill}; other reads use the base.
+     */
+    @Override
+    public RecordResponse doReadRecords(BlockAllocator allocator, ReadRecordsRequest request) throws Exception
+    {
+        Map<String, String> queryPassthroughArguments = request.getConstraints().getQueryPassthroughArguments();
+        if (queryPassthroughArguments == null || !queryPassthroughArguments.containsKey(EXPORT_SCHEMA)) {
+            return super.doReadRecords(allocator, request);
+        }
+
+        List<SpillLocation> spillLocations = new ArrayList<>();
+        AthenaClient athena = getAthenaClient(getRequestOverrideConfig(request.getIdentity().getConfigOptions()), athenaClient);
+        try (QueryStatusChecker queryStatusChecker = new QueryStatusChecker(athena, athenaInvoker, request.getQueryId())) {
+            Schema derivedSchema = exportResultSetToSpill(request, allocator, spillLocations, queryStatusChecker);
+            return new RemoteReadRecordsResponse(request.getCatalogName(), derivedSchema, spillLocations,
+                    request.getSplit().getEncryptionKey());
+        }
+    }
+
+    /**
+     * Spills the rows and writes the {@code <spillKey>.schema} sidecar, appending data locations to
+     * {@code spillLocations}. Returns the schema derived from the live result, not {@code request.getSchema()}.
+     */
+    protected Schema exportResultSetToSpill(ReadRecordsRequest request, BlockAllocator allocator, List<SpillLocation> spillLocations,
+            QueryStatusChecker queryStatusChecker)
+            throws Exception
+    {
+        String directQuery = request.getConstraints().getQueryPassthroughArguments().get(JdbcQueryPassthrough.QUERY);
+        return writePassThroughQueryUsingResultSchema(request, directQuery, allocator, spillLocations, queryStatusChecker);
     }
 
     @Override
@@ -199,6 +266,120 @@ public abstract class JdbcRecordHandler
                 disableCaseSensitivelyLookUpSession(connection); // For certain connectors, we require to apply session config first to enable case
             }
         }
+    }
+
+    /**
+     * Runs the export query over JDBC and spills its rows with the schema derived from {@link ResultSetMetaData}.
+     */
+    private Schema writePassThroughQueryUsingResultSchema(ReadRecordsRequest request, String passThroughQuery, BlockAllocator allocator,
+                                                          List<SpillLocation> spillLocations, QueryStatusChecker queryStatusChecker)
+            throws Exception
+    {
+        S3SpillLocation spillLocation = (S3SpillLocation) request.getSplit().getSpillLocation();
+        SpillConfig spillConfig = buildExportSpillConfig(request);
+        S3Client s3Client = resolveScopedS3Client(request);
+
+        LOGGER.info("writePassThroughQueryUsingResultSchema: executing export query; writing records via spiller to s3://{}/{}.N and schema to {}{}",
+                spillLocation.getBucket(), spillLocation.getKey(), spillLocation.getKey(), SCHEMA_SUFFIX);
+
+        try (Connection connection = getJdbcConnectionFactory().getConnection(getCredentialProvider(getRequestOverrideConfig(request)))) {
+            connection.setAutoCommit(false); // enable server-side streaming for large result sets
+            try (PreparedStatement preparedStatement = prepareExportStatement(connection, passThroughQuery);
+                    ResultSet resultSet = preparedStatement.executeQuery()) {
+                Schema derivedSchema = deriveExportSchema(resultSet.getMetaData());
+
+                try (ConstraintEvaluator evaluator = new ConstraintEvaluator(allocator, derivedSchema, request.getConstraints());
+                        S3BlockSpiller spiller = new S3BlockSpiller(s3Client, spillConfig, allocator, derivedSchema, evaluator, configOptions)) {
+                    int columnCount = derivedSchema.getFields().size();
+                    long rowsReturnedFromDatabase = 0;
+                    // Index-based access so duplicate column labels (for example a.id, b.id) keep their own values.
+                    while (resultSet.next() && queryStatusChecker.isQueryRunning()) {
+                        spiller.writeRows((Block block, int rowNum) -> {
+                            List<FieldVector> vectors = block.getFieldVectors();
+                            for (int i = 0; i < columnCount; i++) {
+                                BlockUtils.setValue(vectors.get(i), rowNum, resultSet.getObject(i + 1));
+                            }
+                            return 1;
+                        });
+                        rowsReturnedFromDatabase++;
+                    }
+                    connection.commit();
+
+                    if (spiller.spilled()) {
+                        spillLocations.addAll(spiller.getSpillLocations());
+                    }
+                    writeSchemaSidecar(s3Client, spillLocation, request.getSplit().getEncryptionKey(), derivedSchema, allocator);
+
+                    LOGGER.info("writePassThroughQueryUsingResultSchema: wrote {} row(s) across {} spill object(s) + 1 schema sidecar under s3://{}/{}",
+                            rowsReturnedFromDatabase, spillLocations.size(), spillLocation.getBucket(), spillLocation.getKey());
+                    return derivedSchema;
+                }
+            }
+        }
+    }
+
+    /**
+     * Prepares the export query. Override to set driver options, such as a fetch size for streaming.
+     */
+    protected PreparedStatement prepareExportStatement(Connection connection, String query) throws SQLException
+    {
+        return connection.prepareStatement(query);
+    }
+
+    /**
+     * Derives the export schema from the live result. Override when the driver reports types that
+     * {@link JdbcToArrowUtils} or {@link BlockUtils#setValue} cannot handle.
+     */
+    protected Schema deriveExportSchema(ResultSetMetaData metadata) throws SQLException
+    {
+        return JdbcToArrowUtils.jdbcToArrowSchema(metadata, Calendar.getInstance(TimeZone.getTimeZone("UTC")));
+    }
+
+    /**
+     * Spill config with {@code maxInlineBlockBytes=0} so every batch goes to S3, written synchronously.
+     */
+    protected SpillConfig buildExportSpillConfig(ReadRecordsRequest request)
+    {
+        return SpillConfig.newBuilder()
+                .withSpillLocation(request.getSplit().getSpillLocation())
+                .withMaxBlockBytes(getSpillConfig(request).getMaxBlockBytes())
+                .withMaxInlineBlockBytes(0)
+                .withRequestId(request.getQueryId())
+                .withEncryptionKey(request.getSplit().getEncryptionKey())
+                .withNumSpillThreads(0)
+                .build();
+    }
+
+    /**
+     * S3 client for export writes, using the request's FAS credentials like the base spiller.
+     */
+    protected S3Client resolveScopedS3Client(ReadRecordsRequest request)
+    {
+        S3Client s3Client = getS3Client(getRequestOverrideConfig(request.getIdentity().getConfigOptions()), amazonS3Client);
+        return (s3Client != null) ? s3Client : S3Client.create();
+    }
+
+    /**
+     * Writes the {@code <spillKey>.schema} sidecar, encrypted with the same crypto as the data objects.
+     */
+    protected void writeSchemaSidecar(S3Client s3Client, S3SpillLocation spillLocation, EncryptionKey encryptionKey,
+            Schema derivedSchema, BlockAllocator allocator)
+    {
+        BlockCrypto blockCrypto = (encryptionKey != null)
+                ? new AesGcmBlockCrypto(allocator) : new NoOpBlockCrypto(allocator);
+        byte[] schemaBytes = blockCrypto.encrypt(encryptionKey, derivedSchema.serializeAsMessage());
+        putSchema(s3Client, spillLocation.getBucket(), spillLocation.getKey() + SCHEMA_SUFFIX, schemaBytes);
+    }
+
+    private void putSchema(S3Client client, String bucket, String key, byte[] payload)
+    {
+        PutObjectRequest putRequest = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentLength((long) payload.length)
+                .build();
+        client.putObject(putRequest, RequestBody.fromBytes(payload));
+        LOGGER.info("putSchema: wrote {} bytes to s3://{}/{}", payload.length, bucket, key);
     }
 
     /**
