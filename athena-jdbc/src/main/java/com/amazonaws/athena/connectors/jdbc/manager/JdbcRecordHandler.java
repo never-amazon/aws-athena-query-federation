@@ -25,6 +25,7 @@ import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.BlockUtils;
+import com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtil;
 import com.amazonaws.athena.connector.lambda.data.FieldResolver;
 import com.amazonaws.athena.connector.lambda.data.S3BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.SpillConfig;
@@ -282,11 +283,15 @@ public abstract class JdbcRecordHandler
         LOGGER.info("writePassThroughQueryUsingResultSchema: executing export query; writing records via spiller to s3://{}/{}.N and schema to {}{}",
                 spillLocation.getBucket(), spillLocation.getKey(), spillLocation.getKey(), SCHEMA_SUFFIX);
 
+        // Plain Arrow readers consume this export, so write timestamp-with-tz values unpacked on this thread.
+        DateTimeFormatterUtil.overrideTimezonePacking(false);
         try (Connection connection = getJdbcConnectionFactory().getConnection(getCredentialProvider(getRequestOverrideConfig(request)))) {
             connection.setAutoCommit(false); // enable server-side streaming for large result sets
             try (PreparedStatement preparedStatement = prepareExportStatement(connection, passThroughQuery);
                     ResultSet resultSet = preparedStatement.executeQuery()) {
                 Schema derivedSchema = deriveExportSchema(resultSet.getMetaData());
+                // Sidecar first, so readers find the schema as soon as the first data object appears.
+                writeSchemaSidecar(s3Client, spillLocation, request.getSplit().getEncryptionKey(), derivedSchema, allocator);
 
                 try (ConstraintEvaluator evaluator = new ConstraintEvaluator(allocator, derivedSchema, request.getConstraints());
                         S3BlockSpiller spiller = new S3BlockSpiller(s3Client, spillConfig, allocator, derivedSchema, evaluator, configOptions)) {
@@ -308,13 +313,15 @@ public abstract class JdbcRecordHandler
                     if (spiller.spilled()) {
                         spillLocations.addAll(spiller.getSpillLocations());
                     }
-                    writeSchemaSidecar(s3Client, spillLocation, request.getSplit().getEncryptionKey(), derivedSchema, allocator);
 
                     LOGGER.info("writePassThroughQueryUsingResultSchema: wrote {} row(s) across {} spill object(s) + 1 schema sidecar under s3://{}/{}",
                             rowsReturnedFromDatabase, spillLocations.size(), spillLocation.getBucket(), spillLocation.getKey());
                     return derivedSchema;
                 }
             }
+        }
+        finally {
+            DateTimeFormatterUtil.clearTimezonePackingOverride();
         }
     }
 

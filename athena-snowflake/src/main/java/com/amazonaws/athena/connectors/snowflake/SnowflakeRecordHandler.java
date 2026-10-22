@@ -59,7 +59,10 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TimeStampMilliTZVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
+import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.VectorAppender;
 import org.apache.commons.lang3.StringUtils;
@@ -76,7 +79,9 @@ import software.amazon.awssdk.utils.Validate;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -105,10 +110,14 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
 
     public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, java.util.Map<String, String> configOptions)
     {
-        this(databaseConnectionConfig,
-                new SnowflakeConnectionFactory(databaseConnectionConfig, SnowflakeEnvironmentProperties.getSnowFlakeParameter(JDBC_PROPERTIES, configOptions),
-                new DatabaseConnectionInfo(SnowflakeConstants.SNOWFLAKE_DRIVER_CLASS,
-                        SnowflakeConstants.SNOWFLAKE_DEFAULT_PORT)), configOptions);
+        this(
+            databaseConnectionConfig,
+            new SnowflakeConnectionFactory(
+                databaseConnectionConfig,
+                SnowflakeEnvironmentProperties.getSnowFlakeParameter(JDBC_PROPERTIES, configOptions),
+                new DatabaseConnectionInfo(SnowflakeConstants.SNOWFLAKE_DRIVER_CLASS, SnowflakeConstants.SNOWFLAKE_DEFAULT_PORT),
+                configOptions),
+            configOptions);
     }
 
     public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, GenericJdbcConnectionFactory jdbcConnectionFactory, java.util.Map<String, String> configOptions)
@@ -118,7 +127,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     @VisibleForTesting
-    SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, S3Client amazonS3, SecretsManagerClient secretsManager, AthenaClient athena, JdbcConnectionFactory jdbcConnectionFactory, JdbcSplitQueryBuilder jdbcSplitQueryBuilder, java.util.Map<String, String> configOptions)
+    public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, S3Client amazonS3, SecretsManagerClient secretsManager, AthenaClient athena, JdbcConnectionFactory jdbcConnectionFactory, JdbcSplitQueryBuilder jdbcSplitQueryBuilder, java.util.Map<String, String> configOptions)
     {
         super(amazonS3, secretsManager, athena, databaseConnectionConfig, jdbcConnectionFactory, configOptions);
         this.jdbcConnectionFactory = jdbcConnectionFactory;
@@ -237,6 +246,8 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
                 ConstraintEvaluator evaluator = new ConstraintEvaluator(allocator, derivedSchema, request.getConstraints());
                 S3BlockSpiller spiller = new S3BlockSpiller(s3Client, spillConfig, allocator, derivedSchema, evaluator, configOptions)) {
             VectorSchemaRoot root = reader.getVectorSchemaRoot();
+            // Sidecar first, so readers find the schema as soon as the first data object appears.
+            writeSchemaSidecar(s3Client, spillLocation, split.getEncryptionKey(), derivedSchema, allocator);
             while (reader.loadNextBatch() && queryStatusChecker.isQueryRunning()) {
                 spiller.writeRows((Block block, int startRowNum) -> {
                     for (Field field : root.getSchema().getFields()) {
@@ -250,7 +261,6 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
             if (spiller.spilled()) {
                 spillLocations.addAll(spiller.getSpillLocations());
             }
-            writeSchemaSidecar(s3Client, spillLocation, split.getEncryptionKey(), derivedSchema, allocator);
         }
         return derivedSchema;
     }
@@ -315,7 +325,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     public CredentialsProvider createCredentialsProvider(String secretName, AwsRequestOverrideConfiguration requestOverrideConfiguration)
     {
         if (StringUtils.isNotBlank(secretName)) {
-            return new SnowflakeCredentialsProvider(secretName);
+            return new SnowflakeCredentialsProvider(secretName, requestOverrideConfiguration);
         }
 
         return null;
@@ -359,5 +369,44 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         resultVector.setValueCount(rowCount);
 
         return resultVector;
+    }
+
+    /**
+     * Preserves the declared precision of integer-like Snowflake {@code NUMBER(p,0)} columns on the JDBC export
+     * path. Snowflake reports a scale-0 {@code NUMBER} with JDBC type {@code BIGINT}/{@code INTEGER}/..., so the
+     * default mapping yields an Arrow integer vector that cannot carry the precision {@code p}. We re-map those
+     * columns to {@code Decimal(p, 0)} so the exported schema (and sidecar) keeps the source precision.
+     *
+     * <p>Columns the driver already maps to a decimal (scale &gt; 0) are left untouched, and precisions outside the
+     * Arrow 128-bit decimal range (1..38) fall back to the default integer mapping. Timestamp types are left as-is
+     * ({@code timestamp[ms, tz=UTC]}); the base export path writes them unpacked.
+     */
+    @Override
+    protected Schema deriveExportSchema(ResultSetMetaData metadata) throws SQLException
+    {
+        Schema baseSchema = super.deriveExportSchema(metadata);
+        List<Field> fields = new ArrayList<>(baseSchema.getFields().size());
+
+        for (int i = 0; i < baseSchema.getFields().size(); i++) {
+            Field baseField = baseSchema.getFields().get(i);
+            int column = i + 1; // ResultSetMetaData columns are 1-indexed
+            Types.MinorType minorType = Types.getMinorTypeForArrowType(baseField.getType());
+            boolean isArrowInteger = minorType == Types.MinorType.TINYINT || minorType == Types.MinorType.SMALLINT
+                    || minorType == Types.MinorType.INT || minorType == Types.MinorType.BIGINT;
+
+            if (isArrowInteger && metadata.getScale(column) == 0) {
+                int precision = metadata.getPrecision(column);
+                if (precision >= 1 && precision <= 38) {
+                    ArrowType.Decimal decimalType = new ArrowType.Decimal(precision, 0, 128);
+                    fields.add(new Field(baseField.getName(),
+                            new FieldType(baseField.isNullable(), decimalType, null), baseField.getChildren()));
+                    continue;
+                }
+                LOGGER.debug("deriveExportSchema: column {} precision {} outside Arrow decimal range; keeping {}",
+                        baseField.getName(), precision, baseField.getType());
+            }
+            fields.add(baseField);
+        }
+        return new Schema(fields, baseSchema.getCustomMetadata());
     }
 }
