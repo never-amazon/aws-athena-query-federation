@@ -62,17 +62,20 @@ import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.Text;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -90,7 +93,9 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -511,7 +516,7 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
-    public void testGetCredentialProvider() throws Exception {
+    public void testGetCredentialProvider() {
         final DatabaseConnectionConfig configWithSecret = new DatabaseConnectionConfig(
             "testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
             "snowflake://jdbc:snowflake://hostname/", "testSecret");
@@ -519,8 +524,22 @@ public class SnowflakeRecordHandlerTest
         SnowflakeRecordHandler handler = new SnowflakeRecordHandler(
             configWithSecret, amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, Collections.emptyMap());
         
-        CredentialsProvider provider = (CredentialsProvider) handler.getCredentialProvider();
+        CredentialsProvider provider = handler.getCredentialProvider();
         assertNotNull(provider);
+    }
+
+    @Test
+    public void testCreateCredentialsProviderPassesRequestOverrideConfiguration()
+    {
+        AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(30))
+                .build();
+        List<List<?>> constructorArguments = new ArrayList<>();
+        try (MockedConstruction<SnowflakeCredentialsProvider> providers = mockConstruction(SnowflakeCredentialsProvider.class,
+                (mock, context) -> constructorArguments.add(context.arguments()))) {
+            handler.createCredentialsProvider("testSecret", overrideConfig);
+        }
+        assertEquals(Collections.singletonList(Arrays.asList("testSecret", overrideConfig)), constructorArguments);
     }
 
     @Test
@@ -591,7 +610,7 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
-    public void testGetCredentialProviderWithoutSecret() throws Exception
+    public void testGetCredentialProviderWithoutSecret()
     {
         final DatabaseConnectionConfig configWithoutSecret = new DatabaseConnectionConfig(
             "testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
@@ -600,7 +619,7 @@ public class SnowflakeRecordHandlerTest
         SnowflakeRecordHandler handler = new SnowflakeRecordHandler(
             configWithoutSecret, amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, Collections.emptyMap());
         
-        CredentialsProvider provider = (CredentialsProvider) handler.getCredentialProvider();
+        CredentialsProvider provider = handler.getCredentialProvider();
         assertNull(provider);
     }
 
@@ -1008,6 +1027,35 @@ public class SnowflakeRecordHandlerTest
             assertTrue(putKeys().contains(splitLoc.getKey() + ".schema"));
             verify(connection, never()).prepareStatement(anyString());
         }
+    }
+
+    @Test
+    public void deriveExportSchemaMapsScaleZeroNumberToDecimal() throws SQLException
+    {
+        // label, JDBC type, precision, scale
+        Object[][] columns = {
+                {"number_19_0", java.sql.Types.BIGINT, 19, 0},
+                {"number_precision_0", java.sql.Types.BIGINT, 0, 0},
+                {"number_precision_39", java.sql.Types.BIGINT, 39, 0},
+                {"bigint_scale_2", java.sql.Types.BIGINT, 19, 2},
+                {"number_10_2", java.sql.Types.DECIMAL, 10, 2}};
+        java.sql.ResultSetMetaData metadata = mock(java.sql.ResultSetMetaData.class);
+        when(metadata.getColumnCount()).thenReturn(columns.length);
+        for (int i = 0; i < columns.length; i++) {
+            int column = i + 1;
+            when(metadata.getColumnLabel(column)).thenReturn((String) columns[i][0]);
+            when(metadata.getColumnType(column)).thenReturn((Integer) columns[i][1]);
+            when(metadata.getPrecision(column)).thenReturn((Integer) columns[i][2]);
+            when(metadata.getScale(column)).thenReturn((Integer) columns[i][3]);
+        }
+
+        Schema schema = handler.deriveExportSchema(metadata);
+
+        assertEquals(new ArrowType.Decimal(19, 0, 128), schema.findField("number_19_0").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("number_precision_0").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("number_precision_39").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("bigint_scale_2").getType());
+        assertEquals(new ArrowType.Decimal(10, 2, 128), schema.findField("number_10_2").getType());
     }
 
     private void assertExportUsesJdbc(Split split) throws Exception

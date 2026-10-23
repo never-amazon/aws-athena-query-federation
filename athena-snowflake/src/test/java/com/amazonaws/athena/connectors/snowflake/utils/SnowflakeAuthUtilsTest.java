@@ -20,10 +20,15 @@
 package com.amazonaws.athena.connectors.snowflake.utils;
 
 import com.amazonaws.athena.connectors.snowflake.SnowflakeConstants;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.junit.MockitoJUnitRunner;
 
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.interfaces.RSAPrivateKey;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,6 +38,8 @@ import static org.junit.Assert.assertThrows;
 @RunWith(MockitoJUnitRunner.class)
 public class SnowflakeAuthUtilsTest
 {
+    private static RSAPrivateKey generatedKey;
+
     // Valid 2048-bit RSA private key for testing
     private static final String VALID_PRIVATE_KEY_PEM = 
         "-----BEGIN PRIVATE KEY-----\n" +
@@ -55,6 +62,14 @@ public class SnowflakeAuthUtilsTest
 
     public static final String TESTUSER = "testuser";
     public static final String TESTPASSWORD = "testpassword";
+
+    @BeforeClass
+    public static void generateKey() throws Exception
+    {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        generatedKey = (RSAPrivateKey) generator.generateKeyPair().getPrivate();
+    }
 
     @Test
     public void testDetermineAuthTypeWithKeyPairAuth()
@@ -378,5 +393,70 @@ public class SnowflakeAuthUtilsTest
         assertThrows(IllegalArgumentException.class, () -> {
             SnowflakeAuthUtils.validateCredentials(credentials, SnowflakeAuthType.SNOWFLAKE);
         });
+    }
+
+    @Test
+    public void testGetPasswordFallsBackToUppercaseWhenLowercaseIsBlank()
+    {
+        Map<String, String> credentials = new HashMap<>();
+        credentials.put(SnowflakeConstants.USERNAME, TESTUSER);
+        credentials.put(SnowflakeConstants.PASSWORD, "");
+        credentials.put(SnowflakeConstants.PASSWORD_UPPERCASE, TESTPASSWORD);
+
+        SnowflakeAuthUtils.validateCredentials(credentials, SnowflakeAuthType.SNOWFLAKE);
+        assertEquals(TESTPASSWORD, SnowflakeAuthUtils.getPassword(credentials));
+    }
+
+    @Test
+    public void testGetPasswordPrefersLowercaseKey()
+    {
+        Map<String, String> credentials = new HashMap<>();
+        credentials.put(SnowflakeConstants.PASSWORD, TESTPASSWORD);
+        credentials.put(SnowflakeConstants.PASSWORD_UPPERCASE, "other-password");
+
+        assertEquals(TESTPASSWORD, SnowflakeAuthUtils.getPassword(credentials));
+    }
+
+    @Test
+    public void testCreatePrivateKeyFromMultiLinePem() throws Exception
+    {
+        assertSameKey(SnowflakeAuthUtils.createPrivateKey(multiLinePem(), null));
+    }
+
+    @Test
+    public void testCreatePrivateKeyFromSingleLinePem() throws Exception
+    {
+        String pem = "-----BEGIN PRIVATE KEY-----" + base64Key() + "-----END PRIVATE KEY-----";
+        assertSameKey(SnowflakeAuthUtils.createPrivateKey(pem, null));
+    }
+
+    @Test
+    public void testCreatePrivateKeyFromRawBase64() throws Exception
+    {
+        assertSameKey(SnowflakeAuthUtils.createPrivateKey(base64Key(), null));
+    }
+
+    @Test
+    public void testCreatePrivateKeyFromUnencryptedPemWithPassphrase() throws Exception
+    {
+        // The BEGIN PRIVATE KEY header marks the key as unencrypted, so the passphrase goes unused.
+        assertSameKey(SnowflakeAuthUtils.createPrivateKey(multiLinePem(), "test-passphrase"));
+    }
+
+    private static String base64Key()
+    {
+        return Base64.getEncoder().encodeToString(generatedKey.getEncoded());
+    }
+
+    private static String multiLinePem()
+    {
+        String body = Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(generatedKey.getEncoded());
+        return "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n";
+    }
+
+    private static void assertSameKey(PrivateKey actual)
+    {
+        assertEquals(generatedKey.getModulus(), ((RSAPrivateKey) actual).getModulus());
+        assertEquals(generatedKey.getPrivateExponent(), ((RSAPrivateKey) actual).getPrivateExponent());
     }
 }

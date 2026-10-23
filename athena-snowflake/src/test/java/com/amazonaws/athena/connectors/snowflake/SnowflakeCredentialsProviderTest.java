@@ -25,17 +25,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.PutSecretValueRequest;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -45,6 +51,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -327,7 +334,7 @@ public class SnowflakeCredentialsProviderTest
     {
         try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
                 (mock, context) -> {
-                    when(mock.getSecret(TEST_SECRET_NAME)).thenReturn(null);
+                    when(mock.getSecret(TEST_SECRET_NAME, null)).thenReturn(null);
                     when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
                 })) {
 
@@ -344,15 +351,17 @@ public class SnowflakeCredentialsProviderTest
     {
         try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
                 (mock, context) -> {
-                    when(mock.getSecret(TEST_SECRET_NAME)).thenReturn("invalid json");
+                    when(mock.getSecret(TEST_SECRET_NAME, null)).thenReturn("invalid json");
                     when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
                 })) {
 
             SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, null);
 
-            assertThrows(RuntimeException.class, () -> {
+            RuntimeException exception = assertThrows(RuntimeException.class, () -> {
                 provider.getCredentialMap();
             });
+
+            assertTrue(exception.getMessage().contains("Error retrieving Snowflake credentials"));
         }
     }
 
@@ -383,6 +392,41 @@ public class SnowflakeCredentialsProviderTest
                 assertEquals(TEST_ACCESS_TOKEN, credentialMap.get("password"));
                 assertEquals("oauth", credentialMap.get("authenticator"));
             }
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGetCredentialMapPassesRequestOverrideConfiguration() throws Exception
+    {
+        AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(30))
+                .build();
+        String secretJson = createOAuthSecretJson();
+
+        try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
+                (mock, context) -> {
+                    when(mock.getSecret(TEST_SECRET_NAME, overrideConfig)).thenReturn(secretJson);
+                    when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
+                })) {
+
+            SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, overrideConfig);
+
+            try (MockedStatic<SnowflakeCredentialsProvider> mockedStatic = Mockito.mockStatic(SnowflakeCredentialsProvider.class)) {
+                HttpURLConnection mockConnection = createMockHttpConnection(200, createTokenResponse());
+                mockedStatic.when(() -> SnowflakeCredentialsProvider.getHttpURLConnection(anyString(), anyString(), anyString()))
+                        .thenReturn(mockConnection);
+
+                provider.getCredentialMap();
+            }
+
+            verify(mockedConstruction.constructed().get(0)).getSecret(TEST_SECRET_NAME, overrideConfig);
+            // The provider saves the new token through the Consumer overload, so apply it to a builder to read the request.
+            ArgumentCaptor<Consumer<PutSecretValueRequest.Builder>> putRequest = ArgumentCaptor.forClass(Consumer.class);
+            verify(mockSecretsClient).putSecretValue(putRequest.capture());
+            PutSecretValueRequest.Builder builder = PutSecretValueRequest.builder();
+            putRequest.getValue().accept(builder);
+            assertEquals(Optional.of(overrideConfig), builder.build().overrideConfiguration());
         }
     }
 
@@ -427,10 +471,32 @@ public class SnowflakeCredentialsProviderTest
 
             SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, null);
 
-            RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-                provider.getCredentialMap();
-            });
-            assertTrue(exception.getMessage().contains("password is required for password authentication"));
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, provider::getCredentialMap);
+            assertEquals("password is required for password authentication", exception.getMessage());
+        }
+    }
+
+    @Test
+    public void testGetCredentialMapWithNullLowercasePassword()
+    {
+        String secretJson = new ObjectMapper().createObjectNode()
+                .put("username", TEST_USERNAME)
+                .putNull("password")
+                .put("PASSWORD", TEST_PASSWORD)
+                .toString();
+
+        try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
+                (mock, context) -> {
+                    when(mock.getSecret(TEST_SECRET_NAME, null)).thenReturn(secretJson);
+                    when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
+                })) {
+
+            SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, null);
+
+            Map<String, String> credentialMap = provider.getCredentialMap();
+
+            assertEquals(TEST_USERNAME, credentialMap.get("user"));
+            assertEquals(TEST_PASSWORD, credentialMap.get("password"));
         }
     }
 
@@ -477,59 +543,6 @@ public class SnowflakeCredentialsProviderTest
                 .put("expires_in", "3600")
                 .put("fetched_at", String.valueOf(System.currentTimeMillis() / 1000 - 4000))
                 .toString();
-    }
-
-    /**
-     * Some secrets store the keys upper-cased (USERNAME/PASSWORD). Those must resolve exactly like
-     * the lower-case form rather than being reported as missing credentials.
-     */
-    @Test
-    public void testGetCredentialMapWithUppercaseSecretKeys()
-    {
-        String secretJson = new ObjectMapper().createObjectNode()
-                .put("USERNAME", TEST_USERNAME)
-                .put("PASSWORD", TEST_PASSWORD)
-                .toString();
-
-        try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
-                (mock, context) -> {
-                    when(mock.getSecret(TEST_SECRET_NAME, null)).thenReturn(secretJson);
-                    when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
-                })) {
-
-            SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, null);
-
-            Map<String, String> credentialMap = provider.getCredentialMap();
-
-            assertNotNull(credentialMap);
-            assertEquals(TEST_USERNAME, credentialMap.get("user"));
-            assertEquals(TEST_PASSWORD, credentialMap.get("password"));
-        }
-    }
-
-    /**
-     * A username with no password in either case form is a client configuration error, so it must
-     * surface as IllegalArgumentException rather than being wrapped in a RuntimeException.
-     */
-    @Test
-    public void testGetCredentialMapWithMissingPasswordThrowsIllegalArgument()
-    {
-        String secretJson = new ObjectMapper().createObjectNode()
-                .put("username", TEST_USERNAME)
-                .toString();
-
-        try (MockedConstruction<CachableSecretsManager> mockedConstruction = mockConstruction(CachableSecretsManager.class,
-                (mock, context) -> {
-                    when(mock.getSecret(TEST_SECRET_NAME, null)).thenReturn(secretJson);
-                    when(mock.getSecretsManager()).thenReturn(mockSecretsClient);
-                })) {
-
-            SnowflakeCredentialsProvider provider = new SnowflakeCredentialsProvider(TEST_SECRET_NAME, mockSecretsClient, null);
-
-            IllegalArgumentException thrown = org.junit.Assert.assertThrows(IllegalArgumentException.class,
-                    provider::getCredentialMap);
-            org.junit.Assert.assertTrue(thrown.getMessage().contains("password"));
-        }
     }
 
     private String createStandardSecretJson()

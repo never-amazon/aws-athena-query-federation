@@ -140,13 +140,7 @@ public class SnowflakeEnvironmentProperties extends JdbcEnvironmentProperties
 
     /**
      * Returns true when a Glue connection value is safe to forward to the Snowflake driver.
-     * <p>
-     * Blank values, and the literal string {@code "null"} that upstream config sometimes
-     * supplies for an unset field, must not be forwarded. Quoting them produces a
-     * case-sensitive identifier such as {@code warehouse="null"} that Snowflake resolves to
-     * a non-existent object, so the session opens with no active warehouse and every
-     * subsequent query fails with {@code No active warehouse selected in the current session}.
-     * Omitting the parameter instead lets Snowflake apply the user's default.
+     * Quoting a blank or {@code "null"} value names an object that does not exist, so omit it and let Snowflake use the user's default.
      */
     private static boolean isUsableValue(String value)
     {

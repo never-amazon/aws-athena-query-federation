@@ -52,6 +52,7 @@ import java.util.Map;
 
 import static com.amazonaws.athena.connector.credentials.CredentialsConstants.USER;
 import static com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthType.OAUTH;
+import static com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils.getPassword;
 import static com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils.getUsername;
 import static com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils.validateCredentials;
 
@@ -175,11 +176,7 @@ public class SnowflakeCredentialsProvider implements CredentialsProvider
     {
         Map<String, String> credentialMap = new HashMap<>();
         credentialMap.put(SnowflakeConstants.USER, getUsername(oauthConfig));
-        String password = oauthConfig.getOrDefault(SnowflakeConstants.PASSWORD, oauthConfig.get(SnowflakeConstants.PASSWORD_UPPERCASE));
-        if (password == null) {
-            throw new IllegalArgumentException("Missing required parameter: password/PASSWORD");
-        }
-        credentialMap.put(SnowflakeConstants.PASSWORD, password);
+        credentialMap.put(SnowflakeConstants.PASSWORD, getPassword(oauthConfig));
         LOGGER.debug("Using password authentication for user: {}", getUsername(oauthConfig));
         return credentialMap;
     }

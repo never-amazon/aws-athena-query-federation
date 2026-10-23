@@ -19,6 +19,7 @@
  */
 package com.amazonaws.athena.connectors.snowflake;
 
+import com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
 import com.amazonaws.athena.connector.lambda.data.SchemaBuilder;
@@ -41,6 +42,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -495,10 +497,7 @@ public class SnowflakeQueryStringBuilderTest
         ).add("partition", "partition-primary-\"id\"-limit-1000-offset-500").build();
 
         String result = queryBuilder.appendLimitOffset(split);
-        assertTrue(result.contains("ORDER BY"));
-        assertTrue(result.contains("\"id\""));
-        assertTrue(result.contains("LIMIT"));
-        assertTrue(result.contains("OFFSET"));
+        assertEquals("ORDER BY \"id\"  LIMIT 1000 OFFSET 500", result);
     }
 
     @Test
@@ -510,10 +509,21 @@ public class SnowflakeQueryStringBuilderTest
         ).add("partition", "partition-primary-\"col1\",\"col2\"-limit-5000-offset-10000").build();
 
         String result = queryBuilder.appendLimitOffset(split);
-        assertTrue(result.contains("ORDER BY"));
-        assertTrue(result.contains("\"col1\",\"col2\""));
-        assertTrue(result.contains("LIMIT"));
-        assertTrue(result.contains("OFFSET"));
+        assertEquals("ORDER BY \"col1\",\"col2\"  LIMIT 5000 OFFSET 10000", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithCasingFilterBeforePartition()
+    {
+        // Direct-query splits can carry the casing filter too, and SplitSerDe keeps the key order it receives.
+        Map<String, String> properties = new LinkedHashMap<>();
+        properties.put(EnvironmentConstants.CATALOG_CASING_FILTER, EnvironmentConstants.UPPERCASE_ONLY);
+        properties.put("partition", "partition-primary-\"id\"-limit-100-offset-200");
+        Split split = new Split(S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(), null, properties);
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertTrue(result.contains("ORDER BY \"id\""));
+        assertTrue(result.contains("LIMIT 100 OFFSET 200"));
     }
 
     @Test

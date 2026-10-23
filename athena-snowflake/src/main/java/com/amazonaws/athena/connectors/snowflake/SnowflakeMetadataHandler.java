@@ -97,6 +97,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -113,6 +114,9 @@ import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.JDBC_
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.LARGE_TABLE_THRESHOLD;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.LIST_PAGINATED_TABLES_QUERY;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.MAX_PARTITION_COUNT;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_LIMIT_MARKER;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_OFFSET_MARKER;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_PRIMARY_MARKER;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.SHOW_PRIMARY_KEYS_QUERY;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.SINGLE_SPLIT_LIMIT_COUNT;
@@ -255,8 +259,8 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
         if (request.getIdentity().getConfigOptions() != null
                 && EnvironmentConstants.UPPERCASE_ONLY.equals(request.getIdentity().getConfigOptions().get(EnvironmentConstants.CATALOG_CASING_FILTER))) {
             tableName = new TableName(
-                    tableName.getSchemaName().toUpperCase(),
-                    tableName.getTableName().toUpperCase());
+                    tableName.getSchemaName().toUpperCase(Locale.ROOT),
+                    tableName.getTableName().toUpperCase(Locale.ROOT));
         }
 
         this.handleSnowflakePartitions(request, blockWriter, tableName, queryID);
@@ -341,7 +345,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
                      * the partition values we are setting the limit and offset values like p-limit-3000-offset-0
                      */
                     for (int i = 1; i <= numberOfPartitions; i++) {
-                        final String partitionVal = BLOCK_PARTITION_COLUMN_NAME + "-primary-" + primaryKey.orElse("") + "-limit-" + partitionRecordCount + "-offset-" + offset;
+                        final String partitionVal = BLOCK_PARTITION_COLUMN_NAME + PARTITION_PRIMARY_MARKER + primaryKey.orElse("") + PARTITION_LIMIT_MARKER + partitionRecordCount + PARTITION_OFFSET_MARKER + offset;
                         LOGGER.info("partitionVal {} ", partitionVal);
                         blockWriter.writeRows((Block block, int rowNum) ->
                         {
@@ -646,7 +650,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
         return schemaBuilder.build();
     }
 
-    private Optional<String> getPrimaryKey(TableName tableName, Connection connection) throws Exception
+    private Optional<String> getPrimaryKey(TableName tableName, Connection connection) throws SQLException
     {
         LOGGER.debug("getPrimaryKey tableName: " + tableName);
         List<String> primaryKeys = new ArrayList<String>();
@@ -669,7 +673,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
      * Snowflake does not enforce primary key constraints, so we double-check user has unique primary key
      * before partitioning. Uses a statement-level timeout to fail fast rather than waiting for Lambda timeout.
      */
-    private boolean hasUniquePrimaryKey(TableName tableName, String primaryKey, Connection connection) throws Exception
+    private boolean hasUniquePrimaryKey(TableName tableName, String primaryKey, Connection connection)
     {
         try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT " + primaryKey +  ", count(*) as COUNTS FROM " + "\"" + tableName.getSchemaName() + "\".\"" + tableName.getTableName() + "\"" + " GROUP BY " + primaryKey + " ORDER BY COUNTS DESC LIMIT 1")) {
             preparedStatement.setQueryTimeout(UNIQUENESS_CHECK_TIMEOUT_SECONDS);
@@ -695,7 +699,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
     /*
      * Check if the input table is a view and returns viewflag accordingly
      */
-    private boolean checkForView(TableName tableName, Connection connection) throws Exception
+    private boolean checkForView(TableName tableName, Connection connection) throws SQLException
     {
         boolean viewFlag = false;
         List<String> viewparameters = Arrays.asList(tableName.getSchemaName(), tableName.getTableName());

@@ -44,22 +44,13 @@ import static com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthType.
 
 /**
  * Custom connection factory for Snowflake that supports multiple authentication methods.
- * <p>
- * For JWT (key-pair) auth: uses {@link DriverManager} directly because HikariCP
- * stringifies all property values via {@code toString()}, which breaks the
- * {@link java.security.PrivateKey} object required by the Snowflake JDBC driver.
- * <p>
- * For password/OAuth auth: always uses HikariCP connection pooling via
- * {@link GenericJdbcConnectionFactory#getConnectionFromManagedPool}, bypassing
- * the parent's direct-connection path even when {@code fas_token} is present.
- * <p>
- * The Snowflake JDBC driver's {@code SnowflakeConnectString.parse()} URL-decodes
- * query parameters internally, so both {@code %22} and literal {@code "} in the
- * connection string work correctly for case-sensitive identifiers.
  */
 public class SnowflakeConnectionFactory extends GenericJdbcConnectionFactory
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeConnectionFactory.class);
+
+    // Constructor properties only. The parent's jdbcProperties also collects every pooled caller's credentials.
+    private final Properties keyPairBaseProperties = new Properties();
 
     public SnowflakeConnectionFactory(DatabaseConnectionConfig databaseConnectionConfig, Map<String, String> properties, DatabaseConnectionInfo databaseConnectionInfo)
     {
@@ -69,6 +60,9 @@ public class SnowflakeConnectionFactory extends GenericJdbcConnectionFactory
     public SnowflakeConnectionFactory(DatabaseConnectionConfig databaseConnectionConfig, Map<String, String> properties, DatabaseConnectionInfo databaseConnectionInfo, final Map<String, String> configOptions)
     {
         super(databaseConnectionConfig, properties, databaseConnectionInfo, configOptions);
+        if (properties != null) {
+            keyPairBaseProperties.putAll(properties);
+        }
     }
 
     @Override
@@ -77,83 +71,80 @@ public class SnowflakeConnectionFactory extends GenericJdbcConnectionFactory
         if (credentialsProvider == null) {
             return super.getConnectionFromManagedPool(null);
         }
-        else if (SNOWFLAKE_JWT.equals(SnowflakeAuthUtils.determineAuthType(credentialsProvider.getCredentialMap()))) {
-            // Key-pair auth requires a PrivateKey object in Properties,
-            // which HikariCP cannot handle (it stringifies all property values).
-            // Use DriverManager directly with URL-decoded connection string.
-            return getKeyPairConnection(credentialsProvider.getCredentialMap());
+
+        Map<String, String> credentialMap = credentialsProvider.getCredentialMap();
+        if (SNOWFLAKE_JWT.equals(SnowflakeAuthUtils.determineAuthType(credentialMap))) {
+            // HikariCP stringifies property values, which breaks the PrivateKey object, so key-pair auth uses DriverManager.
+            return getKeyPairConnection(credentialMap);
         }
-        else {
-            // Password and OAuth: always use HikariCP for connection pooling,
-            // bypassing the parent's direct-connection path even when fas_token is present.
-            return super.getConnectionFromManagedPool(credentialsProvider);
-        }
+        // Password and OAuth always use the pool, even when fas_token is set.
+        return super.getConnectionFromManagedPool(credentialsProvider);
     }
 
     /**
      * Creates a connection using key-pair authentication via {@link DriverManager}.
-     * <p>
-     * Secret placeholders are stripped and the connection string is URL-decoded as a
-     * safety measure, though the Snowflake JDBC driver also decodes query parameters
-     * internally via {@code SnowflakeConnectString.parse()}.
      */
     private Connection getKeyPairConnection(Map<String, String> credentialMap) throws SQLException
     {
-      try {
-          String username = credentialMap.get(USER);
-          String privateKeyPem = credentialMap.get(SnowflakeConstants.PEM_PRIVATE_KEY);
-          String passphrase = credentialMap.get(SnowflakeConstants.PEM_PRIVATE_KEY_PASSPHRASE);
-  
-          java.security.PrivateKey privateKey = SnowflakeAuthUtils.createPrivateKey(privateKeyPem, passphrase);
-  
-          String jdbcString = databaseConnectionConfig.getJdbcConnectionString();
-          Matcher secretMatcher = SECRET_NAME_PATTERN.matcher(jdbcString);
-          String cleanedString = secretMatcher.replaceAll(Matcher.quoteReplacement(""));
-  
-          // Parse the JDBC URL and extract query parameters into Properties
-          // instead of passing them in the URL. The Snowflake JDBC driver's
-          // SnowflakeConnectString.parse() rejects URLs containing special
-          // characters (e.g., decoded double quotes from URLDecoder.decode()).
-          // HikariCP (used by the AppFlow path) avoids this by passing
-          // parameters as DataSource properties rather than in the URL.
-          String baseUrl;
-          Properties props = new Properties();
-          props.putAll(jdbcProperties);
-  
-          int queryIndex = cleanedString.indexOf('?');
-          if (queryIndex >= 0) {
-              baseUrl = cleanedString.substring(0, queryIndex);
-              String query = cleanedString.substring(queryIndex + 1);
-              for (String param : query.split("&")) {
-                  String[] kv = param.split("=", 2);
-                  if (kv.length == 2) {
-                      props.setProperty(
-                          URLDecoder.decode(kv[0], StandardCharsets.UTF_8),
-                          URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
-                  }
-              }
-          }
-          else {
-              baseUrl = cleanedString;
-          }
-  
-          props.setProperty(USER, username);
-          props.setProperty(AUTHENTICATOR, SNOWFLAKE_JWT.getValue());
-          props.put(PRIVATE_KEY, privateKey);
-  
-          LOGGER.debug("Creating Snowflake connection with key-pair authentication for user: {}", username);
-  
-          // Explicitly register the Snowflake JDBC driver with DriverManager.
-          // The Athena Federation code path (FederationRequest) does not use HikariCP here,
-          // so the driver may not be auto-registered. HikariCP handles this via its own
-          // fallback mechanism, but DriverManager.getConnection() does not.
-          Class.forName(databaseConnectionInfo.getDriverClassName());
-  
-          return DriverManager.getConnection(baseUrl, props);
-      }
-      catch (Exception e) {
-          LOGGER.error("Failed to create Snowflake connection with key-pair authentication", e);
-          throw new SQLException("Failed to create Snowflake connection with key-pair authentication: " + e.getMessage(), e);
-      }
-  }
+        try {
+            String username = credentialMap.get(USER);
+            String privateKeyPem = credentialMap.get(SnowflakeConstants.PEM_PRIVATE_KEY);
+            String passphrase = credentialMap.get(SnowflakeConstants.PEM_PRIVATE_KEY_PASSPHRASE);
+
+            java.security.PrivateKey privateKey = SnowflakeAuthUtils.createPrivateKey(privateKeyPem, passphrase);
+
+            Properties props = new Properties();
+            props.putAll(keyPairBaseProperties);
+            String baseUrl = moveQueryParametersToProperties(buildConnectionString(), props);
+            props.setProperty(USER, username);
+            props.setProperty(AUTHENTICATOR, SNOWFLAKE_JWT.getValue());
+            props.put(PRIVATE_KEY, privateKey);
+
+            LOGGER.debug("Creating Snowflake connection with key-pair authentication for user: {}", username);
+
+            // DriverManager may not have the Snowflake driver registered on this path, so load it explicitly.
+            Class.forName(databaseConnectionInfo.getDriverClassName());
+
+            return DriverManager.getConnection(baseUrl, props);
+        }
+        catch (Exception e) {
+            LOGGER.error("Failed to create Snowflake connection with key-pair authentication", e);
+            throw new SQLException("Failed to create Snowflake connection with key-pair authentication: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Builds the JDBC connection string for Snowflake.
+     * 
+     * @return The connection string
+     */
+    private String buildConnectionString()
+    {
+        String jdbcString = databaseConnectionConfig.getJdbcConnectionString();
+        
+        // Remove any secret placeholders from the connection string
+        Matcher secretMatcher = SECRET_NAME_PATTERN.matcher(jdbcString);
+        return secretMatcher.replaceAll(Matcher.quoteReplacement(""));
+    }
+
+    /**
+     * Moves the URL's query parameters into {@code props}, URL-decoded, and returns the URL without them.
+     * The driver's {@code SnowflakeConnectString.parse()} rejects a URL that contains decoded double quotes.
+     */
+    private static String moveQueryParametersToProperties(String url, Properties props)
+    {
+        int queryIndex = url.indexOf('?');
+        if (queryIndex < 0) {
+            return url;
+        }
+        for (String param : url.substring(queryIndex + 1).split("&")) {
+            String[] kv = param.split("=", 2);
+            if (kv.length == 2) {
+                props.setProperty(
+                        URLDecoder.decode(kv[0], StandardCharsets.UTF_8),
+                        URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
+            }
+        }
+        return url.substring(0, queryIndex);
+    }
 }

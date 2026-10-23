@@ -64,6 +64,8 @@ public class DateTimeFormatterUtilTest {
     @After
     public void tearDown()
     {
+        // Keep a failed override test from leaking its thread-local into later tests.
+        DateTimeFormatterUtil.clearTimezonePackingOverride();
         logger.info("{}: exit ", testName.getMethodName());
     }
 
@@ -163,6 +165,30 @@ public class DateTimeFormatterUtilTest {
         assertEquals("-05:00", holder.timezone);
         assertNotEquals(expectedPackedLong, holder.value);
         assertEquals(expectedZdt, DateTimeFormatterUtil.constructZonedDateTime(expectedUnpackedLong, arrowType));
+    }
+
+    @Test
+    public void timezonePackingOverrideTakesPrecedence() {
+        ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.of(2015, 12, 21, 17, 42, 34, 0), ZoneId.of("-05:00"));
+        long packed = 5942221840384541L;
+        long unpacked = zdt.toInstant().toEpochMilli();
+
+        DateTimeFormatterUtil.overrideTimezonePacking(false);
+        assertEquals(unpacked, DateTimeFormatterUtil.timestampMilliTzHolderFromObject(zdt, null).value);
+
+        DateTimeFormatterUtil.disableTimezonePacking();
+        DateTimeFormatterUtil.overrideTimezonePacking(true);
+        assertEquals(packed, DateTimeFormatterUtil.timestampMilliTzHolderFromObject(zdt, null).value);
+    }
+
+    @Test
+    public void clearTimezonePackingOverrideRestoresDefault() {
+        ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.of(2015, 12, 21, 17, 42, 34, 0), ZoneId.of("-05:00"));
+
+        DateTimeFormatterUtil.overrideTimezonePacking(false);
+        DateTimeFormatterUtil.clearTimezonePackingOverride();
+
+        assertEquals(5942221840384541L, DateTimeFormatterUtil.timestampMilliTzHolderFromObject(zdt, null).value);
     }
 
     @Test

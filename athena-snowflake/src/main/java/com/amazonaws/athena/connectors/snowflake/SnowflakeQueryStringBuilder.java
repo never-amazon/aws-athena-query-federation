@@ -45,6 +45,9 @@ import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.DOUBLE_QUOTE_CHAR;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_LIMIT_MARKER;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_OFFSET_MARKER;
+import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_PRIMARY_MARKER;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.SINGLE_QUOTE_CHAR;
 
 /**
@@ -176,19 +179,16 @@ public class SnowflakeQueryStringBuilder
     @Override
     protected String appendLimitOffset(Split split)
     {
-        if (split == null || split.getProperties().isEmpty()) {
-            return "";
-        }
-        String partitionVal = split.getProperty(split.getProperties().keySet().iterator().next());
+        String partitionVal = split == null ? null : split.getProperty(BLOCK_PARTITION_COLUMN_NAME);
         // Expected format: partition-primary-<PRIMARYKEY>-limit-<LIMIT>-offset-<OFFSET>
         // Use marker-based parsing to handle primary keys that may contain dashes
-        if (partitionVal == null || !partitionVal.contains("-primary-") || !partitionVal.contains("-limit-") || !partitionVal.contains("-offset-")) {
+        if (partitionVal == null || !partitionVal.contains(PARTITION_PRIMARY_MARKER) || !partitionVal.contains(PARTITION_LIMIT_MARKER) || !partitionVal.contains(PARTITION_OFFSET_MARKER)) {
             return "";
         }
 
-        int primaryStart = partitionVal.indexOf("-primary-") + "-primary-".length();
-        int limitMarker = partitionVal.lastIndexOf("-limit-");
-        int offsetMarker = partitionVal.lastIndexOf("-offset-");
+        int primaryStart = partitionVal.indexOf(PARTITION_PRIMARY_MARKER) + PARTITION_PRIMARY_MARKER.length();
+        int limitMarker = partitionVal.lastIndexOf(PARTITION_LIMIT_MARKER);
+        int offsetMarker = partitionVal.lastIndexOf(PARTITION_OFFSET_MARKER);
 
         if (primaryStart > limitMarker || limitMarker > offsetMarker) {
             LOGGER.warn("Malformed partition value: {}", partitionVal);
@@ -196,8 +196,8 @@ public class SnowflakeQueryStringBuilder
         }
 
         String primaryKey = partitionVal.substring(primaryStart, limitMarker);
-        String xLimit = partitionVal.substring(limitMarker + "-limit-".length(), offsetMarker);
-        String xOffset = partitionVal.substring(offsetMarker + "-offset-".length());
+        String limit = partitionVal.substring(limitMarker + PARTITION_LIMIT_MARKER.length(), offsetMarker);
+        String offset = partitionVal.substring(offsetMarker + PARTITION_OFFSET_MARKER.length());
 
         // if no primary key, single split only
         if (primaryKey.isEmpty()) {
@@ -205,14 +205,14 @@ public class SnowflakeQueryStringBuilder
         }
 
         // Validate limit and offset are numeric to prevent injection
-        if (!xLimit.matches("\\d+") || !xOffset.matches("\\d+")) {
-            LOGGER.warn("Non-numeric limit/offset in partition value: limit={}, offset={}", xLimit, xOffset);
+        if (!limit.matches("\\d+") || !offset.matches("\\d+")) {
+            LOGGER.warn("Non-numeric limit/offset in partition value: limit={}, offset={}", limit, offset);
             return "";
         }
 
         // Primary key is already quoted from getPrimaryKey() (e.g., "\"col1\",\"col2\"")
         // so it is safe to use directly in ORDER BY
-        return "ORDER BY " + primaryKey + " " + appendLimitOffsetWithValue(xLimit, xOffset);
+        return "ORDER BY " + primaryKey + " " + appendLimitOffsetWithValue(limit, offset);
     }
 
     @Override

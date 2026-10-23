@@ -42,6 +42,7 @@ import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory;
+import com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.arrow.dataset.file.FileFormat;
 import org.apache.arrow.dataset.file.FileSystemDatasetFactory;
@@ -97,6 +98,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private static final int EXPORT_READ_BATCH_SIZE_BYTE = 32768;
     private static final int FETCH_SIZE = 1000;
+    private static final int DECIMAL128_BIT_WIDTH = 128;
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
     /**
@@ -372,14 +374,8 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     /**
-     * Preserves the declared precision of integer-like Snowflake {@code NUMBER(p,0)} columns on the JDBC export
-     * path. Snowflake reports a scale-0 {@code NUMBER} with JDBC type {@code BIGINT}/{@code INTEGER}/..., so the
-     * default mapping yields an Arrow integer vector that cannot carry the precision {@code p}. We re-map those
-     * columns to {@code Decimal(p, 0)} so the exported schema (and sidecar) keeps the source precision.
-     *
-     * <p>Columns the driver already maps to a decimal (scale &gt; 0) are left untouched, and precisions outside the
-     * Arrow 128-bit decimal range (1..38) fall back to the default integer mapping. Timestamp types are left as-is
-     * ({@code timestamp[ms, tz=UTC]}); the base export path writes them unpacked.
+     * Maps scale-0 {@code NUMBER(p)} columns, which the driver reports as integer types, to {@code Decimal(p, 0)}
+     * so the export keeps the declared precision.
      */
     @Override
     protected Schema deriveExportSchema(ResultSetMetaData metadata) throws SQLException
@@ -396,8 +392,8 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
 
             if (isArrowInteger && metadata.getScale(column) == 0) {
                 int precision = metadata.getPrecision(column);
-                if (precision >= 1 && precision <= 38) {
-                    ArrowType.Decimal decimalType = new ArrowType.Decimal(precision, 0, 128);
+                if (precision >= 1 && precision <= SnowflakeArrowTypeConverter.DEFAULT_PRECISION) {
+                    ArrowType.Decimal decimalType = new ArrowType.Decimal(precision, 0, DECIMAL128_BIT_WIDTH);
                     fields.add(new Field(baseField.getName(),
                             new FieldType(baseField.isNullable(), decimalType, null), baseField.getChildren()));
                     continue;

@@ -24,6 +24,7 @@ import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtil;
 import com.amazonaws.athena.connector.lambda.data.FieldBuilder;
 import com.amazonaws.athena.connector.lambda.data.S3BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.SchemaBuilder;
@@ -64,6 +65,7 @@ import com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough;
 import com.amazonaws.athena.connector.credentials.CredentialsProvider;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.ByteStreams;
+import org.apache.arrow.vector.TimeStampMilliTZVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.holders.NullableBigIntHolder;
 import org.apache.arrow.vector.holders.NullableBitHolder;
@@ -616,12 +618,22 @@ public class JdbcRecordHandlerTest
         Block block = crypto.decrypt(key, written.get(spillKey + ".0"), schema);
         Assert.assertEquals(2, block.getRowCount());
         VarCharVector nameVec = (VarCharVector) block.getFieldVector("NAME");
+        TimeStampMilliTZVector createdOnVec = (TimeStampMilliTZVector) block.getFieldVector("CREATED_ON");
         List<String> names = new ArrayList<>();
+        List<Long> createdOn = new ArrayList<>();
         for (int i = 0; i < block.getRowCount(); i++) {
             names.add(new String(nameVec.get(i), StandardCharsets.UTF_8));
+            createdOn.add(createdOnVec.get(i));
         }
         Assert.assertTrue(names.contains("orders_view"));
         Assert.assertTrue(names.contains("customers_view"));
+
+        // The export writes plain epoch millis, then restores packing for later reads on this thread.
+        long ordersCreatedOn = Timestamp.valueOf("2021-01-01 00:00:00").getTime();
+        Assert.assertTrue(createdOn.contains(ordersCreatedOn));
+        Assert.assertTrue(createdOn.contains(Timestamp.valueOf("2021-02-02 12:30:00").getTime()));
+        Assert.assertNotEquals(ordersCreatedOn,
+                DateTimeFormatterUtil.timestampMilliTzHolderFromObject(new Timestamp(ordersCreatedOn), "UTC").value);
     }
 
     @Test

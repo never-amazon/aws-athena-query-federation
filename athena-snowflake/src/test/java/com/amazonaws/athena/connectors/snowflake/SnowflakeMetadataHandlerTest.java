@@ -58,9 +58,11 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
@@ -76,7 +78,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -98,6 +102,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
 public class SnowflakeMetadataHandlerTest
@@ -1041,6 +1046,17 @@ public class SnowflakeMetadataHandlerTest
 
     @Test
     public void testGetPartitionsWithUppercaseCasingFilter() throws Exception {
+        Map<String, String> configOptions = new HashMap<>();
+        configOptions.put(EnvironmentConstants.CATALOG_CASING_FILTER, EnvironmentConstants.UPPERCASE_ONLY);
+        assertViewCheckBindsTableName(configOptions, "TESTSCHEMA", "TESTTABLE");
+    }
+
+    @Test
+    public void testGetPartitionsWithoutCasingFilter() throws Exception {
+        assertViewCheckBindsTableName(new HashMap<>(), "testschema", "testtable");
+    }
+
+    private void assertViewCheckBindsTableName(Map<String, String> configOptions, String expectedSchema, String expectedTable) throws Exception {
         Schema tableSchema = SchemaBuilder.newBuilder()
                 .addIntField("day")
                 .addStringField(BLOCK_PARTITION_COLUMN_NAME)
@@ -1060,13 +1076,10 @@ public class SnowflakeMetadataHandlerTest
         when(connection.prepareStatement(anyString())).thenReturn(viewStmt);
         when(viewStmt.executeQuery()).thenReturn(viewResultSet);
 
-        // Set up federated identity with CATALOG_CASING_FILTER = UPPERCASE_ONLY
-        FederatedIdentity identityWithCasing = mock(FederatedIdentity.class);
-        Map<String, String> configOptions = new HashMap<>();
-        configOptions.put(EnvironmentConstants.CATALOG_CASING_FILTER, EnvironmentConstants.UPPERCASE_ONLY);
-        when(identityWithCasing.getConfigOptions()).thenReturn(configOptions);
+        FederatedIdentity identity = mock(FederatedIdentity.class);
+        when(identity.getConfigOptions()).thenReturn(configOptions);
 
-        GetTableLayoutRequest req = new GetTableLayoutRequest(identityWithCasing, "queryId", "default",
+        GetTableLayoutRequest req = new GetTableLayoutRequest(identity, "queryId", "default",
                 new TableName("testschema", "testtable"),  // lowercase names
                 new Constraints(constraintsMap, Collections.emptyList(), Collections.emptyList(), DEFAULT_NO_LIMIT, Collections.emptyMap(), null),
                 tableSchema,
@@ -1079,6 +1092,9 @@ public class SnowflakeMetadataHandlerTest
         assertTrue(partitions.getRowCount() > 0);
         // The partition should be "*" since it's a view
         assertEquals("*", partitions.getFieldVector(BLOCK_PARTITION_COLUMN_NAME).getObject(0).toString());
+        // PreparedStatementBuilder binds the view-check parameters with setString.
+        verify(viewStmt).setString(1, expectedSchema);
+        verify(viewStmt).setString(2, expectedTable);
     }
 
     @Test
@@ -1226,16 +1242,29 @@ public class SnowflakeMetadataHandlerTest
                 new String[]{"TABLE_SCHEM", "TABLE_NAME"}, new int[]{Types.VARCHAR, Types.VARCHAR},
                 new Object[][]{}, new AtomicInteger(-1));
 
+        // A unique primary key, so only the threshold guard keeps the table to one partition.
+        ResultSet primaryKeyResultSet = mockResultSet(
+                new String[]{"column_name"}, new int[]{Types.VARCHAR},
+                new Object[][]{{"id"}}, new AtomicInteger(-1));
+        ResultSet uniquenessResultSet = mockResultSet(
+                new String[]{"COUNTS"}, new int[]{Types.INTEGER},
+                new Object[][]{{1}}, new AtomicInteger(-1));
+
         PreparedStatement countStatement = mock(PreparedStatement.class);
         PreparedStatement viewStatement = mock(PreparedStatement.class);
-        // Fails the test if the skipped uniqueness check is somehow reached.
+        PreparedStatement primaryKeyStatement = mock(PreparedStatement.class);
         PreparedStatement uniquenessStatement = mock(PreparedStatement.class);
         // TestBase.mockResultSet does not stub getLong, which getPartitions uses for row_count.
         when(countResultSet.getLong(1)).thenReturn(SnowflakeConstants.LARGE_TABLE_THRESHOLD + 1);
         when(countStatement.executeQuery()).thenReturn(countResultSet);
         when(viewStatement.executeQuery()).thenReturn(viewResultSet);
+        when(primaryKeyStatement.executeQuery()).thenReturn(primaryKeyResultSet);
+        when(uniquenessStatement.executeQuery()).thenReturn(uniquenessResultSet);
         when(connection.prepareStatement(any())).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0);
+            if (sql.startsWith(SnowflakeConstants.SHOW_PRIMARY_KEYS_QUERY)) {
+                return primaryKeyStatement;
+            }
             if (sql.contains("GROUP BY")) {
                 return uniquenessStatement;
             }
@@ -1257,7 +1286,8 @@ public class SnowflakeMetadataHandlerTest
         GetTableLayoutResponse res = snowflakeMetadataHandlerMocked.doGetTableLayout(allocator, req);
 
         assertNotNull(res.getPartitions());
-        // Above the threshold the GROUP BY uniqueness check must never run at all.
+        // Above the threshold neither the primary-key lookup nor the GROUP BY uniqueness check may run.
+        verify(connection, never()).prepareStatement(startsWith(SnowflakeConstants.SHOW_PRIMARY_KEYS_QUERY));
         verify(uniquenessStatement, never()).executeQuery();
         // With no usable primary key the table falls back to a single partition.
         assertEquals(1, res.getPartitions().getRowCount());
@@ -1396,5 +1426,19 @@ public class SnowflakeMetadataHandlerTest
         assertNotNull(this.snowflakeMetadataHandler.createCredentialsProvider("testSecret", null));
         org.junit.Assert.assertNull(this.snowflakeMetadataHandler.createCredentialsProvider("", null));
         org.junit.Assert.assertNull(this.snowflakeMetadataHandler.createCredentialsProvider(null, null));
+    }
+
+    @Test
+    public void createCredentialsProvider_passesRequestOverrideConfiguration()
+    {
+        AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(30))
+                .build();
+        List<List<?>> constructorArguments = new ArrayList<>();
+        try (MockedConstruction<SnowflakeCredentialsProvider> providers = mockConstruction(SnowflakeCredentialsProvider.class,
+                (mock, context) -> constructorArguments.add(context.arguments()))) {
+            this.snowflakeMetadataHandler.createCredentialsProvider("testSecret", overrideConfig);
+        }
+        assertEquals(Collections.singletonList(Arrays.asList("testSecret", overrideConfig)), constructorArguments);
     }
 }

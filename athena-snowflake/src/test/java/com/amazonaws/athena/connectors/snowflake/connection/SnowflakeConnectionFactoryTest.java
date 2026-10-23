@@ -28,10 +28,12 @@ import com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnitRunner;
 
+import java.security.PrivateKey;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -40,6 +42,7 @@ import java.util.Map;
 import java.util.Properties;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -356,6 +359,7 @@ public class SnowflakeConnectionFactoryTest
         CredentialsProvider mockCredentialsProvider = mock(CredentialsProvider.class);
         Map<String, String> credentialMap = new HashMap<>();
         credentialMap.put(SnowflakeConstants.USERNAME, TESTUSER);
+        credentialMap.put(SnowflakeConstants.USER, TESTUSER);
         credentialMap.put(SnowflakeConstants.PASSWORD, TESTPASSWORD);
         when(mockCredentialsProvider.getCredentialMap()).thenReturn(credentialMap);
 
@@ -363,6 +367,9 @@ public class SnowflakeConnectionFactoryTest
              MockedStatic<DriverManager> mockedDriverManager = Mockito.mockStatic(DriverManager.class)) {
             mockedAuthUtils.when(() -> SnowflakeAuthUtils.determineAuthType(credentialMap))
                     .thenReturn(SnowflakeAuthType.SNOWFLAKE);
+            // A user and a private key let a misrouted key-pair attempt reach DriverManager and its AssertionError.
+            mockedAuthUtils.when(() -> SnowflakeAuthUtils.createPrivateKey(any(), any()))
+                    .thenReturn(mock(PrivateKey.class));
             mockedDriverManager.when(() -> DriverManager.getConnection(anyString(), any(Properties.class)))
                     .thenThrow(new AssertionError("password auth must not use DriverManager"));
 
@@ -391,6 +398,8 @@ public class SnowflakeConnectionFactoryTest
              MockedStatic<DriverManager> mockedDriverManager = Mockito.mockStatic(DriverManager.class)) {
             mockedAuthUtils.when(() -> SnowflakeAuthUtils.determineAuthType(credentialMap))
                     .thenReturn(SnowflakeAuthType.OAUTH);
+            mockedAuthUtils.when(() -> SnowflakeAuthUtils.createPrivateKey(any(), any()))
+                    .thenReturn(mock(PrivateKey.class));
             mockedDriverManager.when(() -> DriverManager.getConnection(anyString(), any(Properties.class)))
                     .thenThrow(new AssertionError("OAuth must not use DriverManager"));
 
@@ -418,6 +427,44 @@ public class SnowflakeConnectionFactoryTest
             // HikariCP's DriverDataSource itself touches DriverManager for driver registration,
             // so assert specifically that the direct-connection call was never made.
             mockedDriverManager.verify(() -> DriverManager.getConnection(anyString(), any(Properties.class)), never());
+        }
+    }
+
+    @Test
+    public void getConnection_keyPairAfterPassword_doesNotSendEarlierPassword() throws Exception
+    {
+        CredentialsProvider passwordProvider = mock(CredentialsProvider.class);
+        Map<String, String> passwordCredentials = new HashMap<>();
+        passwordCredentials.put(SnowflakeConstants.USER, "otheruser");
+        passwordCredentials.put(SnowflakeConstants.PASSWORD, TESTPASSWORD);
+        when(passwordProvider.getCredentialMap()).thenReturn(passwordCredentials);
+
+        CredentialsProvider keyPairProvider = mock(CredentialsProvider.class);
+        Map<String, String> keyPairCredentials = new HashMap<>();
+        keyPairCredentials.put(SnowflakeConstants.USER, TESTUSER);
+        keyPairCredentials.put(SnowflakeConstants.PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM);
+        when(keyPairProvider.getCredentialMap()).thenReturn(keyPairCredentials);
+
+        try (MockedStatic<SnowflakeAuthUtils> mockedAuthUtils = Mockito.mockStatic(SnowflakeAuthUtils.class);
+             MockedStatic<DriverManager> mockedDriverManager = Mockito.mockStatic(DriverManager.class)) {
+            mockedAuthUtils.when(() -> SnowflakeAuthUtils.determineAuthType(passwordCredentials))
+                    .thenReturn(SnowflakeAuthType.SNOWFLAKE);
+            mockedAuthUtils.when(() -> SnowflakeAuthUtils.determineAuthType(keyPairCredentials))
+                    .thenReturn(SnowflakeAuthType.SNOWFLAKE_JWT);
+            mockedAuthUtils.when(() -> SnowflakeAuthUtils.createPrivateKey(VALID_PRIVATE_KEY_PEM, null))
+                    .thenReturn(mock(java.security.PrivateKey.class));
+            mockedDriverManager.when(() -> DriverManager.getConnection(anyString(), any(Properties.class)))
+                    .thenReturn(mock(Connection.class));
+
+            // The pooled attempt fails on the fake host, after it has merged its credentials into the parent's properties.
+            assertThrows(Exception.class, () -> connectionFactory.getConnection(passwordProvider));
+            connectionFactory.getConnection(keyPairProvider);
+
+            ArgumentCaptor<Properties> props = ArgumentCaptor.forClass(Properties.class);
+            mockedDriverManager.verify(() -> DriverManager.getConnection(anyString(), props.capture()));
+            assertFalse(props.getValue().containsKey(SnowflakeConstants.PASSWORD));
+            assertEquals(TESTUSER, props.getValue().getProperty(SnowflakeConstants.USER));
+            assertEquals("test.value", props.getValue().getProperty("test.property"));
         }
     }
 } 

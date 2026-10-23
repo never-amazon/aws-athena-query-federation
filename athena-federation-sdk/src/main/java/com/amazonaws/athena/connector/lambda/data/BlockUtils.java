@@ -301,52 +301,33 @@ public class BlockUtils
                     }
                     break;
                 case FLOAT8:
-                    if (value instanceof Number) {
-                        ((Float8Vector) vector).setSafe(pos, ((Number) value).doubleValue());
-                    }
-                    else {
-                        ((Float8Vector) vector).setSafe(pos, (double) value);
-                    }
+                    ((Float8Vector) vector).setSafe(pos, ((Number) value).doubleValue());
                     break;
                 case FLOAT4:
-                    if (value instanceof Number) {
-                        ((Float4Vector) vector).setSafe(pos, ((Number) value).floatValue());
-                    }
-                    else {
-                        ((Float4Vector) vector).setSafe(pos, (float) value);
-                    }
+                    ((Float4Vector) vector).setSafe(pos, ((Number) value).floatValue());
                     break;
-                case INT:
-                    if (value instanceof Number) {
-                        //This may seem odd at first but many frameworks (like Presto) use long as the preferred
-                        //native java type for representing integers. We do this to keep type conversions simple.
-                        //Accept any Number (Long, Integer, BigDecimal from drivers like Snowflake, etc.).
-                        ((IntVector) vector).setSafe(pos, ((Number) value).intValue());
-                    }
-                    else {
-                        ((IntVector) vector).setSafe(pos, (int) value);
-                    }
+                case INT: {
+                    // Drivers such as Snowflake return BigDecimal for NUMBER columns, so accept any Number.
+                    Number number = (Number) value;
+                    ((IntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).intValueExact());
                     break;
+                }
                 case TINYINT:
                     if (value instanceof Byte) {
                         ((TinyIntVector) vector).setSafe(pos, (byte) value);
                     }
-                    else if (value instanceof Number) {
-                        ((TinyIntVector) vector).setSafe(pos, ((Number) value).intValue());
-                    }
                     else {
-                        ((TinyIntVector) vector).setSafe(pos, (int) value);
+                        Number number = (Number) value;
+                        ((TinyIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).byteValueExact());
                     }
                     break;
                 case SMALLINT:
                     if (value instanceof Short) {
                         ((SmallIntVector) vector).setSafe(pos, (short) value);
                     }
-                    else if (value instanceof Number) {
-                        ((SmallIntVector) vector).setSafe(pos, ((Number) value).intValue());
-                    }
                     else {
-                        ((SmallIntVector) vector).setSafe(pos, (int) value);
+                        Number number = (Number) value;
+                        ((SmallIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).shortValueExact());
                     }
                     break;
                 case UINT1:
@@ -376,39 +357,17 @@ public class BlockUtils
                         ((UInt8Vector) vector).setSafe(pos, (int) value);
                     }
                     break;
-                case BIGINT:
-                    if (value instanceof Number) {
-                        //Accept any Number (Integer, BigDecimal, BigInteger, etc.), not just Long. Some JDBC
-                        //drivers (e.g. Snowflake) return NUMBER columns as BigDecimal even when the column maps
-                        //to Arrow BIGINT; a plain (long) cast on those would throw ClassCastException.
-                        ((BigIntVector) vector).setSafe(pos, ((Number) value).longValue());
-                    }
-                    else {
-                        ((BigIntVector) vector).setSafe(pos, (long) value);
-                    }
+                case BIGINT: {
+                    Number number = (Number) value;
+                    ((BigIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.longValue() : toBigDecimal(number).longValueExact());
                     break;
+                }
                 case VARBINARY:
                     ((VarBinaryVector) vector).setSafe(pos, (byte[]) value);
                     break;
                 case DECIMAL:
                     DecimalVector dVector = ((DecimalVector) vector);
-                    BigDecimal decimalValue;
-                    if (value instanceof BigDecimal) {
-                        decimalValue = (BigDecimal) value;
-                    }
-                    else if (value instanceof Double || value instanceof Float) {
-                        decimalValue = BigDecimal.valueOf(((Number) value).doubleValue());
-                    }
-                    else if (value instanceof Number) {
-                        // Integral Numbers (Long, Integer, Short, BigInteger, etc.). Some JDBC drivers return a
-                        // NUMBER column's value as one of these even when the column maps to an Arrow Decimal; a
-                        // plain (BigDecimal) cast on those would throw ClassCastException.
-                        decimalValue = new BigDecimal(value.toString());
-                    }
-                    else {
-                        decimalValue = (BigDecimal) value;
-                    }
-                    decimalValue = decimalValue.setScale(dVector.getScale(), RoundingMode.HALF_UP);
+                    BigDecimal decimalValue = toBigDecimal((Number) value).setScale(dVector.getScale(), RoundingMode.HALF_UP);
                     dVector.setSafe(pos, decimalValue);
                     break;
                 case VARCHAR:
@@ -441,6 +400,25 @@ public class BlockUtils
                 + " using value " + value
                 + " of type " + vector.getMinorType(), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).build());
         }
+    }
+
+    // setValue converts other Numbers (BigDecimal, BigInteger, Double, ...) with the *ValueExact methods, so a
+    // fraction or an out-of-range value fails instead of being truncated or wrapped.
+    private static boolean isBoxedInteger(Number value)
+    {
+        return value instanceof Long || value instanceof Integer || value instanceof Short || value instanceof Byte;
+    }
+
+    // Double and Float use their shortest decimal form, so 2.675 stays 2.675 rather than 2.67499...
+    private static BigDecimal toBigDecimal(Number value)
+    {
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Double || value instanceof Float) {
+            return BigDecimal.valueOf(value.doubleValue());
+        }
+        return new BigDecimal(value.toString());
     }
 
     /**
