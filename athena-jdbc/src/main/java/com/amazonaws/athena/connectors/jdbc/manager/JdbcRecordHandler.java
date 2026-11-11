@@ -343,7 +343,8 @@ public abstract class JdbcRecordHandler
     }
 
     /**
-     * Spill config with {@code maxInlineBlockBytes=0} so every batch goes to S3, written synchronously.
+     * Spill config with {@code maxInlineBlockBytes=0} so every batch goes to S3. Two spill threads overlap
+     * each block's encrypt and S3 PUT with reading the next block.
      */
     protected SpillConfig buildExportSpillConfig(ReadRecordsRequest request)
     {
@@ -353,7 +354,7 @@ public abstract class JdbcRecordHandler
                 .withMaxInlineBlockBytes(0)
                 .withRequestId(request.getQueryId())
                 .withEncryptionKey(request.getSplit().getEncryptionKey())
-                .withNumSpillThreads(0)
+                .withNumSpillThreads(2)
                 .build();
     }
 
