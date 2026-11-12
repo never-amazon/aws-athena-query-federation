@@ -68,7 +68,6 @@ public class PostGreSqlRecordHandler
     private static final Logger LOGGER = LoggerFactory.getLogger(PostGreSqlRecordHandler.class);
 
     private static final int FETCH_SIZE = 1000;
-    private static final int DECIMAL_BIT_WIDTH = 128;
 
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
@@ -137,24 +136,23 @@ public class PostGreSqlRecordHandler
         Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
         List<Field> fields = new ArrayList<>();
         for (int column = 1; column <= metadata.getColumnCount(); column++) {
-            ArrowType type;
-            if (metadata.getColumnType(column) == Types.NUMERIC && metadata.getPrecision(column) == 0 && metadata.getScale(column) <= 0) {
-                type = new ArrowType.Decimal(JdbcArrowTypeConverter.DEFAULT_PRECISION,
-                        Integer.parseInt(configOptions.getOrDefault(JdbcArrowTypeConverter.DEFAULT_SCALE_KEY, "0")), DECIMAL_BIT_WIDTH);
-            }
-            else {
-                try {
-                    type = JdbcToArrowUtils.getArrowTypeFromJdbcType(new JdbcFieldInfo(metadata, column), utc);
-                }
-                catch (UnsupportedOperationException e) {
-                    type = ArrowType.Utf8.INSTANCE;
-                }
-                if (!SupportedTypes.isSupported(type) || type instanceof ArrowType.List) {
-                    type = ArrowType.Utf8.INSTANCE;
-                }
-            }
-            fields.add(Field.nullable(metadata.getColumnLabel(column), type));
+            fields.add(Field.nullable(metadata.getColumnLabel(column), exportArrowType(metadata, column, utc)));
         }
         return new Schema(fields);
+    }
+
+    private ArrowType exportArrowType(ResultSetMetaData metadata, int column, Calendar utc) throws SQLException
+    {
+        if (metadata.getColumnType(column) == Types.NUMERIC && metadata.getPrecision(column) == 0 && metadata.getScale(column) <= 0) {
+            return JdbcArrowTypeConverter.toArrowType(Types.NUMERIC, 0, 0, configOptions).get();
+        }
+        ArrowType type;
+        try {
+            type = JdbcToArrowUtils.getArrowTypeFromJdbcType(new JdbcFieldInfo(metadata, column), utc);
+        }
+        catch (UnsupportedOperationException e) {
+            return ArrowType.Utf8.INSTANCE;
+        }
+        return SupportedTypes.isSupported(type) && !(type instanceof ArrowType.List) ? type : ArrowType.Utf8.INSTANCE;
     }
 }

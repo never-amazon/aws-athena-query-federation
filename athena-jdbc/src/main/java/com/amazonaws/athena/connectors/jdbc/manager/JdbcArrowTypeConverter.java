@@ -35,7 +35,7 @@ import java.util.Optional;
 public final class JdbcArrowTypeConverter
 {
     public static final int DEFAULT_PRECISION = 38;
-    public static final String DEFAULT_SCALE_KEY = "default_scale";
+    private static final String DEFAULT_SCALE_KEY = "default_scale";
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcArrowTypeConverter.class);
 
     private JdbcArrowTypeConverter() {}

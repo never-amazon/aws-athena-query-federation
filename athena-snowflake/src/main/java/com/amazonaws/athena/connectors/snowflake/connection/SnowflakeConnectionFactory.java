@@ -35,7 +35,6 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Properties;
-import java.util.regex.Matcher;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.AUTHENTICATOR;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PRIVATE_KEY;
@@ -95,7 +94,7 @@ public class SnowflakeConnectionFactory extends GenericJdbcConnectionFactory
 
             Properties props = new Properties();
             props.putAll(keyPairBaseProperties);
-            String baseUrl = moveQueryParametersToProperties(buildConnectionString(), props);
+            String baseUrl = moveQueryParametersToProperties(connectionStringWithoutSecretPlaceholders(), props);
             props.setProperty(USER, username);
             props.setProperty(AUTHENTICATOR, SNOWFLAKE_JWT.getValue());
             props.put(PRIVATE_KEY, privateKey);
@@ -113,18 +112,9 @@ public class SnowflakeConnectionFactory extends GenericJdbcConnectionFactory
         }
     }
 
-    /**
-     * Builds the JDBC connection string for Snowflake.
-     * 
-     * @return The connection string
-     */
-    private String buildConnectionString()
+    private String connectionStringWithoutSecretPlaceholders()
     {
-        String jdbcString = databaseConnectionConfig.getJdbcConnectionString();
-        
-        // Remove any secret placeholders from the connection string
-        Matcher secretMatcher = SECRET_NAME_PATTERN.matcher(jdbcString);
-        return secretMatcher.replaceAll(Matcher.quoteReplacement(""));
+        return SECRET_NAME_PATTERN.matcher(databaseConnectionConfig.getJdbcConnectionString()).replaceAll("");
     }
 
     /**

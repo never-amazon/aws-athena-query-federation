@@ -309,7 +309,7 @@ public class BlockUtils
                 case INT: {
                     // Drivers such as Snowflake return BigDecimal for NUMBER columns, so accept any Number.
                     Number number = (Number) value;
-                    ((IntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).intValueExact());
+                    ((IntVector) vector).setSafe(pos, toExactInt(number));
                     break;
                 }
                 case TINYINT:
@@ -318,7 +318,7 @@ public class BlockUtils
                     }
                     else {
                         Number number = (Number) value;
-                        ((TinyIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).byteValueExact());
+                        ((TinyIntVector) vector).setSafe(pos, toExactByte(number));
                     }
                     break;
                 case SMALLINT:
@@ -327,7 +327,7 @@ public class BlockUtils
                     }
                     else {
                         Number number = (Number) value;
-                        ((SmallIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.intValue() : toBigDecimal(number).shortValueExact());
+                        ((SmallIntVector) vector).setSafe(pos, toExactShort(number));
                     }
                     break;
                 case UINT1:
@@ -359,7 +359,7 @@ public class BlockUtils
                     break;
                 case BIGINT: {
                     Number number = (Number) value;
-                    ((BigIntVector) vector).setSafe(pos, isBoxedInteger(number) ? number.longValue() : toBigDecimal(number).longValueExact());
+                    ((BigIntVector) vector).setSafe(pos, toExactLong(number));
                     break;
                 }
                 case VARBINARY:
@@ -402,8 +402,28 @@ public class BlockUtils
         }
     }
 
-    // setValue converts other Numbers (BigDecimal, BigInteger, Double, ...) with the *ValueExact methods, so a
-    // fraction or an out-of-range value fails instead of being truncated or wrapped.
+    // Non-boxed-integer Numbers (BigDecimal, BigInteger, Double, ...) go through *ValueExact, so a fraction or an
+    // out-of-range value fails instead of being truncated or wrapped. Boxed integers keep the old narrowing cast.
+    private static long toExactLong(Number value)
+    {
+        return isBoxedInteger(value) ? value.longValue() : toBigDecimal(value).longValueExact();
+    }
+
+    private static int toExactInt(Number value)
+    {
+        return isBoxedInteger(value) ? value.intValue() : toBigDecimal(value).intValueExact();
+    }
+
+    private static short toExactShort(Number value)
+    {
+        return isBoxedInteger(value) ? value.shortValue() : toBigDecimal(value).shortValueExact();
+    }
+
+    private static byte toExactByte(Number value)
+    {
+        return isBoxedInteger(value) ? value.byteValue() : toBigDecimal(value).byteValueExact();
+    }
+
     private static boolean isBoxedInteger(Number value)
     {
         return value instanceof Long || value instanceof Integer || value instanceof Short || value instanceof Byte;

@@ -250,7 +250,7 @@ public class SnowflakeConnectionFactoryTest
         when(mockDatabaseConnectionConfig.getJdbcConnectionString())
                 .thenReturn("jdbc:snowflake://test.snowflakecomputing.com?secretName=test-secret");
 
-        // This tests the private buildConnectionString method indirectly through getConnection
+        // This tests the private connectionStringWithoutSecretPlaceholders method indirectly through getConnection
         CredentialsProvider mockCredentialsProvider = mock(CredentialsProvider.class);
         Map<String, String> credentialMap = new HashMap<>();
         credentialMap.put(SnowflakeConstants.USER, TESTUSER);

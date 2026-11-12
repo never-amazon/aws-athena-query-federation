@@ -102,7 +102,6 @@ public class SnowflakeAuthUtils
             PrivateKeyInfo privateKeyInfo = null;
             Security.addProvider(new BouncyCastleProvider());
             
-            // Rewrite the private key string as a well-formed PEM
             String pemFormattedKey = normalizeToPem(privateKeyString, passphrase);
             
             // Parse the PEM object and create PrivateKey
