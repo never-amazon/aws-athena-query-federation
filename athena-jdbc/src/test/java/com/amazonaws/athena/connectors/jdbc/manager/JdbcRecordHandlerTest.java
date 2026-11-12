@@ -45,11 +45,14 @@ import com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtr
 import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder;
 import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
 import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation;
 import com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connector.lambda.records.RecordResponse;
@@ -657,7 +660,46 @@ public class JdbcRecordHandlerTest
         Assert.assertEquals(2, block.getFieldVectors().get(1).getObject(0));
     }
 
+    @Test
+    public void testDoReadRecordsDirectQueryReturnsEveryBlockWithAsyncSpill() throws Exception {
+        Class.forName("org.h2.Driver");
+        Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqmulti;DB_CLOSE_DELAY=-1");
+        int rowCount = 200;
+        try (Statement st = h2.createStatement()) {
+            st.execute("CREATE TABLE n (id INT)");
+            st.execute("INSERT INTO n SELECT X FROM SYSTEM_RANGE(1, " + rowCount + ")");
+        }
+        EncryptionKey key = new LocalKeyFactory().create();
+        Map<String, byte[]> written = new ConcurrentHashMap<>();
+        // A 1-byte block limit spills every row as its own block, so both spill threads run at once.
+        RemoteReadRecordsResponse remote = runExport(h2, key, written, "SELECT id FROM n", 1L);
+
+        String spillKey = exportSpillLocation().getKey();
+        Set<String> expectedKeys = new HashSet<>();
+        for (int i = 0; i < rowCount; i++) {
+            expectedKeys.add(spillKey + "." + i);
+        }
+        Set<String> returnedKeys = new HashSet<>();
+        AesGcmBlockCrypto crypto = new AesGcmBlockCrypto(new BlockAllocatorImpl());
+        long returnedRows = 0;
+        for (SpillLocation location : remote.getRemoteBlocks()) {
+            String locationKey = ((S3SpillLocation) location).getKey();
+            returnedKeys.add(locationKey);
+            returnedRows += crypto.decrypt(key, written.get(locationKey), remote.getSchema()).getRowCount();
+        }
+        Assert.assertEquals(rowCount, remote.getRemoteBlocks().size());
+        Assert.assertEquals(expectedKeys, returnedKeys);
+        Assert.assertEquals(rowCount, returnedRows);
+    }
+
     private RemoteReadRecordsResponse runExport(Connection h2, EncryptionKey key, Map<String, byte[]> written, String query)
+            throws Exception
+    {
+        return runExport(h2, key, written, query, 100_000_000_000L);
+    }
+
+    private RemoteReadRecordsResponse runExport(Connection h2, EncryptionKey key, Map<String, byte[]> written, String query,
+            long maxBlockBytes)
             throws Exception
     {
         JdbcConnectionFactory h2Factory = Mockito.mock(JdbcConnectionFactory.class);
@@ -689,7 +731,7 @@ public class JdbcRecordHandlerTest
                 new TableName(TEST_SCHEMA, TEST_TABLE), SchemaBuilder.newBuilder().addStringField("name").build(), split,
                 new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(),
                         Constraints.DEFAULT_NO_LIMIT, qptArgs, null),
-                100_000_000_000L, 100_000_000_000L);
+                maxBlockBytes, 100_000_000_000L);
 
         RecordResponse response = handler.doReadRecords(new BlockAllocatorImpl(), request);
         Assert.assertTrue(response instanceof RemoteReadRecordsResponse);

@@ -94,8 +94,8 @@ public class S3BlockSpiller
     private final Schema schema;
     //The max number of rows that are allowed to be written per call to writeRows(...)
     private final long maxRowsPerCall;
-    //If we spilled, the spill locations are kept here.
-    private final List<SpillLocation> spillLocations = new ArrayList<>();
+    //If we spilled, the spill locations are kept here. Synchronized because async spill threads add to it concurrently.
+    private final List<SpillLocation> spillLocations = Collections.synchronizedList(new ArrayList<>());
     //Reference to the in progress Block.
     private final AtomicReference<Block> inProgressBlock = new AtomicReference<>();
     //Allows a degree of pipelining to take place so we don't block reading from the source
