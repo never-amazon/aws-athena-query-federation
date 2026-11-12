@@ -516,7 +516,7 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
-    public void testGetCredentialProvider() {
+    public void testGetCredentialProvider() throws Exception {
         final DatabaseConnectionConfig configWithSecret = new DatabaseConnectionConfig(
             "testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
             "snowflake://jdbc:snowflake://hostname/", "testSecret");
@@ -524,7 +524,7 @@ public class SnowflakeRecordHandlerTest
         SnowflakeRecordHandler handler = new SnowflakeRecordHandler(
             configWithSecret, amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, Collections.emptyMap());
         
-        CredentialsProvider provider = handler.getCredentialProvider();
+        CredentialsProvider provider = (CredentialsProvider) handler.getCredentialProvider();
         assertNotNull(provider);
     }
 
@@ -610,7 +610,7 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
-    public void testGetCredentialProviderWithoutSecret()
+    public void testGetCredentialProviderWithoutSecret() throws Exception
     {
         final DatabaseConnectionConfig configWithoutSecret = new DatabaseConnectionConfig(
             "testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
@@ -619,7 +619,7 @@ public class SnowflakeRecordHandlerTest
         SnowflakeRecordHandler handler = new SnowflakeRecordHandler(
             configWithoutSecret, amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, Collections.emptyMap());
         
-        CredentialsProvider provider = handler.getCredentialProvider();
+        CredentialsProvider provider = (CredentialsProvider) handler.getCredentialProvider();
         assertNull(provider);
     }
 
