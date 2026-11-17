@@ -424,10 +424,7 @@ fn result_of(context: &dyn Any) -> Result<&Value> {
 }
 
 fn class_cast(value: &Value, target: &str) -> FederationError {
-    FederationError::ClassCast(format!(
-        "class {} cannot be cast to class {target}",
-        value.java_class_name()
-    ))
+    FederationError::class_cast(value.java_class_name(), target)
 }
 
 fn create_output_row_writer(

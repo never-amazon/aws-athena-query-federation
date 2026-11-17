@@ -41,12 +41,32 @@ pub fn compare_unsigned_bytes(a: &[u8], b: &[u8]) -> i32 {
 }
 
 fn cast_err(type_name: MinorType, lhs: &Value, rhs: &Value) -> FederationError {
-    FederationError::ClassCast(format!(
-        "cannot compare {} and {} as {}",
-        lhs.java_class_name(),
-        rhs.java_class_name(),
-        type_name
-    ))
+    let target = match type_name {
+        MinorType::TINYINT | MinorType::UINT1 => "java.lang.Byte",
+        MinorType::SMALLINT => "java.lang.Short",
+        MinorType::UINT2 => "java.lang.Character",
+        MinorType::BIGINT | MinorType::UINT8 => "java.lang.Long",
+        MinorType::FLOAT8 => "java.lang.Double",
+        MinorType::FLOAT4 => "java.lang.Float",
+        MinorType::VARBINARY => "[B",
+        MinorType::DECIMAL => "java.math.BigDecimal",
+        MinorType::BIT => "java.lang.Boolean",
+        MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ
+            if matches!(lhs, Value::Long(_)) =>
+        {
+            "java.lang.Long"
+        }
+        MinorType::DATEMILLI | MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => {
+            "java.time.LocalDateTime"
+        }
+        _ => "java.lang.Integer",
+    };
+    let culprit = if lhs.java_class_name() == target {
+        rhs
+    } else {
+        lhs
+    };
+    FederationError::class_cast(culprit.java_class_name(), target)
 }
 
 impl ArrowTypeComparator {

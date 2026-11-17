@@ -833,3 +833,17 @@ async fn udf_handler_runs_as_request_stream_handler() {
 }
 
 fn assert_runnable<H: RequestStreamHandler + 'static>(_handler: &H) {}
+
+#[tokio::test]
+async fn udf_without_arguments_fails_like_java() {
+    let Setup { handler, .. } = set_up();
+    let stream_handler = UserDefinedFunctionStreamHandler::new(handler);
+    let input = include_bytes!("fixtures/udf/zero_args.req.json");
+    let err = RequestStreamHandler::handle_request(&stream_handler, input, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        include_str!("fixtures/udf/zero_args.java.out"),
+        LambdaError::new(&err).to_report()
+    );
+}

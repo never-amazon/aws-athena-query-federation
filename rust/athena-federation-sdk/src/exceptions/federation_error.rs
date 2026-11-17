@@ -139,6 +139,10 @@ impl FederationError {
         FederationError::IllegalArgument(message.into())
     }
 
+    pub fn class_cast(from: &str, to: &str) -> FederationError {
+        FederationError::ClassCast(super::class_cast_message(from, to))
+    }
+
     pub fn null_pointer(message: impl Into<String>) -> FederationError {
         FederationError::NullPointer(Some(message.into()))
     }

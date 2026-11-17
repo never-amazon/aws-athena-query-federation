@@ -25,7 +25,7 @@ use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{JdbcMetadataHandler, JdbcMetadataHandlerBase};
 use athena_jdbc::MultiplexingJdbcMetadataHandler;
 use indexmap::{IndexMap, IndexSet};
-use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes};
+use jdbc_support::{addr, FakeConnection, FakeConnectionFactory, Fakes};
 
 const FAKE_DATABASE: &str = "fakedatabase";
 const TEST_CATALOG: &str = "testCatalog";
@@ -51,9 +51,28 @@ fn connection_config() -> DatabaseConnectionConfig {
     .unwrap()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Call {
+    method: &'static str,
+    catalog: String,
+    args: Vec<usize>,
+}
+
+fn call(method: &'static str, catalog: &str, args: &[usize]) -> Call {
+    Call {
+        method,
+        catalog: catalog.to_string(),
+        args: args.to_vec(),
+    }
+}
+
+fn allocator_addr(allocator: &Arc<dyn BlockAllocator>) -> usize {
+    addr(&**allocator)
+}
+
 struct RecordingHandler {
     base: JdbcMetadataHandlerBase,
-    calls: Mutex<Vec<String>>,
+    calls: Mutex<Vec<Call>>,
     close_error: Option<String>,
 }
 
@@ -70,11 +89,11 @@ impl RecordingHandler {
         }
     }
 
-    fn record(&self, call: &str, catalog: &str) {
-        self.calls.lock().unwrap().push(format!("{call}:{catalog}"));
+    fn record(&self, method: &'static str, catalog: &str, args: &[usize]) {
+        self.calls.lock().unwrap().push(call(method, catalog, args));
     }
 
-    fn calls(&self) -> Vec<String> {
+    fn calls(&self) -> Vec<Call> {
         self.calls.lock().unwrap().clone()
     }
 }
@@ -97,19 +116,27 @@ impl MetadataHandler for RecordingHandler {
 
     async fn do_list_schema_names(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &ListSchemasRequest,
     ) -> Result<ListSchemasResponse> {
-        self.record("doListSchemaNames", request.catalog_name());
+        self.record(
+            "doListSchemaNames",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(ListSchemasResponse::new(request.catalog_name(), Vec::new()))
     }
 
     async fn do_list_tables(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &ListTablesRequest,
     ) -> Result<ListTablesResponse> {
-        self.record("doListTables", request.catalog_name());
+        self.record(
+            "doListTables",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(ListTablesResponse::new(
             request.catalog_name(),
             Vec::new(),
@@ -119,10 +146,14 @@ impl MetadataHandler for RecordingHandler {
 
     async fn do_get_query_passthrough_schema(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableRequest,
     ) -> Result<GetTableResponse> {
-        self.record("doGetQueryPassthroughSchema", request.catalog_name());
+        self.record(
+            "doGetQueryPassthroughSchema",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(GetTableResponse::new(
             request.catalog_name(),
             request.table_name().clone(),
@@ -133,10 +164,14 @@ impl MetadataHandler for RecordingHandler {
 
     async fn do_get_table(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableRequest,
     ) -> Result<GetTableResponse> {
-        self.record("doGetTable", request.catalog_name());
+        self.record(
+            "doGetTable",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(GetTableResponse::new(
             request.catalog_name(),
             request.table_name().clone(),
@@ -150,7 +185,11 @@ impl MetadataHandler for RecordingHandler {
         allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableLayoutRequest,
     ) -> Result<GetTableLayoutResponse> {
-        self.record("doGetTableLayout", request.catalog_name());
+        self.record(
+            "doGetTableLayout",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(GetTableLayoutResponse::new(
             request.catalog_name(),
             request.table_name().clone(),
@@ -162,27 +201,39 @@ impl MetadataHandler for RecordingHandler {
         &self,
         _block_writer: &mut (dyn BlockWriter + Send),
         request: &GetTableLayoutRequest,
-        _query_status_checker: &QueryStatusChecker,
+        query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        self.record("getPartitions", request.catalog_name());
+        self.record(
+            "getPartitions",
+            request.catalog_name(),
+            &[addr(request), addr(query_status_checker)],
+        );
         Ok(())
     }
 
     async fn do_get_splits(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
-        self.record("doGetSplits", request.catalog_name());
+        self.record(
+            "doGetSplits",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(GetSplitsResponse::new(request.catalog_name(), [], None))
     }
 
     async fn do_get_data_source_capabilities(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         request: &GetDataSourceCapabilitiesRequest,
     ) -> Result<GetDataSourceCapabilitiesResponse> {
-        self.record("doGetDataSourceCapabilities", request.catalog_name());
+        self.record(
+            "doGetDataSourceCapabilities",
+            request.catalog_name(),
+            &[allocator_addr(allocator), addr(request)],
+        );
         Ok(GetDataSourceCapabilitiesResponse::new(
             request.catalog_name(),
             IndexMap::new(),
@@ -197,12 +248,12 @@ impl JdbcMetadataHandler for RecordingHandler {
     }
 
     fn get_partition_schema(&self, catalog_name: &str) -> Result<Schema> {
-        self.record("getPartitionSchema", catalog_name);
+        self.record("getPartitionSchema", catalog_name, &[]);
         Ok(Schema::empty())
     }
 
     async fn close(&self) -> Result<()> {
-        self.record("close", "");
+        self.record("close", "", &[]);
         match &self.close_error {
             Some(message) => Err(FederationError::Runtime(message.clone())),
             None => Ok(()),
@@ -265,51 +316,77 @@ fn layout_request() -> GetTableLayoutRequest {
 #[tokio::test]
 async fn do_list_schema_names() {
     let fixture = setup();
+    let request = ListSchemasRequest::new(None, None, FAKE_DATABASE);
     fixture
         .handler
-        .do_list_schema_names(
-            &fixture.allocator,
-            &ListSchemasRequest::new(None, None, FAKE_DATABASE),
-        )
+        .do_list_schema_names(&fixture.allocator, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.delegate.calls(), ["doListSchemaNames:fakedatabase"]);
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "doListSchemaNames",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
+    );
 }
 
 #[tokio::test]
 async fn do_list_tables() {
     let fixture = setup();
+    let request = ListTablesRequest::new(None, None, FAKE_DATABASE, None, None, -1);
     fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &ListTablesRequest::new(None, None, FAKE_DATABASE, None, None, -1),
-        )
+        .do_list_tables(&fixture.allocator, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.delegate.calls(), ["doListTables:fakedatabase"]);
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "doListTables",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
+    );
 }
 
 #[tokio::test]
 async fn do_get_table() {
     let fixture = setup();
+    let request = table_request();
     fixture
         .handler
-        .do_get_table(&fixture.allocator, &table_request())
+        .do_get_table(&fixture.allocator, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.delegate.calls(), ["doGetTable:fakedatabase"]);
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "doGetTable",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
+    );
 }
 
 #[tokio::test]
 async fn do_get_table_layout() {
     let fixture = setup();
+    let request = layout_request();
     fixture
         .handler
-        .do_get_table_layout(&fixture.allocator, &layout_request())
+        .do_get_table_layout(&fixture.allocator, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.delegate.calls(), ["doGetTableLayout:fakedatabase"]);
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "doGetTableLayout",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
+    );
 }
 
 #[tokio::test]
@@ -318,7 +395,7 @@ async fn get_partition_schema() {
     fixture.handler.get_partition_schema(FAKE_DATABASE).unwrap();
     assert_eq!(
         fixture.delegate.calls(),
-        ["getPartitionSchema:fakedatabase"]
+        [call("getPartitionSchema", FAKE_DATABASE, &[])]
     );
 }
 
@@ -346,15 +423,23 @@ async fn get_partitions() {
         Arc::clone(base.athena_invoker()),
         "queryId",
     );
+    let request = layout_request();
     let mut block = fixture.allocator.create_block(Arc::new(Schema::empty()));
     let mut writer = SimpleBlockWriter::new(&mut block);
     fixture
         .handler
-        .get_partitions(&mut writer, &layout_request(), &checker)
+        .get_partitions(&mut writer, &request, &checker)
         .await
         .unwrap();
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "getPartitions",
+            FAKE_DATABASE,
+            &[addr(&request), addr(&checker)]
+        )]
+    );
     checker.close();
-    assert_eq!(fixture.delegate.calls(), ["getPartitions:fakedatabase"]);
 }
 
 #[tokio::test]
@@ -375,7 +460,14 @@ async fn do_get_splits() {
         .do_get_splits(&fixture.allocator, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.delegate.calls(), ["doGetSplits:fakedatabase"]);
+    assert_eq!(
+        fixture.delegate.calls(),
+        [call(
+            "doGetSplits",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
+    );
 }
 
 #[tokio::test]
@@ -401,31 +493,38 @@ async fn test_constructor_with_too_many_handlers_should_throw_exception() {
 #[tokio::test]
 async fn test_do_get_query_passthrough_schema() {
     let fixture = setup();
+    let request = table_request();
     fixture
         .handler
-        .do_get_query_passthrough_schema(&fixture.allocator, &table_request())
+        .do_get_query_passthrough_schema(&fixture.allocator, &request)
         .await
         .unwrap();
     assert_eq!(
         fixture.delegate.calls(),
-        ["doGetQueryPassthroughSchema:fakedatabase"]
+        [call(
+            "doGetQueryPassthroughSchema",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
     );
 }
 
 #[tokio::test]
 async fn test_do_get_data_source_capabilities() {
     let fixture = setup();
+    let request = GetDataSourceCapabilitiesRequest::new(None, None, FAKE_DATABASE);
     fixture
         .handler
-        .do_get_data_source_capabilities(
-            &fixture.allocator,
-            &GetDataSourceCapabilitiesRequest::new(None, None, FAKE_DATABASE),
-        )
+        .do_get_data_source_capabilities(&fixture.allocator, &request)
         .await
         .unwrap();
     assert_eq!(
         fixture.delegate.calls(),
-        ["doGetDataSourceCapabilities:fakedatabase"]
+        [call(
+            "doGetDataSourceCapabilities",
+            FAKE_DATABASE,
+            &[allocator_addr(&fixture.allocator), addr(&request)]
+        )]
     );
 }
 
@@ -433,7 +532,7 @@ async fn test_do_get_data_source_capabilities() {
 async fn test_close_closes_delegates_and_own_factory() {
     let fixture = setup();
     fixture.handler.close().await.unwrap();
-    assert_eq!(fixture.delegate.calls(), ["close:"]);
+    assert_eq!(fixture.delegate.calls(), [call("close", "", &[])]);
     assert_eq!(fixture.factory.close_calls(), 1);
 }
 
@@ -450,7 +549,7 @@ async fn test_close_closes_remaining_delegates_when_one_fails() {
     let error = handler.close().await.unwrap_err();
     assert!(error.is_runtime_exception());
     assert_eq!(error.to_string(), "boom");
-    assert_eq!(failing.calls(), ["close:"]);
-    assert_eq!(healthy.calls(), ["close:"]);
+    assert_eq!(failing.calls(), [call("close", "", &[])]);
+    assert_eq!(healthy.calls(), [call("close", "", &[])]);
     assert_eq!(own_factory.close_calls(), 1);
 }

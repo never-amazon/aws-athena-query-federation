@@ -36,11 +36,7 @@ pub const MAP_KEY_NAME: &str = "key";
 pub const MAP_VALUE_NAME: &str = "value";
 
 fn class_cast(value: &Value, target: &str) -> FederationError {
-    FederationError::ClassCast(format!(
-        "class {} cannot be cast to class {}",
-        value.java_class_name(),
-        target
-    ))
+    FederationError::class_cast(value.java_class_name(), target)
 }
 
 fn is_boxed_integer(value: &Value) -> bool {

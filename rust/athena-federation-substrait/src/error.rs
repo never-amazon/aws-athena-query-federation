@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use athena_federation_sdk::exceptions::JavaExceptionKind;
+use athena_federation_sdk::exceptions::{class_cast_message, JavaExceptionKind};
 use athena_federation_sdk::FederationError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +13,7 @@ pub enum ErrorKind {
     UnsupportedOperation,
     IndexOutOfBounds,
     NullPointer,
+    ClassCast,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,10 @@ impl SubstraitError {
 
     pub fn index_out_of_bounds(message: impl Into<String>) -> SubstraitError {
         SubstraitError::new(ErrorKind::IndexOutOfBounds, message)
+    }
+
+    pub fn class_cast(from: &str, to: &str) -> SubstraitError {
+        SubstraitError::new(ErrorKind::ClassCast, class_cast_message(from, to))
     }
 
     pub fn null_pointer(message: impl Into<String>) -> SubstraitError {
@@ -133,6 +138,7 @@ impl From<ErrorKind> for JavaExceptionKind {
             ErrorKind::UnsupportedOperation => JavaExceptionKind::UnsupportedOperation,
             ErrorKind::IndexOutOfBounds => JavaExceptionKind::IndexOutOfBounds,
             ErrorKind::NullPointer => JavaExceptionKind::NullPointer,
+            ErrorKind::ClassCast => JavaExceptionKind::Unchecked("java.lang.ClassCastException"),
         }
     }
 }

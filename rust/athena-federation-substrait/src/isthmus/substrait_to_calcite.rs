@@ -713,8 +713,9 @@ impl SubstraitToCalcite {
             match a.input_ref_index() {
                 Some(i) => arg_index.push(i),
                 None => {
-                    return Err(SubstraitError::runtime(
-                        "class org.apache.calcite.rex.RexCall cannot be cast to class org.apache.calcite.rex.RexInputRef",
+                    return Err(SubstraitError::class_cast(
+                        "org.apache.calcite.rex.RexCall",
+                        "org.apache.calcite.rex.RexInputRef",
                     ))
                 }
             }
@@ -737,8 +738,9 @@ impl SubstraitToCalcite {
             Some(e) => match ex.convert(e, row_type)?.input_ref_index() {
                 Some(i) => Some(i),
                 None => {
-                    return Err(SubstraitError::runtime(
-                        "class org.apache.calcite.rex.RexCall cannot be cast to class org.apache.calcite.rex.RexInputRef",
+                    return Err(SubstraitError::class_cast(
+                        "org.apache.calcite.rex.RexCall",
+                        "org.apache.calcite.rex.RexInputRef",
                     ))
                 }
             },
@@ -750,10 +752,12 @@ impl SubstraitToCalcite {
                 .expr
                 .as_ref()
                 .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
-            let index = ex
-                .convert(e, row_type)?
-                .input_ref_index()
-                .ok_or_else(|| SubstraitError::runtime("class org.apache.calcite.rex.RexCall cannot be cast to class org.apache.calcite.rex.RexSlot"))?;
+            let index = ex.convert(e, row_type)?.input_ref_index().ok_or_else(|| {
+                SubstraitError::class_cast(
+                    "org.apache.calcite.rex.RexCall",
+                    "org.apache.calcite.rex.RexSlot",
+                )
+            })?;
             let (direction, null_direction) = match sort_direction(s)? {
                 SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
                 SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),

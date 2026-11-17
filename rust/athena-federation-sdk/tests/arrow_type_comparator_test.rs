@@ -240,3 +240,50 @@ fn test_compare_nulls() {
     assert_comparison(1, &int_type(), Value::Null, 10);
     assert_comparison(-1, &int_type(), 10, Value::Null);
 }
+
+#[test]
+fn compare_mismatched_values_throws_java_class_cast_text() {
+    let cases = [
+        (
+            DataType::Int32,
+            Value::String("x".into()),
+            Value::Int(1),
+            "class java.lang.String cannot be cast to class java.lang.Integer (java.lang.String and java.lang.Integer are in module java.base of loader 'bootstrap')",
+        ),
+        (
+            DataType::Int32,
+            Value::Int(1),
+            Value::Long(2),
+            "class java.lang.Long cannot be cast to class java.lang.Integer (java.lang.Long and java.lang.Integer are in module java.base of loader 'bootstrap')",
+        ),
+        (
+            DataType::Decimal128(10, 2),
+            Value::Int(1),
+            Value::Int(2),
+            "class java.lang.Integer cannot be cast to class java.math.BigDecimal (java.lang.Integer and java.math.BigDecimal are in module java.base of loader 'bootstrap')",
+        ),
+        (
+            DataType::Timestamp(TimeUnit::Millisecond, Some(Arc::from("UTC"))),
+            Value::Long(1),
+            Value::String("x".into()),
+            "class java.lang.String cannot be cast to class java.lang.Long (java.lang.String and java.lang.Long are in module java.base of loader 'bootstrap')",
+        ),
+        (
+            DataType::Timestamp(TimeUnit::Millisecond, Some(Arc::from("UTC"))),
+            Value::String("x".into()),
+            Value::Long(1),
+            "class java.lang.String cannot be cast to class java.time.LocalDateTime (java.lang.String and java.time.LocalDateTime are in module java.base of loader 'bootstrap')",
+        ),
+        (
+            DataType::Binary,
+            Value::String("x".into()),
+            Value::Bytes(Vec::new()),
+            "class java.lang.String cannot be cast to class [B (java.lang.String and [B are in module java.base of loader 'bootstrap')",
+        ),
+    ];
+    for (data_type, lhs, rhs, expected) in cases {
+        let error = ArrowTypeComparator::compare(&data_type, &lhs, &rhs).unwrap_err();
+        assert!(matches!(error, FederationError::ClassCast(_)), "{error:?}");
+        assert_eq!(error.to_string(), expected);
+    }
+}
