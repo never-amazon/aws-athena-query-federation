@@ -303,44 +303,43 @@ fn bind_error(error: impl std::fmt::Display) -> SqlException {
     snowflake_exception(error.to_string())
 }
 
-fn bind_statement(
-    sql: &str,
-    binds: &[SqlValue],
-) -> Result<Statement<snowflake_connector_rs::PositionalBinds>, SqlException> {
-    let mut statement = Statement::new_positional(sql.to_string());
-    for value in binds {
-        let mut value = value;
-        while let SqlValue::Rendered { value: inner, .. } = value {
-            value = inner.as_ref();
+type PositionalStatement = Statement<snowflake_connector_rs::PositionalBinds>;
+
+fn bind_statement(sql: &str, binds: &[SqlValue]) -> Result<PositionalStatement, SqlException> {
+    binds
+        .iter()
+        .try_fold(Statement::new_positional(sql.to_string()), bind_value)
+}
+
+fn bind_value(
+    statement: PositionalStatement,
+    value: &SqlValue,
+) -> Result<PositionalStatement, SqlException> {
+    let statement = match value {
+        SqlValue::Rendered { value, .. } => return bind_value(statement, value),
+        SqlValue::Null => statement.bind(Option::<String>::None),
+        SqlValue::Boolean(v) => statement.bind(*v),
+        SqlValue::TinyInt(v) => statement.bind(*v),
+        SqlValue::SmallInt(v) => statement.bind(*v),
+        SqlValue::Integer(v) => statement.bind(*v),
+        SqlValue::BigInt(v) => statement.bind(*v),
+        SqlValue::Real(v) => statement.bind(*v),
+        SqlValue::Double(v) => statement.bind(*v),
+        SqlValue::Decimal(v) => statement.bind(RawBind::new(BindType::Fixed, v.to_string())),
+        SqlValue::String(v) => statement.bind(v.clone()),
+        SqlValue::Bytes(v) => statement.bind(Binary::new(v.clone())),
+        SqlValue::Date(v) => statement.bind(*v),
+        SqlValue::Time(v) => statement.bind(Time::try_from(*v).map_err(bind_error)?),
+        SqlValue::Timestamp(v) => {
+            statement.bind(TimestampLtz::try_from(v.and_utc()).map_err(bind_error)?)
         }
-        statement = match value {
-            SqlValue::Null => statement.bind(Option::<String>::None),
-            SqlValue::Boolean(v) => statement.bind(*v),
-            SqlValue::TinyInt(v) => statement.bind(*v),
-            SqlValue::SmallInt(v) => statement.bind(*v),
-            SqlValue::Integer(v) => statement.bind(*v),
-            SqlValue::BigInt(v) => statement.bind(*v),
-            SqlValue::Real(v) => statement.bind(*v),
-            SqlValue::Double(v) => statement.bind(*v),
-            SqlValue::Decimal(v) => statement.bind(RawBind::new(BindType::Fixed, v.to_string())),
-            SqlValue::String(v) => statement.bind(v.clone()),
-            SqlValue::Bytes(v) => statement.bind(Binary::new(v.clone())),
-            SqlValue::Date(v) => statement.bind(*v),
-            SqlValue::Time(v) => statement.bind(Time::try_from(*v).map_err(bind_error)?),
-            SqlValue::Timestamp(v) => {
-                statement.bind(TimestampLtz::try_from(v.and_utc()).map_err(bind_error)?)
-            }
-            SqlValue::TimestampTz(v) => {
-                statement.bind(TimestampTz::try_from(*v).map_err(bind_error)?)
-            }
-            SqlValue::Array(_) => {
-                return Err(snowflake_exception(
-                    "Data type ARRAY is not supported for binding",
-                ))
-            }
-            SqlValue::Rendered { .. } => unreachable!("rendered values are unwrapped above"),
-        };
-    }
+        SqlValue::TimestampTz(v) => statement.bind(TimestampTz::try_from(*v).map_err(bind_error)?),
+        SqlValue::Array(_) => {
+            return Err(snowflake_exception(
+                "Data type ARRAY is not supported for binding",
+            ))
+        }
+    };
     Ok(statement)
 }
 

@@ -43,19 +43,25 @@ impl SnowflakeEnvironmentProperties {
             tracing::debug!("No schema specified in connection string");
         }
         copy_usable(
-            connection_properties.get(EnvironmentConstants::WAREHOUSE),
+            connection_properties
+                .get(EnvironmentConstants::WAREHOUSE)
+                .map(String::as_str),
             WAREHOUSE_PROPERTY_KEY,
             "warehouse",
             &mut parameters,
         );
         copy_usable(
-            connection_properties.get(EnvironmentConstants::DATABASE),
+            connection_properties
+                .get(EnvironmentConstants::DATABASE)
+                .map(String::as_str),
             DB_PROPERTY_KEY,
             "database",
             &mut parameters,
         );
         copy_usable(
-            connection_properties.get(EnvironmentConstants::SCHEMA),
+            connection_properties
+                .get(EnvironmentConstants::SCHEMA)
+                .map(String::as_str),
             SCHEMA_PROPERTY_KEY,
             "schema",
             &mut parameters,
@@ -65,7 +71,7 @@ impl SnowflakeEnvironmentProperties {
 }
 
 fn copy_usable(
-    value: Option<&String>,
+    value: Option<&str>,
     key: &str,
     label: &str,
     parameters: &mut HashMap<String, String>,

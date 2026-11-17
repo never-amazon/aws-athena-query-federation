@@ -8,7 +8,7 @@ use athena_federation_sdk::credentials::{
     Credentials, CredentialsProvider, DefaultCredentials, HttpClient, HttpRequest,
     ReqwestHttpClient,
 };
-use athena_federation_sdk::exceptions::FederationSourceErrorCode;
+use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaExceptionKind};
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, CachableSecretsManager, SecretsManagerClient,
 };
@@ -81,8 +81,8 @@ impl SnowflakeCredentialsProvider {
                 }
                 other => other,
             })?;
-        let mut secret_json: Map<String, Value> = serde_json::from_str(&secret_string)
-            .map_err(|e| FederationError::Runtime(e.to_string()))?;
+        let mut secret_json: Map<String, Value> =
+            serde_json::from_str(&secret_string).map_err(runtime_error)?;
         let secret_map = string_map(&secret_json);
         let auth_type = SnowflakeAuthUtils::determine_auth_type(&secret_map)?;
         SnowflakeAuthUtils::validate_credentials(&secret_map, auth_type)?;
@@ -138,8 +138,8 @@ impl SnowflakeCredentialsProvider {
                 .save_token_to_secrets_manager(token_json, secret_json)
                 .await;
         };
-        let expires_in = parse_long(oauth_config.get(Self::EXPIRES_IN))?;
-        let fetched_at = parse_long_text(Some(
+        let expires_in = parse_long(oauth_config.get(Self::EXPIRES_IN).map(String::as_str))?;
+        let fetched_at = parse_long(Some(
             oauth_config
                 .get(Self::FETCHED_AT)
                 .map_or("0", String::as_str),
@@ -186,7 +186,7 @@ impl SnowflakeCredentialsProvider {
             .http_client
             .send(request)
             .await
-            .map_err(|e| FederationError::Runtime(e.to_string()))?;
+            .map_err(runtime_error)?;
         let response_code = response.status_code();
         let success = (200..300).contains(&response_code);
         if !success && response.body().is_empty() {
@@ -201,7 +201,7 @@ impl SnowflakeCredentialsProvider {
             ));
         }
         let mut token_json: Map<String, Value> =
-            serde_json::from_str(&body).map_err(|e| FederationError::Runtime(e.to_string()))?;
+            serde_json::from_str(&body).map_err(runtime_error)?;
         token_json.insert(Self::FETCHED_AT.to_string(), Value::from(now_seconds()));
         Ok(token_json)
     }
@@ -233,8 +233,8 @@ impl SnowflakeCredentialsProvider {
             Value::String(fetched_at.to_string()),
         );
         let save = async {
-            let updated_secret_string = serde_json::to_string(&*secret_json)
-                .map_err(|e| FederationError::Runtime(e.to_string()))?;
+            let updated_secret_string =
+                serde_json::to_string(&*secret_json).map_err(runtime_error)?;
             self.secrets_manager
                 .secrets_manager()
                 .put_secret_value_with_override_configuration(
@@ -253,6 +253,10 @@ impl SnowflakeCredentialsProvider {
         }
         Ok(access_token)
     }
+}
+
+fn runtime_error(error: impl std::error::Error + Send + Sync + 'static) -> FederationError {
+    FederationError::wrapped(JavaExceptionKind::Runtime, error)
 }
 
 fn now_seconds() -> i64 {
@@ -282,11 +286,7 @@ fn require_non_blank<'a>(config: &'a HashMap<String, String>, key: &str) -> Resu
     }
 }
 
-fn parse_long(value: Option<&String>) -> Result<i64> {
-    parse_long_text(value.map(String::as_str))
-}
-
-fn parse_long_text(value: Option<&str>) -> Result<i64> {
+fn parse_long(value: Option<&str>) -> Result<i64> {
     let text = value.ok_or_else(|| {
         FederationError::NumberFormat("Cannot parse null string: null".to_string())
     })?;
@@ -440,5 +440,26 @@ impl CredentialsProvider for SnowflakeCredentialsProvider {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::{runtime_error, FederationError};
+
+    #[test]
+    fn json_errors_keep_their_source_and_message() {
+        let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
+        let expected = json_error.to_string();
+        let error = runtime_error(json_error);
+        assert_eq!(expected, error.to_string());
+        assert_eq!("java.lang.RuntimeException", error.java_class_name());
+        assert!(error.source().is_some());
+        assert!(matches!(
+            &error,
+            FederationError::Wrapped { source, .. } if source.downcast_ref::<serde_json::Error>().is_some()
+        ));
     }
 }
