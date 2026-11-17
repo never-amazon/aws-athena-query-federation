@@ -61,7 +61,7 @@ public final class SnowflakeConstants
      * Partition key
      */
     public static final String BLOCK_PARTITION_COLUMN_NAME = "partition";
-    /** Markers of the {@code partition-primary-<pk>-limit-<n>-offset-<m>} value that getPartitions writes and appendLimitOffset parses. */
+    /** Markers of the {@code partition-primary-<pk>-limit-<n>-offset-<m>} value that getPartitions writes and SnowflakeQueryStringBuilder parses. */
     public static final String PARTITION_PRIMARY_MARKER = "-primary-";
     public static final String PARTITION_LIMIT_MARKER = "-limit-";
     public static final String PARTITION_OFFSET_MARKER = "-offset-";

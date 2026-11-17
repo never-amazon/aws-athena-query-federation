@@ -716,7 +716,7 @@ async fn fetch_data_select_integ_test() {
     assert_eq!(3, run.rows);
     let (sql, binds) = last_data_query(&lambda);
     assert_eq!(
-        "SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"ISSUANCE\" ",
+        "SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"ISSUANCE\"",
         sql
     );
     assert!(binds.is_empty());
@@ -809,7 +809,7 @@ async fn fetch_data_group_by_having_clause_integ_test() {
     let (sql, binds) = last_data_query(&lambda);
     assert!(
         sql.starts_with(
-            "SELECT \"FREQUENCY\" FROM \"CMRN\".\"ISSUANCE\"  WHERE (\"FREQUENCY\" = ?)"
+            "SELECT \"FREQUENCY\" FROM \"CMRN\".\"ISSUANCE\" WHERE (\"FREQUENCY\" = ?)"
         ),
         "{sql}"
     );
@@ -875,7 +875,7 @@ async fn fetch_data_select_integ_view_test() {
     assert_eq!(3, run.rows);
     let (sql, _) = last_data_query(&lambda);
     assert_eq!(
-        "SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"ISSUANCE_VIEW\" ",
+        "SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"ISSUANCE_VIEW\"",
         sql
     );
     assert!(!lambda
@@ -911,7 +911,7 @@ async fn run_partion_test() {
         .map(|(sql, _)| sql)
         .collect();
     assert!(card_queries.contains(
-        &"SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"AAB_COMPLETEDCARD\" ORDER BY \"FREQUENCY\"  LIMIT 400 OFFSET 19600".to_string()
+        &"SELECT \"FREQUENCY\", \"AMOUNT\" FROM \"CMRN\".\"AAB_COMPLETEDCARD\" ORDER BY \"FREQUENCY\" LIMIT 400 OFFSET 19600".to_string()
     ));
     let acct_run = run_query(
         &lambda,

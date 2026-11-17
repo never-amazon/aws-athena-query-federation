@@ -90,44 +90,91 @@ impl SnowflakeQueryStringBuilder {
         format!("{quote}{}{quote}", name.replace(quote, "''"))
     }
 
-    pub fn append_limit_offset_with_optional_split(&self, split: Option<&Split>) -> String {
-        let Some(partition_val) =
-            split.and_then(|s| s.get_property(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME))
-        else {
-            return String::new();
+    pub fn append_order_by_limit_offset(
+        &self,
+        split: Option<&Split>,
+        constraints: &Constraints,
+    ) -> String {
+        let order_by_clause = self.extract_order_by_clause(constraints);
+        let Some(page) = split.and_then(split_page) else {
+            let order_by = if order_by_clause.is_empty() {
+                String::new()
+            } else {
+                format!(" {order_by_clause}")
+            };
+            if constraints.limit() > 0 {
+                return format!("{order_by} LIMIT {}", constraints.limit());
+            }
+            return order_by;
         };
-        let primary_marker = SnowflakeConstants::PARTITION_PRIMARY_MARKER;
-        let limit_marker_text = SnowflakeConstants::PARTITION_LIMIT_MARKER;
-        let offset_marker_text = SnowflakeConstants::PARTITION_OFFSET_MARKER;
-        let (Some(primary_index), Some(limit_marker), Some(offset_marker)) = (
-            partition_val.find(primary_marker),
-            partition_val.rfind(limit_marker_text),
-            partition_val.rfind(offset_marker_text),
-        ) else {
-            return String::new();
+        let order_by = if order_by_clause.is_empty() {
+            " ORDER BY ".to_string()
+        } else {
+            format!(" {order_by_clause}, ")
         };
-        let primary_start = primary_index + primary_marker.len();
-        if primary_start > limit_marker || limit_marker > offset_marker {
-            tracing::warn!("Malformed partition value: {partition_val}");
-            return String::new();
-        }
-        let primary_key = &partition_val[primary_start..limit_marker];
-        let limit = &partition_val[limit_marker + limit_marker_text.len()..offset_marker];
-        let offset = &partition_val[offset_marker + offset_marker_text.len()..];
-        if primary_key.is_empty() {
-            return String::new();
-        }
-        if !is_ascii_digits(limit) || !is_ascii_digits(offset) {
-            tracing::warn!(
-                "Non-numeric limit/offset in partition value: limit={limit}, offset={offset}"
-            );
-            return String::new();
-        }
         format!(
-            "ORDER BY {primary_key} {}",
-            self.append_limit_offset_with_value(limit, Some(offset))
+            "{order_by}{}{}",
+            page.primary_key,
+            self.append_limit_offset_with_value(
+                &page.limit_within(constraints.limit()),
+                Some(page.offset)
+            )
         )
     }
+}
+
+struct SplitPage<'a> {
+    primary_key: &'a str,
+    limit: &'a str,
+    offset: &'a str,
+}
+
+impl SplitPage<'_> {
+    fn limit_within(&self, constraint_limit: i64) -> String {
+        if constraint_limit <= 0 {
+            return self.limit.to_string();
+        }
+        self.limit
+            .parse::<i64>()
+            .map_or(constraint_limit, |limit| limit.min(constraint_limit))
+            .to_string()
+    }
+}
+
+fn split_page(split: &Split) -> Option<SplitPage<'_>> {
+    let partition_val = split.get_property(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME)?;
+    let primary_marker = SnowflakeConstants::PARTITION_PRIMARY_MARKER;
+    let limit_marker_text = SnowflakeConstants::PARTITION_LIMIT_MARKER;
+    let offset_marker_text = SnowflakeConstants::PARTITION_OFFSET_MARKER;
+    let (Some(primary_index), Some(limit_marker), Some(offset_marker)) = (
+        partition_val.find(primary_marker),
+        partition_val.rfind(limit_marker_text),
+        partition_val.rfind(offset_marker_text),
+    ) else {
+        return None;
+    };
+    let primary_start = primary_index + primary_marker.len();
+    if primary_start > limit_marker || limit_marker > offset_marker {
+        tracing::warn!("Malformed partition value: {partition_val}");
+        return None;
+    }
+    let primary_key = &partition_val[primary_start..limit_marker];
+    let limit = &partition_val[limit_marker + limit_marker_text.len()..offset_marker];
+    let offset = &partition_val[offset_marker + offset_marker_text.len()..];
+    if primary_key.is_empty() {
+        return None;
+    }
+    if !is_ascii_digits(limit) || !is_ascii_digits(offset) {
+        tracing::warn!(
+            "Non-numeric limit/offset in partition value: limit={limit}, offset={offset}"
+        );
+        return None;
+    }
+    Some(SplitPage {
+        primary_key,
+        limit,
+        offset,
+    })
 }
 
 fn is_ascii_digits(text: &str) -> bool {
@@ -261,7 +308,7 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
             table_name.push('.');
         }
         table_name.push_str(&self.quote(table));
-        format!(" FROM {table_name} ")
+        format!(" FROM {table_name}")
     }
 
     fn get_partition_where_clauses(&self, _split: &Split) -> Vec<String> {
@@ -273,8 +320,30 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
         format!("{quote}{}{quote}", name.replace(quote, "\"\""))
     }
 
-    fn append_limit_offset(&self, split: &Split) -> String {
-        self.append_limit_offset_with_optional_split(Some(split))
+    fn build_sql_string_literal(
+        &self,
+        catalog: &str,
+        schema: &str,
+        table: &str,
+        table_schema: &Schema,
+        constraints: &Constraints,
+        split: &Split,
+        column_names: &str,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<String> {
+        let mut sql = SelectFromWhere(self).build_sql_string_literal(
+            catalog,
+            schema,
+            table,
+            table_schema,
+            constraints,
+            split,
+            column_names,
+            accumulator,
+        )?;
+        sql.push_str(&self.append_order_by_limit_offset(Some(split), constraints));
+        tracing::info!("Generated Snowflake SQL : {}", sql);
+        Ok(sql)
     }
 
     fn get_sql_dialect(&self) -> SqlDialect {
@@ -286,5 +355,44 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
         catalog_casing_filter: bool,
     ) -> SqlDialect {
         SnowflakeDialect::new(catalog_casing_filter).into_sql_dialect()
+    }
+}
+
+struct SelectFromWhere<'a>(&'a SnowflakeQueryStringBuilder);
+
+impl JdbcSplitQueryBuilder for SelectFromWhere<'_> {
+    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
+        self.0.query_builder_base()
+    }
+
+    fn get_from_clause_with_split(
+        &self,
+        catalog: &str,
+        schema: &str,
+        table: &str,
+        split: &Split,
+    ) -> String {
+        self.0
+            .get_from_clause_with_split(catalog, schema, table, split)
+    }
+
+    fn get_partition_where_clauses(&self, split: &Split) -> Vec<String> {
+        self.0.get_partition_where_clauses(split)
+    }
+
+    fn quote(&self, name: &str) -> String {
+        self.0.quote(name)
+    }
+
+    fn extract_order_by_clause(&self, _constraints: &Constraints) -> String {
+        String::new()
+    }
+
+    fn append_limit_offset_with_constraints(
+        &self,
+        _split: &Split,
+        _constraints: &Constraints,
+    ) -> String {
+        String::new()
     }
 }

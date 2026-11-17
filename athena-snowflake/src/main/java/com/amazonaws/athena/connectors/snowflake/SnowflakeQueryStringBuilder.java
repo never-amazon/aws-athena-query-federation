@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
@@ -73,7 +74,7 @@ public class SnowflakeQueryStringBuilder
             tableName.append(quote(schema)).append('.');
         }
         tableName.append(quote(table));
-        return String.format(" FROM %s ", tableName);
+        return " FROM " + tableName;
     }
 
     @Override
@@ -177,13 +178,44 @@ public class SnowflakeQueryStringBuilder
     }
 
     @Override
-    protected String appendLimitOffset(Split split)
+    protected String buildSQLStringLiteral(
+            final String catalog,
+            final String schema,
+            final String table,
+            final Schema tableSchema,
+            final Constraints constraints,
+            final Split split,
+            final String columnNames,
+            List<TypeAndValue> accumulator)
+    {
+        Constraints filterConstraints = new Constraints(constraints.getSummary(), constraints.getExpression(), Collections.emptyList(),
+                Constraints.DEFAULT_NO_LIMIT, constraints.getQueryPassthroughArguments(), constraints.getQueryPlan());
+        String sql = super.buildSQLStringLiteral(catalog, schema, table, tableSchema, filterConstraints, split, columnNames, accumulator)
+                + appendOrderByLimitOffset(split, constraints);
+        LOGGER.info("Generated Snowflake SQL : {}", sql);
+        return sql;
+    }
+
+    @VisibleForTesting
+    String appendOrderByLimitOffset(Split split, Constraints constraints)
+    {
+        String orderByClause = extractOrderByClause(constraints);
+        Optional<SplitPage> page = getSplitPage(split);
+        if (!page.isPresent()) {
+            String sql = orderByClause.isEmpty() ? "" : " " + orderByClause;
+            return constraints.getLimit() > 0 ? sql + appendLimitOffset(split, constraints) : sql;
+        }
+        String orderBy = orderByClause.isEmpty() ? " ORDER BY " : " " + orderByClause + ", ";
+        return orderBy + page.get().primaryKey + appendLimitOffsetWithValue(page.get().limitWithin(constraints.getLimit()), page.get().offset);
+    }
+
+    private Optional<SplitPage> getSplitPage(Split split)
     {
         String partitionVal = split == null ? null : split.getProperty(BLOCK_PARTITION_COLUMN_NAME);
         // Expected format: partition-primary-<PRIMARYKEY>-limit-<LIMIT>-offset-<OFFSET>
         // Use marker-based parsing to handle primary keys that may contain dashes
         if (partitionVal == null || !partitionVal.contains(PARTITION_PRIMARY_MARKER) || !partitionVal.contains(PARTITION_LIMIT_MARKER) || !partitionVal.contains(PARTITION_OFFSET_MARKER)) {
-            return "";
+            return Optional.empty();
         }
 
         int primaryStart = partitionVal.indexOf(PARTITION_PRIMARY_MARKER) + PARTITION_PRIMARY_MARKER.length();
@@ -192,7 +224,7 @@ public class SnowflakeQueryStringBuilder
 
         if (primaryStart > limitMarker || limitMarker > offsetMarker) {
             LOGGER.warn("Malformed partition value: {}", partitionVal);
-            return "";
+            return Optional.empty();
         }
 
         String primaryKey = partitionVal.substring(primaryStart, limitMarker);
@@ -201,18 +233,45 @@ public class SnowflakeQueryStringBuilder
 
         // if no primary key, single split only
         if (primaryKey.isEmpty()) {
-            return "";
+            return Optional.empty();
         }
 
         // Validate limit and offset are numeric to prevent injection
         if (!limit.matches("\\d+") || !offset.matches("\\d+")) {
             LOGGER.warn("Non-numeric limit/offset in partition value: limit={}, offset={}", limit, offset);
-            return "";
+            return Optional.empty();
         }
 
         // Primary key is already quoted from getPrimaryKey() (e.g., "\"col1\",\"col2\"")
         // so it is safe to use directly in ORDER BY
-        return "ORDER BY " + primaryKey + " " + appendLimitOffsetWithValue(limit, offset);
+        return Optional.of(new SplitPage(primaryKey, limit, offset));
+    }
+
+    private static final class SplitPage
+    {
+        private final String primaryKey;
+        private final String limit;
+        private final String offset;
+
+        private SplitPage(String primaryKey, String limit, String offset)
+        {
+            this.primaryKey = primaryKey;
+            this.limit = limit;
+            this.offset = offset;
+        }
+
+        private String limitWithin(long constraintLimit)
+        {
+            if (constraintLimit <= 0) {
+                return limit;
+            }
+            try {
+                return String.valueOf(Math.min(Long.parseLong(limit), constraintLimit));
+            }
+            catch (NumberFormatException e) {
+                return String.valueOf(constraintLimit);
+            }
+        }
     }
 
     @Override

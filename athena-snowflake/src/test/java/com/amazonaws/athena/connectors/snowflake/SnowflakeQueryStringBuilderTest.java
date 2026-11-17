@@ -51,6 +51,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class SnowflakeQueryStringBuilderTest
@@ -58,6 +59,7 @@ public class SnowflakeQueryStringBuilderTest
     private SnowflakeQueryStringBuilder queryBuilder;
     private static final String QUOTE_CHARACTER = "\"";
     private static final BlockAllocator blockAllocator = new BlockAllocatorImpl();
+    private static final Constraints NO_CONSTRAINTS = new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(), -1L, Collections.emptyMap(), null);
 
     @Before
     public void setUp()
@@ -133,6 +135,7 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE (\"col2\" = ?) ORDER BY col1 LIMIT 1000 OFFSET 0");
     }
 
     @Test
@@ -170,6 +173,7 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST, \"col2\" DESC NULLS LAST, col1 LIMIT 1000 OFFSET 0");
     }
 
     @Test
@@ -202,6 +206,7 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" LIMIT 100");
     }
 
     @Test
@@ -236,6 +241,7 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"");
     }
 
     @Test
@@ -264,6 +270,7 @@ public class SnowflakeQueryStringBuilderTest
         assertTrue(result.contains("\"testSchema\".\"testTable\""));
         // Should not contain partition column
         assertTrue(!result.contains("\"partition\""));
+        assertEquals("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"", result);
     }
 
     @Test
@@ -290,6 +297,7 @@ public class SnowflakeQueryStringBuilderTest
         assertNotNull(result);
         assertTrue(result.contains("WHERE"));
         assertTrue(result.contains("LIMIT"));
+        assertEquals("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE ((\"col2\" > 10)) LIMIT 100", result);
     }
 
     @Test
@@ -316,6 +324,7 @@ public class SnowflakeQueryStringBuilderTest
         assertNotNull(result);
         assertTrue(result.contains("ORDER BY"));
         assertTrue(result.contains("\"col1\""));
+        assertEquals("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST", result);
     }
 
     @Test
@@ -338,6 +347,7 @@ public class SnowflakeQueryStringBuilderTest
         assertNotNull(result);
         assertTrue(result.contains("\"testSchema\".\"testTable\""));
         assertTrue(!result.contains("null"));
+        assertEquals("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"", result);
     }
 
     @Test
@@ -372,6 +382,7 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"id\",\"name\" LIMIT 5000 OFFSET 10000");
     }
 
     @Test
@@ -406,12 +417,13 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"");
     }
 
     @Test
     public void testAppendLimitOffsetWithNullSplit()
     {
-        String result = queryBuilder.appendLimitOffset(null);
+        String result = queryBuilder.appendOrderByLimitOffset(null, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -423,7 +435,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -435,7 +447,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "some-random-value").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -448,7 +460,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-offset-0-limit-100-primary-col1").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -460,7 +472,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-primary--limit-1000-offset-0").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -472,7 +484,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-primary-col1-limit-abc-offset-0").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -484,7 +496,7 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-primary-col1-limit-1000-offset-xyz").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertEquals("", result);
     }
 
@@ -496,8 +508,8 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-primary-\"id\"-limit-1000-offset-500").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
-        assertEquals("ORDER BY \"id\"  LIMIT 1000 OFFSET 500", result);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
+        assertEquals(" ORDER BY \"id\" LIMIT 1000 OFFSET 500", result);
     }
 
     @Test
@@ -508,8 +520,8 @@ public class SnowflakeQueryStringBuilderTest
                 null
         ).add("partition", "partition-primary-\"col1\",\"col2\"-limit-5000-offset-10000").build();
 
-        String result = queryBuilder.appendLimitOffset(split);
-        assertEquals("ORDER BY \"col1\",\"col2\"  LIMIT 5000 OFFSET 10000", result);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
+        assertEquals(" ORDER BY \"col1\",\"col2\" LIMIT 5000 OFFSET 10000", result);
     }
 
     @Test
@@ -521,9 +533,66 @@ public class SnowflakeQueryStringBuilderTest
         properties.put("partition", "partition-primary-\"id\"-limit-100-offset-200");
         Split split = new Split(S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(), null, properties);
 
-        String result = queryBuilder.appendLimitOffset(split);
+        String result = queryBuilder.appendOrderByLimitOffset(split, NO_CONSTRAINTS);
         assertTrue(result.contains("ORDER BY \"id\""));
         assertTrue(result.contains("LIMIT 100 OFFSET 200"));
+        assertEquals(" ORDER BY \"id\" LIMIT 100 OFFSET 200", result);
+    }
+
+    @Test
+    public void testBuildSqlWithOrderByLimitAndPagination() throws SQLException
+    {
+        Connection mockConnection = mock(Connection.class);
+        when(mockConnection.prepareStatement(anyString())).thenReturn(mock(PreparedStatement.class));
+        Map<String, ValueSet> constraintsMap = new HashMap<>();
+        constraintsMap.put("col2", SortedRangeSet.copyOf(Types.MinorType.INT.getType(),
+                Arrays.asList(Range.greaterThan(blockAllocator, Types.MinorType.INT.getType(), 10)), false));
+        List<OrderByField> orderByFields = Arrays.asList(new OrderByField("col2", OrderByField.Direction.DESC_NULLS_LAST));
+        Constraints constraints = new Constraints(constraintsMap, Collections.emptyList(), orderByFields, 5000L, Collections.emptyMap(), null);
+
+        queryBuilder.buildSql(mockConnection, "testCatalog", "testSchema", "testTable", twoColumnSchema(), constraints,
+                paginatedSplit("partition-primary-\"id\"-limit-1000-offset-3000"));
+
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE ((\"col2\" > ?)) ORDER BY \"col2\" DESC NULLS LAST, \"id\" LIMIT 1000 OFFSET 3000");
+    }
+
+    @Test
+    public void testBuildSqlWithLimitBelowPageSizeAndPagination() throws SQLException
+    {
+        Connection mockConnection = mock(Connection.class);
+        when(mockConnection.prepareStatement(anyString())).thenReturn(mock(PreparedStatement.class));
+        Constraints constraints = new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(), 100L, Collections.emptyMap(), null);
+
+        queryBuilder.buildSql(mockConnection, "testCatalog", "testSchema", "testTable", twoColumnSchema(), constraints,
+                paginatedSplit("partition-primary-\"id\"-limit-1000-offset-2000"));
+
+        verify(mockConnection).prepareStatement("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"id\" LIMIT 100 OFFSET 2000");
+    }
+
+    @Test
+    public void testGetBaseExportSQLStringWithOrderByAndLimit() throws SQLException
+    {
+        List<OrderByField> orderByFields = Arrays.asList(new OrderByField("col1", OrderByField.Direction.ASC_NULLS_FIRST));
+        Constraints constraints = new Constraints(Collections.emptyMap(), Collections.emptyList(), orderByFields, 10L, Collections.emptyMap(), null);
+
+        String result = queryBuilder.getBaseExportSQLString("testCatalog", "testSchema", "testTable", twoColumnSchema(), constraints);
+
+        assertEquals("SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST LIMIT 10", result);
+    }
+
+    private static Schema twoColumnSchema()
+    {
+        return SchemaBuilder.newBuilder()
+                .addStringField("col1")
+                .addIntField("col2")
+                .build();
+    }
+
+    private static Split paginatedSplit(String partition)
+    {
+        return Split.newBuilder(S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(), null)
+                .add("partition", partition)
+                .build();
     }
 
     @Test
