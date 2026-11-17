@@ -72,9 +72,10 @@ impl DatabaseConnectionConfigBuilder {
     }
 
     pub fn build(&self) -> Result<Vec<DatabaseConnectionConfig>> {
-        let properties = self.properties.as_ref().ok_or_else(|| {
-            FederationError::NullPointer("properties must not be empty".to_string())
-        })?;
+        let properties = self
+            .properties
+            .as_ref()
+            .ok_or_else(|| FederationError::null_pointer("properties must not be empty"))?;
         is_true(!properties.is_empty(), "properties must not be empty")?;
         is_true(
             properties.contains_key(DEFAULT_CONNECTION_STRING_PROPERTY),

@@ -29,6 +29,7 @@ pub enum SqlValue {
     Timestamp(NaiveDateTime),
     TimestampTz(DateTime<FixedOffset>),
     Array(Vec<SqlValue>),
+    Rendered { value: Box<SqlValue>, text: String },
 }
 
 fn bad_value(type_name: &str, value: &SqlValue) -> SqlException {
@@ -69,6 +70,13 @@ fn parse_date(text: &str) -> Option<NaiveDate> {
 }
 
 impl SqlValue {
+    pub fn rendered(value: SqlValue, text: impl Into<String>) -> SqlValue {
+        SqlValue::Rendered {
+            value: Box::new(value),
+            text: text.into(),
+        }
+    }
+
     pub fn is_null(&self) -> bool {
         matches!(self, SqlValue::Null)
     }
@@ -97,6 +105,9 @@ impl SqlValue {
     }
 
     pub fn to_boolean(&self) -> Result<Option<bool>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_boolean().map_err(|_| bad_value("boolean", self));
+        }
         match self {
             SqlValue::Null => Ok(None),
             SqlValue::Boolean(b) => Ok(Some(*b)),
@@ -114,30 +125,45 @@ impl SqlValue {
     }
 
     pub fn to_byte(&self) -> Result<Option<i8>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_byte().map_err(|_| bad_value("byte", self));
+        }
         self.to_integral("byte")?
             .map(|d| d.to_i8().ok_or_else(|| bad_value("byte", self)))
             .transpose()
     }
 
     pub fn to_short(&self) -> Result<Option<i16>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_short().map_err(|_| bad_value("short", self));
+        }
         self.to_integral("short")?
             .map(|d| d.to_i16().ok_or_else(|| bad_value("short", self)))
             .transpose()
     }
 
     pub fn to_int(&self) -> Result<Option<i32>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_int().map_err(|_| bad_value("int", self));
+        }
         self.to_integral("int")?
             .map(|d| d.to_i32().ok_or_else(|| bad_value("int", self)))
             .transpose()
     }
 
     pub fn to_long(&self) -> Result<Option<i64>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_long().map_err(|_| bad_value("long", self));
+        }
         self.to_integral("long")?
             .map(|d| d.to_i64().ok_or_else(|| bad_value("long", self)))
             .transpose()
     }
 
     pub fn to_double(&self) -> Result<Option<f64>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_double().map_err(|_| bad_value("double", self));
+        }
         let value = match self {
             SqlValue::Null => return Ok(None),
             SqlValue::Boolean(b) => f64::from(u8::from(*b)),
@@ -158,6 +184,9 @@ impl SqlValue {
     }
 
     pub fn to_float(&self) -> Result<Option<f32>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_float().map_err(|_| bad_value("float", self));
+        }
         match self {
             SqlValue::Real(v) => Ok(Some(*v)),
             SqlValue::String(s) => s
@@ -170,6 +199,11 @@ impl SqlValue {
     }
 
     pub fn to_big_decimal(&self) -> Result<Option<BigDecimal>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value
+                .to_big_decimal()
+                .map_err(|_| bad_value("BigDecimal", self));
+        }
         let value = match self {
             SqlValue::Null => return Ok(None),
             SqlValue::Boolean(b) => BigDecimal::from(i32::from(*b)),
@@ -198,6 +232,9 @@ impl SqlValue {
     }
 
     pub fn to_bytes(&self) -> Result<Option<Vec<u8>>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_bytes().map_err(|_| bad_value("bytes", self));
+        }
         match self {
             SqlValue::Null => Ok(None),
             SqlValue::Bytes(b) => Ok(Some(b.clone())),
@@ -207,6 +244,9 @@ impl SqlValue {
     }
 
     pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_date().map_err(|_| bad_value("date", self));
+        }
         match self {
             SqlValue::Null => Ok(None),
             SqlValue::Date(d) => Ok(Some(*d)),
@@ -220,6 +260,11 @@ impl SqlValue {
     }
 
     pub fn to_timestamp(&self) -> Result<Option<NaiveDateTime>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value
+                .to_timestamp()
+                .map_err(|_| bad_value("timestamp", self));
+        }
         match self {
             SqlValue::Null => Ok(None),
             SqlValue::Timestamp(ts) => Ok(Some(*ts)),
@@ -233,6 +278,9 @@ impl SqlValue {
     }
 
     pub fn to_array(&self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+        if let SqlValue::Rendered { value, .. } = self {
+            return value.to_array().map_err(|_| bad_value("array", self));
+        }
         match self {
             SqlValue::Null => Ok(None),
             SqlValue::Array(items) => Ok(Some(items.clone())),
@@ -258,6 +306,10 @@ impl SqlValue {
             SqlValue::Timestamp(ts) => Value::Date(ts.and_utc().timestamp_millis()),
             SqlValue::TimestampTz(ts) => Value::Date(ts.timestamp_millis()),
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
+            SqlValue::Rendered { value, text } => match value.as_ref() {
+                SqlValue::Array(_) => Value::String(text.clone()),
+                other => other.to_value(),
+            },
         }
     }
 }
@@ -293,6 +345,7 @@ impl fmt::Display for SqlValue {
                 }
                 f.write_str("}")
             }
+            SqlValue::Rendered { text, .. } => f.write_str(text),
         }
     }
 }

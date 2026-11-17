@@ -395,7 +395,7 @@ fn serialize_spill_location(location: &SpillLocation, jgen: &mut JsonGenerator) 
     match location {
         SpillLocation::S3(s3) => {
             write_type(jgen, "S3SpillLocation")?;
-            jgen.write_string_field("bucket", Some(s3.bucket()))?;
+            jgen.write_string_field("bucket", s3.bucket_value())?;
             jgen.write_string_field("key", Some(s3.key()))?;
             jgen.write_boolean_field("directory", s3.is_directory())?;
         }

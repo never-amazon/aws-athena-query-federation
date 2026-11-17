@@ -586,7 +586,8 @@ impl<T: JdbcMetadataHandler + ?Sized> JdbcMetadataHandlerExt for T {
         let connection = self.jdbc_get_connection(request.identity()).await?;
         let result = async {
             let prepared_statement = connection.prepare_statement(&customer_passed_query).await?;
-            let Some(metadata) = prepared_statement.metadata() else {
+            let metadata = connection.statement_metadata(&prepared_statement).await?;
+            let Some(metadata) = metadata.as_deref() else {
                 return Err(FederationError::not_supported(format!(
                     "Query not supported: ResultSetMetaData not available for query: {customer_passed_query}"
                 )));

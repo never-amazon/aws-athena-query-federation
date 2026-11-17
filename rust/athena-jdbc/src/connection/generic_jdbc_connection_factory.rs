@@ -11,7 +11,9 @@ use regex::Regex;
 use super::database_connection_config::DatabaseConnectionConfig;
 use super::database_connection_info::DatabaseConnectionInfo;
 use super::jdbc_connection_factory::JdbcConnectionFactory;
-use crate::sql::{DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, SqlException};
+use crate::sql::{
+    DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, ResultSetMetaData, SqlException,
+};
 
 pub type JdbcProperties = HashMap<String, String>;
 
@@ -360,6 +362,20 @@ impl JdbcConnection for PooledConnection {
         sql: &str,
     ) -> std::result::Result<ResultSet, SqlException> {
         self.inner().execute_query_with_sql(sql).await
+    }
+
+    async fn statement_metadata(
+        &self,
+        statement: &PreparedStatement,
+    ) -> std::result::Result<Option<Arc<ResultSetMetaData>>, SqlException> {
+        self.inner().statement_metadata(statement).await
+    }
+
+    async fn parameter_count(
+        &self,
+        statement: &PreparedStatement,
+    ) -> std::result::Result<Option<usize>, SqlException> {
+        self.inner().parameter_count(statement).await
     }
 
     async fn set_auto_commit(&self, auto_commit: bool) -> std::result::Result<(), SqlException> {

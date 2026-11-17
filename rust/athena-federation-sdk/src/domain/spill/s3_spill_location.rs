@@ -4,7 +4,7 @@ const SEPARATOR: &str = "/";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct S3SpillLocation {
-    bucket: String,
+    bucket: Option<String>,
     key: String,
     directory: bool,
 }
@@ -16,14 +16,18 @@ impl S3SpillLocation {
         directory: bool,
     ) -> S3SpillLocation {
         S3SpillLocation {
-            bucket: bucket.into(),
+            bucket: Some(bucket.into()),
             key: key.into(),
             directory,
         }
     }
 
     pub fn bucket(&self) -> &str {
-        &self.bucket
+        or_null(self.bucket.as_deref())
+    }
+
+    pub fn bucket_value(&self) -> Option<&str> {
+        self.bucket.as_deref()
     }
 
     pub fn key(&self) -> &str {
@@ -44,7 +48,9 @@ impl fmt::Display for S3SpillLocation {
         write!(
             f,
             "S3SpillLocation{{bucket='{}', key='{}', directory={}}}",
-            self.bucket, self.key, self.directory
+            self.bucket(),
+            self.key,
+            self.directory
         )
     }
 }
@@ -127,6 +133,10 @@ impl S3SpillLocationBuilder {
             SEPARATOR,
             or_null(self.split_id.as_deref())
         );
-        S3SpillLocation::new(or_null(self.bucket.as_deref()), key, true)
+        S3SpillLocation {
+            bucket: self.bucket.clone(),
+            key,
+            directory: true,
+        }
     }
 }

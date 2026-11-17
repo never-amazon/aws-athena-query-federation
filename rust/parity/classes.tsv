@@ -294,3 +294,15 @@ com.amazonaws.athena.connectors.jdbc.splits.SplitInfo	athena-jdbc/src/splits/spl
 com.amazonaws.athena.connectors.jdbc.splits.SplitRange	athena-jdbc/src/splits/split_range.rs::SplitRange	ported	
 com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/splitter.rs::Splitter	ported	
 com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::SplitterFactory	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::PostGreSqlCompositeHandler	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/constants.rs::PostGreSqlConstants	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::PostGreSqlEnvironmentProperties	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMetadataHandler	athena-postgresql/src/metadata_handler.rs::PostGreSqlMetadataHandler	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxCompositeHandler	athena-postgresql/src/mux_composite_handler.rs::PostGreSqlMuxCompositeHandler	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-postgresql/src/mux_metadata_handler.rs::PostGreSqlMuxMetadataHandler	ported	constructors return the athena-jdbc MultiplexingJdbcMetadataHandler; the package-private factory is PostGreSqlMetadataHandlerFactory in the same file
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxRecordHandler	athena-postgresql/src/mux_record_handler.rs::PostGreSqlMuxRecordHandler	ported	constructors return the athena-jdbc MultiplexingJdbcRecordHandler; the package-private factory is PostGreSqlRecordHandlerFactory in the same file
+com.amazonaws.athena.connectors.postgresql.PostGreSqlQueryStringBuilder	athena-postgresql/src/query_string_builder.rs::PostGreSqlQueryStringBuilder	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlRecordHandler	athena-postgresql/src/record_handler.rs::PostGreSqlRecordHandler	ported	
+com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.postgresql.PostgresqlSqlDialect	athena-postgresql/src/sql_dialect.rs::PostgresqlSqlDialect	ported	
+com.amazonaws.athena.connectors.postgresql.resolver.PostGreSqlJDBCCaseResolver	athena-postgresql/src/resolver/postgresql_jdbc_case_resolver.rs::PostGreSqlJdbcCaseResolver	ported	

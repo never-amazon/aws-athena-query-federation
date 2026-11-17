@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use super::prepared_statement::PreparedStatement;
 use super::result_set::ResultSet;
+use super::result_set_metadata::ResultSetMetaData;
 use super::sql_exception::SqlException;
 
 #[async_trait]
@@ -60,6 +63,20 @@ pub trait JdbcConnection: Send + Sync {
         -> Result<ResultSet, SqlException>;
 
     async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlException>;
+
+    async fn statement_metadata(
+        &self,
+        statement: &PreparedStatement,
+    ) -> Result<Option<Arc<ResultSetMetaData>>, SqlException> {
+        Ok(statement.metadata().cloned())
+    }
+
+    async fn parameter_count(
+        &self,
+        statement: &PreparedStatement,
+    ) -> Result<Option<usize>, SqlException> {
+        Ok(statement.parameter_count())
+    }
 
     async fn execute_query_with_sql(&self, sql: &str) -> Result<ResultSet, SqlException> {
         let statement = self.prepare_statement(sql).await?;

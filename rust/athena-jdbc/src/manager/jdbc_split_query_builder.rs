@@ -318,15 +318,15 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
                 .query_plan()
                 .map(|plan| plan.substrait_plan().to_string())
                 .ok_or_else(|| {
-                    FederationError::NullPointer(
-                        "Cannot invoke \"com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan.getSubstraitPlan()\" because the return value of \"com.amazonaws.athena.connector.lambda.domain.predicate.Constraints.getQueryPlan()\" is null".to_string(),
+                    FederationError::null_pointer(
+                        "Cannot invoke \"com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan.getSubstraitPlan()\" because the return value of \"com.amazonaws.athena.connector.lambda.domain.predicate.Constraints.getQueryPlan()\" is null",
                     )
                 })?;
             tracing::debug!("CalciteSql substrait plan: {}", base64_encoded_plan);
             let sql = build_calcite_sql(&base64_encoded_plan, sql_dialect, &partition_clauses)?;
             let (sql, accumulator) = sql;
             let mut statement = jdbc_connection.prepare_statement(&sql).await?;
-            match statement.parameter_count() {
+            match jdbc_connection.parameter_count(&statement).await? {
                 Some(count) if count != accumulator.len() => {
                     tracing::warn!(
                         "Parameter count mismatch: SQL has {} parameters, accumulator has {}. Skipping parameter binding.",
