@@ -27,7 +27,7 @@ impl fmt::Debug for PreparedStatementBuilder<'_> {
 
 fn not_empty(parameters: Option<&Vec<String>>) -> Result<&Vec<String>> {
     match parameters {
-        None => Err(FederationError::NullPointer(PARAMETERS_MESSAGE.to_string())),
+        None => Err(FederationError::null_pointer(PARAMETERS_MESSAGE)),
         Some(p) if p.is_empty() => Err(FederationError::IllegalArgument(
             PARAMETERS_MESSAGE.to_string(),
         )),
@@ -68,7 +68,7 @@ impl<'a> PreparedStatementBuilder<'a> {
         let query = not_blank(self.query.as_deref(), QUERY_MESSAGE)?;
         let connection = self
             .connection
-            .ok_or_else(|| FederationError::NullPointer(CONNECTION_MESSAGE.to_string()))?;
+            .ok_or_else(|| FederationError::null_pointer(CONNECTION_MESSAGE))?;
         tracing::info!("Running query {}", query);
         tracing::info!("Parameters {:?}", parameters);
         let prepared = async {

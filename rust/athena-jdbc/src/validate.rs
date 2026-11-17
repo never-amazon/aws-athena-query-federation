@@ -9,7 +9,7 @@ use crate::sql::JdbcConnection;
 
 pub(crate) fn not_blank<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str> {
     match value {
-        None => Err(FederationError::NullPointer(message.to_string())),
+        None => Err(FederationError::null_pointer(message)),
         Some(v) if v.trim().is_empty() => {
             Err(FederationError::IllegalArgument(message.to_string()))
         }
@@ -61,7 +61,7 @@ pub(crate) fn runtime_with_cause(
 }
 
 pub(crate) fn null_pointer(message: impl Into<String>) -> FederationError {
-    FederationError::NullPointer(message.into())
+    FederationError::null_pointer(message)
 }
 
 pub(crate) async fn close_after<T>(

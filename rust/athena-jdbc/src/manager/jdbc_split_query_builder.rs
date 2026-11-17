@@ -318,8 +318,8 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
                 .query_plan()
                 .map(|plan| plan.substrait_plan().to_string())
                 .ok_or_else(|| {
-                    FederationError::NullPointer(
-                        "Cannot invoke \"com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan.getSubstraitPlan()\" because the return value of \"com.amazonaws.athena.connector.lambda.domain.predicate.Constraints.getQueryPlan()\" is null".to_string(),
+                    FederationError::null_pointer(
+                        "Cannot invoke \"com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan.getSubstraitPlan()\" because the return value of \"com.amazonaws.athena.connector.lambda.domain.predicate.Constraints.getQueryPlan()\" is null",
                     )
                 })?;
             tracing::debug!("CalciteSql substrait plan: {}", base64_encoded_plan);

@@ -530,8 +530,8 @@ impl AthenaClient for FakeAthena {
         Ok(Some(self.state.lock().unwrap().clone()))
     }
 
-    fn with_credentials(&self, _credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
-        None
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn AthenaClient> {
+        unreachable!("this test does not pass FAS credentials")
     }
 }
 
@@ -573,6 +573,10 @@ impl S3Client for FakeS3 {
 
     async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
         Ok(())
+    }
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn S3Client> {
+        Arc::new(self.clone())
     }
 }
 
