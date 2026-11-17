@@ -927,6 +927,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveDateTime};
 
     use arrow::datatypes::DataType;
+    use athena_federation_sdk::data::java_format::big_decimal_to_string;
     use athena_federation_sdk::data::Value;
     use athena_federation_sdk::domain::predicate::Bound;
     use athena_federation_sdk::domain::split::Split;
@@ -939,7 +940,10 @@ mod tests {
         handle_data_types_for_prepared_statement, range_to_predicate, JdbcSplitQueryBuilder,
         JdbcSplitQueryBuilderBase,
     };
-    use crate::sql::{PreparedStatement, SqlValue};
+    use crate::sql::{PreparedStatement, ResultSet, ResultSetMetaData, SqlValue};
+
+    const JAVA_PROBE: &str =
+        include_str!("../../tests/fixtures/split_query_builder_integration.tsv");
 
     struct TestBuilder {
         base: JdbcSplitQueryBuilderBase,
@@ -1280,5 +1284,84 @@ mod tests {
             Some(&SqlValue::Date(date("2025-01-10")))
         );
         assert_eq!(statement.parameter(3), Some(&SqlValue::Integer(12345)));
+    }
+
+    fn java_multiple_parameters_run() -> Vec<Vec<&'static str>> {
+        JAVA_PROBE
+            .lines()
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .skip_while(|f| f[..] != ["test", "testRealPreparedStatementWithMultipleParameters"])
+            .skip(1)
+            .take_while(|f| f[0] != "end")
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_real_prepared_statement_with_multiple_parameters() {
+        let sql = "SELECT * FROM test_schema.test_table WHERE int_col > ? AND decimal_col < ? AND bool_col = ?";
+        let mut stmt = PreparedStatement::new(sql);
+        let int_param = tv(
+            SqlTypeName::Integer,
+            SubstraitValue::Integer(500),
+            "int_col",
+        );
+        let decimal_param = tv(
+            SqlTypeName::Decimal,
+            SubstraitValue::Decimal("80000.00".parse().unwrap()),
+            "decimal_col",
+        );
+        let bool_param = tv(
+            SqlTypeName::Boolean,
+            SubstraitValue::Boolean(true),
+            "bool_col",
+        );
+        let accumulator = [int_param, decimal_param, bool_param];
+        handle_data_types_for_prepared_statement(&mut stmt, &accumulator).unwrap();
+
+        let java = java_multiple_parameters_run();
+        assert!(java.contains(&vec!["prepare", sql]), "{java:?}");
+        assert!(java.contains(&vec!["result", "passed"]), "{java:?}");
+        let java_binds: Vec<&[&str]> = java
+            .iter()
+            .filter(|f| f[0] == "bind")
+            .map(|f| &f[1..])
+            .collect();
+        assert_eq!(
+            java_binds,
+            [
+                &["setInt", "1", "java.lang.Integer", "500"][..],
+                &["setBigDecimal", "2", "java.math.BigDecimal", "80000.00"][..],
+                &["setBoolean", "3", "java.lang.Boolean", "true"][..],
+            ]
+        );
+        assert_eq!(
+            stmt.parameters(),
+            &[
+                SqlValue::Integer(500),
+                SqlValue::Decimal("80000.00".parse().unwrap()),
+                SqlValue::Boolean(true),
+            ]
+        );
+        let Some(SqlValue::Decimal(decimal)) = stmt.parameter(2) else {
+            panic!("expected a decimal parameter");
+        };
+        assert_eq!(big_decimal_to_string(decimal), "80000.00");
+
+        let h2_row: Vec<SqlValue> = java
+            .iter()
+            .filter(|f| f[0] == "get")
+            .map(|f| match f[1] {
+                "getInt" => SqlValue::Integer(f[3].parse().unwrap()),
+                "getBoolean" => SqlValue::Boolean(f[3].parse().unwrap()),
+                other => panic!("unexpected getter {other}"),
+            })
+            .collect();
+        let mut rs = ResultSet::from_rows(
+            ResultSetMetaData::of_labels(["int_col", "bool_col"]),
+            vec![h2_row],
+        );
+        assert!(rs.next().await.unwrap(), "Should find matching record");
+        assert_eq!(Some(1000), rs.get_int("int_col").unwrap());
+        assert_eq!(Some(true), rs.get_boolean("bool_col").unwrap());
     }
 }
