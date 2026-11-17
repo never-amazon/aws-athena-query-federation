@@ -34,6 +34,7 @@ pub const UTC_ZONE_ID: &str = "UTC";
 pub const MAP_DATA_VECTOR_NAME: &str = "entries";
 pub const MAP_KEY_NAME: &str = "key";
 pub const MAP_VALUE_NAME: &str = "value";
+const LIST_DATA_VECTOR_NAME: &str = "$data$";
 
 fn class_cast(value: &Value, target: &str) -> FederationError {
     FederationError::class_cast(value.java_class_name(), target)
@@ -570,7 +571,13 @@ impl BlockUtils {
             Value::List(items) => items,
             other => return Err(class_cast(other, "java.util.List")),
         };
-        let child_field = get_children(field).into_iter().next();
+        let child_field = get_children(field).into_iter().next().map(|child| {
+            if child.name() == LIST_DATA_VECTOR_NAME {
+                child
+            } else {
+                Arc::new(child.as_ref().clone().with_name(LIST_DATA_VECTOR_NAME))
+            }
+        });
         let start = vector.start_list(pos)?;
         let mut end = start;
         if let Some(child_field) = child_field {
