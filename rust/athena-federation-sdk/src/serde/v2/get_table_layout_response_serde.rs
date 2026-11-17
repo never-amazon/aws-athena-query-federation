@@ -13,11 +13,11 @@ pub fn do_typed_serialize(
     jgen: &mut JsonGenerator,
     version: i32,
 ) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(response.get_table_name(), jgen)?;
+    super::table_name_serde::serialize(response.table_name(), jgen)?;
     jgen.write_field_name(PARTITIONS_FIELD)?;
-    super::block_serde::serialize(Some(response.get_partitions()), jgen, version)
+    super::block_serde::serialize(Some(response.partitions()), jgen, version)
 }
 
 pub fn do_typed_deserialize(

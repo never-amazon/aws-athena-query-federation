@@ -15,9 +15,9 @@ pub fn serialize(range: &Range, jgen: &mut JsonGenerator, version: i32) -> Resul
 
 pub fn do_serialize(range: &Range, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
     jgen.write_field_name(LOW_FIELD)?;
-    super::marker_serde::serialize(range.get_low(), jgen, version)?;
+    super::marker_serde::serialize(range.low(), jgen, version)?;
     jgen.write_field_name(HIGH_FIELD)?;
-    super::marker_serde::serialize(range.get_high(), jgen, version)
+    super::marker_serde::serialize(range.high(), jgen, version)
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Option<Range>> {

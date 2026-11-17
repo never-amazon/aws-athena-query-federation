@@ -20,13 +20,13 @@ pub fn do_typed_serialize(
 ) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(request.get_table_name(), jgen)?;
+    super::table_name_serde::serialize(request.table_name(), jgen)?;
     jgen.write_field_name(PARTITIONS_FIELD)?;
-    super::block_serde::serialize(Some(request.get_partitions()), jgen, version)?;
-    write_string_array(jgen, PARTITION_COLS_FIELD, request.get_partition_cols())?;
+    super::block_serde::serialize(Some(request.partitions()), jgen, version)?;
+    write_string_array(jgen, PARTITION_COLS_FIELD, request.partition_cols())?;
     jgen.write_field_name(CONSTRAINTS_FIELD)?;
-    super::constraints_serde::serialize(Some(request.get_constraints()), jgen, version)?;
-    jgen.write_string_field(CONTINUATION_TOKEN_FIELD, request.get_continuation_token())
+    super::constraints_serde::serialize(Some(request.constraints()), jgen, version)?;
+    jgen.write_string_field(CONTINUATION_TOKEN_FIELD, request.continuation_token())
 }
 
 pub fn do_typed_deserialize(

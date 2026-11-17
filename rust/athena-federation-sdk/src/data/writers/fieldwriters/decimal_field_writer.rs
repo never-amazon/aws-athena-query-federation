@@ -56,8 +56,7 @@ impl FieldWriter for DecimalFieldWriter {
         self.extractor.extract(context, &mut self.holder)?;
         let h = &self.holder;
         if h.is_set > 0 {
-            let (_, scale) =
-                decimal_precision_scale(vector.get_field().data_type()).unwrap_or((38, 0));
+            let (_, scale) = decimal_precision_scale(vector.field().data_type()).unwrap_or((38, 0));
             let scaled = h
                 .value
                 .with_scale_round(i64::from(scale), RoundingMode::HalfUp);

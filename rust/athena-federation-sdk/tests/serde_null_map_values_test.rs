@@ -102,12 +102,12 @@ fn assert_get_table_request_round_trip(
         FederationRequest::GetTable(r) => r,
         other => panic!("expected GetTableRequest, got {other:?}"),
     };
-    let identity = request.get_identity().expect("identity");
-    assert_eq!(&null_tags(), identity.get_principal_tags());
-    assert_eq!(&null_config_options(), identity.get_config_options());
+    let identity = request.identity().expect("identity");
+    assert_eq!(&null_tags(), identity.principal_tags());
+    assert_eq!(&null_config_options(), identity.config_options());
     assert_eq!(
         expected_query_passthrough_arguments,
-        request.get_query_passthrough_arguments()
+        request.query_passthrough_arguments()
     );
 
     let rewritten = write_request(&mapper, request);
@@ -130,7 +130,7 @@ fn assert_read_records_request_round_trip(version: i32) {
     };
     assert_eq!(
         &null_query_passthrough_arguments(),
-        request.get_constraints().get_query_passthrough_arguments()
+        request.constraints().query_passthrough_arguments()
     );
 
     let rewritten = write_request(&mapper, request);
@@ -209,15 +209,15 @@ fn split_null_property_rejected_v6() {
 struct SystemQuerySignature;
 
 impl QueryPassthroughSignature for SystemQuerySignature {
-    fn get_function_schema(&self) -> String {
+    fn function_schema(&self) -> String {
         "system".to_string()
     }
 
-    fn get_function_name(&self) -> String {
+    fn function_name(&self) -> String {
         "query".to_string()
     }
 
-    fn get_function_arguments(&self) -> Vec<String> {
+    fn function_arguments(&self) -> Vec<String> {
         vec!["QUERY".to_string()]
     }
 }
@@ -303,8 +303,8 @@ fn split_null_property_kept_v1() {
         FederationRequest::ReadRecords(r) => r,
         other => panic!("expected ReadRecordsRequest, got {other:?}"),
     };
-    let split = request.get_split();
-    assert_eq!(Some(&None), split.get_properties().get("year"));
+    let split = request.split();
+    assert_eq!(Some(&None), split.properties().get("year"));
     assert_eq!(None, split.get_property("year"));
     assert!(
         split.to_string().ends_with("properties={year=null}}"),
@@ -392,7 +392,7 @@ fn assert_null_group_round_trip(version: i32) {
     };
     assert_eq!(
         &[Some("admins".to_string()), None, Some("users".to_string())],
-        request.get_identity().expect("identity").get_iam_groups()
+        request.identity().expect("identity").iam_groups()
     );
 
     let rewritten = write_request(&mapper, request);

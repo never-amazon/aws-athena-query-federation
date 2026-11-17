@@ -11,7 +11,7 @@ pub struct SimpleArrowValueProjector<'a> {
 
 impl<'a> SimpleArrowValueProjector<'a> {
     pub fn new(field_reader: FieldReader<'a>) -> Result<SimpleArrowValueProjector<'a>> {
-        let projection = create_value_projection(field_reader.get_minor_type())?;
+        let projection = create_value_projection(field_reader.minor_type())?;
         Ok(SimpleArrowValueProjector {
             field_reader,
             projection,

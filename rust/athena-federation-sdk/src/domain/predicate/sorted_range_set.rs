@@ -126,7 +126,7 @@ impl SortedRangeSet {
         &self.low_indexed_ranges
     }
 
-    pub fn get_range_count(&self) -> usize {
+    pub fn range_count(&self) -> usize {
         self.low_indexed_ranges.len()
     }
 
@@ -160,7 +160,7 @@ impl SortedRangeSet {
     fn floor_entry(&self, marker: &dyn ValueMarker) -> Result<Option<&Range>> {
         let mut found = None;
         for range in &self.low_indexed_ranges {
-            if range.get_low().compare_to(marker)? <= 0 {
+            if range.low().compare_to(marker)? <= 0 {
                 found = Some(range);
             } else {
                 break;
@@ -174,10 +174,10 @@ impl SortedRangeSet {
         if marker.is_null_value() {
             return Ok(self.null_allowed);
         }
-        if marker.get_bound() != Bound::Exactly {
+        if marker.bound() != Bound::Exactly {
             return Err(FederationError::invalid_input(format!(
                 "Expected Bound.EXACTLY but found {}",
-                marker.get_bound()
+                marker.bound()
             )));
         }
         match self.floor_entry(marker)? {
@@ -235,7 +235,7 @@ impl SortedRangeSet {
                 if range1.overlaps(range2)? {
                     builder.add(range1.intersect(range2)?)?;
                 }
-                if range1.get_high().compare_to(range2.get_high())? <= 0 {
+                if range1.high().compare_to(range2.high())? <= 0 {
                     match it1.next() {
                         Some(r) => range1 = r,
                         None => break,
@@ -289,22 +289,22 @@ impl SortedRangeSet {
             builder.add(Range::all(allocator, &self.arrow_type))?;
             return builder.build();
         };
-        if !first.get_low().is_lower_unbounded() {
+        if !first.low().is_lower_unbounded() {
             builder.add(Range::new(
                 Marker::lower_unbounded(allocator, &self.arrow_type),
-                first.get_low().lesser_adjacent()?,
+                first.low().lesser_adjacent()?,
             )?)?;
         }
         let mut previous = first;
         for current in iter {
-            let low = previous.get_high().greater_adjacent()?;
-            let high = current.get_low().lesser_adjacent()?;
+            let low = previous.high().greater_adjacent()?;
+            let high = current.low().lesser_adjacent()?;
             builder.add(Range::new(low, high)?)?;
             previous = current;
         }
-        if !previous.get_high().is_upper_unbounded() {
+        if !previous.high().is_upper_unbounded() {
             builder.add(Range::new(
-                previous.get_high().greater_adjacent()?,
+                previous.high().greater_adjacent()?,
                 Marker::upper_unbounded(allocator, &self.arrow_type),
             )?)?;
         }
@@ -355,15 +355,15 @@ impl SortedRangeSet {
 
     pub fn hash_code(&self) -> i32 {
         let map_hash = self.low_indexed_ranges.iter().fold(0i32, |acc, r| {
-            acc.wrapping_add(r.get_low().hash_code() ^ r.hash_code())
+            acc.wrapping_add(r.low().hash_code() ^ r.hash_code())
         });
         objects_hash(&[map_hash, if self.null_allowed { 1231 } else { 1237 }])
     }
 }
 
 impl Ranges for SortedRangeSet {
-    fn get_range_count(&self) -> usize {
-        SortedRangeSet::get_range_count(self)
+    fn range_count(&self) -> usize {
+        SortedRangeSet::range_count(self)
     }
 
     fn get_ordered_ranges(&self) -> Vec<Range> {
@@ -387,7 +387,7 @@ impl fmt::Display for SortedRangeSet {
         let entries: Vec<String> = self
             .low_indexed_ranges
             .iter()
-            .map(|r| format!("{}={}", r.get_low(), r))
+            .map(|r| format!("{}={}", r.low(), r))
             .collect();
         write!(
             f,
@@ -437,7 +437,7 @@ impl SortedRangeSetBuilder {
     pub fn build(&self) -> Result<SortedRangeSet> {
         let error: RefCell<Option<FederationError>> = RefCell::new(None);
         let mut ranges = self.ranges.clone();
-        ranges.sort_by(|a, b| match a.get_low().compare_to(b.get_low()) {
+        ranges.sort_by(|a, b| match a.low().compare_to(b.low()) {
             Ok(c) => c.cmp(&0),
             Err(e) => {
                 error.borrow_mut().get_or_insert(e);
@@ -453,7 +453,7 @@ impl SortedRangeSetBuilder {
             current = match current {
                 None => Some(next),
                 Some(cur) => {
-                    if cur.overlaps(&next)? || cur.get_high().is_adjacent(next.get_low())? {
+                    if cur.overlaps(&next)? || cur.high().is_adjacent(next.low())? {
                         Some(cur.span(&next)?)
                     } else {
                         result.push(cur);

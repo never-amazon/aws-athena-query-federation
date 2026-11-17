@@ -55,7 +55,7 @@ pub fn do_serialize(
 ) -> Result<()> {
     let flavor = ConstraintsSerDeVersion::for_ser_de_version(version);
     jgen.write_object_field_start(SUMMARY_FIELD)?;
-    for (column, value_set) in constraints.get_summary() {
+    for (column, value_set) in constraints.summary() {
         jgen.write_field_name(column)?;
         super::value_set_serde::serialize(Some(value_set), jgen, version)?;
     }
@@ -64,7 +64,7 @@ pub fn do_serialize(
         return Ok(());
     }
     jgen.write_array_field_start(EXPRESSION_FIELD)?;
-    for expression in constraints.get_expression() {
+    for expression in constraints.expression() {
         crate::serde::v4::federation_expression_serde_v4::serialize(
             Some(expression),
             jgen,
@@ -73,20 +73,20 @@ pub fn do_serialize(
     }
     jgen.write_end_array()?;
     jgen.write_array_field_start(ORDER_BY_CLAUSE)?;
-    for order_by_field in constraints.get_order_by_clause() {
+    for order_by_field in constraints.order_by_clause() {
         crate::serde::v4::order_by_field_serde_v4::serialize(Some(order_by_field), jgen)?;
     }
     jgen.write_end_array()?;
-    jgen.write_number_field_i64(LIMIT_FIELD, constraints.get_limit())?;
+    jgen.write_number_field_i64(LIMIT_FIELD, constraints.limit())?;
     if flavor >= ConstraintsSerDeVersion::V5 {
         write_string_map(
             jgen,
             QUERY_PASSTHROUGH_ARGUMENTS,
-            constraints.get_query_passthrough_arguments(),
+            constraints.query_passthrough_arguments(),
         )?;
     }
     if flavor >= ConstraintsSerDeVersion::V6 {
-        match constraints.get_query_plan() {
+        match constraints.query_plan() {
             Some(plan) => {
                 jgen.write_field_name(QUERY_PLAN)?;
                 crate::serde::v6::query_plan_serde::serialize(Some(plan), jgen)?;

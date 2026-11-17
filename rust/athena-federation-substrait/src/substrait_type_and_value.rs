@@ -203,11 +203,11 @@ impl SubstraitTypeAndValue {
         self.type_name
     }
 
-    pub fn get_value(&self) -> &SubstraitValue {
+    pub fn value(&self) -> &SubstraitValue {
         &self.value
     }
 
-    pub fn get_column_name(&self) -> &str {
+    pub fn column_name(&self) -> &str {
         &self.column_name
     }
 }

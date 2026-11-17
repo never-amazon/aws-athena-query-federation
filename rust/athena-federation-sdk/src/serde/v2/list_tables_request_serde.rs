@@ -9,9 +9,9 @@ const NEXT_TOKEN_FIELD: &str = "nextToken";
 
 pub fn do_typed_serialize(request: &ListTablesRequest, jgen: &mut JsonGenerator) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
-    jgen.write_string_field(SCHEMA_NAME_FIELD, request.get_schema_name())?;
-    jgen.write_string_field(NEXT_TOKEN_FIELD, request.get_next_token())?;
-    jgen.write_number_field_i32(PAGE_SIZE_FIELD, request.get_page_size())
+    jgen.write_string_field(SCHEMA_NAME_FIELD, request.schema_name())?;
+    jgen.write_string_field(NEXT_TOKEN_FIELD, request.next_token())?;
+    jgen.write_number_field_i32(PAGE_SIZE_FIELD, request.page_size())
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRequest> {

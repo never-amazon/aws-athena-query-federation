@@ -79,7 +79,7 @@ fn prune_project(
             used.dedup();
             if used.is_empty() {
                 *p_input
-            } else if used.len() < row_type.get_field_count() {
+            } else if used.len() < row_type.field_count() {
                 let map = |source: usize| used.iter().position(|u| *u == source).unwrap_or(source);
                 group_after = group_set.iter().map(|g| map(*g)).collect();
                 for set in group_sets.iter_mut() {
@@ -97,8 +97,8 @@ fn prune_project(
                 let mut new_exprs = Vec::new();
                 for &i in &used {
                     new_exprs.push(exprs[i].clone());
-                    let f = &row_type.get_field_list()[i];
-                    builder.add(f.get_name(), f.get_type().clone());
+                    let f = &row_type.field_list()[i];
+                    builder.add(f.name(), f.get_type().clone());
                 }
                 RelNode::Project {
                     input: p_input,
@@ -119,7 +119,7 @@ fn prune_project(
 }
 
 fn is_identity(nodes: &[RexNode], row_type: &RelDataType) -> bool {
-    let fields = row_type.get_field_list();
+    let fields = row_type.field_list();
     nodes.len() == fields.len()
         && nodes.iter().enumerate().all(|(i, n)| match n {
             RexNode::InputRef { index, ty } => *index == i && ty == fields[i].get_type(),
@@ -255,12 +255,12 @@ impl RelBuilder {
         })?;
         let mut fields: Vec<(String, RelDataType)> = first
             .row_type()
-            .get_field_list()
+            .field_list()
             .iter()
-            .map(|f| (f.get_name().to_string(), f.get_type().clone()))
+            .map(|f| (f.name().to_string(), f.get_type().clone()))
             .collect();
         for other in inputs.iter().skip(1) {
-            let other_fields = other.row_type().get_field_list();
+            let other_fields = other.row_type().field_list();
             if other_fields.len() != fields.len() {
                 return Err(SubstraitError::illegal_argument(
                     "set op inputs must have the same number of fields",
@@ -300,9 +300,9 @@ impl RelBuilder {
     fn infer_alias(input_row_type: &RelDataType, expr: &RexNode) -> Option<String> {
         match expr {
             RexNode::InputRef { index, .. } => input_row_type
-                .get_field_list()
+                .field_list()
                 .get(*index)
-                .map(|f| f.get_name().to_string()),
+                .map(|f| f.name().to_string()),
             RexNode::Call(c) if c.op.kind == super::operators::SqlKind::Cast => {
                 Self::infer_alias(input_row_type, &c.operands[0])
             }
@@ -335,9 +335,9 @@ impl RelBuilder {
                 if name.is_none() {
                     if let RexNode::InputRef { index, .. } = &nodes[i] {
                         *name = bottom_row_type
-                            .get_field_list()
+                            .field_list()
                             .get(*index)
-                            .map(|f| f.get_name().to_string());
+                            .map(|f| f.name().to_string());
                     }
                 }
             }
@@ -400,7 +400,7 @@ impl RelBuilder {
     fn fields(input: &RelNode) -> Vec<RexNode> {
         input
             .row_type()
-            .get_field_list()
+            .field_list()
             .iter()
             .enumerate()
             .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))

@@ -109,15 +109,15 @@ fn adjusted_row_type(row_type: &RelDataType, node: &SqlNode) -> RelDataType {
                 return row_type.clone();
             }
             let mut b = RelDataTypeBuilder::new();
-            for (item, field) in s.select_list.iter().zip(row_type.get_field_list().iter()) {
-                let name = item.alias().unwrap_or_else(|| field.get_name().to_string());
+            for (item, field) in s.select_list.iter().zip(row_type.field_list().iter()) {
+                let name = item.alias().unwrap_or_else(|| field.name().to_string());
                 b.add(name, field.get_type().clone());
             }
             b.build()
         }
         SqlNode::Call(c) if c.op.kind == SqlKind::As && c.operands.len() > 2 => {
             let mut b = RelDataTypeBuilder::new();
-            for (op, field) in c.operands[2..].iter().zip(row_type.get_field_list().iter()) {
+            for (op, field) in c.operands[2..].iter().zip(row_type.field_list().iter()) {
                 b.add(op.to_plain_string(), field.get_type().clone());
             }
             b.build()
@@ -137,12 +137,12 @@ fn is_star(
             _ => return false,
         }
     }
-    exprs.len() == input_row_type.get_field_count()
-        && input_row_type.get_field_names() == project_row_type.get_field_names()
+    exprs.len() == input_row_type.field_count()
+        && input_row_type.field_names() == project_row_type.field_names()
 }
 
 fn add_select(list: &mut Vec<SqlNode>, node: SqlNode, row_type: &RelDataType) {
-    let names = row_type.get_field_names();
+    let names = row_type.field_names();
     let name = names.get(list.len()).cloned().unwrap_or_default();
     let alias = node.alias();
     let node = match alias {
@@ -278,7 +278,7 @@ impl SqlResult {
         }
     }
 
-    fn as_from(&self) -> SqlNode {
+    fn to_from(&self) -> SqlNode {
         match &self.needed_alias {
             Some(alias) => {
                 let id = SqlNode::identifier(alias.clone());
@@ -298,30 +298,30 @@ impl SqlResult {
     }
 
     fn sub_select(&self, dialect: &SqlDialect) -> SqlSelect {
-        wrap_select(dialect, self.as_from())
+        wrap_select(dialect, self.to_from())
     }
 
-    fn as_select(&self, dialect: &SqlDialect) -> SqlSelect {
+    fn to_select(&self, dialect: &SqlDialect) -> SqlSelect {
         match &self.node {
             SqlNode::Select(s) => (**s).clone(),
             other => {
                 if dialect.has_implicit_table_alias() {
                     wrap_select(dialect, other.clone())
                 } else {
-                    wrap_select(dialect, self.as_from())
+                    wrap_select(dialect, self.to_from())
                 }
             }
         }
     }
 
-    pub fn as_statement(&self, dialect: &SqlDialect) -> SqlNode {
+    pub fn to_statement(&self, dialect: &SqlDialect) -> SqlNode {
         if matches!(
-            self.node.get_kind(),
+            self.node.kind(),
             SqlKind::Union | SqlKind::Intersect | SqlKind::Except
         ) {
             return self.node.clone();
         }
-        let node = SqlNode::Select(Box::new(self.as_select(dialect)));
+        let node = SqlNode::Select(Box::new(self.to_select(dialect)));
         if self.anon {
             strip_trivial_aliases(node)
         } else {
@@ -346,7 +346,7 @@ impl SqlResult {
         }
         if let RelNode::Project { exprs, input, .. } = rel {
             if clauses.contains(&Clause::OrderBy)
-                && dialect.get_conformance().is_sort_by_ordinal()
+                && dialect.conformance().is_sort_by_ordinal()
                 && has_sort_by_ordinal(node)
             {
                 return true;
@@ -442,7 +442,7 @@ fn requires_alias(dialect: &SqlDialect, node: &SqlNode) -> bool {
     if !dialect.requires_alias_for_from_items() {
         return false;
     }
-    match node.get_kind() {
+    match node.kind() {
         SqlKind::Identifier => !dialect.has_implicit_table_alias(),
         SqlKind::As | SqlKind::Join => false,
         _ => true,
@@ -545,9 +545,9 @@ impl Context {
             ContextKind::Alias { aliases, qualified } => {
                 let mut ord = ordinal;
                 for (alias, ty) in aliases {
-                    let fields = ty.get_field_list();
+                    let fields = ty.field_list();
                     if ord < fields.len() {
-                        let name = fields[ord].get_name().to_string();
+                        let name = fields[ord].name().to_string();
                         let names = if *qualified {
                             vec![alias.clone(), name]
                         } else {
@@ -582,7 +582,7 @@ impl Context {
 
     fn base_order_field(&self, ordinal: usize) -> Result<SqlNode> {
         let node = self.field(ordinal)?;
-        let by_ordinal = self.dialect.get_conformance().is_sort_by_ordinal();
+        let by_ordinal = self.dialect.conformance().is_sort_by_ordinal();
         match &node {
             SqlNode::Literal(l)
                 if by_ordinal
@@ -609,7 +609,7 @@ impl Context {
                         if i != ordinal {
                             if let Some(alias) = item.alias() {
                                 if name.eq_ignore_ascii_case(&alias)
-                                    && self.dialect.get_conformance().is_sort_by_alias()
+                                    && self.dialect.conformance().is_sort_by_alias()
                                 {
                                     return Ok(SqlNode::Literal(SqlLiteral::exact(
                                         &(ordinal + 1).to_string(),
@@ -723,7 +723,7 @@ impl Context {
             | SqlKind::LessThanOrEqual => {
                 let o0 = &call.operands[0];
                 let o1 = &call.operands[1];
-                let is_cast = |n: &RexNode| n.get_kind() == SqlKind::Cast;
+                let is_cast = |n: &RexNode| n.kind() == SqlKind::Cast;
                 let coercion = |n: &RexNode| -> bool {
                     match n {
                         RexNode::Call(c) => {
@@ -1062,7 +1062,7 @@ fn create_over_call(
 }
 
 pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
-    let tn = literal.ty.get_sql_type_name();
+    let tn = literal.ty.sql_type_name();
     let lit = match &literal.value {
         LiteralValue::Symbol(Symbol::TimeUnit(t)) => SqlLiteral::symbol(t.name()),
         LiteralValue::Symbol(Symbol::Trim(t)) => SqlLiteral::symbol(t.name()),
@@ -1095,10 +1095,10 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
             value: SqlLiteralValue::Date(d.clone()),
         },
         LiteralValue::Time(t) => SqlLiteral {
-            value: SqlLiteralValue::Time(t.clone(), literal.ty.get_precision()),
+            value: SqlLiteralValue::Time(t.clone(), literal.ty.precision()),
         },
         LiteralValue::Timestamp(t) => SqlLiteral {
-            value: SqlLiteralValue::Timestamp(t.clone(), literal.ty.get_precision()),
+            value: SqlLiteralValue::Timestamp(t.clone(), literal.ty.precision()),
         },
         LiteralValue::Binary(b) => SqlLiteral {
             value: SqlLiteralValue::Binary(b.clone()),
@@ -1279,7 +1279,7 @@ impl RelToSqlConverter {
         let (select, mut clause_list) = if need_new {
             (x.sub_select(&self.dialect), Vec::new())
         } else {
-            (x.as_select(&self.dialect), x.clauses.clone())
+            (x.to_select(&self.dialect), x.clauses.clone())
         };
         clause_list.extend(expected.iter().copied());
         let mut new_aliases: Option<Aliases> = None;
@@ -1298,8 +1298,8 @@ impl RelToSqlConverter {
                 _ => Context::alias_context(&self.dialect, x.aliases.clone(), qualified),
             }
         } else {
-            let alias_ref = expected.contains(&Clause::Having)
-                && self.dialect.get_conformance().is_having_alias();
+            let alias_ref =
+                expected.contains(&Clause::Having) && self.dialect.conformance().is_having_alias();
             Context {
                 kind: ContextKind::SelectList {
                     items: select.select_list.clone(),
@@ -1394,7 +1394,7 @@ impl RelToSqlConverter {
         row_type: &RelDataType,
         tuples: &[Vec<RexLiteral>],
     ) -> Result<SqlResult> {
-        let names = row_type.get_field_names();
+        let names = row_type.field_names();
         let mut rows = Vec::new();
         if tuples.is_empty() {
             rows.push(SqlNode::call(
@@ -1443,7 +1443,7 @@ impl RelToSqlConverter {
             RexNode::SubQuery(q) => {
                 if !context.subqueries.iter().any(|(k, _)| k == q.as_ref()) {
                     let result = self.visit_root(&q.rel)?;
-                    let node = result.as_statement(&self.dialect);
+                    let node = result.to_statement(&self.dialect);
                     context.subqueries.push(((**q).clone(), node));
                 }
                 for o in &q.operands {
@@ -1516,7 +1516,7 @@ impl RelToSqlConverter {
             };
             (op, Some(sql))
         };
-        let mut operands = vec![left_result.as_from(), right_result.as_from()];
+        let mut operands = vec![left_result.to_from(), right_result.to_from()];
         operands.extend(sql_condition);
         let join = SqlNode::call(op, operands);
         Ok(self.make_result(join, vec![Clause::From], None, None, aliases))
@@ -1541,7 +1541,7 @@ impl RelToSqlConverter {
         for input in inputs {
             let anon = self.is_anon();
             let result = self.visit_input(input, anon, false, Vec::new())?;
-            let select = SqlNode::Select(Box::new(result.as_select(&self.dialect)));
+            let select = SqlNode::Select(Box::new(result.to_select(&self.dialect)));
             node = Some(match node {
                 None => select,
                 Some(n) => SqlNode::call(op, vec![n, select]),
@@ -1584,7 +1584,7 @@ impl RelToSqlConverter {
         }
         let mut x = self.visit_input_clauses(input, vec![Clause::Where])?;
         if matches!(
-            condition.get_kind(),
+            condition.kind(),
             SqlKind::Not | SqlKind::Exists | SqlKind::In
         ) {
             x = x.reset_alias();
@@ -1617,7 +1617,7 @@ impl RelToSqlConverter {
                 let mut sql = builder.context.to_sql(e)?;
                 if sql.is_null_literal() {
                     let field_type = row_type
-                        .get_field_list()
+                        .field_list()
                         .get(select_list.len())
                         .map(|f| f.get_type().clone());
                     if let Some(ft) = field_type {
@@ -1685,11 +1685,11 @@ impl RelToSqlConverter {
     }
 
     fn rewrite_max_min(&self, node: SqlNode, call: &AggregateCall) -> SqlNode {
-        if call.ty.get_sql_type_name() != SqlTypeName::Boolean {
+        if call.ty.sql_type_name() != SqlTypeName::Boolean {
             return node;
         }
         let is_max = call.op.kind == SqlKind::Max;
-        let op: &'static SqlOperator = match self.dialect.get_database_product() {
+        let op: &'static SqlOperator = match self.dialect.database_product() {
             super::sql_dialect::DatabaseProduct::Postgresql => {
                 if is_max {
                     &operators::BOOL_OR
@@ -1725,7 +1725,7 @@ impl RelToSqlConverter {
         let mut builder = self.builder(&x, rel);
         if self.stack.len() != 1 && is_singleton_star(&builder.select.select_list) {
             let mut list = Vec::new();
-            for i in 0..rel.row_type().get_field_count() {
+            for i in 0..rel.row_type().field_count() {
                 let f = builder.context.field(i)?;
                 add_select(&mut list, f, rel.row_type());
             }

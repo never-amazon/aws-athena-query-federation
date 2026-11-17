@@ -65,7 +65,7 @@ impl ArrowRecordBatch {
         })
     }
 
-    pub fn get_length(&self) -> usize {
+    pub fn length(&self) -> usize {
         self.length
     }
 

@@ -152,18 +152,18 @@ pub fn derive_aggregate_row_type(
     calls: &[AggregateCall],
 ) -> RelDataType {
     let mut builder = RelDataTypeBuilder::new();
-    let fields = input_row_type.get_field_list();
+    let fields = input_row_type.field_list();
     let mut contained: Vec<String> = Vec::new();
     for &g in group_set {
         if let Some(f) = fields.get(g) {
-            contained.push(f.get_name().to_string());
+            contained.push(f.name().to_string());
             let in_all = group_sets.iter().all(|set| set.contains(&g));
             let ty = if in_all {
                 f.get_type().clone()
             } else {
                 f.get_type().with_nullability(true)
             };
-            builder.add(f.get_name(), ty);
+            builder.add(f.name(), ty);
         }
     }
     for (i, call) in calls.iter().enumerate() {
@@ -216,11 +216,11 @@ pub fn derive_join_row_type(
     let mut add = |f: &super::rel_data_type::RelDataTypeField,
                    nullable: bool,
                    builder: &mut RelDataTypeBuilder| {
-        let mut name = f.get_name().to_string();
+        let mut name = f.name().to_string();
         if names.contains(&name) {
             let mut j = 0;
             loop {
-                let candidate = format!("{}{j}", f.get_name());
+                let candidate = format!("{}{j}", f.name());
                 if !names.contains(&candidate) {
                     name = candidate;
                     break;
@@ -238,11 +238,11 @@ pub fn derive_join_row_type(
     };
     let left_nullable = matches!(join_type, JoinType::Right | JoinType::Full);
     let right_nullable = matches!(join_type, JoinType::Left | JoinType::Full);
-    for f in left.get_field_list() {
+    for f in left.field_list() {
         add(f, left_nullable, &mut builder);
     }
     if !matches!(join_type, JoinType::Semi | JoinType::Anti) {
-        for f in right.get_field_list() {
+        for f in right.field_list() {
             add(f, right_nullable, &mut builder);
         }
     }

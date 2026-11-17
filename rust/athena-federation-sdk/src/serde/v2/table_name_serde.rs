@@ -13,8 +13,8 @@ pub fn serialize(table_name: &TableName, jgen: &mut JsonGenerator) -> Result<()>
 }
 
 pub fn do_serialize(table_name: &TableName, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(SCHEMA_NAME_FIELD, Some(table_name.get_schema_name()))?;
-    jgen.write_string_field(TABLE_NAME_FIELD, Some(table_name.get_table_name()))
+    jgen.write_string_field(SCHEMA_NAME_FIELD, Some(table_name.schema_name()))?;
+    jgen.write_string_field(TABLE_NAME_FIELD, Some(table_name.table_name()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<TableName>> {

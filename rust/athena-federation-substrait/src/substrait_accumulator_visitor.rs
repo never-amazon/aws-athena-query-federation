@@ -425,10 +425,10 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
             .ok_or_else(|| {
                 SubstraitError::illegal_argument(format!(
                     "field {column_name} not found in schema with fields: [{}]",
-                    self.schema.get_field_names().join(", ")
+                    self.schema.field_names().join(", ")
                 ))
             })?;
-        let type_name: SqlTypeName = field.get_type().get_sql_type_name();
+        let type_name: SqlTypeName = field.get_type().sql_type_name();
         let value = literal_value(literal);
         self.accumulator
             .push(SubstraitTypeAndValue::new(type_name, value, column_name)?);
@@ -438,6 +438,6 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     fn is_boolean_column(&self, column_name: &str) -> bool {
         self.schema
             .get_field(column_name, true, true)
-            .is_some_and(|f| f.get_type().get_sql_type_name() == SqlTypeName::Boolean)
+            .is_some_and(|f| f.get_type().sql_type_name() == SqlTypeName::Boolean)
     }
 }

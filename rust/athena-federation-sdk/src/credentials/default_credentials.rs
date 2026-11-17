@@ -33,17 +33,17 @@ impl DefaultCredentials {
         })
     }
 
-    pub fn get_user(&self) -> &str {
+    pub fn user(&self) -> &str {
         &self.user
     }
 
-    pub fn get_password(&self) -> &str {
+    pub fn password(&self) -> &str {
         &self.password
     }
 }
 
 impl Credentials for DefaultCredentials {
-    fn get_properties(&self) -> HashMap<String, String> {
+    fn properties(&self) -> HashMap<String, String> {
         HashMap::from([
             (CredentialsConstants::USER.to_string(), self.user.clone()),
             (

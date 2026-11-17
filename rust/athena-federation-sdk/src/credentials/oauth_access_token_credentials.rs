@@ -22,13 +22,13 @@ impl OAuthAccessTokenCredentials {
         })
     }
 
-    pub fn get_access_token(&self) -> &str {
+    pub fn access_token(&self) -> &str {
         &self.access_token
     }
 }
 
 impl Credentials for OAuthAccessTokenCredentials {
-    fn get_properties(&self) -> HashMap<String, String> {
+    fn properties(&self) -> HashMap<String, String> {
         HashMap::from([(
             CredentialsConstants::ACCESS_TOKEN_PROPERTY.to_string(),
             self.access_token.clone(),

@@ -162,7 +162,7 @@ impl ZoneId {
         }
     }
 
-    pub fn get_id(&self) -> &str {
+    pub fn id(&self) -> &str {
         &self.id
     }
 
@@ -258,11 +258,11 @@ impl ZonedDateTime {
         Ok(ZonedDateTime { instant, zone })
     }
 
-    pub fn get_zone(&self) -> &ZoneId {
+    pub fn zone(&self) -> &ZoneId {
         &self.zone
     }
 
-    pub fn get_offset(&self) -> FixedOffset {
+    pub fn offset(&self) -> FixedOffset {
         self.zone.offset_at(&self.instant)
     }
 
@@ -274,16 +274,16 @@ impl ZonedDateTime {
         self.instant.timestamp_millis()
     }
 
-    pub fn get_epoch_second(&self) -> i64 {
+    pub fn epoch_second(&self) -> i64 {
         self.instant.timestamp()
     }
 
-    pub fn get_nano(&self) -> u32 {
+    pub fn nano(&self) -> u32 {
         self.instant.timestamp_subsec_nanos()
     }
 
     pub fn to_local_date_time(&self) -> NaiveDateTime {
-        self.instant.naive_utc() + Duration::seconds(i64::from(self.get_offset().local_minus_utc()))
+        self.instant.naive_utc() + Duration::seconds(i64::from(self.offset().local_minus_utc()))
     }
 
     pub fn to_local_date(&self) -> NaiveDate {
@@ -302,7 +302,7 @@ impl ZonedDateTime {
         self.instant
             .timestamp()
             .cmp(&other.instant.timestamp())
-            .then(self.get_nano().cmp(&other.get_nano()))
+            .then(self.nano().cmp(&other.nano()))
             .then_with(|| self.to_local_date_time().cmp(&other.to_local_date_time()))
             .then_with(|| self.zone.id.cmp(&other.zone.id))
     }
@@ -337,7 +337,7 @@ impl Ord for ZonedDateTime {
 
 impl fmt::Display for ZonedDateTime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let offset = self.get_offset();
+        let offset = self.offset();
         let off = offset_id(&offset);
         write!(
             f,

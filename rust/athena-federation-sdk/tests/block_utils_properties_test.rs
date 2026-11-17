@@ -81,8 +81,8 @@ fn get_value(
     match variant {
         Variant::DefaultResolver => Ok(custom.obj_list.get(pos).cloned().unwrap_or(Value::Null)),
         Variant::ArrowToArrow => {
-            if vector.get_minor_type() == MinorType::MAP {
-                resolver.get_field_value(vector.get_field(), &vector.get_object(pos))
+            if vector.minor_type() == MinorType::MAP {
+                resolver.get_field_value(vector.field(), &vector.get_object(pos))
             } else {
                 Ok(vector.get_object(pos))
             }
@@ -91,9 +91,9 @@ fn get_value(
 }
 
 fn vectors_equal(a: &FieldVector, b: &FieldVector) -> bool {
-    a.get_field() == b.get_field()
-        && a.get_value_count() == b.get_value_count()
-        && (0..a.get_value_count()).all(|i| a.get_object(i) == b.get_object(i))
+    a.field() == b.field()
+        && a.value_count() == b.value_count()
+        && (0..a.value_count()).all(|i| a.get_object(i) == b.get_object(i))
 }
 
 fn is_complex(field: &Field) -> bool {
@@ -115,7 +115,7 @@ fn set_complex_values_sets_all_fields_correctly_given_any_input(
     generator
         .generate_values_root(&mut vector, &mut custom)
         .expect("generate values");
-    let value_count = vector.get_value_count();
+    let value_count = vector.value_count();
     let mut output = FieldVector::new(field.clone());
     output.set_value_count(1);
     let resolver: Box<dyn FieldResolver> = match variant {

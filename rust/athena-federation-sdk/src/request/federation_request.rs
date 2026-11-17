@@ -36,17 +36,17 @@ impl FederationRequest {
         }
     }
 
-    pub fn get_identity(&self) -> Option<&FederatedIdentity> {
+    pub fn identity(&self) -> Option<&FederatedIdentity> {
         match self {
-            FederationRequest::Ping(r) => r.get_identity(),
-            FederationRequest::ListSchemas(r) => r.get_identity(),
-            FederationRequest::ListTables(r) => r.get_identity(),
-            FederationRequest::GetTable(r) => r.get_identity(),
-            FederationRequest::GetTableLayout(r) => r.get_identity(),
-            FederationRequest::GetSplits(r) => r.get_identity(),
-            FederationRequest::ReadRecords(r) => r.get_identity(),
-            FederationRequest::UserDefinedFunction(r) => r.get_identity(),
-            FederationRequest::GetDataSourceCapabilities(r) => r.get_identity(),
+            FederationRequest::Ping(r) => r.identity(),
+            FederationRequest::ListSchemas(r) => r.identity(),
+            FederationRequest::ListTables(r) => r.identity(),
+            FederationRequest::GetTable(r) => r.identity(),
+            FederationRequest::GetTableLayout(r) => r.identity(),
+            FederationRequest::GetSplits(r) => r.identity(),
+            FederationRequest::ReadRecords(r) => r.identity(),
+            FederationRequest::UserDefinedFunction(r) => r.identity(),
+            FederationRequest::GetDataSourceCapabilities(r) => r.identity(),
         }
     }
 

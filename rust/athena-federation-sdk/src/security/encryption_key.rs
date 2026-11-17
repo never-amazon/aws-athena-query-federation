@@ -11,11 +11,11 @@ impl EncryptionKey {
         EncryptionKey { key, nonce }
     }
 
-    pub fn get_key(&self) -> &[u8] {
+    pub fn key(&self) -> &[u8] {
         &self.key
     }
 
-    pub fn get_nonce(&self) -> &[u8] {
+    pub fn nonce(&self) -> &[u8] {
         &self.nonce
     }
 

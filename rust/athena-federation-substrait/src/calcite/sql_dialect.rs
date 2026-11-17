@@ -88,7 +88,7 @@ impl SqlDialect {
         d
     }
 
-    pub fn get_database_product(&self) -> DatabaseProduct {
+    pub fn database_product(&self) -> DatabaseProduct {
         self.product
     }
 
@@ -96,14 +96,14 @@ impl SqlDialect {
         self.upper_case_identifiers
     }
 
-    pub fn get_type_system(&self) -> RelDataTypeSystem {
+    pub fn type_system(&self) -> RelDataTypeSystem {
         match self.product {
             DatabaseProduct::Postgresql => RelDataTypeSystem::Postgresql,
             _ => RelDataTypeSystem::Default,
         }
     }
 
-    pub fn get_conformance(&self) -> Conformance {
+    pub fn conformance(&self) -> Conformance {
         match self.product {
             DatabaseProduct::Unknown => Conformance::Default,
             _ => Conformance::Pragmatic2003,
@@ -171,10 +171,10 @@ impl SqlDialect {
         operand_type: &RelDataType,
         operand_is_literal: bool,
     ) -> bool {
-        let base = operand_type.get_sql_type_name().is_character();
+        let base = operand_type.sql_type_name().is_character();
         match self.product {
             DatabaseProduct::Postgresql => {
-                if base && cast_type.get_sql_type_name().is_numeric() {
+                if base && cast_type.sql_type_name().is_numeric() {
                     return false;
                 }
                 base && operand_is_literal
@@ -184,7 +184,7 @@ impl SqlDialect {
     }
 
     pub fn get_cast_spec(&self, ty: &RelDataType) -> Option<SqlDataTypeSpec> {
-        let tn = ty.get_sql_type_name();
+        let tn = ty.sql_type_name();
         if self.product == DatabaseProduct::Postgresql {
             let alien = match tn {
                 SqlTypeName::Tinyint => Some("smallint"),
@@ -205,9 +205,9 @@ impl SqlDialect {
         if tn == SqlTypeName::Null {
             return None;
         }
-        let system = self.get_type_system();
-        let mut precision = ty.get_precision();
-        let mut scale = ty.get_scale();
+        let system = self.type_system();
+        let mut precision = ty.precision();
+        let mut scale = ty.scale();
         match tn {
             SqlTypeName::Decimal => {
                 let max_scale = system.max_scale(tn);

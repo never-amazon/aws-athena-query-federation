@@ -14,7 +14,7 @@ impl HintsSubtype {
         }
     }
 
-    pub fn get_sub_type(&self) -> &'static str {
+    pub fn sub_type(&self) -> &'static str {
         match self {
             HintsSubtype::NonDefaultCollate => "non_default_collate",
         }

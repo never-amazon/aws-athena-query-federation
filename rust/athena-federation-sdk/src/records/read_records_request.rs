@@ -47,61 +47,61 @@ impl ReadRecordsRequest {
         }
     }
 
-    pub fn get_identity(&self) -> Option<&FederatedIdentity> {
+    pub fn identity(&self) -> Option<&FederatedIdentity> {
         self.identity.as_ref()
     }
 
-    pub fn get_request_type(&self) -> RecordRequestType {
+    pub fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_query_id(&self) -> &str {
+    pub fn query_id(&self) -> &str {
         &self.query_id
     }
 
-    pub fn get_table_name(&self) -> &TableName {
+    pub fn table_name(&self) -> &TableName {
         &self.table_name
     }
 
-    pub fn get_schema(&self) -> &Schema {
+    pub fn schema(&self) -> &Schema {
         &self.schema
     }
 
-    pub fn get_split(&self) -> &Split {
+    pub fn split(&self) -> &Split {
         &self.split
     }
 
-    pub fn get_max_inline_block_size(&self) -> i64 {
+    pub fn max_inline_block_size(&self) -> i64 {
         self.max_inline_block_size
     }
 
-    pub fn get_max_block_size(&self) -> i64 {
+    pub fn max_block_size(&self) -> i64 {
         self.max_block_size
     }
 
-    pub fn get_constraints(&self) -> &Constraints {
+    pub fn constraints(&self) -> &Constraints {
         &self.constraints
     }
 }
 
 impl RecordRequest for ReadRecordsRequest {
-    fn get_identity(&self) -> Option<&FederatedIdentity> {
+    fn identity(&self) -> Option<&FederatedIdentity> {
         self.identity.as_ref()
     }
 
-    fn get_request_type(&self) -> RecordRequestType {
+    fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    fn get_catalog_name(&self) -> &str {
+    fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    fn get_query_id(&self) -> &str {
+    fn query_id(&self) -> &str {
         &self.query_id
     }
 }
@@ -128,7 +128,7 @@ impl fmt::Display for ReadRecordsRequest {
             self.table_name,
             self.schema,
             self.split,
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name,
             self.max_block_size,
             self.max_inline_block_size,

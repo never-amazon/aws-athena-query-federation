@@ -14,11 +14,11 @@ impl OptimizationSubType {
         }
     }
 
-    pub fn get_sub_type(&self) -> &str {
+    pub fn sub_type(&self) -> &str {
         &self.sub_type
     }
 
-    pub fn get_properties(&self) -> &[String] {
+    pub fn properties(&self) -> &[String] {
         &self.properties
     }
 }

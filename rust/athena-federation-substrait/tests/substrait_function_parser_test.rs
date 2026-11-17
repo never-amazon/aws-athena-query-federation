@@ -137,7 +137,7 @@ fn string_value(v: &str) -> PredicateValue {
 }
 
 fn list_len(p: &ColumnPredicate) -> usize {
-    match p.get_value() {
+    match p.value() {
         Some(PredicateValue::Predicates(v)) => v.len(),
         Some(PredicateValue::Values(v)) => v.len(),
         other => panic!("expected a list value, got {other:?}"),
@@ -161,9 +161,9 @@ fn test_get_column_predicates_map_with_single_predicate() {
     assert!(result.contains_key(&Some("id".to_string())));
     assert_eq!(1, result[&Some("id".to_string())].len());
     let predicate = &result[&Some("id".to_string())][0];
-    assert_eq!(Some("id"), predicate.get_column());
-    assert_eq!(SubstraitOperator::Equal, predicate.get_operator());
-    assert_eq!(Some(&int_value(123)), predicate.get_value());
+    assert_eq!(Some("id"), predicate.column());
+    assert_eq!(SubstraitOperator::Equal, predicate.operator());
+    assert_eq!(Some(&int_value(123)), predicate.value());
 }
 
 #[test]
@@ -188,11 +188,11 @@ fn test_get_column_predicates_map_with_multiple_predicates() {
     assert!(result.contains_key(&Some("id".to_string())));
     assert!(result.contains_key(&Some("age".to_string())));
     let id_predicate = &result[&Some("id".to_string())][0];
-    assert_eq!(SubstraitOperator::Equal, id_predicate.get_operator());
-    assert_eq!(Some(&int_value(123)), id_predicate.get_value());
+    assert_eq!(SubstraitOperator::Equal, id_predicate.operator());
+    assert_eq!(Some(&int_value(123)), id_predicate.value());
     let age_predicate = &result[&Some("age".to_string())][0];
-    assert_eq!(SubstraitOperator::GreaterThan, age_predicate.get_operator());
-    assert_eq!(Some(&int_value(18)), age_predicate.get_value());
+    assert_eq!(SubstraitOperator::GreaterThan, age_predicate.operator());
+    assert_eq!(Some(&int_value(18)), age_predicate.value());
 }
 
 #[test]
@@ -203,9 +203,9 @@ fn test_parse_column_predicates_with_unary_operator() {
         SubstraitFunctionParser::parse_column_predicates(&extensions, &expression, &column_names())
             .unwrap();
     assert_eq!(1, result.len());
-    assert_eq!(Some("name"), result[0].get_column());
-    assert_eq!(SubstraitOperator::IsNull, result[0].get_operator());
-    assert!(result[0].get_value().is_none());
+    assert_eq!(Some("name"), result[0].column());
+    assert_eq!(SubstraitOperator::IsNull, result[0].operator());
+    assert!(result[0].value().is_none());
 }
 
 #[test]
@@ -216,10 +216,10 @@ fn test_parse_column_predicates_with_string_literal() {
         SubstraitFunctionParser::parse_column_predicates(&extensions, &expression, &column_names())
             .unwrap();
     assert_eq!(1, result.len());
-    assert_eq!(Some("name"), result[0].get_column());
-    assert_eq!(SubstraitOperator::Equal, result[0].get_operator());
-    assert_eq!(Some(&string_value("John")), result[0].get_value());
-    assert_eq!(Some(&DataType::Utf8), result[0].get_arrow_type());
+    assert_eq!(Some("name"), result[0].column());
+    assert_eq!(SubstraitOperator::Equal, result[0].operator());
+    assert_eq!(Some(&string_value("John")), result[0].value());
+    assert_eq!(Some(&DataType::Utf8), result[0].arrow_type());
 }
 
 #[test]
@@ -230,13 +230,13 @@ fn test_parse_column_predicates_with_boolean_literal() {
         SubstraitFunctionParser::parse_column_predicates(&extensions, &expression, &column_names())
             .unwrap();
     assert_eq!(1, result.len());
-    assert_eq!(Some("active"), result[0].get_column());
-    assert_eq!(SubstraitOperator::Equal, result[0].get_operator());
+    assert_eq!(Some("active"), result[0].column());
+    assert_eq!(SubstraitOperator::Equal, result[0].operator());
     assert_eq!(
         Some(&PredicateValue::Literal(LiteralValue::Boolean(true))),
-        result[0].get_value()
+        result[0].value()
     );
-    assert_eq!(Some(&DataType::Boolean), result[0].get_arrow_type());
+    assert_eq!(Some(&DataType::Boolean), result[0].arrow_type());
 }
 
 #[test]
@@ -288,13 +288,9 @@ fn test_not_operator_handling() {
         )
         .unwrap();
         assert_eq!(1, result.len(), "{inner_operator}");
-        assert_eq!(Some("id"), result[0].get_column());
-        assert_eq!(
-            expected_operator,
-            result[0].get_operator(),
-            "{inner_operator}"
-        );
-        assert_eq!(Some(&int_value(expected_value)), result[0].get_value());
+        assert_eq!(Some("id"), result[0].column());
+        assert_eq!(expected_operator, result[0].operator(), "{inner_operator}");
+        assert_eq!(Some(&int_value(expected_value)), result[0].value());
     }
 }
 
@@ -313,7 +309,7 @@ fn test_not_null_operators() {
     )
     .unwrap();
     assert_eq!(1, result1.len());
-    assert_eq!(SubstraitOperator::IsNotNull, result1[0].get_operator());
+    assert_eq!(SubstraitOperator::IsNotNull, result1[0].operator());
     let not_is_not_null = create_not_expression(1, create_unary_expression(3, 0));
     let result2 = SubstraitFunctionParser::parse_column_predicates(
         &extensions,
@@ -322,7 +318,7 @@ fn test_not_null_operators() {
     )
     .unwrap();
     assert_eq!(1, result2.len());
-    assert_eq!(SubstraitOperator::IsNull, result2[0].get_operator());
+    assert_eq!(SubstraitOperator::IsNull, result2[0].operator());
 }
 
 #[test]
@@ -342,10 +338,10 @@ fn test_not_and_operator_nand() {
         SubstraitFunctionParser::parse_column_predicates(&extensions, &not_and, &column_names())
             .unwrap();
     assert_eq!(1, result.len());
-    assert!(result[0].get_column().is_none());
-    assert_eq!(SubstraitOperator::Nand, result[0].get_operator());
+    assert!(result[0].column().is_none());
+    assert_eq!(SubstraitOperator::Nand, result[0].operator());
     assert!(matches!(
-        result[0].get_value(),
+        result[0].value(),
         Some(PredicateValue::Predicates(_))
     ));
     assert_eq!(2, list_len(&result[0]));
@@ -368,10 +364,10 @@ fn test_not_or_operator_nor() {
         SubstraitFunctionParser::parse_column_predicates(&extensions, &not_or, &column_names())
             .unwrap();
     assert_eq!(1, result.len());
-    assert!(result[0].get_column().is_none());
-    assert_eq!(SubstraitOperator::Nor, result[0].get_operator());
+    assert!(result[0].column().is_none());
+    assert_eq!(SubstraitOperator::Nor, result[0].operator());
     assert!(matches!(
-        result[0].get_value(),
+        result[0].value(),
         Some(PredicateValue::Predicates(_))
     ));
     assert_eq!(2, list_len(&result[0]));
@@ -396,12 +392,12 @@ fn test_not_in_pattern() {
             .unwrap();
     assert_eq!(1, result.len());
     let predicate = &result[0];
-    if predicate.get_operator() == SubstraitOperator::NotIn {
-        assert_eq!(Some("id"), predicate.get_column());
+    if predicate.operator() == SubstraitOperator::NotIn {
+        assert_eq!(Some("id"), predicate.column());
         assert_eq!(3, list_len(predicate));
     } else {
-        assert!(predicate.get_column().is_none());
-        assert_eq!(SubstraitOperator::Nor, predicate.get_operator());
+        assert!(predicate.column().is_none());
+        assert_eq!(SubstraitOperator::Nor, predicate.operator());
     }
 }
 
@@ -417,10 +413,10 @@ fn test_parse_logical_expression_with_single_predicate() {
     .unwrap()
     .unwrap();
     assert!(result.is_leaf());
-    assert_eq!(SubstraitOperator::Equal, result.get_operator());
-    let leaf = result.get_leaf_predicate().unwrap();
-    assert_eq!(Some("id"), leaf.get_column());
-    assert_eq!(Some(&int_value(123)), leaf.get_value());
+    assert_eq!(SubstraitOperator::Equal, result.operator());
+    let leaf = result.leaf_predicate().unwrap();
+    assert_eq!(Some("id"), leaf.column());
+    assert_eq!(Some(&int_value(123)), leaf.value());
 }
 
 #[test]
@@ -442,27 +438,24 @@ fn test_parse_logical_expression_with_and_operator() {
     .unwrap()
     .unwrap();
     assert!(!result.is_leaf());
-    assert_eq!(SubstraitOperator::And, result.get_operator());
-    let children = result.get_children().unwrap();
+    assert_eq!(SubstraitOperator::And, result.operator());
+    let children = result.children().unwrap();
     assert_eq!(2, children.len());
     let left = &children[0];
     assert!(left.is_leaf());
-    assert_eq!(SubstraitOperator::Equal, left.get_operator());
-    assert_eq!(Some("id"), left.get_leaf_predicate().unwrap().get_column());
+    assert_eq!(SubstraitOperator::Equal, left.operator());
+    assert_eq!(Some("id"), left.leaf_predicate().unwrap().column());
     assert_eq!(
         Some(&int_value(123)),
-        left.get_leaf_predicate().unwrap().get_value()
+        left.leaf_predicate().unwrap().value()
     );
     let right = &children[1];
     assert!(right.is_leaf());
-    assert_eq!(SubstraitOperator::Equal, right.get_operator());
-    assert_eq!(
-        Some("name"),
-        right.get_leaf_predicate().unwrap().get_column()
-    );
+    assert_eq!(SubstraitOperator::Equal, right.operator());
+    assert_eq!(Some("name"), right.leaf_predicate().unwrap().column());
     assert_eq!(
         Some(&string_value("test")),
-        right.get_leaf_predicate().unwrap().get_value()
+        right.leaf_predicate().unwrap().value()
     );
 }
 
@@ -485,8 +478,8 @@ fn test_parse_logical_expression_with_or_operator() {
     .unwrap()
     .unwrap();
     assert!(!result.is_leaf());
-    assert_eq!(SubstraitOperator::Or, result.get_operator());
-    let children = result.get_children().unwrap();
+    assert_eq!(SubstraitOperator::Or, result.operator());
+    let children = result.children().unwrap();
     assert_eq!(2, children.len());
     assert!(result.has_complex_logic());
     assert!(children[0].is_leaf());
@@ -505,11 +498,8 @@ fn test_parse_logical_expression_with_unary_predicate() {
     .unwrap()
     .unwrap();
     assert!(result.is_leaf());
-    assert_eq!(SubstraitOperator::IsNull, result.get_operator());
-    assert_eq!(
-        Some("id"),
-        result.get_leaf_predicate().unwrap().get_column()
-    );
+    assert_eq!(SubstraitOperator::IsNull, result.operator());
+    assert_eq!(Some("id"), result.leaf_predicate().unwrap().column());
 }
 
 #[test]
@@ -563,13 +553,10 @@ fn test_parse_logical_expression_with_not_operator() {
     .unwrap()
     .unwrap();
     assert!(result.is_leaf());
-    assert_eq!(SubstraitOperator::NotEqual, result.get_operator());
-    assert_eq!(
-        Some("id"),
-        result.get_leaf_predicate().unwrap().get_column()
-    );
+    assert_eq!(SubstraitOperator::NotEqual, result.operator());
+    assert_eq!(Some("id"), result.leaf_predicate().unwrap().column());
     assert_eq!(
         Some(&int_value(123)),
-        result.get_leaf_predicate().unwrap().get_value()
+        result.leaf_predicate().unwrap().value()
     );
 }

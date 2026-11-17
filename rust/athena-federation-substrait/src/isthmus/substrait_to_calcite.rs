@@ -50,14 +50,14 @@ fn expression_row_type(node: &RelNode) -> RelDataType {
             row_type,
             ..
         } if group_sets.len() > 1 => {
-            let input_fields = input.row_type().get_field_list();
+            let input_fields = input.row_type().field_list();
             let mut b = RelDataTypeBuilder::new();
-            for (i, f) in row_type.get_field_list().iter().enumerate() {
+            for (i, f) in row_type.field_list().iter().enumerate() {
                 let ty = match group_set.get(i).and_then(|g| input_fields.get(*g)) {
                     Some(source) => source.get_type().clone(),
                     None => f.get_type().clone(),
                 };
-                b.add(f.get_name(), ty);
+                b.add(f.name(), ty);
             }
             b.build()
         }
@@ -108,7 +108,7 @@ fn input_of(input: Option<&Rel>) -> &Rel {
 
 impl SubstraitToCalcite {
     pub(crate) fn new(plan: &Plan, dialect: &SqlDialect) -> SubstraitToCalcite {
-        let system = dialect.get_type_system();
+        let system = dialect.type_system();
         let rex_builder = RexBuilder::new(system);
         let mut functions = HashMap::new();
         for ext in &plan.extensions {
@@ -157,7 +157,7 @@ impl SubstraitToCalcite {
                 ))
             })?;
         let frame = &mut frames[position];
-        let fields = frame.row_type.get_field_list();
+        let fields = frame.row_type.field_list();
         let ty = fields
             .get(index)
             .map(|f| f.get_type().clone())
@@ -269,7 +269,7 @@ impl SubstraitToCalcite {
         let Some(indices) = remap else {
             return Ok(node);
         };
-        let fields = node.row_type().get_field_list().to_vec();
+        let fields = node.row_type().field_list().to_vec();
         let mut exprs = Vec::with_capacity(indices.len());
         for i in indices {
             let index = usize::try_from(i).map_err(|_| {
@@ -381,8 +381,8 @@ impl SubstraitToCalcite {
             }
         };
         let mut input_type = RelDataTypeBuilder::new();
-        input_type.add_all(expression_row_type(&left).get_field_list());
-        input_type.add_all(expression_row_type(&right).get_field_list());
+        input_type.add_all(expression_row_type(&left).field_list());
+        input_type.add_all(expression_row_type(&right).field_list());
         let input_type = crate::calcite::rel::derive_join_row_type(
             &input_type.build(),
             &RelDataTypeBuilder::new().build(),
@@ -430,7 +430,7 @@ impl SubstraitToCalcite {
         let row_type = expression_row_type(&child);
         let mut exprs: Vec<RexNode> = child
             .row_type()
-            .get_field_list()
+            .field_list()
             .iter()
             .enumerate()
             .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))
@@ -632,7 +632,7 @@ impl SubstraitToCalcite {
     ) -> Result<(RelNode, Vec<Vec<Expression>>)> {
         let child_type = expression_row_type(&child);
         let mut new_expressions: Vec<RexNode> = Vec::new();
-        let mut offset = child_type.get_field_count();
+        let mut offset = child_type.field_count();
         let ex = self.expressions();
         let mut project_out =
             |e: &Expression, new_expressions: &mut Vec<RexNode>| -> Result<Expression> {
@@ -684,7 +684,7 @@ impl SubstraitToCalcite {
             new_groupings.push(list);
         }
         let mut exprs: Vec<RexNode> = child_type
-            .get_field_list()
+            .field_list()
             .iter()
             .enumerate()
             .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))

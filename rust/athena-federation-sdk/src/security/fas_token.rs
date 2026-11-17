@@ -23,15 +23,15 @@ impl FasToken {
         }
     }
 
-    pub fn get_access_token(&self) -> &str {
+    pub fn access_token(&self) -> &str {
         &self.access
     }
 
-    pub fn get_secret_token(&self) -> &str {
+    pub fn secret_token(&self) -> &str {
         &self.secret
     }
 
-    pub fn get_security_token(&self) -> &str {
+    pub fn security_token(&self) -> &str {
         &self.security
     }
 }

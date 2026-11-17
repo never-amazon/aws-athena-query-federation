@@ -101,7 +101,7 @@ impl DateTimeFormatterUtil {
                 tracing::warn!(
                     "Unable to parse {} as ZonedDateTime type due to invalid date format, Falling back to LocalDateTime using timezone {:?}",
                     value,
-                    default_time_zone.map(|z| z.get_id().to_string())
+                    default_time_zone.map(|z| z.id().to_string())
                 );
             }
         }
@@ -162,12 +162,12 @@ impl DateTimeFormatterUtil {
     }
 
     pub fn pack_date_time_with_zone(zdt: &ZonedDateTime) -> Result<i64> {
-        DateTimeFormatterUtil::pack_millis_with_zone(zdt.to_epoch_milli(), zdt.get_zone().get_id())
+        DateTimeFormatterUtil::pack_millis_with_zone(zdt.to_epoch_milli(), zdt.zone().id())
     }
 
     pub fn pack_millis_with_zone(millis_utc: i64, zone_id: &str) -> Result<i64> {
         let key = TimeZoneKey::get_time_zone_key_for_id(zone_id)?;
-        Ok(DateTimeFormatterUtil::pack(millis_utc, key.get_key()))
+        Ok(DateTimeFormatterUtil::pack(millis_utc, key.key()))
     }
 
     pub fn pack(millis_utc: i64, time_zone_key: i16) -> i64 {
@@ -205,7 +205,7 @@ impl DateTimeFormatterUtil {
             }
             let key = DateTimeFormatterUtil::unpack_zone_key(epoch)?;
             epoch = DateTimeFormatterUtil::unpack_millis_utc(epoch);
-            zone = ZoneId::of(key.get_id())?;
+            zone = ZoneId::of(key.id())?;
         }
         let instant = instant_plus(epoch, unit)?;
         Ok(ZonedDateTime::of_instant(instant, zone))
@@ -238,7 +238,7 @@ impl DateTimeFormatterUtil {
     ) -> Result<TimeStampMilliTzHolder> {
         let zdt = DateTimeFormatterUtil::zoned_date_time_from_object(value)?;
         let mut holder = TimeStampMilliTzHolder {
-            timezone: zdt.get_zone().get_id().to_string(),
+            timezone: zdt.zone().id().to_string(),
             value: zdt.to_epoch_milli(),
         };
         if DateTimeFormatterUtil::is_pack_timezone() {
@@ -262,10 +262,10 @@ impl DateTimeFormatterUtil {
         }
         let zdt = DateTimeFormatterUtil::zoned_date_time_from_object(value)?;
         let zone = target_time_zone_id.map_or_else(
-            || zdt.get_zone().get_id().to_string(),
+            || zdt.zone().id().to_string(),
             std::string::ToString::to_string,
         );
-        let micros = zdt.get_epoch_second() * 1_000_000 + i64::from(zdt.get_nano() / 1000);
+        let micros = zdt.epoch_second() * 1_000_000 + i64::from(zdt.nano() / 1000);
         Ok(TimeStampMicroTzHolder {
             timezone: zone,
             value: micros,

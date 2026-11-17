@@ -25,11 +25,11 @@ impl GetTableLayoutResponse {
         }
     }
 
-    pub fn get_table_name(&self) -> &TableName {
+    pub fn table_name(&self) -> &TableName {
         &self.table_name
     }
 
-    pub fn get_partitions(&self) -> &Block {
+    pub fn partitions(&self) -> &Block {
         &self.partitions
     }
 }
@@ -50,7 +50,7 @@ impl fmt::Display for GetTableLayoutResponse {
             f,
             "GetTableLayoutResponse{{tableName={}, requestType={}, catalogName={}}}",
             self.table_name,
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name
         )
     }

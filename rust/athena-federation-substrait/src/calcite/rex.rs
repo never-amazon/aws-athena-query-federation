@@ -238,7 +238,7 @@ impl RexNode {
         }
     }
 
-    pub fn get_kind(&self) -> SqlKind {
+    pub fn kind(&self) -> SqlKind {
         match self {
             RexNode::InputRef { .. } => SqlKind::InputRef,
             RexNode::Literal(_) => SqlKind::Literal,

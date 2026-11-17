@@ -51,7 +51,7 @@ fn cast_err(type_name: MinorType, lhs: &Value, rhs: &Value) -> FederationError {
 
 impl ArrowTypeComparator {
     pub fn compare_reader(reader: &FieldReader<'_>, lhs: &Value, rhs: &Value) -> Result<i32> {
-        ArrowTypeComparator::compare(reader.get_field().data_type(), lhs, rhs)
+        ArrowTypeComparator::compare(reader.field().data_type(), lhs, rhs)
     }
 
     pub fn compare(arrow_type: &ArrowType, lhs: &Value, rhs: &Value) -> Result<i32> {

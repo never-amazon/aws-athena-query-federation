@@ -20,5 +20,5 @@ where
 pub trait BlockWriter {
     fn write_rows(&mut self, row_writer: &mut dyn RowWriter) -> Result<()>;
 
-    fn get_constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
+    fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
 }

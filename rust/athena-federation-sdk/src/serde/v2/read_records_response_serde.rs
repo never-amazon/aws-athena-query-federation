@@ -12,9 +12,9 @@ pub fn do_typed_serialize(
     jgen: &mut JsonGenerator,
     version: i32,
 ) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(RECORDS_FIELD)?;
-    super::block_serde::serialize(Some(response.get_records()), jgen, version)
+    super::block_serde::serialize(Some(response.records()), jgen, version)
 }
 
 pub fn do_typed_deserialize(

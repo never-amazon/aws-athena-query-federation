@@ -35,8 +35,8 @@ fn test_get_table_schema_from_substrait_plan_all_arrow_types() {
         &dialect(),
     )
     .expect("schema");
-    assert!(schema.get_field_count() > 0);
-    let names = schema.get_field_names();
+    assert!(schema.field_count() > 0);
+    let names = schema.field_names();
     assert!(
         names.contains(&"bool_col".to_string()),
         "Missing boolean type"
@@ -55,8 +55,8 @@ fn test_get_table_schema_from_substrait_plan_basic_types() {
         &dialect(),
     )
     .expect("schema");
-    assert!(!schema.get_field_list().is_empty());
-    let names = schema.get_field_names();
+    assert!(!schema.field_list().is_empty());
+    let names = schema.field_names();
     assert!(names.contains(&"varchar_col".to_string()));
     assert!(names.contains(&"int_col".to_string()));
 }
@@ -68,7 +68,7 @@ fn test_get_table_schema_from_substrait_plan_with_where_clause() {
         &dialect(),
     )
     .expect("schema");
-    assert!(schema.get_field_count() > 0);
+    assert!(schema.field_count() > 0);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_get_table_schema_from_substrait_plan_complex_query() {
         &dialect(),
     )
     .expect("schema");
-    assert!(schema.get_field_count() > 0);
+    assert!(schema.field_count() > 0);
 }
 
 #[test]

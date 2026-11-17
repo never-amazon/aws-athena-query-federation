@@ -12,7 +12,7 @@ impl FunctionName {
         }
     }
 
-    pub fn get_function_name(&self) -> &str {
+    pub fn function_name(&self) -> &str {
         &self.function_name
     }
 }

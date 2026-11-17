@@ -73,21 +73,21 @@ mod marker_serialization_test {
         let deserializer = object_mapper_factory::create(allocator.clone());
         let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
         assert_eq!(
-            expected_marker.get_schema().metadata(),
-            actual_marker.get_schema().metadata()
+            expected_marker.schema().metadata(),
+            actual_marker.schema().metadata()
         );
         assert_eq!(
-            expected_marker.get_schema().fields(),
-            actual_marker.get_schema().fields()
+            expected_marker.schema().fields(),
+            actual_marker.schema().fields()
         );
-        assert_eq!(expected_marker.get_bound(), actual_marker.get_bound());
+        assert_eq!(expected_marker.bound(), actual_marker.bound());
         assert_eq!(
-            expected_marker.get_value().expect("value"),
-            actual_marker.get_value().expect("value")
+            expected_marker.value().expect("value"),
+            actual_marker.value().expect("value")
         );
         assert_eq!(
             &Value::from(expected_value),
-            actual_marker.get_value().expect("value")
+            actual_marker.value().expect("value")
         );
         assert!(!actual_marker.is_null_value());
     }
@@ -104,14 +104,14 @@ mod marker_serialization_test {
         let deserializer = object_mapper_factory::create(allocator.clone());
         let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
         assert_eq!(
-            expected_marker.get_schema().metadata(),
-            actual_marker.get_schema().metadata()
+            expected_marker.schema().metadata(),
+            actual_marker.schema().metadata()
         );
         assert_eq!(
-            expected_marker.get_schema().fields(),
-            actual_marker.get_schema().fields()
+            expected_marker.schema().fields(),
+            actual_marker.schema().fields()
         );
-        assert_eq!(expected_marker.get_bound(), actual_marker.get_bound());
+        assert_eq!(expected_marker.bound(), actual_marker.bound());
         assert!(actual_marker.is_null_value());
     }
 }
@@ -252,8 +252,8 @@ mod ping_request_ser_de_test {
         let actual = read_ping(&t, &fixture("serde", "PingRequest.json"));
         assert_eq!(expected, actual);
         assert_eq!(
-            expected.get_identity().and_then(|i| i.get_arn()),
-            actual.get_identity().and_then(|i| i.get_arn())
+            expected.identity().and_then(|i| i.arn()),
+            actual.identity().and_then(|i| i.arn())
         );
     }
 
@@ -270,8 +270,8 @@ mod ping_request_ser_de_test {
         let actual = read_ping(&t, &fixture("serde", "PingRequestForwardsCompatible.json"));
         assert_eq!(expected, actual);
         assert_eq!(
-            expected.get_identity().and_then(|i| i.get_arn()),
-            actual.get_identity().and_then(|i| i.get_arn())
+            expected.identity().and_then(|i| i.arn()),
+            actual.identity().and_then(|i| i.arn())
         );
     }
 }

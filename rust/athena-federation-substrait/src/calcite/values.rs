@@ -256,11 +256,11 @@ impl BitString {
         }
     }
 
-    pub fn get_as_byte_array(&self) -> &[u8] {
+    pub fn as_byte_array(&self) -> &[u8] {
         &self.bytes
     }
 
-    pub fn get_bit_count(&self) -> usize {
+    pub fn bit_count(&self) -> usize {
         self.bytes.len() * 8
     }
 

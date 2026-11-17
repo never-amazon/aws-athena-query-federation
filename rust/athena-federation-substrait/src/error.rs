@@ -2,6 +2,9 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
+use athena_federation_sdk::exceptions::JavaExceptionKind;
+use athena_federation_sdk::FederationError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
     Runtime,
@@ -121,24 +124,43 @@ impl Error for SubstraitError {
     }
 }
 
-impl From<SubstraitError> for athena_federation_sdk::FederationError {
-    fn from(error: SubstraitError) -> Self {
-        let message = error.message;
-        match error.kind {
-            ErrorKind::Runtime => athena_federation_sdk::FederationError::Runtime(message),
-            ErrorKind::IllegalArgument => {
-                athena_federation_sdk::FederationError::IllegalArgument(message)
-            }
-            ErrorKind::IllegalState => {
-                athena_federation_sdk::FederationError::IllegalState(message)
-            }
-            ErrorKind::UnsupportedOperation => {
-                athena_federation_sdk::FederationError::UnsupportedOperation(message)
-            }
-            ErrorKind::IndexOutOfBounds => {
-                athena_federation_sdk::FederationError::IndexOutOfBounds(message)
-            }
-            ErrorKind::NullPointer => athena_federation_sdk::FederationError::NullPointer(message),
+impl From<ErrorKind> for JavaExceptionKind {
+    fn from(kind: ErrorKind) -> Self {
+        match kind {
+            ErrorKind::Runtime => JavaExceptionKind::Runtime,
+            ErrorKind::IllegalArgument => JavaExceptionKind::IllegalArgument,
+            ErrorKind::IllegalState => JavaExceptionKind::IllegalState,
+            ErrorKind::UnsupportedOperation => JavaExceptionKind::UnsupportedOperation,
+            ErrorKind::IndexOutOfBounds => JavaExceptionKind::IndexOutOfBounds,
+            ErrorKind::NullPointer => JavaExceptionKind::NullPointer,
         }
+    }
+}
+
+impl From<SubstraitError> for FederationError {
+    fn from(error: SubstraitError) -> Self {
+        FederationError::wrapped(error.kind.into(), error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
+
+    use super::{FederationError, JavaExceptionKind, SubstraitError};
+
+    #[test]
+    fn substrait_error_keeps_kind_message_and_source() {
+        let cause = SubstraitError::illegal_argument("bad input");
+        let error = SubstraitError::wrap("Failed to parse Substrait plan", cause.clone());
+        let federation = FederationError::from(error.clone());
+        assert_eq!(federation.to_string(), "Failed to parse Substrait plan");
+        let FederationError::Wrapped { kind, source } = &federation else {
+            panic!("expected a wrapped error, got {federation:?}");
+        };
+        assert_eq!(*kind, JavaExceptionKind::Runtime);
+        assert_eq!(source.downcast_ref::<SubstraitError>(), Some(&error));
+        let inner = federation.source().and_then(|s| s.source());
+        assert_eq!(inner.map(ToString::to_string), Some(cause.to_string()));
     }
 }

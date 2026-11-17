@@ -13,8 +13,8 @@ pub fn serialize(order_by_field: Option<&OrderByField>, jgen: &mut JsonGenerator
 }
 
 pub fn do_serialize(order_by_field: &OrderByField, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(COLUMN_NAME_FIELD, Some(order_by_field.get_column_name()))?;
-    jgen.write_string_field(DIRECTION_FIELD, Some(order_by_field.get_direction().name()))
+    jgen.write_string_field(COLUMN_NAME_FIELD, Some(order_by_field.column_name()))?;
+    jgen.write_string_field(DIRECTION_FIELD, Some(order_by_field.direction().name()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<OrderByField>> {

@@ -58,15 +58,15 @@ impl Constraints {
         )
     }
 
-    pub fn get_summary(&self) -> &IndexMap<String, ValueSet> {
+    pub fn summary(&self) -> &IndexMap<String, ValueSet> {
         &self.summary
     }
 
-    pub fn get_expression(&self) -> &[FederationExpression] {
+    pub fn expression(&self) -> &[FederationExpression] {
         &self.expression
     }
 
-    pub fn get_limit(&self) -> i64 {
+    pub fn limit(&self) -> i64 {
         self.limit
     }
 
@@ -74,7 +74,7 @@ impl Constraints {
         self.limit > DEFAULT_NO_LIMIT
     }
 
-    pub fn get_order_by_clause(&self) -> &[OrderByField] {
+    pub fn order_by_clause(&self) -> &[OrderByField] {
         &self.order_by_clause
     }
 
@@ -82,11 +82,11 @@ impl Constraints {
         !self.order_by_clause.is_empty()
     }
 
-    pub fn get_query_passthrough_arguments(&self) -> &HashMap<String, Option<String>> {
+    pub fn query_passthrough_arguments(&self) -> &HashMap<String, Option<String>> {
         &self.query_passthrough_arguments
     }
 
-    pub fn get_query_plan(&self) -> Option<&QueryPlan> {
+    pub fn query_plan(&self) -> Option<&QueryPlan> {
         self.query_plan.as_ref()
     }
 

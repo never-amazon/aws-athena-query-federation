@@ -103,7 +103,7 @@ async fn decrypt_with_schema() {
         .decrypt_with_schema(None, &encrypted, schema.clone())
         .unwrap();
 
-    assert_eq!(&schema, decrypted_block.get_schema());
+    assert_eq!(&schema, decrypted_block.schema());
     let batch = decrypted_block.get_record_batch().unwrap();
     let result_vector = batch
         .column(0)

@@ -14,11 +14,11 @@ impl QueryPlan {
         }
     }
 
-    pub fn get_substrait_version(&self) -> Option<&str> {
+    pub fn substrait_version(&self) -> Option<&str> {
         self.substrait_version.as_deref()
     }
 
-    pub fn get_substrait_plan(&self) -> &str {
+    pub fn substrait_plan(&self) -> &str {
         &self.substrait_plan
     }
 }

@@ -11,17 +11,17 @@ pub const ENABLE_QUERY_PASSTHROUGH: &str = "enable_query_passthrough";
 pub const DEFAULT_ENABLE_QUERY_PASSTHROUGH_STATE: &str = "true";
 
 pub trait QueryPassthroughSignature {
-    fn get_function_schema(&self) -> String;
+    fn function_schema(&self) -> String;
 
-    fn get_function_name(&self) -> String;
+    fn function_name(&self) -> String;
 
-    fn get_function_arguments(&self) -> Vec<String>;
+    fn function_arguments(&self) -> Vec<String>;
 
     fn get_function_signature(&self) -> String {
         format!(
             "{}.{}",
-            self.get_function_schema().to_uppercase(),
-            self.get_function_name().to_uppercase()
+            self.function_schema().to_uppercase(),
+            self.function_name().to_uppercase()
         )
     }
 
@@ -31,7 +31,7 @@ pub trait QueryPassthroughSignature {
                 "Function Signature doesn't match implementation's",
             ));
         }
-        for argument in self.get_function_arguments() {
+        for argument in self.function_arguments() {
             match engine_qpt_arguments.get(&argument) {
                 None => {
                     return Err(FederationError::invalid_input(format!(
@@ -83,10 +83,9 @@ pub trait QueryPassthroughSignature {
 
     fn get_query_passthrough_capabilities(&self) -> Vec<OptimizationSubType> {
         vec![
-            QueryPassthrough::QueryPassthroughSchema.with_schema(&self.get_function_schema()),
-            QueryPassthrough::QueryPassthroughName.with_name(&self.get_function_name()),
-            QueryPassthrough::QueryPassthroughArguments
-                .with_arguments(self.get_function_arguments()),
+            QueryPassthrough::QueryPassthroughSchema.with_schema(&self.function_schema()),
+            QueryPassthrough::QueryPassthroughName.with_name(&self.function_name()),
+            QueryPassthrough::QueryPassthroughArguments.with_arguments(self.function_arguments()),
         ]
     }
 

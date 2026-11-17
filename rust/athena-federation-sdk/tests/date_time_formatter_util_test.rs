@@ -305,7 +305,7 @@ fn date_time_packing_round_trip() {
         let arrow_type = timestamp_tz(TimeUnit::Millisecond, &holder.timezone);
         let back =
             DateTimeFormatterUtil::construct_zoned_date_time(holder.value, &arrow_type).unwrap();
-        assert_eq!(zdt.get_offset(), back.get_offset());
+        assert_eq!(zdt.offset(), back.offset());
         assert_eq!(zdt.to_instant(), back.to_instant());
     }
 }

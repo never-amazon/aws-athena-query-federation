@@ -121,9 +121,9 @@ fn constrained_block_test() {
 }
 
 fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: &FieldReader<'_>) {
-    match vector.get_minor_type() {
+    match vector.minor_type() {
         MinorType::INT => {
-            for i in 0..actual_block.get_row_count() {
+            for i in 0..actual_block.row_count() {
                 vector.set_position(i);
                 assert_eq!(
                     int(i * actual_field_count * 3),
@@ -132,14 +132,14 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
             }
         }
         MinorType::FLOAT8 => {
-            for i in 0..actual_block.get_row_count() {
+            for i in 0..actual_block.row_count() {
                 vector.set_position(i);
                 let expected = double(i) * double(actual_field_count) * 1.1;
                 assert!((expected - vector.read_double().unwrap()).abs() <= 0.1);
             }
         }
         MinorType::VARCHAR => {
-            for i in 0..actual_block.get_row_count() {
+            for i in 0..actual_block.row_count() {
                 vector.set_position(i);
                 assert_eq!(
                     (i * actual_field_count).to_string(),
@@ -148,8 +148,8 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
             }
         }
         MinorType::STRUCT => {
-            for i in 0..actual_block.get_row_count() {
-                let effective_vector = if vector.get_field().name() == "structFieldNested28" {
+            for i in 0..actual_block.row_count() {
+                let effective_vector = if vector.field().name() == "structFieldNested28" {
                     vector.reader_named("nestedStruct").unwrap()
                 } else {
                     vector.clone()
@@ -162,7 +162,7 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
                         .unwrap()
                         .read_long(),
                     " name: {}",
-                    effective_vector.get_field().name()
+                    effective_vector.field().name()
                 );
                 assert_eq!(
                     (1000 + i).to_string(),
@@ -181,9 +181,9 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
 
 fn assert_list_values(actual_block: &Block, vector: &FieldReader<'_>) {
     let mut actual = 0;
-    let child = get_children(vector.get_field())[0].clone();
+    let child = get_children(vector.field())[0].clone();
     let child_type = minor_type_of(child.data_type());
-    for i in 0..actual_block.get_row_count() {
+    for i in 0..actual_block.row_count() {
         vector.set_position(i);
         let mut entry_values = 0usize;
         while vector.next() {
@@ -241,10 +241,10 @@ fn assert_list_values(actual_block: &Block, vector: &FieldReader<'_>) {
         }
     }
     assert_eq!(
-        actual_block.get_row_count(),
+        actual_block.row_count(),
         actual,
         "failed for {}",
-        vector.get_field().name()
+        vector.field().name()
     );
 }
 
@@ -256,25 +256,25 @@ fn end_to_end_block_test() {
     let expected_block = generate_test_block(&expected_allocator, &orig_schema, expected_rows);
 
     let mut actual_block = round_trip(&expected_block, &orig_schema);
-    for i in 0..actual_block.get_row_count() {
+    for i in 0..actual_block.row_count() {
         BlockUtils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
-        actual_block.get_row_count(),
+        actual_block.row_count(),
         "Row count missmatch"
     );
 
-    for (actual_field_count, next) in (1usize..).zip(actual_block.get_fields()) {
+    for (actual_field_count, next) in (1usize..).zip(actual_block.fields()) {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         assert_field_values(&actual_block, actual_field_count, &vector);
     }
 
     BlockUtils::unset_row(0, &mut actual_block).unwrap();
 
-    for next in actual_block.get_fields() {
+    for next in actual_block.fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::DATEDAY
             | MinorType::DATEMILLI
             | MinorType::TINYINT
@@ -297,7 +297,7 @@ fn end_to_end_block_test() {
                 assert!(
                     !vector.is_set(),
                     "Failed for {} {}",
-                    vector.get_minor_type(),
+                    vector.minor_type(),
                     next.name()
                 );
             }
@@ -458,7 +458,7 @@ fn list_values(child_type: MinorType, i: usize) -> Option<Vec<Value>> {
 }
 
 fn assert_map_schema(vector: &FieldVector) {
-    let children: Vec<FieldRef> = get_children(vector.get_field());
+    let children: Vec<FieldRef> = get_children(vector.field());
     assert_eq!(1, children.len(), "Invalid Arrow Map schema");
     let key_value_struct_field = children[0].clone();
     assert!(
@@ -475,7 +475,7 @@ fn assert_map_schema(vector: &FieldVector) {
 }
 
 fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usize) {
-    let minor = vector.get_minor_type();
+    let minor = vector.minor_type();
     if let Some(k) = int_multiplier(minor) {
         for i in 0..expected_rows {
             vector.set_safe(i, int(i * field_count * k)).unwrap();
@@ -528,7 +528,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
             }
         }
         MinorType::LIST => {
-            let child = get_children(vector.get_field())[0].clone();
+            let child = get_children(vector.field())[0].clone();
             for i in 0..expected_rows {
                 let Some(values) = list_values(minor_type_of(child.data_type()), i) else {
                     continue;
@@ -585,9 +585,9 @@ fn list_of_lists_test() {
     let expected_rows = 200;
     for next in orig_schema.fields() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::LIST => {
-                let child = get_children(vector.get_field())[0].clone();
+                let child = get_children(vector.field())[0].clone();
                 for i in 0..expected_rows {
                     let mut value = Vec::new();
                     match minor_type_of(child.data_type()) {
@@ -598,7 +598,7 @@ fn list_of_lists_test() {
                                 "1002".into(),
                             ]));
                         }
-                        _ => panic!("{} is not supported", vector.get_minor_type()),
+                        _ => panic!("{} is not supported", vector.minor_type()),
                     }
                     BlockUtils::set_complex_value(
                         vector,
@@ -615,20 +615,20 @@ fn list_of_lists_test() {
     expected_block.set_row_count(expected_rows);
 
     let actual_block = round_trip(&expected_block, &orig_schema);
-    for i in 0..actual_block.get_row_count() {
+    for i in 0..actual_block.row_count() {
         BlockUtils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
-        actual_block.get_row_count(),
+        actual_block.row_count(),
         "Row count missmatch"
     );
-    for next in actual_block.get_fields() {
+    for next in actual_block.fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::LIST => {
                 let mut actual = 0;
-                for i in 0..actual_block.get_row_count() {
+                for i in 0..actual_block.row_count() {
                     vector.set_position(i);
                     let mut entry_values = 0;
                     while vector.next() {
@@ -648,10 +648,10 @@ fn list_of_lists_test() {
                     }
                 }
                 assert_eq!(
-                    actual_block.get_row_count(),
+                    actual_block.row_count(),
                     actual,
                     "failed for {}",
-                    vector.get_field().name()
+                    vector.field().name()
                 );
             }
             other => panic!("{other} is not supported"),
@@ -681,9 +681,9 @@ fn list_of_structs_test() {
     let expected_rows = 200;
     for next in orig_schema.fields() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::LIST => {
-                let child = get_children(vector.get_field())[0].clone();
+                let child = get_children(vector.field())[0].clone();
                 for i in 0..expected_rows {
                     let mut value = Vec::new();
                     match minor_type_of(child.data_type()) {
@@ -693,7 +693,7 @@ fn list_of_structs_test() {
                                 ("bigint", Value::Long(100)),
                             ]));
                         }
-                        _ => panic!("{} is not supported", vector.get_minor_type()),
+                        _ => panic!("{} is not supported", vector.minor_type()),
                     }
                     BlockUtils::set_complex_value(
                         vector,
@@ -710,20 +710,20 @@ fn list_of_structs_test() {
     expected_block.set_row_count(expected_rows);
 
     let actual_block = round_trip(&expected_block, &orig_schema);
-    for i in 0..actual_block.get_row_count() {
+    for i in 0..actual_block.row_count() {
         BlockUtils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
-        actual_block.get_row_count(),
+        actual_block.row_count(),
         "Row count missmatch"
     );
-    for next in actual_block.get_fields() {
+    for next in actual_block.fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::LIST => {
                 let mut actual = 0;
-                for i in 0..actual_block.get_row_count() {
+                for i in 0..actual_block.row_count() {
                     vector.set_position(i);
                     let mut entry_values = 0;
                     while vector.next() {
@@ -740,10 +740,10 @@ fn list_of_structs_test() {
                     }
                 }
                 assert_eq!(
-                    actual_block.get_row_count(),
+                    actual_block.row_count(),
                     actual,
                     "failed for {}",
-                    vector.get_field().name()
+                    vector.field().name()
                 );
             }
             other => panic!("{other} is not supported"),
@@ -767,7 +767,7 @@ fn struct_of_lists_test() {
     for next in orig_schema.fields() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
         for i in 0..expected_rows {
-            match vector.get_minor_type() {
+            match vector.minor_type() {
                 MinorType::STRUCT => {
                     let list = if i % 2 == 0 {
                         Value::List(vec![
@@ -789,20 +789,20 @@ fn struct_of_lists_test() {
     expected_block.set_row_count(expected_rows);
 
     let actual_block = round_trip(&expected_block, &orig_schema);
-    for i in 0..actual_block.get_row_count() {
+    for i in 0..actual_block.row_count() {
         BlockUtils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
-        actual_block.get_row_count(),
+        actual_block.row_count(),
         "Row count missmatch"
     );
     let mut actual_list_values = 0;
     let mut empty_list_values = 0;
-    for next in actual_block.get_fields() {
+    for next in actual_block.fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
-        for i in 0..actual_block.get_row_count() {
-            match vector.get_minor_type() {
+        for i in 0..actual_block.row_count() {
+            match vector.minor_type() {
                 MinorType::STRUCT => {
                     vector.set_position(i);
                     assert_eq!(

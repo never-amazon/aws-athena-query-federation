@@ -71,8 +71,8 @@ async fn test_create() {
 
     let result = kms_key_factory.create().await.unwrap();
 
-    assert_eq!(test_plaintext_key.as_slice(), result.get_key());
-    assert_eq!(test_nonce.as_slice(), result.get_nonce());
+    assert_eq!(test_plaintext_key.as_slice(), result.key());
+    assert_eq!(test_nonce.as_slice(), result.nonce());
     assert_eq!(
         1,
         mock_kms_client
@@ -124,8 +124,8 @@ async fn test_create_with_override_configuration() {
         .await
         .unwrap();
 
-    assert_eq!(test_plaintext_key.as_slice(), result.get_key());
-    assert_eq!(test_nonce.as_slice(), result.get_nonce());
+    assert_eq!(test_plaintext_key.as_slice(), result.key());
+    assert_eq!(test_nonce.as_slice(), result.nonce());
     assert_eq!(
         1,
         mock_kms_client
@@ -154,6 +154,6 @@ async fn test_create_with_null_override_configuration() {
         .await
         .unwrap();
 
-    assert_eq!(test_plaintext_key.as_slice(), result.get_key());
-    assert_eq!(test_nonce.as_slice(), result.get_nonce());
+    assert_eq!(test_plaintext_key.as_slice(), result.key());
+    assert_eq!(test_nonce.as_slice(), result.nonce());
 }

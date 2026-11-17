@@ -25,7 +25,7 @@ impl FilterPushdownSubType {
         }
     }
 
-    pub fn get_sub_type(&self) -> &'static str {
+    pub fn sub_type(&self) -> &'static str {
         match self {
             FilterPushdownSubType::SortedRangeSet => "sorted_range_set",
             FilterPushdownSubType::EquatableValueSet => "equatable_range_set",

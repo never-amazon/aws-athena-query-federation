@@ -82,7 +82,7 @@ impl Setup {
             self.mock_s3.clone(),
             self.spill_config.clone(),
             self.allocator.clone(),
-            self.expected.get_schema().clone(),
+            self.expected.schema().clone(),
             Arc::new(ConstraintEvaluator::empty_evaluator()),
             config_options,
         )
@@ -203,16 +203,16 @@ async fn spill_test() {
 
     let block_location = s.block_writer.write(&s.expected).await.unwrap();
     let SpillLocation::S3(block_location) = block_location;
-    assert_eq!(BUCKET, block_location.get_bucket());
-    assert_eq!(key0, block_location.get_key());
+    assert_eq!(BUCKET, block_location.bucket());
+    assert_eq!(key0, block_location.key());
     assert_eq!(1, s.mock_s3.put_count());
     assert_eq!(BUCKET, s.mock_s3.last_put().bucket());
     assert_eq!(key0, s.mock_s3.last_put().key());
 
     let block_location2 = s.block_writer.write(&s.expected).await.unwrap();
     let SpillLocation::S3(block_location2) = block_location2;
-    assert_eq!(BUCKET, block_location2.get_bucket());
-    assert_eq!(key1, block_location2.get_key());
+    assert_eq!(BUCKET, block_location2.bucket());
+    assert_eq!(key1, block_location2.key());
     assert_eq!(2, s.mock_s3.put_count());
     assert_eq!(BUCKET, s.mock_s3.last_put().bucket());
     assert_eq!(key1, s.mock_s3.last_put().key());
@@ -223,8 +223,8 @@ async fn spill_test() {
         .block_writer
         .read(
             &block_location2,
-            s.spill_config.get_encryption_key(),
-            s.expected.get_schema().clone(),
+            s.spill_config.encryption_key(),
+            s.expected.schema().clone(),
         )
         .await
         .unwrap();
@@ -507,7 +507,7 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
     let store = Arc::new(KeyedS3::default());
     let spill_config = async_spill_config(1, 4).await;
-    let encryption_key = spill_config.get_encryption_key().cloned();
+    let encryption_key = spill_config.encryption_key().cloned();
     let spiller = S3BlockSpiller::new(
         store.clone(),
         spill_config,
@@ -531,16 +531,16 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
     assert_eq!(BLOCKS as usize, locations.len());
 
     let base_key = match spill_location() {
-        SpillLocation::S3(l) => l.get_key().to_string(),
+        SpillLocation::S3(l) => l.key().to_string(),
     };
     let mut seen = Vec::new();
     for location in &locations {
         let SpillLocation::S3(location) = location;
         let number: i32 = location
-            .get_key()
+            .key()
             .strip_prefix(&format!("{base_key}."))
             .and_then(|n| n.parse().ok())
-            .unwrap_or_else(|| panic!("unexpected key {}", location.get_key()));
+            .unwrap_or_else(|| panic!("unexpected key {}", location.key()));
         let block = spiller
             .read(location, encryption_key.as_ref(), one_column_schema())
             .await
@@ -552,7 +552,7 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
             BlockUtils::row_to_string(&expected, 0).unwrap(),
             BlockUtils::row_to_string(&block, 0).unwrap(),
             "block spilled to {} is not block {}",
-            location.get_key(),
+            location.key(),
             number
         );
         seen.push(number);

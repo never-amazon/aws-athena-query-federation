@@ -12,7 +12,7 @@ pub fn serialize(function_name: Option<&FunctionName>, jgen: &mut JsonGenerator)
 }
 
 pub fn do_serialize(function_name: &FunctionName, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(FUNCTION_NAME_FIELD, Some(function_name.get_function_name()))
+    jgen.write_string_field(FUNCTION_NAME_FIELD, Some(function_name.function_name()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<FunctionName>> {

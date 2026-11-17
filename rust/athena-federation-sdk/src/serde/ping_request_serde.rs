@@ -12,9 +12,9 @@ const QUERY_ID_FIELD: &str = "queryId";
 
 pub fn do_typed_serialize(request: &PingRequest, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
-    federated_identity_serde::serialize(request.get_identity(), jgen)?;
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.get_catalog_name()))?;
-    jgen.write_string_field(QUERY_ID_FIELD, Some(request.get_query_id()))
+    federated_identity_serde::serialize(request.identity(), jgen)?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.catalog_name()))?;
+    jgen.write_string_field(QUERY_ID_FIELD, Some(request.query_id()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<PingRequest> {

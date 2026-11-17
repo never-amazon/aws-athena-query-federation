@@ -12,7 +12,7 @@ pub struct StructArrowValueProjector<'a> {
 
 impl<'a> StructArrowValueProjector<'a> {
     pub fn new(struct_reader: FieldReader<'a>) -> Result<StructArrowValueProjector<'a>> {
-        let projections = get_children(struct_reader.get_field())
+        let projections = get_children(struct_reader.field())
             .iter()
             .map(|child| {
                 Ok((

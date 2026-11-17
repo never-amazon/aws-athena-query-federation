@@ -108,7 +108,7 @@ impl ValueSet {
         }
     }
 
-    pub fn get_ranges(&self) -> Result<&dyn Ranges> {
+    pub fn ranges(&self) -> Result<&dyn Ranges> {
         match self {
             ValueSet::SortedRangeSet(v) => Ok(v),
             _ => Err(FederationError::not_supported("Operation not supported")),

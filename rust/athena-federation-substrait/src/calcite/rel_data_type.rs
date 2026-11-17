@@ -81,11 +81,11 @@ impl RelDataTypeField {
         }
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn get_index(&self) -> usize {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -242,15 +242,15 @@ impl RelDataType {
         t
     }
 
-    pub fn get_sql_type_name(&self) -> SqlTypeName {
+    pub fn sql_type_name(&self) -> SqlTypeName {
         self.type_name
     }
 
-    pub fn get_precision(&self) -> i32 {
+    pub fn precision(&self) -> i32 {
         self.precision
     }
 
-    pub fn get_scale(&self) -> i32 {
+    pub fn scale(&self) -> i32 {
         self.scale
     }
 
@@ -262,19 +262,19 @@ impl RelDataType {
         self.type_name == SqlTypeName::Row
     }
 
-    pub fn get_field_list(&self) -> &[RelDataTypeField] {
+    pub fn field_list(&self) -> &[RelDataTypeField] {
         &self.fields
     }
 
-    pub fn get_field_count(&self) -> usize {
+    pub fn field_count(&self) -> usize {
         self.fields.len()
     }
 
-    pub fn get_field_names(&self) -> Vec<String> {
+    pub fn field_names(&self) -> Vec<String> {
         self.fields.iter().map(|f| f.name.clone()).collect()
     }
 
-    pub fn get_component_type(&self) -> Option<&RelDataType> {
+    pub fn component_type(&self) -> Option<&RelDataType> {
         if self.type_name == SqlTypeName::Array {
             self.component.as_deref()
         } else {
@@ -282,7 +282,7 @@ impl RelDataType {
         }
     }
 
-    pub fn get_key_type(&self) -> Option<&RelDataType> {
+    pub fn key_type(&self) -> Option<&RelDataType> {
         if self.type_name == SqlTypeName::Map {
             self.component.as_deref()
         } else {
@@ -290,7 +290,7 @@ impl RelDataType {
         }
     }
 
-    pub fn get_value_type(&self) -> Option<&RelDataType> {
+    pub fn value_type(&self) -> Option<&RelDataType> {
         self.value.as_deref()
     }
 
@@ -400,7 +400,7 @@ impl RelDataTypeBuilder {
     pub fn add_all(&mut self, fields: &[RelDataTypeField]) -> &mut Self {
         for f in fields {
             self.fields
-                .push((f.get_name().to_string(), f.get_type().clone()));
+                .push((f.name().to_string(), f.get_type().clone()));
         }
         self
     }

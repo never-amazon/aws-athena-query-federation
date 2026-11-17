@@ -295,8 +295,8 @@ impl Value {
             }
             Value::ZonedDateTime(z) => {
                 Value::LocalDateTime(z.to_local_date_time()).java_hash_code()
-                    ^ z.get_offset().local_minus_utc()
-                    ^ java_string_hash(z.get_zone().get_id()).rotate_left(3)
+                    ^ z.offset().local_minus_utc()
+                    ^ java_string_hash(z.zone().id()).rotate_left(3)
             }
             Value::List(items) => {
                 let mut h: i32 = 1;

@@ -19,21 +19,21 @@ impl LogicalExpression {
 
     pub fn from_leaf(leaf_predicate: ColumnPredicate) -> LogicalExpression {
         LogicalExpression {
-            operator: leaf_predicate.get_operator(),
+            operator: leaf_predicate.operator(),
             children: None,
             leaf_predicate: Some(leaf_predicate),
         }
     }
 
-    pub fn get_operator(&self) -> SubstraitOperator {
+    pub fn operator(&self) -> SubstraitOperator {
         self.operator
     }
 
-    pub fn get_children(&self) -> Option<&[LogicalExpression]> {
+    pub fn children(&self) -> Option<&[LogicalExpression]> {
         self.children.as_deref()
     }
 
-    pub fn get_leaf_predicate(&self) -> Option<&ColumnPredicate> {
+    pub fn leaf_predicate(&self) -> Option<&ColumnPredicate> {
         self.leaf_predicate.as_ref()
     }
 

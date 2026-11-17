@@ -16,11 +16,11 @@ impl UserDefinedFunctionResponse {
         }
     }
 
-    pub fn get_records(&self) -> &Block {
+    pub fn records(&self) -> &Block {
         &self.records
     }
 
-    pub fn get_method_name(&self) -> &str {
+    pub fn method_name(&self) -> &str {
         &self.method_name
     }
 }

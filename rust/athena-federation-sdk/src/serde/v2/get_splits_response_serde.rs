@@ -11,13 +11,13 @@ const SPLITS_FIELD: &str = "splits";
 const CONTINUATION_TOKEN_FIELD: &str = "continuationToken";
 
 pub fn do_typed_serialize(response: &GetSplitsResponse, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_array_field_start(SPLITS_FIELD)?;
-    for split in response.get_splits() {
+    for split in response.splits() {
         super::split_serde::serialize(Some(split), jgen)?;
     }
     jgen.write_end_array()?;
-    jgen.write_string_field(CONTINUATION_TOKEN_FIELD, response.get_continuation_token())
+    jgen.write_string_field(CONTINUATION_TOKEN_FIELD, response.continuation_token())
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<GetSplitsResponse> {

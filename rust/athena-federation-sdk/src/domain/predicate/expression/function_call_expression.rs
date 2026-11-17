@@ -27,15 +27,15 @@ impl FunctionCallExpression {
         }
     }
 
-    pub fn get_function_name(&self) -> &FunctionName {
+    pub fn function_name(&self) -> &FunctionName {
         &self.function_name
     }
 
-    pub fn get_arguments(&self) -> &[FederationExpression] {
+    pub fn arguments(&self) -> &[FederationExpression] {
         &self.arguments
     }
 
-    pub fn get_children(&self) -> &[FederationExpression] {
+    pub fn children(&self) -> &[FederationExpression] {
         &self.arguments
     }
 
@@ -48,7 +48,7 @@ impl FunctionCallExpression {
             acc.wrapping_mul(31).wrapping_add(a.hash_code())
         });
         objects_hash(&[
-            java_string_hash(self.function_name.get_function_name()),
+            java_string_hash(self.function_name.function_name()),
             args,
             type_hash(&self.arrow_type),
         ])

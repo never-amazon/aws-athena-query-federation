@@ -23,7 +23,7 @@ impl GetDataSourceCapabilitiesResponse {
         }
     }
 
-    pub fn get_capabilities(&self) -> &IndexMap<String, Vec<OptimizationSubType>> {
+    pub fn capabilities(&self) -> &IndexMap<String, Vec<OptimizationSubType>> {
         &self.capabilities
     }
 }
@@ -53,7 +53,7 @@ impl fmt::Display for GetDataSourceCapabilitiesResponse {
             f,
             "GetDataSourceCapabilitiesResponse{{capabilities={{{}}}, requestType={}, catalogName={}}}",
             caps.join(", "),
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name
         )
     }

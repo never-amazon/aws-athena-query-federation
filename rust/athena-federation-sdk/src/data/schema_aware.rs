@@ -3,7 +3,7 @@ use arrow::datatypes::{FieldRef, Metadata, Schema};
 pub trait SchemaAware {
     fn internal_get_schema(&self) -> &Schema;
 
-    fn get_fields(&self) -> Vec<FieldRef> {
+    fn fields(&self) -> Vec<FieldRef> {
         self.internal_get_schema()
             .fields()
             .iter()
@@ -18,7 +18,7 @@ pub trait SchemaAware {
             .map(std::string::String::as_str)
     }
 
-    fn get_meta_data_map(&self) -> &Metadata {
+    fn meta_data_map(&self) -> &Metadata {
         self.internal_get_schema().metadata()
     }
 }

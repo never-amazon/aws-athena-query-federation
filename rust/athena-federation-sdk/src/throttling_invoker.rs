@@ -205,27 +205,27 @@ where
         *self.lock_spiller() = spiller;
     }
 
-    pub fn get_state(&self) -> State {
+    pub fn state(&self) -> State {
         self.lock_throttle().state
     }
 
-    pub fn get_delay(&self) -> i64 {
+    pub fn delay(&self) -> i64 {
         self.lock_throttle().delay
     }
 
-    pub fn get_decrease(&self) -> f64 {
+    pub fn decrease(&self) -> f64 {
         self.decrease
     }
 
-    pub fn get_default_initial_delay_ms(&self) -> i64 {
+    pub fn default_initial_delay_ms(&self) -> i64 {
         self.initial_delay_ms
     }
 
-    pub fn get_max_delay_ms(&self) -> i64 {
+    pub fn max_delay_ms(&self) -> i64 {
         self.max_delay_ms
     }
 
-    pub fn get_increase(&self) -> i64 {
+    pub fn increase(&self) -> i64 {
         self.increase
     }
 
@@ -294,7 +294,7 @@ where
     }
 
     async fn apply_sleep(&self) {
-        let delay = self.get_delay();
+        let delay = self.delay();
         if delay > 0 {
             tokio::time::sleep(Duration::from_millis(delay.unsigned_abs())).await;
         }

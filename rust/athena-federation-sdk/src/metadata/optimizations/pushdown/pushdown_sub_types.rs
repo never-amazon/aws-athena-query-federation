@@ -15,22 +15,22 @@ pub enum PushdownSubTypes {
 }
 
 impl PushdownSubTypes {
-    pub fn get_sub_type(&self) -> String {
+    pub fn sub_type(&self) -> String {
         match self {
-            PushdownSubTypes::Limit(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::TopN(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::Filter(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::ComplexExpression(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::ComplexExpressionProperties(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::Hints(s) => s.get_sub_type().to_string(),
-            PushdownSubTypes::Properties(s) => s.get_sub_type().to_string(),
+            PushdownSubTypes::Limit(s) => s.sub_type().to_string(),
+            PushdownSubTypes::TopN(s) => s.sub_type().to_string(),
+            PushdownSubTypes::Filter(s) => s.sub_type().to_string(),
+            PushdownSubTypes::ComplexExpression(s) => s.sub_type().to_string(),
+            PushdownSubTypes::ComplexExpressionProperties(s) => s.sub_type().to_string(),
+            PushdownSubTypes::Hints(s) => s.sub_type().to_string(),
+            PushdownSubTypes::Properties(s) => s.sub_type().to_string(),
         }
     }
 
-    pub fn get_properties(&self) -> Vec<String> {
+    pub fn properties(&self) -> Vec<String> {
         match self {
-            PushdownSubTypes::ComplexExpressionProperties(s) => s.get_properties().to_vec(),
-            PushdownSubTypes::Properties(s) => s.get_properties().to_vec(),
+            PushdownSubTypes::ComplexExpressionProperties(s) => s.properties().to_vec(),
+            PushdownSubTypes::Properties(s) => s.properties().to_vec(),
             _ => Vec::new(),
         }
     }

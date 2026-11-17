@@ -30,9 +30,9 @@ impl FederationExpression {
         }
     }
 
-    pub fn get_children(&self) -> &[FederationExpression] {
+    pub fn children(&self) -> &[FederationExpression] {
         match self {
-            FederationExpression::FunctionCall(e) => e.get_children(),
+            FederationExpression::FunctionCall(e) => e.children(),
             FederationExpression::Variable(_) | FederationExpression::Constant(_) => &[],
         }
     }

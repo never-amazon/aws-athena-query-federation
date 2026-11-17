@@ -63,11 +63,11 @@ impl OrderByField {
         }
     }
 
-    pub fn get_column_name(&self) -> &str {
+    pub fn column_name(&self) -> &str {
         &self.column_name
     }
 
-    pub fn get_direction(&self) -> Direction {
+    pub fn direction(&self) -> Direction {
         self.direction
     }
 }

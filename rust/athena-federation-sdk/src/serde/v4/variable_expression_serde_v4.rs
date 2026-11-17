@@ -7,7 +7,7 @@ const COLUMN_NAME_FIELD: &str = "columnName";
 const TYPE_FIELD: &str = "type";
 
 pub fn do_typed_serialize(expression: &VariableExpression, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(COLUMN_NAME_FIELD, Some(expression.get_column_name()))?;
+    jgen.write_string_field(COLUMN_NAME_FIELD, Some(expression.column_name()))?;
     jgen.write_field_name(TYPE_FIELD)?;
     crate::serde::v2::arrow_type_serde::serialize(Some(expression.get_type()), jgen)
 }

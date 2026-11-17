@@ -20,7 +20,7 @@ impl ConstantExpression {
         }
     }
 
-    pub fn get_values(&self) -> Option<&Block> {
+    pub fn values(&self) -> Option<&Block> {
         self.value_block.as_ref()
     }
 
@@ -28,7 +28,7 @@ impl ConstantExpression {
         &self.arrow_type
     }
 
-    pub fn get_children(&self) -> &[super::FederationExpression] {
+    pub fn children(&self) -> &[super::FederationExpression] {
         &[]
     }
 

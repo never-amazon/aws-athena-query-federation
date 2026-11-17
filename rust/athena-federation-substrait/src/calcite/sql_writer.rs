@@ -418,7 +418,7 @@ fn unparse_call_node(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, righ
 }
 
 fn dialect_unparse_call(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, right_prec: i32) {
-    if w.dialect().get_database_product() == super::sql_dialect::DatabaseProduct::Snowflake
+    if w.dialect().database_product() == super::sql_dialect::DatabaseProduct::Snowflake
         && call.op.kind == SqlKind::CharLength
     {
         let rewritten = SqlCall {

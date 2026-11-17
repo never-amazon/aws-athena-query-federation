@@ -30,23 +30,23 @@ impl PingResponse {
         }
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_query_id(&self) -> &str {
+    pub fn query_id(&self) -> &str {
         &self.query_id
     }
 
-    pub fn get_source_type(&self) -> Option<&str> {
+    pub fn source_type(&self) -> Option<&str> {
         self.source_type.as_deref()
     }
 
-    pub fn get_capabilities(&self) -> i32 {
+    pub fn capabilities(&self) -> i32 {
         self.capabilities
     }
 
-    pub fn get_ser_de_version(&self) -> i32 {
+    pub fn ser_de_version(&self) -> i32 {
         self.ser_de_version
     }
 }

@@ -19,16 +19,12 @@ pub fn do_typed_serialize(
     jgen: &mut JsonGenerator,
     version: i32,
 ) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(response.get_table_name(), jgen)?;
+    super::table_name_serde::serialize(response.table_name(), jgen)?;
     jgen.write_field_name(SCHEMA_FIELD)?;
-    crate::serde::v3::schema_serde_v3::serialize_for_version(response.get_schema(), jgen, version)?;
-    write_string_array(
-        jgen,
-        PARTITION_COLUMNS_FIELD,
-        response.get_partition_columns(),
-    )
+    crate::serde::v3::schema_serde_v3::serialize_for_version(response.schema(), jgen, version)?;
+    write_string_array(jgen, PARTITION_COLUMNS_FIELD, response.partition_columns())
 }
 
 pub fn do_typed_deserialize(

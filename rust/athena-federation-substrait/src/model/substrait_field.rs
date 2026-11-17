@@ -20,7 +20,7 @@ impl SubstraitField {
         }
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
@@ -28,7 +28,7 @@ impl SubstraitField {
         &self.r#type
     }
 
-    pub fn get_children(&self) -> &[SubstraitField] {
+    pub fn children(&self) -> &[SubstraitField] {
         &self.children
     }
 

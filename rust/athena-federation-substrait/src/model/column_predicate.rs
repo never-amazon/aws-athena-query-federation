@@ -72,19 +72,19 @@ impl ColumnPredicate {
         }
     }
 
-    pub fn get_column(&self) -> Option<&str> {
+    pub fn column(&self) -> Option<&str> {
         self.column_name.as_deref()
     }
 
-    pub fn get_operator(&self) -> SubstraitOperator {
+    pub fn operator(&self) -> SubstraitOperator {
         self.substrait_operator
     }
 
-    pub fn get_value(&self) -> Option<&PredicateValue> {
+    pub fn value(&self) -> Option<&PredicateValue> {
         self.value.as_ref()
     }
 
-    pub fn get_arrow_type(&self) -> Option<&DataType> {
+    pub fn arrow_type(&self) -> Option<&DataType> {
         self.arrow_type.as_ref()
     }
 }

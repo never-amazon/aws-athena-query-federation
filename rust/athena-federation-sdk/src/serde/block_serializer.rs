@@ -9,10 +9,10 @@ pub const BATCH_FIELD_NAME: &str = "records";
 
 pub fn serialize(block: &Block, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_start_object()?;
-    jgen.write_string_field(ALLOCATOR_ID_FIELD_NAME, Some(block.get_allocator_id()))?;
-    let schema_bytes = schema_to_bytes(block.get_schema(), IpcFormat::AthenaFederationLegacy)?;
+    jgen.write_string_field(ALLOCATOR_ID_FIELD_NAME, Some(block.allocator_id()))?;
+    let schema_bytes = schema_to_bytes(block.schema(), IpcFormat::AthenaFederationLegacy)?;
     jgen.write_binary_field(SCHEMA_FIELD_NAME, &schema_bytes)?;
-    let batch_bytes = if block.get_row_count() > 0 {
+    let batch_bytes = if block.row_count() > 0 {
         block_batch_bytes(block, IpcFormat::AthenaFederationLegacy)?
     } else {
         Vec::new()

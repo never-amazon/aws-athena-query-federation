@@ -58,7 +58,7 @@ impl DefaultCredentialsProvider {
         })
     }
 
-    pub fn get_credential(&self) -> &DefaultCredentials {
+    pub fn credential(&self) -> &DefaultCredentials {
         &self.default_credentials
     }
 }

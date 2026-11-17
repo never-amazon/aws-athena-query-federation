@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::sync::Arc;
 
 use arrow::error::ArrowError;
@@ -6,6 +7,16 @@ use thiserror::Error;
 use super::athena_connector_exception::AthenaConnectorException;
 use super::error_details::{ErrorDetails, FederationSourceErrorCode};
 use super::federation_throttle_exception::FederationThrottleException;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JavaExceptionKind {
+    Runtime,
+    IllegalArgument,
+    IllegalState,
+    UnsupportedOperation,
+    IndexOutOfBounds,
+    NullPointer,
+}
 
 #[derive(Debug, Error, Clone)]
 pub enum FederationError {
@@ -37,6 +48,12 @@ pub enum FederationError {
     Runtime(String),
     #[error("{}", .0.get_message().unwrap_or_default())]
     AwsService(crate::security::AwsServiceError),
+    #[error("{source}")]
+    Wrapped {
+        kind: JavaExceptionKind,
+        #[source]
+        source: Arc<dyn StdError + Send + Sync>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, FederationError>;
@@ -84,6 +101,16 @@ impl FederationError {
 
     pub fn illegal_state(message: impl Into<String>) -> FederationError {
         FederationError::IllegalState(message.into())
+    }
+
+    pub fn wrapped(
+        kind: JavaExceptionKind,
+        source: impl StdError + Send + Sync + 'static,
+    ) -> FederationError {
+        FederationError::Wrapped {
+            kind,
+            source: Arc::new(source),
+        }
     }
 
     pub fn as_connector_exception(&self) -> Option<&AthenaConnectorException> {

@@ -14,11 +14,11 @@ const QUERY_PASSTHROUGH_ARGUMENTS: &str = "queryPassthroughArguments";
 pub fn do_typed_serialize(request: &GetTableRequest, jgen: &mut JsonGenerator) -> Result<()> {
     crate::serde::v2::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    crate::serde::v2::table_name_serde::serialize(request.get_table_name(), jgen)?;
+    crate::serde::v2::table_name_serde::serialize(request.table_name(), jgen)?;
     write_string_map(
         jgen,
         QUERY_PASSTHROUGH_ARGUMENTS,
-        request.get_query_passthrough_arguments(),
+        request.query_passthrough_arguments(),
     )
 }
 

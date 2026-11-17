@@ -19,33 +19,33 @@ impl ReadRecordsResponse {
         }
     }
 
-    pub fn get_request_type(&self) -> RecordRequestType {
+    pub fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_schema(&self) -> &SchemaRef {
-        self.records.get_schema()
+    pub fn schema(&self) -> &SchemaRef {
+        self.records.schema()
     }
 
-    pub fn get_records(&self) -> &Block {
+    pub fn records(&self) -> &Block {
         &self.records
     }
 
-    pub fn get_record_count(&self) -> usize {
-        self.records.get_row_count()
+    pub fn record_count(&self) -> usize {
+        self.records.row_count()
     }
 }
 
 impl RecordResponse for ReadRecordsResponse {
-    fn get_request_type(&self) -> RecordRequestType {
+    fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    fn get_catalog_name(&self) -> &str {
+    fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 }
@@ -62,7 +62,7 @@ impl fmt::Display for ReadRecordsResponse {
             f,
             "ReadRecordsResponse{{records={}, requestType={}, catalogName={}}}",
             self.records,
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name
         )
     }

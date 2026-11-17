@@ -102,19 +102,19 @@ impl FieldVector {
         }
     }
 
-    pub fn get_field(&self) -> &FieldRef {
+    pub fn field(&self) -> &FieldRef {
         &self.field
     }
 
-    pub fn get_name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.field.name()
     }
 
-    pub fn get_minor_type(&self) -> MinorType {
+    pub fn minor_type(&self) -> MinorType {
         self.minor_type
     }
 
-    pub fn get_value_count(&self) -> usize {
+    pub fn value_count(&self) -> usize {
         self.value_count
     }
 
@@ -132,7 +132,7 @@ impl FieldVector {
         *self = fresh;
     }
 
-    pub fn get_children(&self) -> Vec<&FieldVector> {
+    pub fn children(&self) -> Vec<&FieldVector> {
         match &self.data {
             VectorData::Struct { children, .. } => children.iter().collect(),
             VectorData::List { child, .. } => vec![child.as_ref()],
@@ -142,28 +142,26 @@ impl FieldVector {
 
     pub fn get_child(&self, name: &str) -> Option<&FieldVector> {
         match &self.data {
-            VectorData::Struct { children, .. } => children.iter().find(|c| c.get_name() == name),
+            VectorData::Struct { children, .. } => children.iter().find(|c| c.name() == name),
             _ => None,
         }
     }
 
     pub fn get_child_mut(&mut self, name: &str) -> Option<&mut FieldVector> {
         match &mut self.data {
-            VectorData::Struct { children, .. } => {
-                children.iter_mut().find(|c| c.get_name() == name)
-            }
+            VectorData::Struct { children, .. } => children.iter_mut().find(|c| c.name() == name),
             _ => None,
         }
     }
 
-    pub fn get_data_vector(&self) -> Option<&FieldVector> {
+    pub fn data_vector(&self) -> Option<&FieldVector> {
         match &self.data {
             VectorData::List { child, .. } => Some(child.as_ref()),
             _ => None,
         }
     }
 
-    pub fn get_data_vector_mut(&mut self) -> Option<&mut FieldVector> {
+    pub fn data_vector_mut(&mut self) -> Option<&mut FieldVector> {
         match &mut self.data {
             VectorData::List { child, .. } => Some(child.as_mut()),
             _ => None,
@@ -188,7 +186,7 @@ impl FieldVector {
         }
     }
 
-    pub fn get_null_count(&self) -> usize {
+    pub fn null_count(&self) -> usize {
         (0..self.value_count).filter(|i| self.is_null(*i)).count()
     }
 
@@ -239,7 +237,7 @@ impl FieldVector {
                 for child in children {
                     let v = child.get_object(index);
                     if !v.is_null() {
-                        entries.push((Value::String(child.get_name().to_string()), v));
+                        entries.push((Value::String(child.name().to_string()), v));
                     }
                 }
                 Value::Map(entries)
@@ -449,7 +447,7 @@ impl FieldVector {
                 }
                 validity[index] = true;
                 for child in children.iter_mut() {
-                    let name = child.get_name().to_string();
+                    let name = child.name().to_string();
                     let v = entries
                         .iter()
                         .find(|(k, _)| matches!(k, Value::String(s) if *s == name))
@@ -1083,16 +1081,16 @@ impl<'a> FieldReader<'a> {
         }
     }
 
-    pub fn get_vector(&self) -> &'a FieldVector {
+    pub fn vector(&self) -> &'a FieldVector {
         self.vector
     }
 
-    pub fn get_field(&self) -> &'a FieldRef {
-        self.vector.get_field()
+    pub fn field(&self) -> &'a FieldRef {
+        self.vector.field()
     }
 
-    pub fn get_minor_type(&self) -> MinorType {
-        self.vector.get_minor_type()
+    pub fn minor_type(&self) -> MinorType {
+        self.vector.minor_type()
     }
 
     pub fn set_position(&self, index: usize) {
@@ -1100,7 +1098,7 @@ impl<'a> FieldReader<'a> {
         self.reset_cursor();
     }
 
-    pub fn get_position(&self) -> usize {
+    pub fn position(&self) -> usize {
         self.pos.get()
     }
 
@@ -1147,7 +1145,7 @@ impl<'a> FieldReader<'a> {
 
     pub fn reader(&self) -> Option<FieldReader<'a>> {
         self.vector
-            .get_data_vector()
+            .data_vector()
             .map(|child| FieldReader::with_position(child, self.child_pos.clone()))
     }
 

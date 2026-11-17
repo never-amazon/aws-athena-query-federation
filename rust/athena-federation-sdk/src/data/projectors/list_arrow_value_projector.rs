@@ -12,11 +12,11 @@ pub struct ListArrowValueProjector<'a> {
 
 impl<'a> ListArrowValueProjector<'a> {
     pub fn new(list_reader: FieldReader<'a>) -> Result<ListArrowValueProjector<'a>> {
-        let children = get_children(list_reader.get_field());
+        let children = get_children(list_reader.field());
         if children.len() != 1 {
             return Err(FederationError::invalid_input(format!(
                 "Unexpected number of children for ListProjector field {}",
-                list_reader.get_field().name()
+                list_reader.field().name()
             )));
         }
         let projection = create_value_projection(minor_type_of(children[0].data_type()))?;

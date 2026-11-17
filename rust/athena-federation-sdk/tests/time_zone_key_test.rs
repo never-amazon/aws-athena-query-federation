@@ -26,8 +26,8 @@ fn assert_time_zone_not_supported(zone_id: &str) {
 
 #[test]
 fn test_utc() {
-    assert_eq!(utc_key().get_key(), 0);
-    assert_eq!(utc_key().get_id(), "UTC");
+    assert_eq!(utc_key().key(), 0);
+    assert_eq!(utc_key().id(), "UTC");
     assert_eq!(TimeZoneKey::get_time_zone_key(0).unwrap(), utc_key());
     for id in [
         "UTC",
@@ -88,10 +88,10 @@ fn test_hour_offset_zone() {
 #[test]
 fn test_zone_key_lookup() {
     for tzk in TimeZoneKey::get_time_zone_keys() {
-        assert_eq!(TimeZoneKey::get_time_zone_key(tzk.get_key()).unwrap(), tzk);
-        assert_eq!(key(tzk.get_id()), tzk);
-        assert_eq!(key(&tzk.get_id().to_uppercase()), tzk);
-        assert_eq!(key(&tzk.get_id().to_lowercase()), tzk);
+        assert_eq!(TimeZoneKey::get_time_zone_key(tzk.key()).unwrap(), tzk);
+        assert_eq!(key(tzk.id()), tzk);
+        assert_eq!(key(&tzk.id().to_uppercase()), tzk);
+        assert_eq!(key(&tzk.id().to_lowercase()), tzk);
     }
 }
 
@@ -100,11 +100,8 @@ fn test_max_time_zone_key() {
     let max = TimeZoneKey::max_time_zone_key();
     let mut found_max = false;
     for tzk in TimeZoneKey::get_time_zone_keys() {
-        assert!(
-            tzk.get_key() <= max,
-            "{tzk} key is larger than max key {max}"
-        );
-        found_max = found_max || tzk.get_key() == max;
+        assert!(tzk.key() <= max, "{tzk} key is larger than max key {max}");
+        found_max = found_max || tzk.key() == max;
     }
     assert!(
         found_max,
@@ -117,7 +114,7 @@ fn test_zone_key_id_range() {
     let max = usize::try_from(TimeZoneKey::max_time_zone_key()).unwrap();
     let mut has_value = vec![false; max + 1];
     for tzk in TimeZoneKey::get_time_zone_keys() {
-        let k = tzk.get_key();
+        let k = tzk.key();
         assert!(k >= 0, "{tzk} has a negative time zone key");
         let k = usize::try_from(k).unwrap();
         assert!(
@@ -201,12 +198,12 @@ fn murmur3_128_as_long(data: &[u8]) -> i64 {
 #[test]
 fn test_zone_key_data() {
     let mut keys = TimeZoneKey::get_time_zone_keys();
-    keys.sort_by_key(athena_federation_sdk::data::TimeZoneKey::get_key);
-    keys.dedup_by_key(|k| k.get_key());
+    keys.sort_by_key(athena_federation_sdk::data::TimeZoneKey::key);
+    keys.dedup_by_key(|k| k.key());
     let mut bytes = Vec::new();
     for tzk in keys {
-        bytes.extend_from_slice(&tzk.get_key().to_le_bytes());
-        bytes.extend_from_slice(tzk.get_id().as_bytes());
+        bytes.extend_from_slice(&tzk.key().to_le_bytes());
+        bytes.extend_from_slice(tzk.id().as_bytes());
     }
     assert_eq!(
         murmur3_128_as_long(&bytes),

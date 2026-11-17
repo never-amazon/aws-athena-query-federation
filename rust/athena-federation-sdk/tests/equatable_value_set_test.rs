@@ -42,7 +42,7 @@ fn test_empty_set() {
     assert!(!equatables.is_all());
     assert!(!equatables.is_single_value());
     assert!(equatables.is_white_list());
-    assert_eq!(equatables.get_values().get_row_count(), 0);
+    assert_eq!(equatables.values().row_count(), 0);
     assert_eq!(equatables.complement(&h.a).unwrap(), h.all());
     assert!(!contains(&equatables, 0));
     assert!(!contains(&equatables, 1));
@@ -57,7 +57,7 @@ fn test_entire_set() {
     assert!(equatables.is_all());
     assert!(!equatables.is_single_value());
     assert!(!equatables.is_white_list());
-    assert_eq!(equatables.get_values().get_row_count(), 0);
+    assert_eq!(equatables.values().row_count(), 0);
     assert_eq!(equatables.complement(&h.a).unwrap(), h.none());
     assert!(contains(&equatables, 0));
     assert!(contains(&equatables, 1));

@@ -24,11 +24,11 @@ impl ListTablesResponse {
         }
     }
 
-    pub fn get_tables(&self) -> &[TableName] {
+    pub fn tables(&self) -> &[TableName] {
         &self.tables
     }
 
-    pub fn get_next_token(&self) -> Option<&str> {
+    pub fn next_token(&self) -> Option<&str> {
         self.next_token.as_deref()
     }
 }

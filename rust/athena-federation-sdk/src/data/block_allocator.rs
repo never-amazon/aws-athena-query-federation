@@ -18,7 +18,7 @@ pub trait BlockAllocator: Send + Sync {
 
     fn register_batch(&self, generator: &mut BatchGenerator<'_>) -> Result<ArrowRecordBatch>;
 
-    fn get_usage(&self) -> usize;
+    fn usage(&self) -> usize;
 
     fn close(&self);
 
@@ -69,15 +69,15 @@ impl BlockAllocatorImpl {
         }
     }
 
-    pub fn get_id(&self) -> &str {
+    pub fn id(&self) -> &str {
         &self.id
     }
 
-    pub fn get_memory_limit(&self) -> usize {
+    pub fn memory_limit(&self) -> usize {
         self.memory_limit
     }
 
-    pub fn get_blocks_created(&self) -> usize {
+    pub fn blocks_created(&self) -> usize {
         self.blocks_created.load(Ordering::SeqCst)
     }
 
@@ -114,7 +114,7 @@ impl BlockAllocator for BlockAllocatorImpl {
         Ok(batch)
     }
 
-    fn get_usage(&self) -> usize {
+    fn usage(&self) -> usize {
         self.usage.load(Ordering::SeqCst)
     }
 

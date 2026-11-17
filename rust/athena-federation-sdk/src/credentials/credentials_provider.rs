@@ -11,7 +11,7 @@ pub trait CredentialsProvider: Send + Sync {
     async fn get_credential(&self) -> Result<Box<dyn Credentials>>;
 
     async fn get_credential_map(&self) -> Result<HashMap<String, String>> {
-        Ok(self.get_credential().await?.get_properties())
+        Ok(self.get_credential().await?.properties())
     }
 
     fn as_any(&self) -> &dyn Any;

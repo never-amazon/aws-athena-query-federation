@@ -13,7 +13,7 @@ pub fn do_typed_serialize(
     version: i32,
 ) -> Result<()> {
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
-    crate::serde::v2::block_serde::serialize(expression.get_values(), jgen, version)?;
+    crate::serde::v2::block_serde::serialize(expression.values(), jgen, version)?;
     jgen.write_field_name(TYPE_FIELD)?;
     crate::serde::v2::arrow_type_serde::serialize(Some(expression.get_type()), jgen)
 }

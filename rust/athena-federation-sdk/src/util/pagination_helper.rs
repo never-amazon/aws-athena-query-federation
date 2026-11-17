@@ -24,15 +24,15 @@ impl ListTablesPage {
         }
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_tables(&self) -> &[TableName] {
+    pub fn tables(&self) -> &[TableName] {
         &self.tables
     }
 
-    pub fn get_next_token(&self) -> Option<&str> {
+    pub fn next_token(&self) -> Option<&str> {
         self.next_token.as_deref()
     }
 
@@ -76,7 +76,7 @@ impl PaginationHelper {
         let start_token =
             PaginationHelper::validate_and_parse_pagination_arguments(token, page_size)?;
         let mut sorted = all_tables.to_vec();
-        sorted.sort_by(|a, b| a.get_table_name().cmp(b.get_table_name()));
+        sorted.sort_by(|a, b| a.table_name().cmp(b.table_name()));
         let start = usize::try_from(start_token).unwrap_or(usize::MAX);
         if start >= all_tables.len() {
             return Ok(ListTablesPage::new(catalog_name, Vec::new(), None));

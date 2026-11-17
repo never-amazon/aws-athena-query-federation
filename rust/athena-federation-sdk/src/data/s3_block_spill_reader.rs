@@ -7,7 +7,9 @@ use super::block_allocator::BlockAllocator;
 use super::s3_client::{GetObjectRequest, S3Client};
 use crate::domain::spill::S3SpillLocation;
 use crate::exceptions::{FederationError, Result};
-use crate::security::{AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto};
+use crate::security::{
+    run_blocking, AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
+};
 
 pub(crate) fn require_present<T>(value: Option<T>, name: &str) -> Result<T> {
     value.ok_or_else(|| FederationError::NullPointer(format!("{name} was null")))
@@ -42,8 +44,8 @@ impl S3BlockSpillReader {
         let bytes = self
             .amazon_s3
             .get_object(GetObjectRequest::new(
-                spill_location.get_bucket(),
-                spill_location.get_key(),
+                spill_location.bucket(),
+                spill_location.key(),
             ))
             .await?;
         tracing::debug!("read: Completed reading block from S3");
@@ -60,9 +62,11 @@ impl S3BlockSpillReader {
         let schema = schema.into();
         let bytes = self.get_object(spill_location).await?;
         let schema = require_present(schema, "schema")?;
-        let block = self
-            .block_crypto(key)
-            .decrypt_with_schema(key, &bytes, schema)?;
+        let block_crypto = self.block_crypto(key);
+        let key = key.cloned();
+        let block =
+            run_blocking(move || block_crypto.decrypt_with_schema(key.as_ref(), &bytes, schema))
+                .await?;
         tracing::debug!("read: Completed decrypting block of size.");
         Ok(block)
     }
@@ -74,6 +78,8 @@ impl S3BlockSpillReader {
     ) -> Result<Vec<u8>> {
         let spill_location = require_present(spill_location.into(), "spillLocation")?;
         let bytes = self.get_object(spill_location).await?;
-        self.block_crypto(key).decrypt(key, &bytes)
+        let block_crypto = self.block_crypto(key);
+        let key = key.cloned();
+        run_blocking(move || block_crypto.decrypt(key.as_ref(), &bytes)).await
     }
 }

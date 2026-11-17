@@ -66,7 +66,7 @@ async fn check_bucket_auth_z() {
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
-    assert_eq!(BucketState::Valid, spy_verifier.get_state());
+    assert_eq!(BucketState::Valid, spy_verifier.state());
     assert!(spy_verifier.pass_or_fail().is_ok());
 
     assert!(
@@ -77,18 +77,15 @@ async fn check_bucket_auth_z() {
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
-    assert_eq!(BucketState::Valid, spy_verifier.get_state());
+    assert_eq!(BucketState::Valid, spy_verifier.state());
 
     assert!(
         spy_verifier.check_bucket_auth_z(Some("")).await.is_ok(),
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
-    assert_eq!(
-        Some(bucket_names[index].as_str()),
-        spy_verifier.get_bucket()
-    );
-    assert_eq!(BucketState::Valid, spy_verifier.get_state());
+    assert_eq!(Some(bucket_names[index].as_str()), spy_verifier.bucket());
+    assert_eq!(BucketState::Valid, spy_verifier.state());
 }
 
 #[tokio::test]
@@ -102,7 +99,7 @@ async fn check_bucket_auth_z_fail() {
         .expect_err("checkBucketAuthZFail failed");
     assert_eq!(invalid_message(bucket_not_own), err.to_string());
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
-    assert_eq!(BucketState::Invalid, spy_verifier.get_state());
+    assert_eq!(BucketState::Invalid, spy_verifier.state());
     assert_eq!(
         invalid_message(bucket_not_own),
         spy_verifier
@@ -140,7 +137,7 @@ async fn client_error_passes_through_unchanged() {
         Err(FederationError::AwsService(e)) => assert_eq!(error, e),
         other => panic!("expected the client error unchanged, got {other:?}"),
     }
-    assert_eq!(BucketState::Unchecked, verifier.get_state());
+    assert_eq!(BucketState::Unchecked, verifier.state());
 }
 
 #[tokio::test]

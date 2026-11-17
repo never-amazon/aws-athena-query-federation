@@ -14,11 +14,11 @@ impl TableName {
         }
     }
 
-    pub fn get_schema_name(&self) -> &str {
+    pub fn schema_name(&self) -> &str {
         &self.schema_name
     }
 
-    pub fn get_table_name(&self) -> &str {
+    pub fn table_name(&self) -> &str {
         &self.table_name
     }
 

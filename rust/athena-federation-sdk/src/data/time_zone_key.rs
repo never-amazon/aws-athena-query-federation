@@ -228,11 +228,11 @@ impl TimeZoneKey {
         normalize_zone_id(zone_id) == "utc"
     }
 
-    pub fn get_id(&self) -> &str {
+    pub fn id(&self) -> &str {
         &self.id
     }
 
-    pub fn get_key(&self) -> i16 {
+    pub fn key(&self) -> i16 {
         self.key
     }
 }

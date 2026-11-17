@@ -292,7 +292,7 @@ impl ExpressionConverter<'_> {
                 let rel = rel_of(s.input.as_deref())?;
                 let ty = rel
                     .row_type()
-                    .get_field_list()
+                    .field_list()
                     .first()
                     .map(|f| f.get_type().with_nullability(true))
                     .ok_or_else(|| SubstraitError::illegal_argument("scalar sub-query must return one column"))?;
@@ -310,7 +310,7 @@ impl ExpressionConverter<'_> {
                 }
                 let rel = rel_of(p.haystack.as_deref())?;
                 let nullable = operands.iter().any(|o| o.get_type().is_nullable())
-                    || rel.row_type().get_field_list().iter().any(|f| f.get_type().is_nullable());
+                    || rel.row_type().field_list().iter().any(|f| f.get_type().is_nullable());
                 RexSubQuery {
                     kind: SubQueryKind::In,
                     operands,
@@ -347,10 +347,10 @@ impl ExpressionConverter<'_> {
     }
 
     fn make_in(&self, lhs: RexNode, options: Vec<RexNode>) -> RexNode {
-        let family = lhs.get_type().get_sql_type_name().family();
+        let family = lhs.get_type().sql_type_name().family();
         let assignable = options
             .iter()
-            .all(|o| same_family(family, o.get_type().get_sql_type_name().family()));
+            .all(|o| same_family(family, o.get_type().sql_type_name().family()));
         if assignable {
             let mut values = Vec::new();
             for o in &options {
@@ -437,7 +437,7 @@ impl ExpressionConverter<'_> {
             })?;
             return self.rels.outer_field(o.steps_out, index);
         }
-        let fields = input.get_field_list();
+        let fields = input.field_list();
         let index = usize::try_from(field).map_err(|_| {
             SubstraitError::index_out_of_bounds(format!(
                 "Index {field} out of bounds for length {}",
@@ -782,7 +782,7 @@ impl ExpressionConverter<'_> {
 
     fn string_literal(&self, value: &str, ty: RelDataType, nullable: bool) -> RexNode {
         let len = char_length(value);
-        let precision = ty.get_precision();
+        let precision = ty.precision();
         let nullable_ty = nullable.then(|| ty.with_nullability(true));
         let literal = if precision < 0 || precision >= len {
             Self::lit(LiteralValue::Char(value.to_string()), ty)
@@ -839,7 +839,7 @@ pub(crate) fn least_restrictive(types: &[RelDataType]) -> RelDataType {
     let nullable = types.iter().any(RelDataType::is_nullable);
     let non_null: Vec<&RelDataType> = types
         .iter()
-        .filter(|t| t.get_sql_type_name() != SqlTypeName::Null)
+        .filter(|t| t.sql_type_name() != SqlTypeName::Null)
         .collect();
     let Some(first) = non_null.first() else {
         return types
@@ -856,12 +856,12 @@ pub(crate) fn least_restrictive(types: &[RelDataType]) -> RelDataType {
 }
 
 fn merge_types(a: &RelDataType, b: &RelDataType) -> RelDataType {
-    let an = a.get_sql_type_name();
-    let bn = b.get_sql_type_name();
+    let an = a.sql_type_name();
+    let bn = b.sql_type_name();
     if an.is_character() && bn.is_character() {
         let varchar = an == SqlTypeName::Varchar || bn == SqlTypeName::Varchar;
-        let pa = a.get_precision();
-        let pb = b.get_precision();
+        let pa = a.precision();
+        let pb = b.precision();
         let precision = if pa < 0 || pb < 0 { -1 } else { pa.max(pb) };
         let name = if varchar {
             SqlTypeName::Varchar
@@ -871,7 +871,7 @@ fn merge_types(a: &RelDataType, b: &RelDataType) -> RelDataType {
         return RelDataType::basic(name, precision, i32::MIN, false);
     }
     if an == bn {
-        if a.get_precision() >= b.get_precision() {
+        if a.precision() >= b.precision() {
             return a.clone();
         }
         return b.clone();

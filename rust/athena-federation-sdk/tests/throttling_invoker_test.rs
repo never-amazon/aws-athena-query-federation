@@ -37,7 +37,7 @@ impl BlockSpiller for MockSpiller {
         Ok(())
     }
 
-    fn get_constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
+    fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
         Arc::new(ConstraintEvaluator::empty_evaluator())
     }
 
@@ -73,8 +73,8 @@ async fn invoke_no_throttle() {
             .await
             .unwrap();
         assert_eq!(2, result);
-        assert_eq!(State::FastStart, invoker.get_state());
-        assert_eq!(0, invoker.get_delay());
+        assert_eq!(State::FastStart, invoker.state());
+        assert_eq!(0, invoker.delay());
     }
 }
 
@@ -111,11 +111,11 @@ async fn invoke_with_throttle() {
             .unwrap();
         assert_eq!(val, result);
         assert_eq!(4, count.load(Ordering::SeqCst));
-        assert_eq!(State::Avoidance, invoker.get_state());
-        assert!(invoker.get_delay() > 0);
+        assert_eq!(State::Avoidance, invoker.state());
+        assert!(invoker.delay() > 0);
     }
 
-    assert_eq!(199, invoker.get_delay());
+    assert_eq!(199, invoker.delay());
 }
 
 #[tokio::test]
@@ -182,8 +182,8 @@ fn test_default_builder_from_config() {
     let builder =
         ThrottlingInvoker::new_default_builder(throttle_filter(), &config_option).unwrap();
     let invoker = builder.build().unwrap();
-    assert_eq!(0.1f64.to_bits(), invoker.get_decrease().to_bits());
-    assert_eq!(500, invoker.get_increase());
-    assert_eq!(100, invoker.get_default_initial_delay_ms());
-    assert_eq!(10000, invoker.get_max_delay_ms());
+    assert_eq!(0.1f64.to_bits(), invoker.decrease().to_bits());
+    assert_eq!(500, invoker.increase());
+    assert_eq!(100, invoker.default_initial_delay_ms());
+    assert_eq!(10000, invoker.max_delay_ms());
 }

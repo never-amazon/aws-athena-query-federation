@@ -16,9 +16,9 @@ pub fn do_typed_serialize(
     response: &GetDataSourceCapabilitiesResponse,
     jgen: &mut JsonGenerator,
 ) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_object_field_start(CAPABILITIES_NAME_FIELD)?;
-    for (name, sub_types) in response.get_capabilities() {
+    for (name, sub_types) in response.capabilities() {
         jgen.write_array_field_start(name)?;
         for sub_type in sub_types {
             super::optimization_sub_type_serde_v4::serialize(Some(sub_type), jgen)?;

@@ -14,7 +14,7 @@ impl ComplexExpressionPushdownSubType {
         "SUPPORTED_FUNCTION_EXPRESSION_TYPES"
     }
 
-    pub fn get_sub_type(&self) -> &'static str {
+    pub fn sub_type(&self) -> &'static str {
         "supported_function_expression_types"
     }
 
@@ -28,7 +28,7 @@ impl ComplexExpressionPushdownSubType {
             ));
         }
         Ok(ComplexExpressionSubTypeProperties::new(
-            self.get_sub_type(),
+            self.sub_type(),
             properties
                 .iter()
                 .map(std::string::ToString::to_string)
@@ -54,11 +54,11 @@ impl ComplexExpressionSubTypeProperties {
         }
     }
 
-    pub fn get_sub_type(&self) -> &str {
+    pub fn sub_type(&self) -> &str {
         &self.property_name
     }
 
-    pub fn get_properties(&self) -> &[String] {
+    pub fn properties(&self) -> &[String] {
         &self.property_values
     }
 }

@@ -122,18 +122,18 @@ fn serialize_identity(
         return jgen.write_null();
     };
     jgen.write_start_object()?;
-    jgen.write_string_field("arn", identity.get_arn())?;
-    jgen.write_string_field("account", identity.get_account())?;
-    write_string_map_bean(jgen, "principalTags", identity.get_principal_tags())?;
-    write_strings(jgen, "iamGroups", identity.get_iam_groups())?;
-    write_string_map_bean(jgen, "configOptions", identity.get_config_options())?;
+    jgen.write_string_field("arn", identity.arn())?;
+    jgen.write_string_field("account", identity.account())?;
+    write_string_map_bean(jgen, "principalTags", identity.principal_tags())?;
+    write_strings(jgen, "iamGroups", identity.iam_groups())?;
+    write_string_map_bean(jgen, "configOptions", identity.config_options())?;
     jgen.write_end_object()
 }
 
 fn serialize_table_name(table_name: &TableName, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_start_object()?;
-    jgen.write_string_field("schemaName", Some(table_name.get_schema_name()))?;
-    jgen.write_string_field("tableName", Some(table_name.get_table_name()))?;
+    jgen.write_string_field("schemaName", Some(table_name.schema_name()))?;
+    jgen.write_string_field("tableName", Some(table_name.table_name()))?;
     jgen.write_string_field(
         "qualifiedTableName",
         Some(&table_name.get_qualified_table_name()),
@@ -262,7 +262,7 @@ pub fn serialize_marker(marker: &Marker, jgen: &mut JsonGenerator) -> Result<()>
     jgen.write_start_object()?;
     jgen.write_field_name("valueBlock")?;
     serialize_block(Some(&marker.get_value_block()?), jgen)?;
-    jgen.write_string_field("bound", Some(marker.get_bound().name()))?;
+    jgen.write_string_field("bound", Some(marker.bound().name()))?;
     jgen.write_boolean_field("nullValue", marker.is_null_value())?;
     jgen.write_end_object()
 }
@@ -273,11 +273,11 @@ fn serialize_value_set(value_set: &ValueSet, jgen: &mut JsonGenerator) -> Result
         ValueSet::EquatableValueSet(v) => {
             write_type(jgen, "equatable")?;
             jgen.write_field_name("valueBlock")?;
-            serialize_block(Some(v.get_value_block()), jgen)?;
+            serialize_block(Some(v.value_block()), jgen)?;
             jgen.write_boolean_field("whiteList", v.is_white_list())?;
             jgen.write_boolean_field("nullAllowed", v.is_null_allowed())?;
             jgen.write_field_name("values")?;
-            serialize_block(Some(v.get_values()), jgen)?;
+            serialize_block(Some(v.values()), jgen)?;
         }
         ValueSet::SortedRangeSet(v) => {
             write_type(jgen, "sortable")?;
@@ -287,9 +287,9 @@ fn serialize_value_set(value_set: &ValueSet, jgen: &mut JsonGenerator) -> Result
             for range in v.ordered_ranges() {
                 jgen.write_start_object()?;
                 jgen.write_field_name("low")?;
-                serialize_marker(range.get_low(), jgen)?;
+                serialize_marker(range.low(), jgen)?;
                 jgen.write_field_name("high")?;
-                serialize_marker(range.get_high(), jgen)?;
+                serialize_marker(range.high(), jgen)?;
                 jgen.write_field_name("type")?;
                 serialize_arrow_type(range.get_type(), jgen)?;
                 jgen.write_end_object()?;
@@ -315,25 +315,22 @@ fn serialize_expression(expression: &FederationExpression, jgen: &mut JsonGenera
             jgen.write_field_name("type")?;
             serialize_arrow_type(f.get_type(), jgen)?;
             jgen.write_object_field_start("functionName")?;
-            jgen.write_string_field(
-                "functionName",
-                Some(f.get_function_name().get_function_name()),
-            )?;
+            jgen.write_string_field("functionName", Some(f.function_name().function_name()))?;
             jgen.write_end_object()?;
             jgen.write_array_field_start("arguments")?;
-            for a in f.get_arguments() {
+            for a in f.arguments() {
                 serialize_expression(a, jgen)?;
             }
             jgen.write_end_array()?;
             jgen.write_array_field_start("children")?;
-            for a in f.get_children() {
+            for a in f.children() {
                 serialize_expression(a, jgen)?;
             }
             jgen.write_end_array()?;
         }
         FederationExpression::Variable(v) => {
             write_type(jgen, "variable")?;
-            jgen.write_string_field("columnName", Some(v.get_column_name()))?;
+            jgen.write_string_field("columnName", Some(v.column_name()))?;
             jgen.write_field_name("type")?;
             serialize_arrow_type(v.get_type(), jgen)?;
             jgen.write_array_field_start("children")?;
@@ -342,7 +339,7 @@ fn serialize_expression(expression: &FederationExpression, jgen: &mut JsonGenera
         FederationExpression::Constant(c) => {
             write_type(jgen, "constant")?;
             jgen.write_field_name("valueBlock")?;
-            serialize_block(c.get_values(), jgen)?;
+            serialize_block(c.values(), jgen)?;
             jgen.write_field_name("type")?;
             serialize_arrow_type(c.get_type(), jgen)?;
             jgen.write_array_field_start("children")?;
@@ -355,36 +352,36 @@ fn serialize_expression(expression: &FederationExpression, jgen: &mut JsonGenera
 fn serialize_constraints(constraints: &Constraints, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_start_object()?;
     jgen.write_object_field_start("summary")?;
-    for (k, v) in constraints.get_summary() {
+    for (k, v) in constraints.summary() {
         jgen.write_field_name(k)?;
         serialize_value_set(v, jgen)?;
     }
     jgen.write_end_object()?;
     jgen.write_array_field_start("expression")?;
-    for e in constraints.get_expression() {
+    for e in constraints.expression() {
         serialize_expression(e, jgen)?;
     }
     jgen.write_end_array()?;
     jgen.write_array_field_start("orderByClause")?;
-    for o in constraints.get_order_by_clause() {
+    for o in constraints.order_by_clause() {
         jgen.write_start_object()?;
-        jgen.write_string_field("columnName", Some(o.get_column_name()))?;
-        jgen.write_string_field("direction", Some(o.get_direction().name()))?;
+        jgen.write_string_field("columnName", Some(o.column_name()))?;
+        jgen.write_string_field("direction", Some(o.direction().name()))?;
         jgen.write_end_object()?;
     }
     jgen.write_end_array()?;
-    jgen.write_number_field_i64("limit", constraints.get_limit())?;
+    jgen.write_number_field_i64("limit", constraints.limit())?;
     write_string_map_bean(
         jgen,
         "queryPassthroughArguments",
-        constraints.get_query_passthrough_arguments(),
+        constraints.query_passthrough_arguments(),
     )?;
     jgen.write_field_name("queryPlan")?;
-    match constraints.get_query_plan() {
+    match constraints.query_plan() {
         Some(plan) => {
             jgen.write_start_object()?;
-            jgen.write_string_field("substraitVersion", plan.get_substrait_version())?;
-            jgen.write_string_field("substraitPlan", Some(plan.get_substrait_plan()))?;
+            jgen.write_string_field("substraitVersion", plan.substrait_version())?;
+            jgen.write_string_field("substraitPlan", Some(plan.substrait_plan()))?;
             jgen.write_end_object()?;
         }
         None => jgen.write_null()?,
@@ -398,8 +395,8 @@ fn serialize_spill_location(location: &SpillLocation, jgen: &mut JsonGenerator) 
     match location {
         SpillLocation::S3(s3) => {
             write_type(jgen, "S3SpillLocation")?;
-            jgen.write_string_field("bucket", Some(s3.get_bucket()))?;
-            jgen.write_string_field("key", Some(s3.get_key()))?;
+            jgen.write_string_field("bucket", Some(s3.bucket()))?;
+            jgen.write_string_field("key", Some(s3.key()))?;
             jgen.write_boolean_field("directory", s3.is_directory())?;
         }
     }
@@ -410,8 +407,8 @@ fn serialize_encryption_key(key: Option<&EncryptionKey>, jgen: &mut JsonGenerato
     match key {
         Some(k) => {
             jgen.write_start_object()?;
-            jgen.write_binary_field("key", k.get_key())?;
-            jgen.write_binary_field("nonce", k.get_nonce())?;
+            jgen.write_binary_field("key", k.key())?;
+            jgen.write_binary_field("nonce", k.nonce())?;
             jgen.write_end_object()
         }
         None => jgen.write_null(),
@@ -421,25 +418,25 @@ fn serialize_encryption_key(key: Option<&EncryptionKey>, jgen: &mut JsonGenerato
 fn serialize_split(split: &Split, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_start_object()?;
     jgen.write_field_name("spillLocation")?;
-    match split.get_spill_location() {
+    match split.spill_location() {
         Some(l) => serialize_spill_location(l, jgen)?,
         None => jgen.write_null()?,
     }
     jgen.write_field_name("encryptionKey")?;
-    serialize_encryption_key(split.get_encryption_key(), jgen)?;
-    write_string_map_bean(jgen, "properties", split.get_properties())?;
+    serialize_encryption_key(split.encryption_key(), jgen)?;
+    write_string_map_bean(jgen, "properties", split.properties())?;
     jgen.write_end_object()
 }
 
 fn write_metadata_header(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name("identity")?;
-    serialize_identity(request.get_identity(), jgen)?;
-    jgen.write_string_field("queryId", request.get_query_id())?;
-    jgen.write_string_field("catalogName", Some(request.get_catalog_name()))
+    serialize_identity(request.identity(), jgen)?;
+    jgen.write_string_field("queryId", request.query_id())?;
+    jgen.write_string_field("catalogName", Some(request.catalog_name()))
 }
 
 fn write_metadata_trailer(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field("requestType", Some(request.get_request_type().name()))?;
+    jgen.write_string_field("requestType", Some(request.request_type().name()))?;
     jgen.write_null_field("context")
 }
 
@@ -449,9 +446,9 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
     match request {
         FederationRequest::Ping(r) => {
             jgen.write_field_name("identity")?;
-            serialize_identity(r.get_identity(), jgen)?;
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
-            jgen.write_string_field("queryId", Some(r.get_query_id()))?;
+            serialize_identity(r.identity(), jgen)?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
+            jgen.write_string_field("queryId", Some(r.query_id()))?;
         }
         FederationRequest::ListSchemas(r) => {
             write_metadata_header(r, jgen)?;
@@ -459,19 +456,19 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
         }
         FederationRequest::ListTables(r) => {
             write_metadata_header(r, jgen)?;
-            jgen.write_string_field("schemaName", r.get_schema_name())?;
-            jgen.write_string_field("nextToken", r.get_next_token())?;
-            jgen.write_number_field_i32("pageSize", r.get_page_size())?;
+            jgen.write_string_field("schemaName", r.schema_name())?;
+            jgen.write_string_field("nextToken", r.next_token())?;
+            jgen.write_number_field_i32("pageSize", r.page_size())?;
             write_metadata_trailer(r, jgen)?;
         }
         FederationRequest::GetTable(r) => {
             write_metadata_header(r, jgen)?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             write_string_map_bean(
                 jgen,
                 "queryPassthroughArguments",
-                r.get_query_passthrough_arguments(),
+                r.query_passthrough_arguments(),
             )?;
             write_metadata_trailer(r, jgen)?;
             jgen.write_boolean_field("queryPassthrough", r.is_query_passthrough())?;
@@ -479,52 +476,52 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
         FederationRequest::GetTableLayout(r) => {
             write_metadata_header(r, jgen)?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("constraints")?;
-            serialize_constraints(r.get_constraints(), jgen)?;
+            serialize_constraints(r.constraints(), jgen)?;
             jgen.write_field_name("schema")?;
-            serialize_schema(r.get_schema(), jgen)?;
-            write_strings(jgen, "partitionCols", r.get_partition_cols())?;
+            serialize_schema(r.schema(), jgen)?;
+            write_strings(jgen, "partitionCols", r.partition_cols())?;
             write_metadata_trailer(r, jgen)?;
         }
         FederationRequest::GetSplits(r) => {
             write_metadata_header(r, jgen)?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("partitions")?;
-            serialize_block(Some(r.get_partitions()), jgen)?;
-            write_strings(jgen, "partitionCols", r.get_partition_cols())?;
+            serialize_block(Some(r.partitions()), jgen)?;
+            write_strings(jgen, "partitionCols", r.partition_cols())?;
             jgen.write_field_name("constraints")?;
-            serialize_constraints(r.get_constraints(), jgen)?;
-            jgen.write_string_field("continuationToken", r.get_continuation_token())?;
+            serialize_constraints(r.constraints(), jgen)?;
+            jgen.write_string_field("continuationToken", r.continuation_token())?;
             write_metadata_trailer(r, jgen)?;
         }
         FederationRequest::ReadRecords(r) => {
             jgen.write_field_name("identity")?;
-            serialize_identity(r.get_identity(), jgen)?;
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
-            jgen.write_string_field("queryId", Some(r.get_query_id()))?;
+            serialize_identity(r.identity(), jgen)?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
+            jgen.write_string_field("queryId", Some(r.query_id()))?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("schema")?;
-            serialize_schema(r.get_schema(), jgen)?;
+            serialize_schema(r.schema(), jgen)?;
             jgen.write_field_name("split")?;
-            serialize_split(r.get_split(), jgen)?;
+            serialize_split(r.split(), jgen)?;
             jgen.write_field_name("constraints")?;
-            serialize_constraints(r.get_constraints(), jgen)?;
-            jgen.write_number_field_i64("maxBlockSize", r.get_max_block_size())?;
-            jgen.write_number_field_i64("maxInlineBlockSize", r.get_max_inline_block_size())?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            serialize_constraints(r.constraints(), jgen)?;
+            jgen.write_number_field_i64("maxBlockSize", r.max_block_size())?;
+            jgen.write_number_field_i64("maxInlineBlockSize", r.max_inline_block_size())?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationRequest::UserDefinedFunction(r) => {
             jgen.write_field_name("identity")?;
-            serialize_identity(r.get_identity(), jgen)?;
+            serialize_identity(r.identity(), jgen)?;
             jgen.write_field_name("inputRecords")?;
-            serialize_block(Some(r.get_input_records()), jgen)?;
+            serialize_block(Some(r.input_records()), jgen)?;
             jgen.write_field_name("outputSchema")?;
-            serialize_schema(r.get_output_schema(), jgen)?;
-            jgen.write_string_field("methodName", Some(r.get_method_name()))?;
-            jgen.write_string_field("functionType", Some(r.get_function_type().name()))?;
+            serialize_schema(r.output_schema(), jgen)?;
+            jgen.write_string_field("methodName", Some(r.method_name()))?;
+            jgen.write_string_field("functionType", Some(r.function_type().name()))?;
         }
         FederationRequest::GetDataSourceCapabilities(r) => {
             write_metadata_header(r, jgen)?;
@@ -539,93 +536,93 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
     write_type(jgen, response.type_name())?;
     match response {
         FederationResponse::Ping(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
-            jgen.write_string_field("queryId", Some(r.get_query_id()))?;
-            jgen.write_string_field("sourceType", r.get_source_type())?;
-            jgen.write_number_field_i32("capabilities", r.get_capabilities())?;
-            jgen.write_number_field_i32("serDeVersion", r.get_ser_de_version())?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
+            jgen.write_string_field("queryId", Some(r.query_id()))?;
+            jgen.write_string_field("sourceType", r.source_type())?;
+            jgen.write_number_field_i32("capabilities", r.capabilities())?;
+            jgen.write_number_field_i32("serDeVersion", r.ser_de_version())?;
         }
         FederationResponse::ListSchemas(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
-            write_strings(jgen, "schemas", r.get_schemas())?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
+            write_strings(jgen, "schemas", r.schemas())?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::ListTables(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_array_field_start("tables")?;
-            for t in r.get_tables() {
+            for t in r.tables() {
                 serialize_table_name(t, jgen)?;
             }
             jgen.write_end_array()?;
-            jgen.write_string_field("nextToken", r.get_next_token())?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            jgen.write_string_field("nextToken", r.next_token())?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::GetTable(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("schema")?;
-            serialize_schema(r.get_schema(), jgen)?;
-            write_strings(jgen, "partitionColumns", r.get_partition_columns())?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            serialize_schema(r.schema(), jgen)?;
+            write_strings(jgen, "partitionColumns", r.partition_columns())?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::GetTableLayout(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_field_name("tableName")?;
-            serialize_table_name(r.get_table_name(), jgen)?;
+            serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("partitions")?;
-            serialize_block(Some(r.get_partitions()), jgen)?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            serialize_block(Some(r.partitions()), jgen)?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::GetSplits(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_array_field_start("splits")?;
-            for s in r.get_splits() {
+            for s in r.splits() {
                 serialize_split(s, jgen)?;
             }
             jgen.write_end_array()?;
-            jgen.write_string_field("continuationToken", r.get_continuation_token())?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            jgen.write_string_field("continuationToken", r.continuation_token())?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::ReadRecords(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_field_name("records")?;
-            serialize_block(Some(r.get_records()), jgen)?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            serialize_block(Some(r.records()), jgen)?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::RemoteReadRecords(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_field_name("schema")?;
-            serialize_schema(r.get_schema(), jgen)?;
+            serialize_schema(r.schema(), jgen)?;
             jgen.write_array_field_start("remoteBlocks")?;
-            for b in r.get_remote_blocks() {
+            for b in r.remote_blocks() {
                 serialize_spill_location(b, jgen)?;
             }
             jgen.write_end_array()?;
             jgen.write_field_name("encryptionKey")?;
-            serialize_encryption_key(r.get_encryption_key(), jgen)?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            serialize_encryption_key(r.encryption_key(), jgen)?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
         FederationResponse::UserDefinedFunction(r) => {
             jgen.write_field_name("records")?;
-            serialize_block(Some(r.get_records()), jgen)?;
-            jgen.write_string_field("methodName", Some(r.get_method_name()))?;
+            serialize_block(Some(r.records()), jgen)?;
+            jgen.write_string_field("methodName", Some(r.method_name()))?;
         }
         FederationResponse::GetDataSourceCapabilities(r) => {
-            jgen.write_string_field("catalogName", Some(r.get_catalog_name()))?;
+            jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_object_field_start("capabilities")?;
-            for (name, sub_types) in r.get_capabilities() {
+            for (name, sub_types) in r.capabilities() {
                 jgen.write_array_field_start(name)?;
                 for s in sub_types {
                     jgen.write_start_object()?;
-                    jgen.write_string_field("subType", Some(s.get_sub_type()))?;
-                    write_strings(jgen, "properties", s.get_properties())?;
+                    jgen.write_string_field("subType", Some(s.sub_type()))?;
+                    write_strings(jgen, "properties", s.properties())?;
                     jgen.write_end_object()?;
                 }
                 jgen.write_end_array()?;
             }
             jgen.write_end_object()?;
-            jgen.write_string_field("requestType", Some(r.get_request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
         }
     }
     jgen.write_end_object()

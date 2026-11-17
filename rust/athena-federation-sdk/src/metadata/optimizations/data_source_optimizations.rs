@@ -36,7 +36,7 @@ impl DataSourceOptimizations {
         }
     }
 
-    pub fn get_optimization(&self) -> &'static str {
+    pub fn optimization(&self) -> &'static str {
         match self {
             DataSourceOptimizations::SupportsLimitPushdown => "supports_limit_pushdown",
             DataSourceOptimizations::SupportsTopNPushdown => "supports_top_n_pushdown",
@@ -92,10 +92,10 @@ impl DataSourceOptimizations {
             return Err(FederationError::invalid_input(message));
         }
         Ok((
-            self.get_optimization().to_string(),
+            self.optimization().to_string(),
             sub_types_list
                 .iter()
-                .map(|s| OptimizationSubType::new(s.get_sub_type(), s.get_properties()))
+                .map(|s| OptimizationSubType::new(s.sub_type(), s.properties()))
                 .collect(),
         ))
     }

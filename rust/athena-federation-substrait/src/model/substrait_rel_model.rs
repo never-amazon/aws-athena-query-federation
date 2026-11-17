@@ -28,23 +28,23 @@ impl SubstraitRelModel {
         }
     }
 
-    pub fn get_read_rel(&self) -> Option<&ReadRel> {
+    pub fn read_rel(&self) -> Option<&ReadRel> {
         self.read.as_ref()
     }
 
-    pub fn get_filter_rel(&self) -> Option<&FilterRel> {
+    pub fn filter_rel(&self) -> Option<&FilterRel> {
         self.filter.as_ref()
     }
 
-    pub fn get_project_rel(&self) -> Option<&ProjectRel> {
+    pub fn project_rel(&self) -> Option<&ProjectRel> {
         self.project.as_ref()
     }
 
-    pub fn get_sort_rel(&self) -> Option<&SortRel> {
+    pub fn sort_rel(&self) -> Option<&SortRel> {
         self.sort.as_ref()
     }
 
-    pub fn get_fetch_rel(&self) -> Option<&FetchRel> {
+    pub fn fetch_rel(&self) -> Option<&FetchRel> {
         self.fetch.as_ref()
     }
 

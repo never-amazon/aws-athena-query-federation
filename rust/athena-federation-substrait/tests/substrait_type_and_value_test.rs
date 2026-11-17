@@ -16,8 +16,8 @@ fn test_constructor_with_valid_parameters() {
         "test_column",
     );
     assert_eq!(tav.get_type(), SqlTypeName::Integer);
-    assert_eq!(tav.get_value(), &SubstraitValue::Integer(123));
-    assert_eq!(tav.get_column_name(), "test_column");
+    assert_eq!(tav.value(), &SubstraitValue::Integer(123));
+    assert_eq!(tav.column_name(), "test_column");
 }
 
 #[test]
@@ -55,8 +55,8 @@ fn test_getters_with_integer_type() {
     let value = SubstraitValue::Integer(456);
     let tav = tv(SqlTypeName::Integer, value.clone(), "int_column");
     assert_eq!(tav.get_type(), SqlTypeName::Integer);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "int_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "int_column");
 }
 
 #[test]
@@ -64,8 +64,8 @@ fn test_getters_with_big_int_type() {
     let value = SubstraitValue::Long(9_223_372_036_854_775_807);
     let tav = tv(SqlTypeName::Bigint, value.clone(), "bigint_column");
     assert_eq!(tav.get_type(), SqlTypeName::Bigint);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "bigint_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "bigint_column");
 }
 
 #[test]
@@ -73,8 +73,8 @@ fn test_getters_with_varchar_type() {
     let value = SubstraitValue::String("test_string".to_string());
     let tav = tv(SqlTypeName::Varchar, value.clone(), "varchar_column");
     assert_eq!(tav.get_type(), SqlTypeName::Varchar);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "varchar_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "varchar_column");
 }
 
 #[allow(clippy::approx_constant, reason = "test values match the Java test")]
@@ -83,8 +83,8 @@ fn test_getters_with_double_type() {
     let value = SubstraitValue::Double(3.141_592_653_589_793);
     let tav = tv(SqlTypeName::Double, value.clone(), "double_column");
     assert_eq!(tav.get_type(), SqlTypeName::Double);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "double_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "double_column");
 }
 
 #[allow(clippy::approx_constant, reason = "test values match the Java test")]
@@ -93,8 +93,8 @@ fn test_getters_with_float_type() {
     let value = SubstraitValue::Float(3.14f32);
     let tav = tv(SqlTypeName::Float, value.clone(), "float_column");
     assert_eq!(tav.get_type(), SqlTypeName::Float);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "float_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "float_column");
 }
 
 #[test]
@@ -102,8 +102,8 @@ fn test_getters_with_boolean_type() {
     let value = SubstraitValue::Boolean(true);
     let tav = tv(SqlTypeName::Boolean, value.clone(), "boolean_column");
     assert_eq!(tav.get_type(), SqlTypeName::Boolean);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "boolean_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "boolean_column");
 }
 
 #[test]
@@ -111,8 +111,8 @@ fn test_getters_with_decimal_type() {
     let value = SubstraitValue::Decimal(BigDecimal::from_str("123.45").expect("decimal"));
     let tav = tv(SqlTypeName::Decimal, value.clone(), "decimal_column");
     assert_eq!(tav.get_type(), SqlTypeName::Decimal);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "decimal_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "decimal_column");
 }
 
 #[test]
@@ -120,8 +120,8 @@ fn test_getters_with_date_type() {
     let value = SubstraitValue::String("2024-01-01".to_string());
     let tav = tv(SqlTypeName::Date, value.clone(), "date_column");
     assert_eq!(tav.get_type(), SqlTypeName::Date);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "date_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "date_column");
 }
 
 #[test]
@@ -129,8 +129,8 @@ fn test_getters_with_time_type() {
     let value = SubstraitValue::String("12:30:45".to_string());
     let tav = tv(SqlTypeName::Time, value.clone(), "time_column");
     assert_eq!(tav.get_type(), SqlTypeName::Time);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "time_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "time_column");
 }
 
 #[test]
@@ -138,8 +138,8 @@ fn test_getters_with_timestamp_type() {
     let value = SubstraitValue::String("2024-01-01 12:30:45".to_string());
     let tav = tv(SqlTypeName::Timestamp, value.clone(), "timestamp_column");
     assert_eq!(tav.get_type(), SqlTypeName::Timestamp);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "timestamp_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "timestamp_column");
 }
 
 #[test]
@@ -147,8 +147,8 @@ fn test_getters_with_varbinary_type() {
     let value = SubstraitValue::Bytes(b"test_bytes".to_vec());
     let tav = tv(SqlTypeName::Varbinary, value.clone(), "varbinary_column");
     assert_eq!(tav.get_type(), SqlTypeName::Varbinary);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "varbinary_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "varbinary_column");
 }
 
 #[test]
@@ -156,8 +156,8 @@ fn test_getters_with_tiny_int_type() {
     let value = SubstraitValue::Byte(127);
     let tav = tv(SqlTypeName::Tinyint, value.clone(), "tinyint_column");
     assert_eq!(tav.get_type(), SqlTypeName::Tinyint);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "tinyint_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "tinyint_column");
 }
 
 #[test]
@@ -165,8 +165,8 @@ fn test_getters_with_small_int_type() {
     let value = SubstraitValue::Short(32767);
     let tav = tv(SqlTypeName::Smallint, value.clone(), "smallint_column");
     assert_eq!(tav.get_type(), SqlTypeName::Smallint);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "smallint_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "smallint_column");
 }
 
 #[test]
@@ -174,8 +174,8 @@ fn test_getters_with_char_type() {
     let value = SubstraitValue::String("A".to_string());
     let tav = tv(SqlTypeName::Char, value.clone(), "char_column");
     assert_eq!(tav.get_type(), SqlTypeName::Char);
-    assert_eq!(tav.get_value(), &value);
-    assert_eq!(tav.get_column_name(), "char_column");
+    assert_eq!(tav.value(), &value);
+    assert_eq!(tav.column_name(), "char_column");
 }
 
 #[test]
@@ -227,8 +227,8 @@ fn test_multiple_instances_with_same_values() {
         "test_column",
     );
     assert_eq!(a.get_type(), b.get_type());
-    assert_eq!(a.get_value(), b.get_value());
-    assert_eq!(a.get_column_name(), b.get_column_name());
+    assert_eq!(a.value(), b.value());
+    assert_eq!(a.column_name(), b.column_name());
 }
 
 #[test]
@@ -241,8 +241,8 @@ fn test_multiple_instances_with_different_values() {
     );
     assert_eq!(a.get_type(), SqlTypeName::Integer);
     assert_eq!(b.get_type(), SqlTypeName::Varchar);
-    assert_eq!(a.get_value(), &SubstraitValue::Integer(123));
-    assert_eq!(b.get_value(), &SubstraitValue::String("test".to_string()));
-    assert_eq!(a.get_column_name(), "col1");
-    assert_eq!(b.get_column_name(), "col2");
+    assert_eq!(a.value(), &SubstraitValue::Integer(123));
+    assert_eq!(b.value(), &SubstraitValue::String("test".to_string()));
+    assert_eq!(a.column_name(), "col1");
+    assert_eq!(b.column_name(), "col2");
 }

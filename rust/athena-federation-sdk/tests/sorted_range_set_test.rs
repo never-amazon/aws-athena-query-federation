@@ -79,7 +79,7 @@ fn test_empty_set() {
     assert!(!range_set.is_all());
     assert!(!range_set.is_single_value());
     assert!(range_set.get_ordered_ranges().is_empty());
-    assert_eq!(range_set.get_range_count(), 0);
+    assert_eq!(range_set.range_count(), 0);
     assert_eq!(range_set.complement(&h.a).unwrap(), h.all());
     assert!(!range_set.includes_marker(&h.lower()).unwrap());
     assert!(!range_set.includes_marker(&h.exactly(0)).unwrap());
@@ -94,7 +94,7 @@ fn test_entire_set() {
     assert!(!range_set.is_none());
     assert!(range_set.is_all());
     assert!(!range_set.is_single_value());
-    assert_eq!(range_set.get_range_count(), 1);
+    assert_eq!(range_set.range_count(), 1);
     assert_eq!(range_set.complement(&h.a).unwrap(), H::none());
     assert!(range_set.includes_marker(&h.lower()).unwrap());
     assert!(range_set.includes_marker(&h.exactly(0)).unwrap());
@@ -122,7 +122,7 @@ fn test_single_value() {
     assert!(!range_set.is_all());
     assert!(range_set.is_single_value());
     assert_eq!(range_set.get_ordered_ranges(), vec![h.eq(10)]);
-    assert_eq!(range_set.get_range_count(), 1);
+    assert_eq!(range_set.range_count(), 1);
     assert_eq!(range_set.complement(&h.a).unwrap(), complement);
     assert!(!range_set.includes_marker(&h.lower()).unwrap());
     assert!(range_set.includes_marker(&h.exactly(10)).unwrap());
@@ -157,7 +157,7 @@ fn test_bounded_set() {
         range_set,
         SortedRangeSet::copy_of(&BIGINT, normalized_result, false).unwrap()
     );
-    assert_eq!(range_set.get_range_count(), 3);
+    assert_eq!(range_set.range_count(), 3);
     assert_eq!(range_set.complement(&h.a).unwrap(), complement);
     assert!(!range_set.includes_marker(&h.lower()).unwrap());
     assert!(range_set.includes_marker(&h.exactly(0)).unwrap());
@@ -189,7 +189,7 @@ fn test_unbounded_set() {
         range_set,
         SortedRangeSet::copy_of(&BIGINT, normalized_result, false).unwrap()
     );
-    assert_eq!(range_set.get_range_count(), 3);
+    assert_eq!(range_set.range_count(), 3);
     assert_eq!(range_set.complement(&h.a).unwrap(), complement);
     assert!(range_set.includes_marker(&h.lower()).unwrap());
     assert!(range_set.includes_marker(&h.exactly(0)).unwrap());

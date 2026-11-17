@@ -17,9 +17,9 @@ pub struct MetadataRequestHeader {
 
 pub fn serialize_header(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
-    federated_identity_serde::serialize(request.get_identity(), jgen)?;
-    jgen.write_string_field(QUERY_ID_FIELD, request.get_query_id())?;
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.get_catalog_name()))
+    federated_identity_serde::serialize(request.identity(), jgen)?;
+    jgen.write_string_field(QUERY_ID_FIELD, request.query_id())?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.catalog_name()))
 }
 
 pub fn deserialize_header(jparser: &mut JsonParser<'_>) -> Result<MetadataRequestHeader> {

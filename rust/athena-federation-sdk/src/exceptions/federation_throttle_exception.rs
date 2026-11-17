@@ -34,11 +34,11 @@ impl FederationThrottleException {
         self.message.as_deref()
     }
 
-    pub fn get_cause(&self) -> Option<&Arc<dyn StdError + Send + Sync>> {
+    pub fn cause(&self) -> Option<&Arc<dyn StdError + Send + Sync>> {
         self.cause.as_ref()
     }
 
-    pub fn get_suppressed(&self) -> &[Arc<dyn StdError + Send + Sync>] {
+    pub fn suppressed(&self) -> &[Arc<dyn StdError + Send + Sync>] {
         &[]
     }
 }

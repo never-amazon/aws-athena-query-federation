@@ -95,7 +95,7 @@ impl Marker {
         let reader = block.get_field_reader(DEFAULT_COLUMN).ok_or_else(|| {
             FederationError::NullPointer(format!("block has no column {DEFAULT_COLUMN}"))
         })?;
-        let arrow_type = reader.get_field().data_type().clone();
+        let arrow_type = reader.field().data_type().clone();
         let value = if null_value {
             Value::Null
         } else {
@@ -107,7 +107,7 @@ impl Marker {
             bound,
             null_value,
             value,
-            allocator_id: Some(block.get_allocator_id().to_string()),
+            allocator_id: Some(block.allocator_id().to_string()),
         })
     }
 
@@ -134,22 +134,22 @@ impl Marker {
         &self.arrow_type
     }
 
-    pub fn get_value(&self) -> Result<&Value> {
+    pub fn value(&self) -> Result<&Value> {
         if self.null_value {
             return Err(FederationError::invalid_input("No value to get"));
         }
         Ok(&self.value)
     }
 
-    pub fn get_bound(&self) -> Bound {
+    pub fn bound(&self) -> Bound {
         self.bound
     }
 
-    pub fn get_schema(&self) -> Arc<Schema> {
+    pub fn schema(&self) -> Arc<Schema> {
         value_block_schema(&self.arrow_type)
     }
 
-    pub fn get_allocator_id(&self) -> Option<&str> {
+    pub fn allocator_id(&self) -> Option<&str> {
         self.allocator_id.as_deref()
     }
 
@@ -185,8 +185,8 @@ impl Marker {
         }
         if crate::data::ArrowTypeComparator::compare(
             self.get_type(),
-            self.get_value()?,
-            other.get_value()?,
+            self.value()?,
+            other.value()?,
         )? != 0
         {
             return Ok(false);
@@ -270,7 +270,7 @@ impl Marker {
             bound,
             null_value: true,
             value: Value::Null,
-            allocator_id: Some(block.get_allocator_id().to_string()),
+            allocator_id: Some(block.allocator_id().to_string()),
         }
     }
 
@@ -358,7 +358,7 @@ impl ValueMarker for Marker {
         &self.value
     }
 
-    fn get_bound(&self) -> Bound {
+    fn bound(&self) -> Bound {
         self.bound
     }
 

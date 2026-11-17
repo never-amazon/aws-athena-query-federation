@@ -35,7 +35,7 @@ enum Writable {
     Marker(Marker),
 }
 
-fn as_request(value: &dyn Any) -> Option<FederationRequest> {
+fn to_request(value: &dyn Any) -> Option<FederationRequest> {
     if let Some(r) = value.downcast_ref::<FederationRequest>() {
         return Some(r.clone());
     }
@@ -58,7 +58,7 @@ fn as_request(value: &dyn Any) -> Option<FederationRequest> {
     None
 }
 
-fn as_response(value: &dyn Any) -> Option<FederationResponse> {
+fn to_response(value: &dyn Any) -> Option<FederationResponse> {
     if let Some(r) = value.downcast_ref::<FederationResponse>() {
         return Some(r.clone());
     }
@@ -110,7 +110,7 @@ impl ObjectMapper {
         }
     }
 
-    pub fn get_ser_de_version(&self) -> i32 {
+    pub fn ser_de_version(&self) -> i32 {
         self.version
     }
 
@@ -118,7 +118,7 @@ impl ObjectMapper {
         self.version > SERDE_VERSION_ONE
     }
 
-    pub fn get_allocator(&self) -> &Arc<dyn BlockAllocator> {
+    pub fn allocator(&self) -> &Arc<dyn BlockAllocator> {
         &self.allocator
     }
 
@@ -142,10 +142,10 @@ impl ObjectMapper {
 
     fn resolve_writable<T: Any>(&self, value: &T) -> Result<Writable> {
         let any: &dyn Any = value;
-        if let Some(r) = as_request(any) {
+        if let Some(r) = to_request(any) {
             return Ok(Writable::Request(Box::new(r)));
         }
-        if let Some(r) = as_response(any) {
+        if let Some(r) = to_response(any) {
             return Ok(Writable::Response(Box::new(r)));
         }
         if !self.is_strict() {

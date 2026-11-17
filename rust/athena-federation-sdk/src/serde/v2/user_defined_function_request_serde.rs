@@ -19,20 +19,17 @@ pub fn do_typed_serialize(
     version: i32,
 ) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
-    federated_identity_serde::serialize(request.get_identity(), jgen)?;
+    federated_identity_serde::serialize(request.identity(), jgen)?;
     jgen.write_field_name(INPUT_RECORDS_FIELD)?;
-    super::block_serde::serialize(Some(request.get_input_records()), jgen, version)?;
+    super::block_serde::serialize(Some(request.input_records()), jgen, version)?;
     jgen.write_field_name(OUTPUT_SCHEMA_FIELD)?;
     crate::serde::v3::schema_serde_v3::serialize_for_version(
-        request.get_output_schema(),
+        request.output_schema(),
         jgen,
         version,
     )?;
-    jgen.write_string_field(METHOD_NAME_FIELD, Some(request.get_method_name()))?;
-    jgen.write_string_field(
-        FUNCTION_TYPE_FIELD,
-        Some(request.get_function_type().name()),
-    )
+    jgen.write_string_field(METHOD_NAME_FIELD, Some(request.method_name()))?;
+    jgen.write_string_field(FUNCTION_TYPE_FIELD, Some(request.function_type().name()))
 }
 
 pub fn do_typed_deserialize(

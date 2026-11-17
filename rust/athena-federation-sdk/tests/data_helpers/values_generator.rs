@@ -53,7 +53,7 @@ impl ValuesGenerator {
         length: usize,
         unique: bool,
     ) -> Result<usize> {
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::LIST => self.set_list(vector, custom, length),
             MinorType::MAP => self.set_map(vector, custom, length),
             MinorType::STRUCT => self.set_struct(vector, custom, length),
@@ -67,16 +67,16 @@ impl ValuesGenerator {
         custom: &mut CustomFieldVector,
         length: usize,
     ) -> Result<usize> {
-        let position = vector.get_value_count();
+        let position = vector.value_count();
         let names: Vec<String> = vector
-            .get_children()
+            .children()
             .iter()
-            .map(|c| c.get_name().to_string())
+            .map(|c| c.name().to_string())
             .collect();
         let mut max_child_size = 0;
         for name in names {
             let child = vector.get_child_mut(&name).expect("struct child");
-            let mut child_custom = CustomFieldVector::new(child.get_field().clone());
+            let mut child_custom = CustomFieldVector::new(child.field().clone());
             let size = self.generate_values(child, &mut child_custom, length, false)?;
             max_child_size = max_child_size.max(size);
             custom.add(Some(child_custom));
@@ -85,7 +85,7 @@ impl ValuesGenerator {
             vector.set_index_defined(i);
         }
         vector.set_value_count(max_child_size);
-        Ok(vector.get_value_count())
+        Ok(vector.value_count())
     }
 
     fn set_list(
@@ -94,19 +94,19 @@ impl ValuesGenerator {
         custom: &mut CustomFieldVector,
         length: usize,
     ) -> Result<usize> {
-        assert_eq!(vector.get_children().len(), 1);
-        let position = vector.get_value_count();
-        let nullable = vector.get_field().is_nullable();
+        assert_eq!(vector.children().len(), 1);
+        let position = vector.value_count();
+        let nullable = vector.field().is_nullable();
         let length = self.get_length(length);
         let mut prev_child_size = vector
-            .get_data_vector()
-            .map_or(0, athena_federation_sdk::data::FieldVector::get_value_count);
+            .data_vector()
+            .map_or(0, athena_federation_sdk::data::FieldVector::value_count);
         for i in 0..length {
             let mut child_custom = None;
             if !self.is_null(nullable) {
                 vector.start_new_value(position + i)?;
-                let child = vector.get_data_vector_mut().expect("list child");
-                let mut cc = CustomFieldVector::new(child.get_field().clone());
+                let child = vector.data_vector_mut().expect("list child");
+                let mut cc = CustomFieldVector::new(child.field().clone());
                 let new_child_size = self.generate_values(child, &mut cc, 0, false)?;
                 vector.end_value(position + i, new_child_size - prev_child_size)?;
                 prev_child_size = new_child_size;
@@ -115,7 +115,7 @@ impl ValuesGenerator {
             custom.add(child_custom);
         }
         vector.set_value_count(position + length);
-        Ok(vector.get_value_count())
+        Ok(vector.value_count())
     }
 
     fn set_map(
@@ -124,35 +124,35 @@ impl ValuesGenerator {
         custom: &mut CustomFieldVector,
         length: usize,
     ) -> Result<usize> {
-        assert_eq!(vector.get_children().len(), 1);
-        let position = vector.get_value_count();
+        assert_eq!(vector.children().len(), 1);
+        let position = vector.value_count();
         let length = self.get_length(length);
         for i in 0..length {
             vector.start_new_value(position + i)?;
-            let entries = vector.get_data_vector_mut().expect("entries");
-            assert_eq!(entries.get_children().len(), 2);
-            let key_minor = entries.get_child("key").expect("key").get_minor_type();
+            let entries = vector.data_vector_mut().expect("entries");
+            assert_eq!(entries.children().len(), 2);
+            let key_minor = entries.get_child("key").expect("key").minor_type();
             let mut kv_length = self.get_length(0);
             if key_minor == MinorType::VARBINARY || key_minor == MinorType::BIT {
                 kv_length = 2;
             }
             let keys = entries.get_child_mut("key").expect("key");
-            let mut keys_custom = CustomFieldVector::new(keys.get_field().clone());
+            let mut keys_custom = CustomFieldVector::new(keys.field().clone());
             self.generate_values(keys, &mut keys_custom, kv_length, true)?;
             let values = entries.get_child_mut("value").expect("value");
-            let mut values_custom = CustomFieldVector::new(values.get_field().clone());
+            let mut values_custom = CustomFieldVector::new(values.field().clone());
             self.generate_values(values, &mut values_custom, kv_length, false)?;
             custom.add_map(keys_custom, values_custom);
             vector.end_value(position + i, kv_length)?;
         }
         vector.set_value_count(position + length);
-        let entries = vector.get_data_vector_mut().expect("entries");
-        let key_count = entries.get_child("key").expect("key").get_value_count();
+        let entries = vector.data_vector_mut().expect("entries");
+        let key_count = entries.get_child("key").expect("key").value_count();
         for i in 0..key_count {
             entries.set_index_defined(i);
         }
         entries.set_value_count(key_count);
-        Ok(vector.get_value_count())
+        Ok(vector.value_count())
     }
 
     #[allow(
@@ -160,8 +160,8 @@ impl ValuesGenerator {
         reason = "takes the low bits of a random word, as the Java generator does"
     )]
     fn random_value(&mut self, vector: &FieldVector) -> Value {
-        let field = vector.get_field().clone();
-        match vector.get_minor_type() {
+        let field = vector.field().clone();
+        match vector.minor_type() {
             MinorType::BIGINT => Value::Long(self.rng.next_u64().cast_signed()),
             MinorType::BIT => Value::Int(i32::try_from(self.rng.between(0, 1)).unwrap()),
             MinorType::DATEDAY => {
@@ -220,9 +220,9 @@ impl ValuesGenerator {
         length: usize,
         unique: bool,
     ) -> Result<usize> {
-        let position = vector.get_value_count();
+        let position = vector.value_count();
         let length = self.get_length(length);
-        let nullable = vector.get_field().is_nullable();
+        let nullable = vector.field().is_nullable();
         let mut items = Vec::with_capacity(length);
         let mut seen = HashSet::new();
         while items.len() < length {
@@ -241,6 +241,6 @@ impl ValuesGenerator {
             custom.add_value(vector.get_object(i + position));
         }
         vector.set_value_count(position + length);
-        Ok(vector.get_value_count())
+        Ok(vector.value_count())
     }
 }

@@ -108,7 +108,7 @@ fn test_accumulator_non_nls_string_value() {
     );
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Integer);
-    assert_eq!(acc[0].get_column_name(), "int_col");
+    assert_eq!(acc[0].column_name(), "int_col");
 }
 
 #[test]
@@ -119,10 +119,7 @@ fn test_accumulator_nls_string_value() {
     );
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Varchar);
-    assert_eq!(
-        acc[0].get_value(),
-        &SubstraitValue::String("hello".to_string())
-    );
+    assert_eq!(acc[0].value(), &SubstraitValue::String("hello".to_string()));
 }
 
 #[test]
@@ -185,7 +182,7 @@ fn test_binary_comparison_reversed_operands() {
         &call(&operators::EQUALS, vec![num("99"), id("int_col")]),
     );
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_column_name(), "int_col");
+    assert_eq!(acc[0].column_name(), "int_col");
     assert!(matches!(operand(&result, 0), SqlNode::DynamicParam(_)));
 }
 
@@ -294,7 +291,7 @@ fn test_like_basic() {
     );
     assert_eq!(acc.len(), 1);
     assert_eq!(
-        acc[0].get_value(),
+        acc[0].value(),
         &SubstraitValue::String("%test%".to_string())
     );
 }
@@ -337,8 +334,8 @@ fn test_not_on_boolean_column() {
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::Boolean(false));
-    assert_eq!(where_of(&result).get_kind(), SqlKind::Equals);
+    assert_eq!(acc[0].value(), &SubstraitValue::Boolean(false));
+    assert_eq!(where_of(&result).kind(), SqlKind::Equals);
 }
 
 #[test]
@@ -347,10 +344,10 @@ fn test_standalone_boolean_column() {
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::Boolean(true));
-    assert_eq!(acc[0].get_column_name(), "bool_col");
+    assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
+    assert_eq!(acc[0].column_name(), "bool_col");
     let w = where_of(&result);
-    assert_eq!(w.get_kind(), SqlKind::Equals);
+    assert_eq!(w.kind(), SqlKind::Equals);
     assert!(matches!(operand(w, 0), SqlNode::Identifier(_)));
     assert!(matches!(operand(w, 1), SqlNode::DynamicParam(_)));
     assert_eq!(
@@ -368,14 +365,14 @@ fn test_boolean_column_in_and_operator() {
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 2);
     assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::Boolean(true));
-    assert_eq!(acc[0].get_column_name(), "bool_col");
+    assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
+    assert_eq!(acc[0].column_name(), "bool_col");
     assert_eq!(acc[1].get_type(), SqlTypeName::Integer);
     let w = where_of(&result);
-    assert_eq!(w.get_kind(), SqlKind::And);
+    assert_eq!(w.kind(), SqlKind::And);
     assert!(matches!(operand(w, 0), SqlNode::Call(_)));
     assert!(matches!(operand(w, 1), SqlNode::Call(_)));
-    assert_eq!(operand(w, 0).get_kind(), SqlKind::Equals);
+    assert_eq!(operand(w, 0).kind(), SqlKind::Equals);
 }
 
 #[test]
@@ -385,8 +382,8 @@ fn test_boolean_column_in_or_operator() {
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 2);
     assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::Boolean(true));
-    assert_eq!(where_of(&result).get_kind(), SqlKind::Or);
+    assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
+    assert_eq!(where_of(&result).kind(), SqlKind::Or);
 }
 
 #[test]
@@ -398,8 +395,8 @@ fn test_explicit_boolean_comparison() {
     let (result, acc) = run(&schema(), &select_where(eq));
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::Boolean(true));
-    assert_eq!(where_of(&result).get_kind(), SqlKind::Equals);
+    assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
+    assert_eq!(where_of(&result).kind(), SqlKind::Equals);
 }
 
 #[test]
@@ -449,6 +446,6 @@ fn test_visit_like_with_concat() {
     );
     assert_eq!(acc.len(), 1);
     assert_eq!(acc[0].get_type(), SqlTypeName::Varchar);
-    assert_eq!(acc[0].get_value(), &SubstraitValue::String("a".to_string()));
-    assert_eq!(acc[0].get_column_name(), "cc_call_center_id");
+    assert_eq!(acc[0].value(), &SubstraitValue::String("a".to_string()));
+    assert_eq!(acc[0].column_name(), "cc_call_center_id");
 }

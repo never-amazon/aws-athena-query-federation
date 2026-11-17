@@ -73,31 +73,31 @@ impl AesGcmBlockCrypto {
 
     fn make_cipher(mode: Mode, key: Option<&EncryptionKey>) -> Result<GcmCipher> {
         let key = key.ok_or_else(|| FederationError::NullPointer("key was null".into()))?;
-        if key.get_nonce().len() != NONCE_BYTES {
+        if key.nonce().len() != NONCE_BYTES {
             return Err(invalid_input(format!(
                 "Expected {} nonce bytes but found {}",
                 NONCE_BYTES,
-                key.get_nonce().len()
+                key.nonce().len()
             )));
         }
-        tracing::debug!("Cipher key bytes length: {}", key.get_key().len());
-        if key.get_key().is_empty() {
+        tracing::debug!("Cipher key bytes length: {}", key.key().len());
+        if key.key().is_empty() {
             return Err(invalid_input("Invalid key"));
         }
         let bad_key = |_| internal_error("Key length not 128/192/256 bits.");
-        let cipher = match key.get_key().len() {
+        let cipher = match key.key().len() {
             16 => Cipher::Aes128(Box::new(
-                Aes128Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+                Aes128Gcm::new_from_slice(key.key()).map_err(bad_key)?,
             )),
             24 => Cipher::Aes192(Box::new(
-                Aes192Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+                Aes192Gcm::new_from_slice(key.key()).map_err(bad_key)?,
             )),
             32 => Cipher::Aes256(Box::new(
-                Aes256Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+                Aes256Gcm::new_from_slice(key.key()).map_err(bad_key)?,
             )),
             _ => return Err(internal_error("Key length not 128/192/256 bits.")),
         };
-        let nonce = Nonce::<U12>::try_from(key.get_nonce())
+        let nonce = Nonce::<U12>::try_from(key.nonce())
             .map_err(|_| invalid_input(format!("Expected {NONCE_BYTES} nonce bytes")))?;
         Ok(GcmCipher {
             cipher,

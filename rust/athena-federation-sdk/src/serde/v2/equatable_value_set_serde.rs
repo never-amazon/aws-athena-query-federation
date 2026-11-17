@@ -14,7 +14,7 @@ pub fn do_typed_serialize(
     version: i32,
 ) -> Result<()> {
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
-    super::block_serde::serialize(Some(value_set.get_value_block()), jgen, version)?;
+    super::block_serde::serialize(Some(value_set.value_block()), jgen, version)?;
     jgen.write_boolean_field(WHITELIST_FIELD, value_set.is_white_list())?;
     jgen.write_boolean_field(NULL_ALLOWED_FIELD, value_set.is_null_allowed())
 }

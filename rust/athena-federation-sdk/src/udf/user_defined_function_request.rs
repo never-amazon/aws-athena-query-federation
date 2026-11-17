@@ -32,23 +32,23 @@ impl UserDefinedFunctionRequest {
         }
     }
 
-    pub fn get_identity(&self) -> Option<&FederatedIdentity> {
+    pub fn identity(&self) -> Option<&FederatedIdentity> {
         self.identity.as_ref()
     }
 
-    pub fn get_input_records(&self) -> &Block {
+    pub fn input_records(&self) -> &Block {
         &self.input_records
     }
 
-    pub fn get_output_schema(&self) -> &Schema {
+    pub fn output_schema(&self) -> &Schema {
         &self.output_schema
     }
 
-    pub fn get_method_name(&self) -> &str {
+    pub fn method_name(&self) -> &str {
         &self.method_name
     }
 
-    pub fn get_function_type(&self) -> UserDefinedFunctionType {
+    pub fn function_type(&self) -> UserDefinedFunctionType {
         self.function_type
     }
 }

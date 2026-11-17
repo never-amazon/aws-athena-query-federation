@@ -26,11 +26,11 @@ pub fn serialize(identity: Option<&FederatedIdentity>, jgen: &mut JsonGenerator)
 pub fn do_serialize(identity: &FederatedIdentity, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_string_field(ID_FIELD, Some(COMPATIBILITY_ID))?;
     jgen.write_string_field(PRINCIPAL_FIELD, Some(COMPATIBILITY_PRINCIPAL))?;
-    jgen.write_string_field(ACCOUNT_FIELD, identity.get_account())?;
-    jgen.write_string_field(ARN_FIELD, identity.get_arn())?;
-    write_string_map(jgen, TAGS_FIELD, identity.get_principal_tags())?;
-    write_string_array(jgen, GROUPS_FIELD, identity.get_iam_groups())?;
-    write_string_map(jgen, CONFIG_OPTIONS_FIELD, identity.get_config_options())
+    jgen.write_string_field(ACCOUNT_FIELD, identity.account())?;
+    jgen.write_string_field(ARN_FIELD, identity.arn())?;
+    write_string_map(jgen, TAGS_FIELD, identity.principal_tags())?;
+    write_string_array(jgen, GROUPS_FIELD, identity.iam_groups())?;
+    write_string_map(jgen, CONFIG_OPTIONS_FIELD, identity.config_options())
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<FederatedIdentity>> {

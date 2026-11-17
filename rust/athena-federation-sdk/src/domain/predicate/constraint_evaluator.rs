@@ -39,12 +39,12 @@ impl ConstraintEvaluator {
         ConstraintEvaluator::new(None, &Schema::empty(), Constraints::empty())
     }
 
-    pub fn get_constraints(&self) -> &Constraints {
+    pub fn constraints(&self) -> &Constraints {
         &self.constraints
     }
 
     pub fn apply(&self, field_name: &str, value: &Value) -> Result<bool> {
-        let constraint = self.constraints.get_summary().get(field_name);
+        let constraint = self.constraints.summary().get(field_name);
         if let (Some(constraint), Some(arrow_type)) = (constraint, self.type_map.get(field_name)) {
             let marker = self
                 .marker_factory
@@ -58,7 +58,7 @@ impl ConstraintEvaluator {
         &self,
         field_name: &str,
     ) -> Option<Arc<dyn ConstraintProjector>> {
-        let constraint = self.constraints.get_summary().get(field_name)?;
+        let constraint = self.constraints.summary().get(field_name)?;
         self.type_map.get(field_name)?;
         let constraint = constraint.clone();
         Some(Arc::new(move |value: &Value| {

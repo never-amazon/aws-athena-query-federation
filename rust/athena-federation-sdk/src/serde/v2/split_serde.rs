@@ -18,14 +18,14 @@ pub fn serialize(split: Option<&Split>, jgen: &mut JsonGenerator) -> Result<()> 
 
 pub fn do_serialize(split: &Split, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name(SPILL_LOCATION_FIELD)?;
-    super::spill_location_serde::serialize(split.get_spill_location(), jgen)?;
+    super::spill_location_serde::serialize(split.spill_location(), jgen)?;
     jgen.write_field_name(ENCRYPTION_KEY_FIELD)?;
-    match split.get_encryption_key() {
+    match split.encryption_key() {
         Some(key) => super::encryption_key_serde::serialize(Some(key), jgen)?,
         None => jgen.write_null()?,
     }
     jgen.write_object_field_start(PROPERTIES_FIELD)?;
-    let properties = split.get_properties();
+    let properties = split.properties();
     for key in java_hash_map_order(properties.keys()) {
         jgen.write_field_name(key)?;
         jgen.write_string(properties.get(key).and_then(|v| v.as_deref()))?;

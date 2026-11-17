@@ -22,15 +22,15 @@ impl PingRequest {
         }
     }
 
-    pub fn get_identity(&self) -> Option<&FederatedIdentity> {
+    pub fn identity(&self) -> Option<&FederatedIdentity> {
         self.identity.as_ref()
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_query_id(&self) -> &str {
+    pub fn query_id(&self) -> &str {
         &self.query_id
     }
 }

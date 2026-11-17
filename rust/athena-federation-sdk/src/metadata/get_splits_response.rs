@@ -37,11 +37,11 @@ impl GetSplitsResponse {
         GetSplitsResponse::new(catalog_name, vec![split], None)
     }
 
-    pub fn get_splits(&self) -> &[Split] {
+    pub fn splits(&self) -> &[Split] {
         &self.splits
     }
 
-    pub fn get_continuation_token(&self) -> Option<&str> {
+    pub fn continuation_token(&self) -> Option<&str> {
         self.continuation_token.as_deref()
     }
 }

@@ -238,8 +238,8 @@ impl BlockUtils {
         resolver: &dyn FieldResolver,
         value: &Value,
     ) -> Result<()> {
-        let field = vector.get_field().clone();
-        match vector.get_minor_type() {
+        let field = vector.field().clone();
+        match vector.minor_type() {
             MinorType::MAP => BlockUtils::write_map(vector, &field, pos, value, resolver),
             MinorType::LIST => {
                 BlockUtils::write_list(vector, &field, pos, value, resolver).map(|_| ())
@@ -258,9 +258,9 @@ impl BlockUtils {
             Ok(()) => Ok(()),
             Err(_) => Err(FederationError::invalid_input(format!(
                 "Unable to set value for field {} using value {} of type {}",
-                vector.get_name(),
+                vector.name(),
                 value,
-                vector.get_minor_type()
+                vector.minor_type()
             ))),
         }
     }
@@ -269,8 +269,8 @@ impl BlockUtils {
         if value.is_null() {
             return BlockUtils::set_null_value(vector, pos);
         }
-        let minor = vector.get_minor_type();
-        let field = vector.get_field();
+        let minor = vector.minor_type();
+        let field = vector.field();
         let canonical = match minor {
             MinorType::TIMESTAMPMILLITZ | MinorType::TIMESTAMPMICROTZ => {
                 if let Value::Long(v) = value {
@@ -367,7 +367,7 @@ impl BlockUtils {
     }
 
     fn set_null_value(vector: &mut FieldVector, pos: usize) -> Result<()> {
-        match vector.get_minor_type() {
+        match vector.minor_type() {
             MinorType::TIMESTAMPMICROTZ
             | MinorType::TIMESTAMPMILLITZ
             | MinorType::DATEMILLI
@@ -396,28 +396,28 @@ impl BlockUtils {
     }
 
     pub fn row_to_string(block: &Block, row: usize) -> Result<String> {
-        if row > block.get_row_count() {
+        if row > block.row_count() {
             return Err(FederationError::invalid_input(format!(
                 "{} exceeds available rows {}",
                 row,
-                block.get_row_count()
+                block.row_count()
             )));
         }
         let mut sb = String::new();
-        for reader in block.get_field_readers() {
+        for reader in block.field_readers() {
             reader.set_position(row);
             if !sb.is_empty() {
                 sb.push_str(", ");
             }
             sb.push('[');
-            sb.push_str(reader.get_field().name());
+            sb.push_str(reader.field().name());
             sb.push_str(" : ");
             match BlockUtils::field_to_string(&reader) {
                 Ok(s) => sb.push_str(&s),
                 Err(ex) => {
                     return Err(FederationError::connector_with_details(
                         FederationSourceErrorCode::InternalServiceException,
-                        format!("Error processing field {}", reader.get_field().name()),
+                        format!("Error processing field {}", reader.field().name()),
                         ex.to_string(),
                     ))
                 }
@@ -429,7 +429,7 @@ impl BlockUtils {
 
     pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         let npe = || FederationError::NullPointer("null value".into());
-        let minor = reader.get_minor_type();
+        let minor = reader.minor_type();
         Ok(match minor {
             MinorType::DATEDAY => {
                 let days = reader.read_integer().ok_or_else(npe)?;
@@ -438,7 +438,7 @@ impl BlockUtils {
             }
             MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => {
                 let v = reader.read_long().ok_or_else(npe)?;
-                DateTimeFormatterUtil::construct_zoned_date_time(v, reader.get_field().data_type())?
+                DateTimeFormatterUtil::construct_zoned_date_time(v, reader.field().data_type())?
                     .to_string()
             }
             MinorType::DATEMILLI
@@ -465,7 +465,7 @@ impl BlockUtils {
             MinorType::VARBINARY => bytes_to_hex(&reader.read_byte_array().ok_or_else(npe)?),
             MinorType::STRUCT => {
                 let mut sb = String::from("{");
-                for child in get_children(reader.get_field()) {
+                for child in get_children(reader.field()) {
                     if sb.len() > 3 {
                         sb.push(',');
                     }
@@ -517,18 +517,18 @@ impl BlockUtils {
         first_row: usize,
         last_row: usize,
     ) -> Result<usize> {
-        if first_row > last_row || last_row >= src_block.get_row_count() {
+        if first_row > last_row || last_row >= src_block.row_count() {
             return Err(FederationError::internal(format!(
                 "src has {} but requested copy of {} to {}",
-                src_block.get_row_count(),
+                src_block.row_count(),
                 first_row,
                 last_row
             )));
         }
-        for src in src_block.get_field_readers() {
-            let start = dst_block.get_row_count();
+        for src in src_block.field_readers() {
+            let start = dst_block.row_count();
             for (dst_offset, i) in (start..).zip(first_row..=last_row) {
-                let name = src.get_field().name().clone();
+                let name = src.field().name().clone();
                 let dst = dst_block.get_field_vector_mut(&name).ok_or_else(|| {
                     FederationError::NullPointer(format!("No vector found for field {name}"))
                 })?;
@@ -537,20 +537,20 @@ impl BlockUtils {
             }
         }
         let rows_copied = 1 + (last_row - first_row);
-        let new_count = dst_block.get_row_count() + rows_copied;
+        let new_count = dst_block.row_count() + rows_copied;
         dst_block.set_row_count(new_count);
         Ok(rows_copied)
     }
 
     pub fn is_null_row(block: &Block, row: usize) -> Result<bool> {
-        if row >= block.get_row_count() {
+        if row >= block.row_count() {
             return Err(FederationError::invalid_input(format!(
                 "block has {} rows but requested to check {}",
-                block.get_row_count(),
+                block.row_count(),
                 row
             )));
         }
-        for src in block.get_field_readers() {
+        for src in block.field_readers() {
             src.set_position(row);
             if src.is_set() {
                 return Ok(false);
@@ -579,7 +579,7 @@ impl BlockUtils {
         let mut end = start;
         if let Some(child_field) = child_field {
             let child_vector = vector
-                .get_data_vector_mut()
+                .data_vector_mut()
                 .ok_or_else(|| FederationError::illegal_state("list vector has no data vector"))?;
             for item in items {
                 if BlockUtils::write_all_value(
@@ -678,7 +678,7 @@ impl BlockUtils {
         let start = vector.start_list(pos)?;
         let mut idx = start;
         {
-            let entries_vector = vector.get_data_vector_mut().ok_or_else(|| {
+            let entries_vector = vector.data_vector_mut().ok_or_else(|| {
                 FederationError::illegal_state("map vector has no entries vector")
             })?;
             for (k, v) in entries {
@@ -712,7 +712,7 @@ impl BlockUtils {
                 }
                 idx += 1;
             }
-            entries_vector.set_value_count(idx.max(entries_vector.get_value_count()));
+            entries_vector.set_value_count(idx.max(entries_vector.value_count()));
         }
         vector.end_list(pos, idx)?;
         Ok(())
@@ -881,8 +881,8 @@ impl BlockUtils {
     }
 
     pub fn unset_row(row: usize, block: &mut Block) -> Result<()> {
-        for vector in block.get_field_vectors_mut() {
-            match vector.get_minor_type() {
+        for vector in block.field_vectors_mut() {
+            match vector.minor_type() {
                 MinorType::TIMESTAMPMICROTZ
                 | MinorType::TIMESTAMPMILLITZ
                 | MinorType::DATEDAY

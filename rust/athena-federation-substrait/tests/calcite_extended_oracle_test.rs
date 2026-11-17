@@ -81,15 +81,15 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
         let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema).visit(&node)?;
         let mut out = rewritten.to_sql_string(d).replace('\n', "\\n");
         for v in &accumulator {
-            let class = v.get_value().java_class_name();
+            let class = v.value().java_class_name();
             let simple = class.rsplit('.').next().unwrap_or(class);
             write!(
                 out,
                 "\t{}|{}|{}|{}",
                 v.get_type(),
                 simple,
-                v.get_value(),
-                v.get_column_name()
+                v.value(),
+                v.column_name()
             )
             .unwrap();
         }

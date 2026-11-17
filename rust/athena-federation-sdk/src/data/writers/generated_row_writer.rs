@@ -85,7 +85,7 @@ impl GeneratedRowWriter {
 
     pub fn new_builder_with_constraints(constraints: &Constraints) -> RowWriterBuilder {
         let mut builder = GeneratedRowWriter::new_builder();
-        for (name, value_set) in constraints.get_summary() {
+        for (name, value_set) in constraints.summary() {
             let value_set = value_set.clone();
             let projector: Arc<dyn ConstraintProjector> =
                 Arc::new(move |value: &crate::data::Value| value_set.contains_value(value));
@@ -113,7 +113,7 @@ impl GeneratedRowWriter {
         for (writer, vector) in self
             .field_writers
             .iter_mut()
-            .zip(block.get_field_vectors_mut().iter_mut())
+            .zip(block.field_vectors_mut().iter_mut())
         {
             matched &= writer.write(vector, context, row_num)?;
         }
@@ -123,17 +123,17 @@ impl GeneratedRowWriter {
     fn check_and_recompile(&mut self, block: &Block) -> Result<()> {
         let same = match &self.schema {
             Some(s) => {
-                Arc::ptr_eq(s, block.get_schema())
-                    && self.field_writers.len() == block.get_field_vectors().len()
+                Arc::ptr_eq(s, block.schema())
+                    && self.field_writers.len() == block.field_vectors().len()
             }
             None => false,
         };
         if !same {
             tracing::info!("recompile: Detected a new block, rebuilding field writers so they point to the correct Arrow vectors.");
-            self.schema = Some(block.get_schema().clone());
+            self.schema = Some(block.schema().clone());
             self.field_writers.clear();
-            let mut writers = Vec::with_capacity(block.get_field_vectors().len());
-            for vector in block.get_field_vectors() {
+            let mut writers = Vec::with_capacity(block.field_vectors().len());
+            for vector in block.field_vectors() {
                 writers.push(self.make_field_writer(vector)?);
             }
             self.field_writers = writers;
@@ -151,8 +151,8 @@ impl GeneratedRowWriter {
     }
 
     fn make_field_writer(&self, vector: &FieldVector) -> Result<Box<dyn FieldWriter>> {
-        let field_name = vector.get_name().to_string();
-        let field_type = vector.get_minor_type();
+        let field_name = vector.name().to_string();
+        let field_type = vector.minor_type();
         let extractor = self.extractors.get(&field_name);
         let constraint = self.constraint_for(&field_name);
         if let Some(factory) = self.field_writer_factories.get(&field_name) {

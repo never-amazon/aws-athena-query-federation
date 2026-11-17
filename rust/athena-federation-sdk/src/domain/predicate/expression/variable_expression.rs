@@ -27,7 +27,7 @@ impl VariableExpression {
         })
     }
 
-    pub fn get_column_name(&self) -> &str {
+    pub fn column_name(&self) -> &str {
         &self.column_name
     }
 
@@ -35,7 +35,7 @@ impl VariableExpression {
         &self.arrow_type
     }
 
-    pub fn get_children(&self) -> &[super::FederationExpression] {
+    pub fn children(&self) -> &[super::FederationExpression] {
         &[]
     }
 

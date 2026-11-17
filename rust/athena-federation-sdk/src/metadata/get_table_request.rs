@@ -34,11 +34,11 @@ impl GetTableRequest {
         }
     }
 
-    pub fn get_table_name(&self) -> &TableName {
+    pub fn table_name(&self) -> &TableName {
         &self.table_name
     }
 
-    pub fn get_query_passthrough_arguments(&self) -> &HashMap<String, Option<String>> {
+    pub fn query_passthrough_arguments(&self) -> &HashMap<String, Option<String>> {
         &self.query_passthrough_arguments
     }
 

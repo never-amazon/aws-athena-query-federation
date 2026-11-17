@@ -9,7 +9,7 @@ pub struct SubstraitMetadataParser;
 impl SubstraitMetadataParser {
     pub fn get_table_columns(substrait_rel_model: &SubstraitRelModel) -> Result<Vec<String>> {
         let read_rel = substrait_rel_model
-            .get_read_rel()
+            .read_rel()
             .ok_or_else(|| SubstraitError::null_pointer("readRel is null"))?;
         let default_schema = NamedStruct::default();
         let base_schema = read_rel.base_schema.as_ref().unwrap_or(&default_schema);
@@ -21,7 +21,7 @@ impl SubstraitMetadataParser {
         parse_schema_fields(&base_schema.names, types, &mut connector_schema, 0)?;
         Ok(connector_schema
             .iter()
-            .map(|f| f.get_name().to_string())
+            .map(|f| f.name().to_string())
             .collect())
     }
 }

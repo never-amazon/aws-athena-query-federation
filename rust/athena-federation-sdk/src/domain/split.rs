@@ -66,15 +66,15 @@ impl Split {
             .map_err(|_| FederationError::Runtime(format!("For input string: \"{v}\"")))
     }
 
-    pub fn get_properties(&self) -> &HashMap<String, Option<String>> {
+    pub fn properties(&self) -> &HashMap<String, Option<String>> {
         &self.properties
     }
 
-    pub fn get_spill_location(&self) -> Option<&SpillLocation> {
+    pub fn spill_location(&self) -> Option<&SpillLocation> {
         self.spill_location.as_ref()
     }
 
-    pub fn get_encryption_key(&self) -> Option<&EncryptionKey> {
+    pub fn encryption_key(&self) -> Option<&EncryptionKey> {
         self.encryption_key.as_ref()
     }
 

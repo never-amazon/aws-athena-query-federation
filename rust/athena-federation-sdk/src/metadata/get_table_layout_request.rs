@@ -55,19 +55,19 @@ impl GetTableLayoutRequest {
         }
     }
 
-    pub fn get_table_name(&self) -> &TableName {
+    pub fn table_name(&self) -> &TableName {
         &self.table_name
     }
 
-    pub fn get_constraints(&self) -> &Constraints {
+    pub fn constraints(&self) -> &Constraints {
         &self.constraints
     }
 
-    pub fn get_schema(&self) -> &Schema {
+    pub fn schema(&self) -> &Schema {
         &self.schema
     }
 
-    pub fn get_partition_cols(&self) -> &IndexSet<String> {
+    pub fn partition_cols(&self) -> &IndexSet<String> {
         &self.partition_cols
     }
 }

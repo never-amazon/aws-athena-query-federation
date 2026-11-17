@@ -107,11 +107,11 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
         }
     }
 
-    pub fn get_state(&self) -> BucketState {
+    pub fn state(&self) -> BucketState {
         self.state
     }
 
-    pub fn get_bucket(&self) -> Option<&str> {
+    pub fn bucket(&self) -> Option<&str> {
         self.bucket.as_deref()
     }
 }

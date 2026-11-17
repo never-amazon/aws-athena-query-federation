@@ -78,8 +78,8 @@ fn test_single_value() {
 fn test_all_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::all(&a, &BIGINT);
-    assert_eq!(range.get_low(), &Marker::lower_unbounded(&a, &BIGINT));
-    assert_eq!(range.get_high(), &Marker::upper_unbounded(&a, &BIGINT));
+    assert_eq!(range.low(), &Marker::lower_unbounded(&a, &BIGINT));
+    assert_eq!(range.high(), &Marker::upper_unbounded(&a, &BIGINT));
     assert!(!range.is_single_value());
     assert!(range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -104,8 +104,8 @@ fn test_all_range() {
 fn test_greater_than_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::greater_than(&a, &BIGINT, 1i64).unwrap();
-    assert_eq!(range.get_low(), &Marker::above(&a, &BIGINT, 1i64).unwrap());
-    assert_eq!(range.get_high(), &Marker::upper_unbounded(&a, &BIGINT));
+    assert_eq!(range.low(), &Marker::above(&a, &BIGINT, 1i64).unwrap());
+    assert_eq!(range.high(), &Marker::upper_unbounded(&a, &BIGINT));
     assert!(!range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -128,11 +128,8 @@ fn test_greater_than_range() {
 fn test_greater_than_or_equal_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::greater_than_or_equal(&a, &BIGINT, 1i64).unwrap();
-    assert_eq!(
-        range.get_low(),
-        &Marker::exactly(&a, &BIGINT, 1i64).unwrap()
-    );
-    assert_eq!(range.get_high(), &Marker::upper_unbounded(&a, &BIGINT));
+    assert_eq!(range.low(), &Marker::exactly(&a, &BIGINT, 1i64).unwrap());
+    assert_eq!(range.high(), &Marker::upper_unbounded(&a, &BIGINT));
     assert!(!range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -158,8 +155,8 @@ fn test_greater_than_or_equal_range() {
 fn test_less_than_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::less_than(&a, &BIGINT, 1i64).unwrap();
-    assert_eq!(range.get_low(), &Marker::lower_unbounded(&a, &BIGINT));
-    assert_eq!(range.get_high(), &Marker::below(&a, &BIGINT, 1i64).unwrap());
+    assert_eq!(range.low(), &Marker::lower_unbounded(&a, &BIGINT));
+    assert_eq!(range.high(), &Marker::below(&a, &BIGINT, 1i64).unwrap());
     assert!(!range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -182,11 +179,8 @@ fn test_less_than_range() {
 fn test_less_than_or_equal_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::less_than_or_equal(&a, &BIGINT, 1i64).unwrap();
-    assert_eq!(range.get_low(), &Marker::lower_unbounded(&a, &BIGINT));
-    assert_eq!(
-        range.get_high(),
-        &Marker::exactly(&a, &BIGINT, 1i64).unwrap()
-    );
+    assert_eq!(range.low(), &Marker::lower_unbounded(&a, &BIGINT));
+    assert_eq!(range.high(), &Marker::exactly(&a, &BIGINT, 1i64).unwrap());
     assert!(!range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -212,14 +206,8 @@ fn test_less_than_or_equal_range() {
 fn test_equal_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::equal(&a, &BIGINT, 1i64).unwrap();
-    assert_eq!(
-        range.get_low(),
-        &Marker::exactly(&a, &BIGINT, 1i64).unwrap()
-    );
-    assert_eq!(
-        range.get_high(),
-        &Marker::exactly(&a, &BIGINT, 1i64).unwrap()
-    );
+    assert_eq!(range.low(), &Marker::exactly(&a, &BIGINT, 1i64).unwrap());
+    assert_eq!(range.high(), &Marker::exactly(&a, &BIGINT, 1i64).unwrap());
     assert!(range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);
@@ -245,11 +233,8 @@ fn test_equal_range() {
 fn test_range() {
     let a = BlockAllocatorImpl::new();
     let range = Range::range(&a, &BIGINT, 0i64, false, 2i64, true).unwrap();
-    assert_eq!(range.get_low(), &Marker::above(&a, &BIGINT, 0i64).unwrap());
-    assert_eq!(
-        range.get_high(),
-        &Marker::exactly(&a, &BIGINT, 2i64).unwrap()
-    );
+    assert_eq!(range.low(), &Marker::above(&a, &BIGINT, 0i64).unwrap());
+    assert_eq!(range.high(), &Marker::exactly(&a, &BIGINT, 2i64).unwrap());
     assert!(!range.is_single_value());
     assert!(!range.is_all());
     assert_eq!(range.get_type(), &BIGINT);

@@ -14,8 +14,8 @@ pub struct StaticCredentialsProvider {
 
 impl StaticCredentialsProvider {
     pub fn new(default_credentials: DefaultCredentials) -> Result<StaticCredentialsProvider> {
-        if default_credentials.get_user().trim().is_empty()
-            || default_credentials.get_password().trim().is_empty()
+        if default_credentials.user().trim().is_empty()
+            || default_credentials.password().trim().is_empty()
         {
             return Err(FederationError::invalid_input(
                 "User or password must not be blank.",
@@ -26,7 +26,7 @@ impl StaticCredentialsProvider {
         })
     }
 
-    pub fn get_credential(&self) -> &DefaultCredentials {
+    pub fn credential(&self) -> &DefaultCredentials {
         &self.default_credentials
     }
 }

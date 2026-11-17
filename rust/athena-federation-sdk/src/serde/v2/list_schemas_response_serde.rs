@@ -10,8 +10,8 @@ const CATALOG_NAME_FIELD: &str = "catalogName";
 const SCHEMAS_FIELD: &str = "schemas";
 
 pub fn do_typed_serialize(response: &ListSchemasResponse, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
-    write_string_array(jgen, SCHEMAS_FIELD, response.get_schemas())
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
+    write_string_array(jgen, SCHEMAS_FIELD, response.schemas())
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListSchemasResponse> {

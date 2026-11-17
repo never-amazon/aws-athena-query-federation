@@ -21,12 +21,12 @@ pub fn do_typed_serialize(
 ) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(request.get_table_name(), jgen)?;
+    super::table_name_serde::serialize(request.table_name(), jgen)?;
     jgen.write_field_name(CONSTRAINTS_FIELD)?;
-    super::constraints_serde::serialize(Some(request.get_constraints()), jgen, version)?;
+    super::constraints_serde::serialize(Some(request.constraints()), jgen, version)?;
     jgen.write_field_name(SCHEMA_FIELD)?;
-    crate::serde::v3::schema_serde_v3::serialize_for_version(request.get_schema(), jgen, version)?;
-    write_string_array(jgen, PARTITION_COLS_FIELD, request.get_partition_cols())
+    crate::serde::v3::schema_serde_v3::serialize_for_version(request.schema(), jgen, version)?;
+    write_string_array(jgen, PARTITION_COLS_FIELD, request.partition_cols())
 }
 
 pub fn do_typed_deserialize(

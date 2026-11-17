@@ -10,7 +10,7 @@ const TABLE_NAME_FIELD: &str = "tableName";
 pub fn do_typed_serialize(request: &GetTableRequest, jgen: &mut JsonGenerator) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(request.get_table_name(), jgen)
+    super::table_name_serde::serialize(request.table_name(), jgen)
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<GetTableRequest> {

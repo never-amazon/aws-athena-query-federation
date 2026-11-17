@@ -33,7 +33,7 @@ impl SubstraitSqlUtils {
         let node = Self::get_rel_node_from_substrait_plan(plan, sql_dialect)?;
         let mut converter = RelToSqlConverter::new(sql_dialect.clone());
         let result = converter.visit_root(&node)?;
-        Ok(result.as_statement(sql_dialect))
+        Ok(result.to_statement(sql_dialect))
     }
 
     pub fn get_table_schema_from_substrait_plan(
@@ -101,21 +101,21 @@ fn traverse(
 ) {
     match node {
         RelNode::TableScan { .. } | RelNode::Values { .. } => {
-            builder.add_all(node.row_type().get_field_list());
+            builder.add_all(node.row_type().field_list());
         }
         RelNode::Project {
             input,
             exprs,
             row_type,
         } => {
-            let input_fields = input.row_type().get_field_list();
-            let output_fields = row_type.get_field_list();
+            let input_fields = input.row_type().field_list();
+            let output_fields = row_type.field_list();
             builder.add_all(output_fields);
             for (i, rex) in exprs.iter().enumerate() {
-                let output_name = output_fields[i].get_name().to_string();
+                let output_name = output_fields[i].name().to_string();
                 match rex {
                     RexNode::InputRef { index, .. } => {
-                        let original_name = input_fields[*index].get_name();
+                        let original_name = input_fields[*index].name();
                         if output_name != original_name {
                             rename_mapping.insert(output_name, Some(original_name.to_string()));
                         }
@@ -132,22 +132,22 @@ fn traverse(
             row_type,
             ..
         } => {
-            let input_fields = input.row_type().get_field_list();
-            let output_fields = row_type.get_field_list();
+            let input_fields = input.row_type().field_list();
+            let output_fields = row_type.field_list();
             builder.add_all(output_fields);
             let mut output_idx = 0usize;
             let mut sorted = group_set.clone();
             sorted.sort_unstable();
             for group_index in sorted {
-                let output_name = output_fields[output_idx].get_name().to_string();
-                let original_name = input_fields[group_index].get_name();
+                let output_name = output_fields[output_idx].name().to_string();
+                let original_name = input_fields[group_index].name();
                 if output_name != original_name {
                     rename_mapping.insert(output_name, Some(original_name.to_string()));
                 }
                 output_idx += 1;
             }
             while output_idx < output_fields.len() {
-                rename_mapping.insert(output_fields[output_idx].get_name().to_string(), None);
+                rename_mapping.insert(output_fields[output_idx].name().to_string(), None);
                 output_idx += 1;
             }
         }

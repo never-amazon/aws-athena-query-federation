@@ -11,8 +11,8 @@ pub fn serialize(encryption_key: Option<&EncryptionKey>, jgen: &mut JsonGenerato
 }
 
 pub fn do_serialize(encryption_key: &EncryptionKey, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_binary_field(KEY_FIELD, encryption_key.get_key())?;
-    jgen.write_binary_field(NONCE_FIELD, encryption_key.get_nonce())
+    jgen.write_binary_field(KEY_FIELD, encryption_key.key())?;
+    jgen.write_binary_field(NONCE_FIELD, encryption_key.nonce())
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<EncryptionKey>> {

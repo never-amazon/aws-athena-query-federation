@@ -14,8 +14,8 @@ pub fn serialize(sub_type: Option<&OptimizationSubType>, jgen: &mut JsonGenerato
 }
 
 pub fn do_serialize(sub_type: &OptimizationSubType, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(SUBTYPE_FIELD, Some(sub_type.get_sub_type()))?;
-    write_string_array(jgen, PROPERTIES_FIELD, sub_type.get_properties())
+    jgen.write_string_field(SUBTYPE_FIELD, Some(sub_type.sub_type()))?;
+    write_string_array(jgen, PROPERTIES_FIELD, sub_type.properties())
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<OptimizationSubType>> {

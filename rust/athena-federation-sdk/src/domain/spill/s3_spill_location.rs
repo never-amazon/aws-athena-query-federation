@@ -22,11 +22,11 @@ impl S3SpillLocation {
         }
     }
 
-    pub fn get_bucket(&self) -> &str {
+    pub fn bucket(&self) -> &str {
         &self.bucket
     }
 
-    pub fn get_key(&self) -> &str {
+    pub fn key(&self) -> &str {
         &self.key
     }
 

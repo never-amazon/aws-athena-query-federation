@@ -18,7 +18,7 @@ pub struct EquatableValueSet {
 fn column_type(block: &Block) -> Result<ArrowType> {
     block
         .get_field_reader(DEFAULT_COLUMN)
-        .map(|r| r.get_field().data_type().clone())
+        .map(|r| r.field().data_type().clone())
         .ok_or_else(|| {
             FederationError::NullPointer(format!("value block has no column {DEFAULT_COLUMN}"))
         })
@@ -26,9 +26,7 @@ fn column_type(block: &Block) -> Result<ArrowType> {
 
 fn block_values(block: &Block) -> Vec<Value> {
     match block.get_field_vector(DEFAULT_COLUMN) {
-        Some(v) => (0..block.get_row_count())
-            .map(|i| v.get_object(i))
-            .collect(),
+        Some(v) => (0..block.row_count()).map(|i| v.get_object(i)).collect(),
         None => Vec::new(),
     }
 }
@@ -151,11 +149,11 @@ impl EquatableValueSet {
         self.null_allowed
     }
 
-    pub fn get_schema(&self) -> &arrow::datatypes::SchemaRef {
-        self.value_block.get_schema()
+    pub fn schema(&self) -> &arrow::datatypes::SchemaRef {
+        self.value_block.schema()
     }
 
-    pub fn get_value_block(&self) -> &Block {
+    pub fn value_block(&self) -> &Block {
         &self.value_block
     }
 
@@ -167,7 +165,7 @@ impl EquatableValueSet {
         self.white_list
     }
 
-    pub fn get_values(&self) -> &Block {
+    pub fn values(&self) -> &Block {
         &self.value_block
     }
 
@@ -178,15 +176,15 @@ impl EquatableValueSet {
     }
 
     pub fn is_none(&self) -> bool {
-        self.white_list && self.value_block.get_row_count() == 0 && !self.null_allowed
+        self.white_list && self.value_block.row_count() == 0 && !self.null_allowed
     }
 
     pub fn is_all(&self) -> bool {
-        !self.white_list && self.value_block.get_row_count() == 0 && self.null_allowed
+        !self.white_list && self.value_block.row_count() == 0 && self.null_allowed
     }
 
     pub fn is_single_value(&self) -> bool {
-        let rows = self.value_block.get_row_count();
+        let rows = self.value_block.row_count();
         self.white_list && ((rows == 1 && !self.null_allowed) || (rows == 0 && self.null_allowed))
     }
 
@@ -196,7 +194,7 @@ impl EquatableValueSet {
                 "EquatableValueSet does not have just a single value",
             ));
         }
-        if self.null_allowed && self.value_block.get_row_count() == 0 {
+        if self.null_allowed && self.value_block.row_count() == 0 {
             return Ok(Value::Null);
         }
         Ok(self.get_value(0))
@@ -218,7 +216,7 @@ impl EquatableValueSet {
         if marker.is_null_value() {
             return Ok(self.null_allowed);
         }
-        self.contains_raw(marker.get_value()?)
+        self.contains_raw(marker.value()?)
     }
 
     pub fn contains_value(&self, value: &Value) -> Result<bool> {

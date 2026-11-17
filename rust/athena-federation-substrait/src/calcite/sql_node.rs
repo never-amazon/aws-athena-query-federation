@@ -141,7 +141,7 @@ impl SqlLiteral {
         }
     }
 
-    pub fn get_type_name(&self) -> SqlTypeName {
+    pub fn type_name(&self) -> SqlTypeName {
         match &self.value {
             SqlLiteralValue::Null => SqlTypeName::Null,
             SqlLiteralValue::Boolean(_) => SqlTypeName::Boolean,
@@ -263,31 +263,31 @@ impl SqlSelect {
         self.where_clause = w;
     }
 
-    pub fn get_select_list(&self) -> &[SqlNode] {
+    pub fn select_list(&self) -> &[SqlNode] {
         &self.select_list
     }
 
-    pub fn get_from(&self) -> Option<&SqlNode> {
+    pub fn from(&self) -> Option<&SqlNode> {
         self.from.as_ref()
     }
 
-    pub fn get_group(&self) -> Option<&[SqlNode]> {
+    pub fn group(&self) -> Option<&[SqlNode]> {
         self.group_by.as_deref()
     }
 
-    pub fn get_having(&self) -> Option<&SqlNode> {
+    pub fn having(&self) -> Option<&SqlNode> {
         self.having.as_ref()
     }
 
-    pub fn get_order_list(&self) -> Option<&[SqlNode]> {
+    pub fn order_list(&self) -> Option<&[SqlNode]> {
         self.order_by.as_deref()
     }
 
-    pub fn get_offset(&self) -> Option<&SqlNode> {
+    pub fn offset(&self) -> Option<&SqlNode> {
         self.offset.as_ref()
     }
 
-    pub fn get_fetch(&self) -> Option<&SqlNode> {
+    pub fn fetch(&self) -> Option<&SqlNode> {
         self.fetch.as_ref()
     }
 }
@@ -351,7 +351,7 @@ impl SqlNode {
         SqlNode::call(&operators::AS, vec![node, SqlNode::identifier(alias)])
     }
 
-    pub fn get_kind(&self) -> SqlKind {
+    pub fn kind(&self) -> SqlKind {
         match self {
             SqlNode::Identifier(_) => SqlKind::Identifier,
             SqlNode::Literal(_) => SqlKind::Literal,

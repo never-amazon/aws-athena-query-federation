@@ -16,10 +16,10 @@ mod get_data_source_capabilities_response_ser_de_test {
     use super::*;
 
     fn expected() -> GetDataSourceCapabilitiesResponse {
-        let add = StandardFunctions::ADD_FUNCTION_NAME.get_function_name();
-        let subtract = StandardFunctions::SUBTRACT_FUNCTION_NAME.get_function_name();
+        let add = StandardFunctions::ADD_FUNCTION_NAME.function_name();
+        let subtract = StandardFunctions::SUBTRACT_FUNCTION_NAME.function_name();
         let properties = ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-            .with_sub_type_properties(&[add.get_function_name(), subtract.get_function_name()])
+            .with_sub_type_properties(&[add.function_name(), subtract.function_name()])
             .expect("properties");
         let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
             .with_supported_sub_types(&[PushdownSubTypes::ComplexExpressionProperties(properties)])

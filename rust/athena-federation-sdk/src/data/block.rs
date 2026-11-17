@@ -46,15 +46,15 @@ impl Block {
             .unwrap_or_else(|| Arc::new(ConstraintEvaluator::empty_evaluator()));
     }
 
-    pub fn get_constraint_evaluator(&self) -> &Arc<ConstraintEvaluator> {
+    pub fn constraint_evaluator(&self) -> &Arc<ConstraintEvaluator> {
         &self.constraint_evaluator
     }
 
-    pub fn get_allocator_id(&self) -> &str {
+    pub fn allocator_id(&self) -> &str {
         &self.allocator_id
     }
 
-    pub fn get_schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &SchemaRef {
         &self.schema
     }
 
@@ -127,7 +127,7 @@ impl Block {
         }
     }
 
-    pub fn get_row_count(&self) -> usize {
+    pub fn row_count(&self) -> usize {
         self.row_count
     }
 
@@ -136,14 +136,14 @@ impl Block {
     }
 
     pub fn get_field_vector(&self, field_name: &str) -> Option<&FieldVector> {
-        self.vectors.iter().find(|v| v.get_name() == field_name)
+        self.vectors.iter().find(|v| v.name() == field_name)
     }
 
     pub fn get_field_vector_mut(&mut self, field_name: &str) -> Option<&mut FieldVector> {
-        self.vectors.iter_mut().find(|v| v.get_name() == field_name)
+        self.vectors.iter_mut().find(|v| v.name() == field_name)
     }
 
-    pub fn get_field_readers(&self) -> Vec<FieldReader<'_>> {
+    pub fn field_readers(&self) -> Vec<FieldReader<'_>> {
         self.vectors.iter().map(FieldReader::new).collect()
     }
 
@@ -154,11 +154,11 @@ impl Block {
             .sum()
     }
 
-    pub fn get_field_vectors(&self) -> &[FieldVector] {
+    pub fn field_vectors(&self) -> &[FieldVector] {
         &self.vectors
     }
 
-    pub fn get_field_vectors_mut(&mut self) -> &mut [FieldVector] {
+    pub fn field_vectors_mut(&mut self) -> &mut [FieldVector] {
         &mut self.vectors
     }
 

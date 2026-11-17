@@ -74,15 +74,15 @@ impl AthenaConnectorException {
         &self.message
     }
 
-    pub fn get_response(&self) -> Option<&Response> {
+    pub fn response(&self) -> Option<&Response> {
         self.response.as_ref()
     }
 
-    pub fn get_cause(&self) -> Option<&Cause> {
+    pub fn cause(&self) -> Option<&Cause> {
         self.cause.as_ref()
     }
 
-    pub fn get_error_details(&self) -> &ErrorDetails {
+    pub fn error_details(&self) -> &ErrorDetails {
         &self.error_details
     }
 

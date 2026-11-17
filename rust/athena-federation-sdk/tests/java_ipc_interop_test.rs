@@ -8,7 +8,7 @@ const ROWS: &str = include_str!("fixtures/java_arrow_18_3/rows.txt");
 
 fn rows(block: &Block) -> String {
     let mut dump = String::new();
-    for i in 0..block.get_row_count() {
+    for i in 0..block.row_count() {
         dump.push_str(&BlockUtils::row_to_string(block, i).unwrap_or_else(|e| e.to_string()));
         dump.push('\n');
     }
@@ -31,7 +31,7 @@ fn load(allocator: &BlockAllocatorImpl, schema_bytes: &[u8], batch_bytes: &[u8])
 fn reads_java_arrow_ipc_messages() {
     let allocator = BlockAllocatorImpl::new();
     let block = load(&allocator, SCHEMA, BATCH);
-    assert_eq!(23, block.get_row_count());
+    assert_eq!(23, block.row_count());
     assert_eq!(Some("v1"), block.get_meta_data("meta1"));
     assert_eq!(ROWS, rows(&block));
 }
@@ -42,14 +42,14 @@ fn rewrites_java_arrow_ipc_messages_without_loss() {
     let block = load(&allocator, SCHEMA, BATCH);
     let mut schema_out = Vec::new();
     SchemaSerDe::new()
-        .serialize(block.get_schema(), &mut schema_out)
+        .serialize(block.schema(), &mut schema_out)
         .unwrap();
     let mut batch_out = Vec::new();
     RecordBatchSerDe::new(&allocator)
         .serialize(&block.get_arrow_record_batch().unwrap(), &mut batch_out)
         .unwrap();
     let again = load(&allocator, &schema_out, &batch_out);
-    assert_eq!(block.get_schema(), again.get_schema());
+    assert_eq!(block.schema(), again.schema());
     assert_eq!(rows(&block), rows(&again));
     assert_eq!(
         block.get_record_batch().unwrap(),

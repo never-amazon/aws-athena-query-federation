@@ -19,9 +19,9 @@ pub fn do_typed_serialize(
     jgen.write_field_name(TYPE_FIELD)?;
     crate::serde::v2::arrow_type_serde::serialize(Some(expression.get_type()), jgen)?;
     jgen.write_field_name(FUNCTION_NAME_FIELD)?;
-    super::function_name_serde_v4::serialize(Some(expression.get_function_name()), jgen)?;
+    super::function_name_serde_v4::serialize(Some(expression.function_name()), jgen)?;
     jgen.write_array_field_start(ARGUMENTS_FIELD)?;
-    for argument in expression.get_arguments() {
+    for argument in expression.arguments() {
         super::federation_expression_serde_v4::serialize(Some(argument), jgen, version)?;
     }
     jgen.write_end_array()

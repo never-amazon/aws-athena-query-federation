@@ -15,11 +15,11 @@ impl SubTypeProperties {
         }
     }
 
-    pub fn get_sub_type(&self) -> &str {
+    pub fn sub_type(&self) -> &str {
         &self.property_name
     }
 
-    pub fn get_properties(&self) -> &[String] {
+    pub fn properties(&self) -> &[String] {
         &self.property_values
     }
 }

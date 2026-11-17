@@ -14,7 +14,7 @@ impl LimitPushdownSubType {
         }
     }
 
-    pub fn get_sub_type(&self) -> &'static str {
+    pub fn sub_type(&self) -> &'static str {
         match self {
             LimitPushdownSubType::IntegerConstant => "integer_constant",
         }

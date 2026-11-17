@@ -30,7 +30,7 @@ impl MockS3 {
         *self.response.lock().unwrap() = Some(response);
     }
 
-    fn get_count(&self) -> usize {
+    fn count(&self) -> usize {
         self.get_requests.lock().unwrap().len()
     }
 }
@@ -139,7 +139,7 @@ async fn read_encrypted_block_succeeds() {
         .unwrap();
 
     assert_eq!(s.expected, actual);
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
     assert_eq!(0, *s.mock_s3.put_requests.lock().unwrap());
     assert_eq!(
         GetObjectRequest::new(BUCKET, format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}")),
@@ -163,7 +163,7 @@ async fn read_bytes_encrypted_bytes_succeeds() {
         .unwrap();
 
     assert!(!bytes.is_empty());
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
     assert_eq!(0, *s.mock_s3.put_requests.lock().unwrap());
 }
 
@@ -176,7 +176,7 @@ async fn read_null_spill_location_throws_null_pointer_exception() {
         .await
         .unwrap_err();
     assert!(matches!(ex, FederationError::NullPointer(_)));
-    assert_eq!(0, s.mock_s3.get_count());
+    assert_eq!(0, s.mock_s3.count());
 }
 
 #[tokio::test]
@@ -199,7 +199,7 @@ async fn read_s3_failure_throws_s3_exception() {
         "{exception:?}"
     );
     assert_eq!("Failed to read from S3", exception.to_string());
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
 }
 
 #[tokio::test]
@@ -212,7 +212,7 @@ async fn read_corrupted_encrypted_data_throws_athena_connector_exception() {
         .await
         .unwrap_err();
     assert_connector_exception(&ex);
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
 }
 
 #[tokio::test]
@@ -232,7 +232,7 @@ async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
         .unwrap_err();
 
     assert_connector_exception(&ex);
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
 }
 
 #[tokio::test]
@@ -267,5 +267,5 @@ async fn read_unencrypted_block_with_null_encryption_key_succeeds() {
         .unwrap();
 
     assert_eq!(s.expected, actual);
-    assert_eq!(1, s.mock_s3.get_count());
+    assert_eq!(1, s.mock_s3.count());
 }

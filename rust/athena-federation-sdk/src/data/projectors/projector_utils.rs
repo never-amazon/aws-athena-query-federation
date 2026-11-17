@@ -12,7 +12,7 @@ impl ProjectorUtils {
     pub fn create_arrow_value_projector<'a>(
         field_reader: FieldReader<'a>,
     ) -> Result<Box<dyn ArrowValueProjector + 'a>> {
-        Ok(match field_reader.get_minor_type() {
+        Ok(match field_reader.minor_type() {
             MinorType::LIST => Box::new(ListArrowValueProjector::new(field_reader)?),
             MinorType::STRUCT => Box::new(StructArrowValueProjector::new(field_reader)?),
             _ => Box::new(SimpleArrowValueProjector::new(field_reader)?),

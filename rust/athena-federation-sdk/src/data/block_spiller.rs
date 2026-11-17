@@ -12,7 +12,7 @@ use crate::exceptions::Result;
 pub trait BlockSpiller: Send + Sync {
     async fn write_rows(&self, row_writer: &mut (dyn RowWriter + Send)) -> Result<()>;
 
-    fn get_constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
+    fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
 
     async fn spilled(&self) -> Result<bool>;
 

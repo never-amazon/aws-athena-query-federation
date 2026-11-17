@@ -54,27 +54,27 @@ impl GetSplitsRequest {
         copy
     }
 
-    pub fn get_continuation_token(&self) -> Option<&str> {
+    pub fn continuation_token(&self) -> Option<&str> {
         self.continuation_token.as_deref()
     }
 
-    pub fn get_table_name(&self) -> &TableName {
+    pub fn table_name(&self) -> &TableName {
         &self.table_name
     }
 
-    pub fn get_schema(&self) -> &SchemaRef {
-        self.partitions.get_schema()
+    pub fn schema(&self) -> &SchemaRef {
+        self.partitions.schema()
     }
 
-    pub fn get_partition_cols(&self) -> &[String] {
+    pub fn partition_cols(&self) -> &[String] {
         &self.partition_cols
     }
 
-    pub fn get_partitions(&self) -> &Block {
+    pub fn partitions(&self) -> &Block {
         &self.partitions
     }
 
-    pub fn get_constraints(&self) -> &Constraints {
+    pub fn constraints(&self) -> &Constraints {
         &self.constraints
     }
 
@@ -103,7 +103,7 @@ impl fmt::Display for GetSplitsRequest {
             opt_str(self.query_id.as_deref()),
             self.table_name,
             self.partition_cols.join(", "),
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name,
             self.partitions,
             self.constraints,

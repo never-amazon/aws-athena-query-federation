@@ -23,24 +23,24 @@ pub fn do_typed_serialize(
     version: i32,
 ) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
-    federated_identity_serde::serialize(request.get_identity(), jgen)?;
-    jgen.write_string_field(QUERY_ID_FIELD, Some(request.get_query_id()))?;
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.get_catalog_name()))?;
+    federated_identity_serde::serialize(request.identity(), jgen)?;
+    jgen.write_string_field(QUERY_ID_FIELD, Some(request.query_id()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.catalog_name()))?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
-    super::table_name_serde::serialize(request.get_table_name(), jgen)?;
+    super::table_name_serde::serialize(request.table_name(), jgen)?;
     jgen.write_field_name(SCHEMA_FIELD)?;
-    crate::serde::v3::schema_serde_v3::serialize_for_version(request.get_schema(), jgen, version)?;
+    crate::serde::v3::schema_serde_v3::serialize_for_version(request.schema(), jgen, version)?;
     jgen.write_field_name(SPLIT_FIELD)?;
-    super::split_serde::serialize(Some(request.get_split()), jgen)?;
+    super::split_serde::serialize(Some(request.split()), jgen)?;
     jgen.write_field_name(CONSTRAINTS_FIELD)?;
-    super::constraints_serde::serialize(Some(request.get_constraints()), jgen, version)?;
+    super::constraints_serde::serialize(Some(request.constraints()), jgen, version)?;
     jgen.write_string_field(
         MAX_BLOCK_SIZE_FIELD,
-        Some(&request.get_max_block_size().to_string()),
+        Some(&request.max_block_size().to_string()),
     )?;
     jgen.write_string_field(
         MAX_INLINE_BLOCK_SIZE_FIELD,
-        Some(&request.get_max_inline_block_size().to_string()),
+        Some(&request.max_inline_block_size().to_string()),
     )
 }
 

@@ -11,8 +11,8 @@ pub fn do_typed_serialize(
     spill_location: &S3SpillLocation,
     jgen: &mut JsonGenerator,
 ) -> Result<()> {
-    jgen.write_string_field(BUCKET_FIELD, Some(spill_location.get_bucket()))?;
-    jgen.write_string_field(KEY_FIELD, Some(spill_location.get_key()))?;
+    jgen.write_string_field(BUCKET_FIELD, Some(spill_location.bucket()))?;
+    jgen.write_string_field(KEY_FIELD, Some(spill_location.key()))?;
     jgen.write_boolean_field(DIRECTORY_FIELD, spill_location.is_directory())
 }
 

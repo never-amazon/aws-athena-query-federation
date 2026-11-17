@@ -13,7 +13,7 @@ pub trait ValueMarker {
 
     fn value_ref(&self) -> &Value;
 
-    fn get_bound(&self) -> Bound;
+    fn bound(&self) -> Bound;
 
     fn get_type(&self) -> &ArrowType;
 }
@@ -32,7 +32,7 @@ impl LiteralValueMarker {
         }
     }
 
-    pub fn get_value(&self) -> &Value {
+    pub fn value(&self) -> &Value {
         &self.value
     }
 
@@ -58,7 +58,7 @@ impl ValueMarker for LiteralValueMarker {
         &self.value
     }
 
-    fn get_bound(&self) -> Bound {
+    fn bound(&self) -> Bound {
         Bound::Exactly
     }
 
@@ -99,20 +99,16 @@ impl ValueMarkerComparator {
         }
         let compare = ArrowTypeComparator::compare(o1.get_type(), o1.value_ref(), o2.value_ref())?;
         if compare == 0 {
-            if o1.get_bound() == o2.get_bound() {
+            if o1.bound() == o2.bound() {
                 return Ok(0);
             }
-            if o1.get_bound() == Bound::Below {
+            if o1.bound() == Bound::Below {
                 return Ok(-1);
             }
-            if o1.get_bound() == Bound::Above {
+            if o1.bound() == Bound::Above {
                 return Ok(1);
             }
-            return Ok(if o2.get_bound() == Bound::Below {
-                1
-            } else {
-                -1
-            });
+            return Ok(if o2.bound() == Bound::Below { 1 } else { -1 });
         }
         Ok(compare)
     }

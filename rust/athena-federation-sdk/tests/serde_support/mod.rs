@@ -212,11 +212,11 @@ pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpres
         BlockUtils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
     FunctionCallExpression::new(
         DataType::Boolean,
-        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME.get_function_name(),
+        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME.function_name(),
         vec![
             FunctionCallExpression::new(
                 DataType::Float64,
-                StandardFunctions::ADD_FUNCTION_NAME.get_function_name(),
+                StandardFunctions::ADD_FUNCTION_NAME.function_name(),
                 vec![
                     VariableExpression::new("col3", DataType::Float64)
                         .expect("variable")
@@ -323,14 +323,14 @@ fn compare(
                 assert_eq!(e.get("aId"), a.get("aId"), "aId differs at {path}");
                 if e != a {
                     let ctx_alloc = BlockAllocatorImpl::with_id(TEST_ALLOCATOR_ID);
-                    let ctx = SerDeContext::new(mapper.get_ser_de_version(), &ctx_alloc);
+                    let ctx = SerDeContext::new(mapper.ser_de_version(), &ctx_alloc);
                     let e_block = block_deserializer::deserialize_tree(expected, &ctx)
                         .expect("decode fixture block");
                     let a_block = block_deserializer::deserialize_tree(actual, &ctx)
                         .expect("decode output block");
                     assert_eq!(
-                        e_block.get_schema(),
-                        a_block.get_schema(),
+                        e_block.schema(),
+                        a_block.schema(),
                         "block schema differs at {path}"
                     );
                     assert_eq!(e_block, a_block, "block differs at {path}");

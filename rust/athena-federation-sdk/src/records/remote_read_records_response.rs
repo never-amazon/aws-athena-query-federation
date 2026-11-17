@@ -29,37 +29,37 @@ impl RemoteReadRecordsResponse {
         }
     }
 
-    pub fn get_request_type(&self) -> RecordRequestType {
+    pub fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    pub fn get_catalog_name(&self) -> &str {
+    pub fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 
-    pub fn get_schema(&self) -> &Schema {
+    pub fn schema(&self) -> &Schema {
         &self.schema
     }
 
-    pub fn get_remote_blocks(&self) -> &[SpillLocation] {
+    pub fn remote_blocks(&self) -> &[SpillLocation] {
         &self.remote_blocks
     }
 
-    pub fn get_number_blocks(&self) -> usize {
+    pub fn number_blocks(&self) -> usize {
         self.remote_blocks.len()
     }
 
-    pub fn get_encryption_key(&self) -> Option<&EncryptionKey> {
+    pub fn encryption_key(&self) -> Option<&EncryptionKey> {
         self.encryption_key.as_ref()
     }
 }
 
 impl RecordResponse for RemoteReadRecordsResponse {
-    fn get_request_type(&self) -> RecordRequestType {
+    fn request_type(&self) -> RecordRequestType {
         RecordRequestType::ReadRecords
     }
 
-    fn get_catalog_name(&self) -> &str {
+    fn catalog_name(&self) -> &str {
         &self.catalog_name
     }
 }
@@ -85,7 +85,7 @@ impl fmt::Display for RemoteReadRecordsResponse {
             "RemoteReadRecordsResponse{{schema={}, remoteBlocks=[{}], encryptionKey=XXXXXX, requestType={}, catalogName={}}}",
             self.schema,
             blocks.join(", "),
-            self.get_request_type(),
+            self.request_type(),
             self.catalog_name
         )
     }

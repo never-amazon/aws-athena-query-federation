@@ -15,27 +15,27 @@ pub struct SpillConfig {
 }
 
 impl SpillConfig {
-    pub fn get_encryption_key(&self) -> Option<&EncryptionKey> {
+    pub fn encryption_key(&self) -> Option<&EncryptionKey> {
         self.encryption_key.as_ref()
     }
 
-    pub fn get_spill_location(&self) -> &SpillLocation {
+    pub fn spill_location(&self) -> &SpillLocation {
         &self.spill_location
     }
 
-    pub fn get_request_id(&self) -> &str {
+    pub fn request_id(&self) -> &str {
         &self.request_id
     }
 
-    pub fn get_max_block_bytes(&self) -> i64 {
+    pub fn max_block_bytes(&self) -> i64 {
         self.max_block_bytes
     }
 
-    pub fn get_max_inline_block_size(&self) -> i64 {
+    pub fn max_inline_block_size(&self) -> i64 {
         self.max_inline_block_size
     }
 
-    pub fn get_num_spill_threads(&self) -> i32 {
+    pub fn num_spill_threads(&self) -> i32 {
         self.num_spill_threads
     }
 

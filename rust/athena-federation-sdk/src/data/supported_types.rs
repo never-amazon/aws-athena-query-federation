@@ -51,7 +51,7 @@ impl SupportedTypes {
         ]
     }
 
-    pub fn get_arrow_minor_type(&self) -> MinorType {
+    pub fn arrow_minor_type(&self) -> MinorType {
         match self {
             SupportedTypes::BIT => MinorType::BIT,
             SupportedTypes::DATEMILLI => MinorType::DATEMILLI,
@@ -76,7 +76,7 @@ impl SupportedTypes {
     pub fn is_supported_minor_type(minor_type: MinorType) -> bool {
         SupportedTypes::values()
             .iter()
-            .any(|t| t.get_arrow_minor_type() == minor_type)
+            .any(|t| t.arrow_minor_type() == minor_type)
     }
 
     pub fn is_supported_arrow_type(arrow_type: &ArrowType) -> bool {

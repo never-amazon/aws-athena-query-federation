@@ -22,12 +22,12 @@ impl Range {
                 arrow_type_to_string(high.get_type())
             )));
         }
-        if low.get_bound() == Bound::Below {
+        if low.bound() == Bound::Below {
             return Err(FederationError::invalid_input(
                 "low bound must be EXACTLY or ABOVE",
             ));
         }
-        if high.get_bound() == Bound::Above {
+        if high.bound() == Bound::Above {
             return Err(FederationError::invalid_input(
                 "high bound must be EXACTLY or BELOW",
             ));
@@ -132,16 +132,16 @@ impl Range {
         self.low.get_type()
     }
 
-    pub fn get_low(&self) -> &Marker {
+    pub fn low(&self) -> &Marker {
         &self.low
     }
 
-    pub fn get_high(&self) -> &Marker {
+    pub fn high(&self) -> &Marker {
         &self.high
     }
 
     pub fn is_single_value(&self) -> bool {
-        self.low.get_bound() == Bound::Exactly && self.low == self.high
+        self.low.bound() == Bound::Exactly && self.low == self.high
     }
 
     pub fn get_single_value(&self) -> Result<Value> {
@@ -150,7 +150,7 @@ impl Range {
                 "Range does not have just a single value",
             ));
         }
-        self.low.get_value().cloned()
+        self.low.value().cloned()
     }
 
     pub fn is_all(&self) -> bool {
@@ -162,19 +162,17 @@ impl Range {
     }
 
     pub fn contains(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.get_low())? <= 0
-            && self.high.compare_to(other.get_high())? >= 0)
+        Ok(self.low.compare_to(other.low())? <= 0 && self.high.compare_to(other.high())? >= 0)
     }
 
     pub fn span(&self, other: &Range) -> Result<Range> {
-        let low = Marker::min(&self.low, other.get_low())?;
-        let high = Marker::max(&self.high, other.get_high())?;
+        let low = Marker::min(&self.low, other.low())?;
+        let high = Marker::max(&self.high, other.high())?;
         Range::new(low, high)
     }
 
     pub fn overlaps(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.get_high())? <= 0
-            && other.get_low().compare_to(&self.high)? <= 0)
+        Ok(self.low.compare_to(other.high())? <= 0 && other.low().compare_to(&self.high)? <= 0)
     }
 
     pub fn intersect(&self, other: &Range) -> Result<Range> {
@@ -183,8 +181,8 @@ impl Range {
                 "Cannot intersect non-overlapping ranges",
             ));
         }
-        let low = Marker::max(&self.low, other.get_low())?;
-        let high = Marker::min(&self.high, other.get_high())?;
+        let low = Marker::max(&self.low, other.low())?;
+        let high = Marker::min(&self.high, other.high())?;
         Range::new(low, high)
     }
 

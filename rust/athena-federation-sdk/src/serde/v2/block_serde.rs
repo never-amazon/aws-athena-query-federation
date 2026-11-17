@@ -22,11 +22,11 @@ pub fn serialize(block: Option<&Block>, jgen: &mut JsonGenerator, version: i32) 
 
 pub fn do_serialize(block: &Block, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
     let format = crate::serde::ipc_format_for(version);
-    jgen.write_string_field(ALLOCATOR_ID_FIELD_NAME, Some(block.get_allocator_id()))?;
+    jgen.write_string_field(ALLOCATOR_ID_FIELD_NAME, Some(block.allocator_id()))?;
     jgen.write_field_name(SCHEMA_FIELD_NAME)?;
-    super::schema_serde::serialize_with_format(block.get_schema(), jgen, format)?;
+    super::schema_serde::serialize_with_format(block.schema(), jgen, format)?;
     jgen.write_field_name(BATCH_FIELD_NAME)?;
-    if block.get_row_count() > 0 {
+    if block.row_count() > 0 {
         jgen.write_binary(&block_batch_bytes(block, format)?)
     } else {
         jgen.write_string(Some(""))

@@ -35,15 +35,15 @@ impl ListTablesRequest {
         }
     }
 
-    pub fn get_schema_name(&self) -> Option<&str> {
+    pub fn schema_name(&self) -> Option<&str> {
         self.schema_name.as_deref()
     }
 
-    pub fn get_next_token(&self) -> Option<&str> {
+    pub fn next_token(&self) -> Option<&str> {
         self.next_token.as_deref()
     }
 
-    pub fn get_page_size(&self) -> i32 {
+    pub fn page_size(&self) -> i32 {
         self.page_size
     }
 }

@@ -19,7 +19,7 @@ pub enum SubstraitOperator {
 }
 
 impl SubstraitOperator {
-    pub fn get_symbol(&self) -> &'static str {
+    pub fn symbol(&self) -> &'static str {
         match self {
             SubstraitOperator::Equal => "=",
             SubstraitOperator::NotEqual => "!=",

@@ -39,18 +39,16 @@ fn constructor_with_response_message_and_error_details_should_set_fields_correct
     );
     assert_eq!(
         Some(&TEST_RESPONSE),
-        exception
-            .get_response()
-            .and_then(|r| r.downcast_ref::<&str>()),
+        exception.response().and_then(|r| r.downcast_ref::<&str>()),
         "Response should match"
     );
     assert_eq!(
         &error_details,
-        exception.get_error_details(),
+        exception.error_details(),
         "Error details should match"
     );
     assert!(
-        exception.get_cause().is_none(),
+        exception.cause().is_none(),
         "Expected no cause for (message, details) constructor"
     );
 }
@@ -65,16 +63,16 @@ fn constructor_with_message_and_error_details_should_set_fields_correctly() {
         "Error message should match"
     );
     assert!(
-        exception.get_response().is_none(),
+        exception.response().is_none(),
         "Response should be null when not provided"
     );
     assert_eq!(
         &error_details,
-        exception.get_error_details(),
+        exception.error_details(),
         "Error details should match"
     );
     assert!(
-        exception.get_cause().is_none(),
+        exception.cause().is_none(),
         "Expected no cause for (message, details) constructor"
     );
 }
@@ -97,20 +95,18 @@ fn constructor_with_response_message_cause_and_error_details_should_set_fields_c
     );
     assert!(
         exception
-            .get_cause()
+            .cause()
             .is_some_and(|c| Arc::ptr_eq(c, &test_cause)),
         "Cause should match"
     );
     assert_eq!(
         Some(&TEST_RESPONSE),
-        exception
-            .get_response()
-            .and_then(|r| r.downcast_ref::<&str>()),
+        exception.response().and_then(|r| r.downcast_ref::<&str>()),
         "Response should match"
     );
     assert_eq!(
         &error_details,
-        exception.get_error_details(),
+        exception.error_details(),
         "Error details should match"
     );
 }

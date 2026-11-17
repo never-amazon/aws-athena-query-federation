@@ -12,11 +12,11 @@ const CAPABILITIES_FIELD: &str = "capabilities";
 const SERDE_VERSION_FIELD: &str = "serDeVersion";
 
 pub fn do_typed_serialize(response: &PingResponse, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
-    jgen.write_string_field(QUERY_ID_FIELD, Some(response.get_query_id()))?;
-    jgen.write_string_field(SOURCE_TYPE_FIELD, response.get_source_type())?;
-    jgen.write_number_field_i32(CAPABILITIES_FIELD, response.get_capabilities())?;
-    jgen.write_number_field_i32(SERDE_VERSION_FIELD, response.get_ser_de_version())
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
+    jgen.write_string_field(QUERY_ID_FIELD, Some(response.query_id()))?;
+    jgen.write_string_field(SOURCE_TYPE_FIELD, response.source_type())?;
+    jgen.write_number_field_i32(CAPABILITIES_FIELD, response.capabilities())?;
+    jgen.write_number_field_i32(SERDE_VERSION_FIELD, response.ser_de_version())
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<PingResponse> {

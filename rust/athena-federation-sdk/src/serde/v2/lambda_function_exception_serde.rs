@@ -27,7 +27,7 @@ impl LambdaException {
         self.message.as_deref()
     }
 
-    pub fn get_cause(&self) -> Option<&LambdaException> {
+    pub fn cause(&self) -> Option<&LambdaException> {
         self.cause.as_deref()
     }
 }
@@ -54,7 +54,7 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<LambdaException> {
     Ok(recursive_parse(&root))
 }
 
-fn as_text(node: &serde_json::Value) -> String {
+fn to_text(node: &serde_json::Value) -> String {
     match node {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Null => "null".to_string(),
@@ -65,7 +65,7 @@ fn as_text(node: &serde_json::Value) -> String {
 }
 
 fn get_nullable_string_value(parent: &serde_json::Value, field: &str) -> Option<String> {
-    parent.get(field).map(as_text)
+    parent.get(field).map(to_text)
 }
 
 fn recursive_parse(root: &serde_json::Value) -> LambdaException {
@@ -76,8 +76,8 @@ fn recursive_parse(root: &serde_json::Value) -> LambdaException {
     if let Some(serde_json::Value::Array(elements)) = root.get(STACK_TRACE_FIELD) {
         for element in elements {
             let inner = match element {
-                serde_json::Value::Array(inner) => inner.iter().map(as_text).collect(),
-                other => vec![as_text(other)],
+                serde_json::Value::Array(inner) => inner.iter().map(to_text).collect(),
+                other => vec![to_text(other)],
             };
             stack_traces.push(inner);
         }

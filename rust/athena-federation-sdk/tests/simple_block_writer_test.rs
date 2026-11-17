@@ -23,7 +23,7 @@ fn test_write_rows() {
         writer.write_rows(&mut row_writer).unwrap();
     }
     assert_eq!(vec![0usize], calls);
-    assert_eq!(5, block.get_row_count());
+    assert_eq!(5, block.row_count());
 }
 
 #[test]
@@ -43,6 +43,6 @@ fn test_get_constraint_evaluator() {
     let evaluator = Arc::new(ConstraintEvaluator::empty_evaluator());
     block.constrain(Some(evaluator.clone()));
     let writer = SimpleBlockWriter::new(&mut block);
-    let result = writer.get_constraint_evaluator();
+    let result = writer.constraint_evaluator();
     assert!(Arc::ptr_eq(&evaluator, &result));
 }

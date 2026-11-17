@@ -125,7 +125,7 @@ impl BlockSpiller for NotSpilled {
         Ok(())
     }
 
-    fn get_constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
+    fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
         Arc::new(ConstraintEvaluator::empty_evaluator())
     }
 

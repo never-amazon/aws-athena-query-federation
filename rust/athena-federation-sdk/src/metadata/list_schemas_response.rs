@@ -17,7 +17,7 @@ impl ListSchemasResponse {
         }
     }
 
-    pub fn get_schemas(&self) -> &[String] {
+    pub fn schemas(&self) -> &[String] {
         &self.schemas
     }
 }

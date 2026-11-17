@@ -51,7 +51,7 @@ impl CachableSecretsManager {
         }
     }
 
-    pub fn get_secrets_manager(&self) -> &Arc<dyn SecretsManagerClient> {
+    pub fn secrets_manager(&self) -> &Arc<dyn SecretsManagerClient> {
         &self.secrets_manager
     }
 
@@ -107,12 +107,8 @@ impl CachableSecretsManager {
     async fn use_default_credentials(&self, secret: &str) -> Result<String> {
         let secret_string = self.get_secret(secret).await?;
         let provider = DefaultCredentialsProvider::new(&secret_string)?;
-        let credentials = provider.get_credential();
-        Ok(format!(
-            "{}:{}",
-            credentials.get_user(),
-            credentials.get_password()
-        ))
+        let credentials = provider.credential();
+        Ok(format!("{}:{}", credentials.user(), credentials.password()))
     }
 
     pub async fn get_secret(&self, secret_name: &str) -> Result<String> {

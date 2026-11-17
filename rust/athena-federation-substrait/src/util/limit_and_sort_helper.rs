@@ -26,7 +26,7 @@ impl GenericSortField {
         }
     }
 
-    pub fn get_column_name(&self) -> &str {
+    pub fn column_name(&self) -> &str {
         &self.column_name
     }
 
@@ -55,7 +55,7 @@ impl LimitAndSortHelper {
         match plan {
             Some(plan) => {
                 let model = root_input_model(plan)?;
-                if model.get_fetch_rel().is_some() && fetch_limit(&model) > 0 {
+                if model.fetch_rel().is_some() && fetch_limit(&model) > 0 {
                     Ok(Some(fetch_limit(&model)))
                 } else {
                     Ok(None)
@@ -63,7 +63,7 @@ impl LimitAndSortHelper {
             }
             None => {
                 if constraints.has_limit() {
-                    Ok(Some(long_to_int(constraints.get_limit())))
+                    Ok(Some(long_to_int(constraints.limit())))
                 } else {
                     Ok(None)
                 }
@@ -78,7 +78,7 @@ impl LimitAndSortHelper {
         }
         let result = (|| -> Result<Option<Vec<GenericSortField>>> {
             let model = root_input_model(plan)?;
-            let Some(sort_rel) = model.get_sort_rel() else {
+            let Some(sort_rel) = model.sort_rel() else {
                 return Ok(None);
             };
             let table_columns = SubstraitMetadataParser::get_table_columns(&model)?;
@@ -99,7 +99,7 @@ fn fetch_limit(model: &SubstraitRelModel) -> i32 {
         deprecated,
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
-    match model.get_fetch_rel().and_then(|f| f.count_mode.as_ref()) {
+    match model.fetch_rel().and_then(|f| f.count_mode.as_ref()) {
         Some(CountMode::Count(c)) => long_to_int(*c),
         _ => 0,
     }

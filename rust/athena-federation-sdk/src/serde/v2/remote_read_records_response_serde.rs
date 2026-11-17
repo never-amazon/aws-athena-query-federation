@@ -17,16 +17,16 @@ pub fn do_typed_serialize(
     jgen: &mut JsonGenerator,
     version: i32,
 ) -> Result<()> {
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(SCHEMA_FIELD)?;
-    crate::serde::v3::schema_serde_v3::serialize_for_version(response.get_schema(), jgen, version)?;
+    crate::serde::v3::schema_serde_v3::serialize_for_version(response.schema(), jgen, version)?;
     jgen.write_array_field_start(REMOTE_BLOCKS_FIELD)?;
-    for spill_location in response.get_remote_blocks() {
+    for spill_location in response.remote_blocks() {
         super::spill_location_serde::serialize(Some(spill_location), jgen)?;
     }
     jgen.write_end_array()?;
     jgen.write_field_name(ENCRYPTION_KEY_FIELD)?;
-    super::encryption_key_serde::serialize(response.get_encryption_key(), jgen)
+    super::encryption_key_serde::serialize(response.encryption_key(), jgen)
 }
 
 pub fn do_typed_deserialize(

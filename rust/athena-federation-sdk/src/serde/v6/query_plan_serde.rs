@@ -13,8 +13,8 @@ pub fn serialize(query_plan: Option<&QueryPlan>, jgen: &mut JsonGenerator) -> Re
 }
 
 pub fn do_serialize(query_plan: &QueryPlan, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field(SUBSTRAIT_VERSION_FIELD, query_plan.get_substrait_version())?;
-    jgen.write_string_field(SUBSTRAIT_PLAN_FIELD, Some(query_plan.get_substrait_plan()))
+    jgen.write_string_field(SUBSTRAIT_VERSION_FIELD, query_plan.substrait_version())?;
+    jgen.write_string_field(SUBSTRAIT_PLAN_FIELD, Some(query_plan.substrait_plan()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<QueryPlan>> {

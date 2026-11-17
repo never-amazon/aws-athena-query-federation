@@ -106,11 +106,11 @@ impl StandardFunctions {
         }
     }
 
-    pub fn get_function_name(&self) -> FunctionName {
+    pub fn function_name(&self) -> FunctionName {
         FunctionName::new(self.parts().0)
     }
 
-    pub fn get_operator_type(&self) -> OperatorType {
+    pub fn operator_type(&self) -> OperatorType {
         self.parts().1
     }
 
@@ -118,6 +118,6 @@ impl StandardFunctions {
         StandardFunctions::values()
             .iter()
             .copied()
-            .find(|f| f.parts().0 == function_name.get_function_name())
+            .find(|f| f.parts().0 == function_name.function_name())
     }
 }

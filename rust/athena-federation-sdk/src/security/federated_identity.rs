@@ -43,23 +43,23 @@ impl FederatedIdentity {
         }
     }
 
-    pub fn get_arn(&self) -> Option<&str> {
+    pub fn arn(&self) -> Option<&str> {
         self.arn.as_deref()
     }
 
-    pub fn get_account(&self) -> Option<&str> {
+    pub fn account(&self) -> Option<&str> {
         self.account.as_deref()
     }
 
-    pub fn get_principal_tags(&self) -> &HashMap<String, Option<String>> {
+    pub fn principal_tags(&self) -> &HashMap<String, Option<String>> {
         &self.principal_tags
     }
 
-    pub fn get_iam_groups(&self) -> &[Option<String>] {
+    pub fn iam_groups(&self) -> &[Option<String>] {
         &self.iam_groups
     }
 
-    pub fn get_config_options(&self) -> &HashMap<String, Option<String>> {
+    pub fn config_options(&self) -> &HashMap<String, Option<String>> {
         &self.config_options
     }
 }

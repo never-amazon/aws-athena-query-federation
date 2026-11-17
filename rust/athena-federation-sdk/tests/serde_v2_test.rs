@@ -597,7 +597,7 @@ mod lambda_function_exception_ser_de_test {
         let text = fixture_v2("LambdaFunctionException.json");
         let actual: LambdaException = t.mapper.read_value(text.as_bytes()).expect("deserialize");
         assert_eq!(Some(expected_message.as_str()), actual.get_message());
-        assert!(actual.get_cause().is_none());
+        assert!(actual.cause().is_none());
     }
 }
 
@@ -608,7 +608,7 @@ mod arrow_ser_de_test {
     };
 
     fn arrow_type_class(supported_type: SupportedTypes) -> String {
-        match supported_type.get_arrow_minor_type().get_type() {
+        match supported_type.arrow_minor_type().get_type() {
             Ok(arrow_type) => java_type_name(&arrow_type).to_string(),
             Err(_) => match supported_type {
                 SupportedTypes::TIMESTAMPMILLITZ | SupportedTypes::TIMESTAMPMICROTZ => {

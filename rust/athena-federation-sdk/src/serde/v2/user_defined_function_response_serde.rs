@@ -13,8 +13,8 @@ pub fn do_typed_serialize(
     version: i32,
 ) -> Result<()> {
     jgen.write_field_name(RECORDS_FIELD)?;
-    super::block_serde::serialize(Some(response.get_records()), jgen, version)?;
-    jgen.write_string_field(METHOD_NAME_FIELD, Some(response.get_method_name()))
+    super::block_serde::serialize(Some(response.records()), jgen, version)?;
+    jgen.write_string_field(METHOD_NAME_FIELD, Some(response.method_name()))
 }
 
 pub fn do_typed_deserialize(

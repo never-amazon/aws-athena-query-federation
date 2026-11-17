@@ -154,7 +154,7 @@ fn decrypts_java_aes256_block() {
     let block = crypto
         .decrypt_with_schema(Some(&key256()), AES256, schema())
         .unwrap();
-    assert_eq!(3, block.get_row_count());
+    assert_eq!(3, block.row_count());
     assert_eq!(ROWS, rows(&block));
     assert_eq!(rust_block(&allocator), block);
 }

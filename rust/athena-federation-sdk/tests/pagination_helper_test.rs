@@ -54,12 +54,12 @@ fn test_manual_pagination_normal_case() {
         ("schema3", "table5"),
     ]);
     let response = PaginationHelper::manual_pagination(&all, Some("1"), 2, "testCatalog").unwrap();
-    let result = response.get_tables();
-    assert_eq!("testCatalog", response.get_catalog_name());
+    let result = response.tables();
+    assert_eq!("testCatalog", response.catalog_name());
     assert_eq!(2, result.len());
-    assert_eq!("table2", result[0].get_table_name());
-    assert_eq!("table3", result[1].get_table_name());
-    assert_eq!(Some("3"), response.get_next_token());
+    assert_eq!("table2", result[0].table_name());
+    assert_eq!("table3", result[1].table_name());
+    assert_eq!(Some("3"), response.next_token());
 }
 
 #[test]
@@ -70,18 +70,18 @@ fn test_manual_pagination_unlimited_page_size() {
         ("schema2", "table3"),
     ]);
     let response = PaginationHelper::manual_pagination(&all, Some("0"), -1, "testCatalog").unwrap();
-    assert_eq!("testCatalog", response.get_catalog_name());
-    assert_eq!(3, response.get_tables().len());
-    assert!(response.get_next_token().is_none());
+    assert_eq!("testCatalog", response.catalog_name());
+    assert_eq!(3, response.tables().len());
+    assert!(response.next_token().is_none());
 }
 
 #[test]
 fn test_manual_pagination_start_token_past_end() {
     let all = tables(&[("schema1", "table1"), ("schema1", "table2")]);
     let response = PaginationHelper::manual_pagination(&all, Some("3"), 1, "testCatalog").unwrap();
-    assert_eq!("testCatalog", response.get_catalog_name());
-    assert!(response.get_tables().is_empty());
-    assert!(response.get_next_token().is_none());
+    assert_eq!("testCatalog", response.catalog_name());
+    assert!(response.tables().is_empty());
+    assert!(response.next_token().is_none());
 }
 
 #[test]
@@ -92,10 +92,10 @@ fn test_manual_pagination_last_page() {
         ("schema2", "table3"),
     ]);
     let response = PaginationHelper::manual_pagination(&all, Some("2"), 2, "testCatalog").unwrap();
-    assert_eq!("testCatalog", response.get_catalog_name());
-    assert_eq!(1, response.get_tables().len());
-    assert_eq!("table3", response.get_tables()[0].get_table_name());
-    assert!(response.get_next_token().is_none());
+    assert_eq!("testCatalog", response.catalog_name());
+    assert_eq!(1, response.tables().len());
+    assert_eq!("table3", response.tables()[0].table_name());
+    assert!(response.next_token().is_none());
 }
 
 #[test]
@@ -108,19 +108,19 @@ fn test_manual_pagination_sorted_results() {
         ("schema2", "tableE"),
     ]);
     let response = PaginationHelper::manual_pagination(&all, Some("0"), 3, "testCatalog").unwrap();
-    assert_eq!("testCatalog", response.get_catalog_name());
-    assert_eq!(3, response.get_tables().len());
-    assert_eq!(Some("3"), response.get_next_token());
-    let result = response.get_tables();
-    assert_eq!("tableA", result[0].get_table_name());
-    assert_eq!("tableB", result[1].get_table_name());
-    assert_eq!("tableC", result[2].get_table_name());
+    assert_eq!("testCatalog", response.catalog_name());
+    assert_eq!(3, response.tables().len());
+    assert_eq!(Some("3"), response.next_token());
+    let result = response.tables();
+    assert_eq!("tableA", result[0].table_name());
+    assert_eq!("tableB", result[1].table_name());
+    assert_eq!("tableC", result[2].table_name());
     let response = PaginationHelper::manual_pagination(&all, Some("3"), 3, "testCatalog").unwrap();
-    let result = response.get_tables();
+    let result = response.tables();
     assert_eq!(2, result.len());
-    assert_eq!("tableD", result[0].get_table_name());
-    assert_eq!("tableE", result[1].get_table_name());
-    assert!(response.get_next_token().is_none());
+    assert_eq!("tableD", result[0].table_name());
+    assert_eq!("tableE", result[1].table_name());
+    assert!(response.next_token().is_none());
 }
 
 #[test]

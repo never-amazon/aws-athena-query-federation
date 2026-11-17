@@ -231,7 +231,7 @@ impl OAuthCredentialsProvider {
             .as_ref()
             .ok_or_else(|| FederationError::NullPointer("secretsManager was null".into()))?;
         secrets_manager
-            .get_secrets_manager()
+            .secrets_manager()
             .put_secret_value(secret_name, &secret_string)
             .await
             .map_err(|e| {

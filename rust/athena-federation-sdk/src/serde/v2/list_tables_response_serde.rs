@@ -12,12 +12,12 @@ const NEXT_TOKEN_FIELD: &str = "nextToken";
 
 pub fn do_typed_serialize(response: &ListTablesResponse, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_array_field_start(TABLES_FIELD)?;
-    for table_name in response.get_tables() {
+    for table_name in response.tables() {
         super::table_name_serde::serialize(table_name, jgen)?;
     }
     jgen.write_end_array()?;
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
-    jgen.write_string_field(NEXT_TOKEN_FIELD, response.get_next_token())
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
+    jgen.write_string_field(NEXT_TOKEN_FIELD, response.next_token())
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesResponse> {

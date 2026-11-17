@@ -33,7 +33,7 @@ impl SubstraitFunctionParser {
             Self::parse_column_predicates(extension_declaration_list, expression, column_names)?;
         let mut map: HashMap<Option<String>, Vec<ColumnPredicate>> = HashMap::new();
         for p in column_predicates {
-            map.entry(p.get_column().map(str::to_string))
+            map.entry(p.column().map(str::to_string))
                 .or_default()
                 .push(p);
         }
@@ -296,20 +296,20 @@ fn is_not_in_pattern(predicates: &[ColumnPredicate]) -> bool {
     if predicates.len() <= 1 {
         return false;
     }
-    let first_column = predicates[0].get_column();
+    let first_column = predicates[0].column();
     predicates
         .iter()
-        .all(|p| p.get_operator() == SubstraitOperator::Equal && p.get_column() == first_column)
+        .all(|p| p.operator() == SubstraitOperator::Equal && p.column() == first_column)
 }
 
 fn create_not_in_predicate(equal_predicates: &[ColumnPredicate]) -> Option<ColumnPredicate> {
     let first = equal_predicates.first()?;
     let excluded: Vec<Option<PredicateValue>> = equal_predicates
         .iter()
-        .map(|p| p.get_value().cloned())
+        .map(|p| p.value().cloned())
         .collect();
     Some(ColumnPredicate::new(
-        first.get_column().map(str::to_string),
+        first.column().map(str::to_string),
         SubstraitOperator::NotIn,
         Some(PredicateValue::Values(excluded)),
         None,
@@ -317,10 +317,10 @@ fn create_not_in_predicate(equal_predicates: &[ColumnPredicate]) -> Option<Colum
 }
 
 fn create_negated_predicate(predicate: &ColumnPredicate) -> ColumnPredicate {
-    let column = predicate.get_column().map(str::to_string);
-    let value = predicate.get_value().cloned();
-    let arrow_type = predicate.get_arrow_type().cloned();
-    let (operator, value) = match predicate.get_operator() {
+    let column = predicate.column().map(str::to_string);
+    let value = predicate.value().cloned();
+    let arrow_type = predicate.arrow_type().cloned();
+    let (operator, value) = match predicate.operator() {
         SubstraitOperator::Equal => (SubstraitOperator::NotEqual, value),
         SubstraitOperator::NotEqual => (SubstraitOperator::Equal, value),
         SubstraitOperator::GreaterThan => (SubstraitOperator::LessThanOrEqualTo, value),
