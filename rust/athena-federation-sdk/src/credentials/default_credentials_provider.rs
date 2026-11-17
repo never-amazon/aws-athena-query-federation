@@ -33,10 +33,10 @@ impl DefaultCredentialsProvider {
                     serde_json::Value::Null => None,
                     serde_json::Value::String(s) => Some(s),
                     other => {
-                        return Err(FederationError::ClassCast(format!(
-                            "class {} cannot be cast to class java.lang.String",
-                            json_type_name(&other)
-                        )))
+                        return Err(FederationError::class_cast(
+                            json_type_name(&other),
+                            "java.lang.String",
+                        ))
                     }
                 };
                 rds_secrets.insert(key.to_lowercase(), value);
@@ -66,7 +66,12 @@ impl DefaultCredentialsProvider {
 fn json_type_name(value: &serde_json::Value) -> &'static str {
     match value {
         serde_json::Value::Bool(_) => "java.lang.Boolean",
-        serde_json::Value::Number(_) => "java.lang.Integer",
+        serde_json::Value::Number(n) if n.is_f64() => "java.lang.Double",
+        serde_json::Value::Number(n) if n.as_i64().is_some_and(|v| i32::try_from(v).is_ok()) => {
+            "java.lang.Integer"
+        }
+        serde_json::Value::Number(n) if n.is_i64() => "java.lang.Long",
+        serde_json::Value::Number(_) => "java.math.BigInteger",
         serde_json::Value::Array(_) => "java.util.ArrayList",
         serde_json::Value::Object(_) => "java.util.LinkedHashMap",
         _ => "java.lang.Object",

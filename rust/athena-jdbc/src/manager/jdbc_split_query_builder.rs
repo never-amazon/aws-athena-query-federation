@@ -547,11 +547,7 @@ pub(crate) fn range_to_predicate<B: JdbcSplitQueryBuilder + ?Sized>(
 }
 
 fn java_class_cast(value: &Value, target: &str) -> FederationError {
-    FederationError::ClassCast(format!(
-        "class {} cannot be cast to class {}",
-        value.java_class_name(),
-        target
-    ))
+    FederationError::class_cast(value.java_class_name(), target)
 }
 
 fn number_value(value: &Value) -> Result<&Value> {
@@ -674,11 +670,7 @@ fn timestamp_of_epoch_millis(millis: i64) -> NaiveDateTime {
 }
 
 fn substrait_class_cast(value: &SubstraitValue, target: &str) -> FederationError {
-    FederationError::ClassCast(format!(
-        "class {} cannot be cast to class {}",
-        value.java_class_name(),
-        target
-    ))
+    FederationError::class_cast(value.java_class_name(), target)
 }
 
 fn substrait_is_number(value: &SubstraitValue) -> bool {
@@ -1363,5 +1355,20 @@ mod tests {
         assert!(rs.next().await.unwrap(), "Should find matching record");
         assert_eq!(Some(1000), rs.get_int("int_col").unwrap());
         assert_eq!(Some(true), rs.get_boolean("bool_col").unwrap());
+    }
+
+    #[test]
+    fn handle_data_types_reports_java_class_cast_text() {
+        let error = bind(&[tv(
+            SqlTypeName::Bigint,
+            SubstraitValue::String("x".to_string()),
+            "c",
+        )])
+        .unwrap_err();
+        assert!(matches!(error, FederationError::ClassCast(_)), "{error:?}");
+        assert_eq!(
+            message(&error),
+            "class java.lang.String cannot be cast to class java.lang.Number (java.lang.String and java.lang.Number are in module java.base of loader 'bootstrap')"
+        );
     }
 }

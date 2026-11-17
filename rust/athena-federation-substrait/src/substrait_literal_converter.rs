@@ -28,15 +28,15 @@ pub enum LiteralValue {
 impl LiteralValue {
     pub fn java_class_name(&self) -> &'static str {
         match self {
-            LiteralValue::Int(_) => "Integer",
-            LiteralValue::Long(_) => "Long",
-            LiteralValue::Float(_) => "Float",
-            LiteralValue::Double(_) => "Double",
-            LiteralValue::String(_) => "String",
-            LiteralValue::Boolean(_) => "Boolean",
-            LiteralValue::Bytes(_) => "byte[]",
-            LiteralValue::Decimal(_) => "BigDecimal",
-            LiteralValue::ZonedDateTime(_) => "ZonedDateTime",
+            LiteralValue::Int(_) => "java.lang.Integer",
+            LiteralValue::Long(_) => "java.lang.Long",
+            LiteralValue::Float(_) => "java.lang.Float",
+            LiteralValue::Double(_) => "java.lang.Double",
+            LiteralValue::String(_) => "java.lang.String",
+            LiteralValue::Boolean(_) => "java.lang.Boolean",
+            LiteralValue::Bytes(_) => "[B",
+            LiteralValue::Decimal(_) => "java.math.BigDecimal",
+            LiteralValue::ZonedDateTime(_) => "java.time.ZonedDateTime",
         }
     }
 }
@@ -129,7 +129,7 @@ impl SubstraitLiteralConverter {
             },
             DataType::Binary => match value {
                 LiteralValue::Bytes(b) => LiteralType::Binary(b.clone()),
-                other => return Err(class_cast(other, "byte[]")),
+                other => return Err(class_cast(other, "[B")),
             },
             DataType::Decimal32(_, _)
             | DataType::Decimal64(_, _)
@@ -205,11 +205,7 @@ impl SubstraitLiteralConverter {
 }
 
 fn class_cast(value: &LiteralValue, target: &str) -> SubstraitError {
-    SubstraitError::runtime(format!(
-        "class {} cannot be cast to class {}",
-        value.java_class_name(),
-        target
-    ))
+    SubstraitError::class_cast(value.java_class_name(), target)
 }
 
 pub fn big_decimal_from_bytes(value: &[u8], scale: i64) -> BigDecimal {

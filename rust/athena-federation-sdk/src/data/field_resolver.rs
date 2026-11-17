@@ -28,10 +28,10 @@ impl FieldResolver for DefaultFieldResolver {
             if let Value::List(_) = value {
                 return Ok(value.clone());
             }
-            return Err(FederationError::ClassCast(format!(
-                "class {} cannot be cast to java.util.List",
-                value.java_class_name()
-            )));
+            return Err(FederationError::class_cast(
+                value.java_class_name(),
+                "java.util.List",
+            ));
         }
         Err(FederationError::invalid_input(format!(
             "Expected LIST type but found {minor_type}"
