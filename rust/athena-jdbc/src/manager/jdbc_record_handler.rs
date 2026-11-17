@@ -300,9 +300,9 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
             Ok(())
         }),
         MinorType::DATEMILLI => Extractor::date_milli(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_timestamp(index)?;
-            if let Some(timestamp) = value {
-                dst.value = timestamp.and_utc().timestamp_millis();
+            let value = row_of(context)?.get_object(index)?.to_timestamp_millis()?;
+            if let Some(millis) = value {
+                dst.value = millis;
             }
             dst.is_set = i32::from(value.is_some());
             Ok(())

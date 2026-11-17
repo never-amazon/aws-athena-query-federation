@@ -135,12 +135,9 @@ fn is_ascii_digits(text: &str) -> bool {
 }
 
 fn number_long(value: &Value) -> Result<i64> {
-    value.number_long_value().ok_or_else(|| {
-        FederationError::ClassCast(format!(
-            "class {} cannot be cast to class java.lang.Number",
-            value.java_class_name()
-        ))
-    })
+    value
+        .number_long_value()
+        .ok_or_else(|| FederationError::class_cast(value.java_class_name(), "java.lang.Number"))
 }
 
 fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
