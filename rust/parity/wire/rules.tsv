@@ -1,0 +1,9 @@
+rule	scope	path	action	argument	reason
+arrow_decode	response	**	decode-arrow	blocks-and-schemas	Block and schema payloads are base64 Arrow IPC. Java Arrow and arrow-rs may pad buffers differently, so diff.py compares the decoded schema and rows, not the bytes. pyarrow is not installed on this host, so java/ArrowDecode (Java Arrow 18.3) decodes both sides; Athena reads the payloads with Java Arrow too. TODO: decode with pyarrow when it is installed, so the decoder shares no code with the Java side.
+s3_object_decode	aws	/s3Objects	decode-arrow	s3-objects	Spilled blocks and the export schema sidecar are Arrow IPC written to the S3 stub. They are decoded like inline blocks, using the schema of the RemoteReadRecordsResponse, and the byte size is dropped because it depends on buffer padding.
+block_allocator_id	response	**/aId	replace	"<aId>"	BlockAllocatorImpl() names each allocator with a random UUID, and every serialized block carries that id.
+split_spill_key	response	/splits/*/spillLocation/key	regex	[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}=><split-uuid>	MetadataHandler.makeSpillLocation uses UUID.randomUUID() as the split id at the end of the spill key.
+split_order	response	/splits	sort		GetSplitsResponse keeps the splits in a HashSet and Split.hashCode includes the random spill key, so the JSON order changes from run to run.
+partition_columns_order	response	/partitionColumns	sort		JdbcMetadataHandler.doGetTable builds partition columns with Collectors.toSet(), so the order is a hash order and not part of the contract.
+remote_blocks_order	response	/remoteBlocks	sort		S3BlockSpiller records spill locations from two async spill threads in completion order.
+athena_status_poll	aws	/calls	remove-item	"athena.getQueryExecution"	QueryStatusChecker polls Athena from a background thread after one second, so whether the call happens depends on how long the read takes.
