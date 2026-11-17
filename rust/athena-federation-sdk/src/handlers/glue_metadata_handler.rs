@@ -40,12 +40,15 @@ pub const GLUE_TABLE_CONTAINS_PREVIOUSLY_UNSUPPORTED_TYPE: &str =
     "glueTableContainsPreviouslyUnsupportedType";
 
 static TABLE_ARN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^arn:(?:aws|aws-cn|aws-us-gov):[a-z]+:[a-z1-9-]+:[0-9]{12}:table/(.+)$")
-        .expect("valid table arn pattern")
+    Regex::new(concat!(
+        r"^arn:(?:aws|aws-cn|aws-us-gov):[a-z]+:[a-z1-9-]+:[0-9]{12}:table/",
+        r"([^\n\r\x{85}\x{2028}\x{2029}]+)$"
+    ))
+    .expect("valid table arn pattern")
 });
 
 static FUNCTION_ARN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^arn:aws[a-zA-Z-]*?:lambda:[a-zA-Z0-9-]+:(\d{12}):function:[a-zA-Z0-9_-]+$")
+    Regex::new(r"^arn:aws[a-zA-Z-]*?:lambda:[a-zA-Z0-9-]+:([0-9]{12}):function:[a-zA-Z0-9_-]+$")
         .expect("valid function arn pattern")
 });
 
@@ -98,7 +101,7 @@ pub async fn glue_client_from_config<S: BuildHasher>(
 }
 
 fn glue_is_null(method: &str) -> FederationError {
-    FederationError::NullPointer(format!(
+    FederationError::null_pointer(format!(
         "Cannot invoke \"software.amazon.awssdk.services.glue.GlueClient.{method}\" because \"this.awsGlue\" is null"
     ))
 }
@@ -134,10 +137,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
             }
         }
         let identity = request.identity().ok_or_else(|| {
-            FederationError::NullPointer(
-                "Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getAccount()\" because the return value of \"com.amazonaws.athena.connector.lambda.metadata.MetadataRequest.getIdentity()\" is null"
-                    .into(),
-            )
+            FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getAccount()\" because the return value of \"com.amazonaws.athena.connector.lambda.metadata.MetadataRequest.getIdentity()\" is null")
         })?;
         Ok(identity.account().map(str::to_string))
     }
@@ -173,7 +173,10 @@ pub trait GlueMetadataHandler: MetadataHandler {
                     schemas.push(database.name().to_string());
                 }
             }
-            next_token = response.next_token().map(str::to_string);
+            next_token = response
+                .next_token()
+                .filter(|token| !token.is_empty())
+                .map(str::to_string);
             if next_token.is_none() {
                 break;
             }
@@ -267,10 +270,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
             .await
             .map_err(FederationError::AwsService)?;
         let table = response.table().ok_or_else(|| {
-            FederationError::NullPointer(
-                "Cannot invoke \"software.amazon.awssdk.services.glue.model.Table.parameters()\" because \"table\" is null"
-                    .into(),
-            )
+            FederationError::null_pointer("Cannot invoke \"software.amazon.awssdk.services.glue.model.Table.parameters()\" because \"table\" is null")
         })?;
         if filter.is_some_and(|f| !f.filter(table)) {
             return Err(FederationError::connector(
@@ -284,18 +284,18 @@ pub trait GlueMetadataHandler: MetadataHandler {
     fn convert_field(&self, name: &str, glue_type: Option<&str>) -> Result<Option<Field>> {
         let lexed = match glue_type {
             Some(glue_type) => GlueFieldLexer::lex(name, glue_type),
-            None => Err(FederationError::NullPointer(
-                "Cannot invoke \"String.length()\" because \"this.input\" is null".into(),
+            None => Err(FederationError::null_pointer(
+                "Cannot invoke \"String.length()\" because \"this.input\" is null",
             )),
         };
         lexed.map_err(|ex| {
             if ex.is_runtime_exception() {
-                FederationError::AthenaConnector(AthenaConnectorException::with_cause(
+                FederationError::AthenaConnector(AthenaConnectorException::with_response(
+                    Arc::new(ex),
                     format!(
                         "Error converting field[{name}] with type[{}]",
                         glue_type.unwrap_or("null")
                     ),
-                    Arc::new(ex),
                     ErrorDetails::of(FederationSourceErrorCode::OperationNotSupportedException),
                 ))
             } else {
@@ -328,10 +328,7 @@ fn table_to_response<H: GlueMetadataHandler + ?Sized>(
         .map(str::to_string)
         .collect();
     let storage_descriptor = table.storage_descriptor().ok_or_else(|| {
-        FederationError::NullPointer(
-            "Cannot invoke \"software.amazon.awssdk.services.glue.model.StorageDescriptor.columns()\" because the return value of \"software.amazon.awssdk.services.glue.model.Table.storageDescriptor()\" is null"
-                .into(),
-        )
+        FederationError::null_pointer("Cannot invoke \"software.amazon.awssdk.services.glue.model.StorageDescriptor.columns()\" because the return value of \"software.amazon.awssdk.services.glue.model.Table.storageDescriptor()\" is null")
     })?;
     let mut glue_table_contains_previously_unsupported_type = false;
     for next in storage_descriptor.columns().iter().chain(partition_keys) {
@@ -346,10 +343,7 @@ fn table_to_response<H: GlueMetadataHandler + ?Sized>(
         let arrow_field = handler
             .convert_field(mapped_column_name, glue_type)?
             .ok_or_else(|| {
-                FederationError::NullPointer(
-                    "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getName()\" because \"field\" is null"
-                        .into(),
-                )
+                FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getName()\" because \"field\" is null")
             })?;
         schema_builder.add_field(arrow_field.clone());
         if let Some(comment) = next.comment().filter(|c| !c.trim().is_empty()) {

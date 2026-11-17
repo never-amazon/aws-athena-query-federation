@@ -194,7 +194,7 @@ impl DateTimeFormatterUtil {
                 )))
             }
         };
-        let tz = tz.ok_or_else(|| FederationError::NullPointer("timezone is null".into()))?;
+        let tz = tz.ok_or_else(|| FederationError::null_pointer("timezone is null"))?;
         let mut zone = ZoneId::of(&tz)?;
         let mut epoch = epoch_timestamp;
         if DateTimeFormatterUtil::is_pack_timezone() {

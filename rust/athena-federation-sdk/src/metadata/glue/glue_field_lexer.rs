@@ -81,10 +81,7 @@ fn lex_internal(
 
 fn required_child(child: Option<Field>) -> Result<Field> {
     child.ok_or_else(|| {
-        FederationError::NullPointer(
-            "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getName()\" because \"child\" is null"
-                .into(),
-        )
+        FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getName()\" because \"child\" is null")
     })
 }
 
@@ -143,12 +140,11 @@ fn parse_map(
     let closing_token = parser.next();
     expect_token_marker_is_field_end(Some(&closing_token))?;
     let key_type = key_type.ok_or_else(|| {
-        FederationError::NullPointer(
-            "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getType()\" because \"keyType\" is null"
-                .into(),
-        )
+        FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getType()\" because \"keyType\" is null")
     })?;
-    let value_type = required_child(value_type)?;
+    let value_type = value_type.ok_or_else(|| {
+        FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getField(com.google.flatbuffers.FlatBufferBuilder)\" because the return value of \"java.util.List.get(int)\" is null")
+    })?;
     let key_not_nullable = key_type.with_nullable(false);
     Ok(Field::new(
         name,
@@ -169,10 +165,7 @@ fn expect_token_marker_is_field_start(token: &Token) -> Result<()> {
 
 fn expect_token_marker_is_field_end(token: Option<&Token>) -> Result<()> {
     let token = token.ok_or_else(|| {
-        FederationError::NullPointer(
-            "Cannot invoke \"com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser$Token.getMarker()\" because \"token\" is null"
-                .into(),
-        )
+        FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser$Token.getMarker()\" because \"token\" is null")
     })?;
     match token.marker() {
         None | Some(GlueTypeParser::FIELD_SEP | GlueTypeParser::FIELD_END) => Ok(()),

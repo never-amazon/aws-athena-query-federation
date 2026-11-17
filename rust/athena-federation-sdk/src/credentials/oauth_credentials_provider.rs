@@ -144,7 +144,7 @@ impl OAuthCredentialsProvider {
         let http_client = self
             .http_client
             .as_ref()
-            .ok_or_else(|| FederationError::NullPointer("httpClient was null".into()))?;
+            .ok_or_else(|| FederationError::null_pointer("httpClient was null"))?;
         let request = self.flow.build_token_request(snapshot)?;
         let response = http_client.send(request).await.map_err(|e| match e {
             HttpClientError::Io(m) => connector_error(
@@ -229,7 +229,7 @@ impl OAuthCredentialsProvider {
         let secrets_manager = self
             .secrets_manager
             .as_ref()
-            .ok_or_else(|| FederationError::NullPointer("secretsManager was null".into()))?;
+            .ok_or_else(|| FederationError::null_pointer("secretsManager was null"))?;
         secrets_manager
             .secrets_manager()
             .put_secret_value(secret_name, &secret_string)

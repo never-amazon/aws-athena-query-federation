@@ -144,7 +144,7 @@ fn assert_split_null_property_rejected(version: i32) {
         .replace("\"year\" : \"2017\"", "\"year\" : null");
     let result = mapper.read_value::<FederationRequest>(text.as_bytes());
     match result {
-        Err(FederationError::NullPointer(message)) => {
+        Err(FederationError::NullPointer(Some(message))) => {
             assert_eq!("null value in entry: year=null", message);
         }
         other => panic!("expected NullPointer, got {other:?}"),
@@ -226,7 +226,7 @@ impl QueryPassthroughSignature for SystemQuerySignature {
 fn verify_rejects_null_function_signature() {
     let args = nullable_map(&[("schemaFunctionName", None), ("QUERY", Some("SELECT 1"))]);
     match SystemQuerySignature.verify(&args) {
-        Err(FederationError::NullPointer(message)) => assert_eq!(
+        Err(FederationError::NullPointer(Some(message))) => assert_eq!(
             "Cannot invoke \"String.equalsIgnoreCase(String)\" because \"receivedSignature\" is null",
             message
         ),
@@ -328,7 +328,7 @@ fn assert_split_null_property_written_then_rejected(version: i32) {
     assert_serialized_matches(&text, &actual, &mapper);
 
     match mapper.read_value::<FederationRequest>(text.as_bytes()) {
-        Err(FederationError::NullPointer(message)) => {
+        Err(FederationError::NullPointer(Some(message))) => {
             assert_eq!("null value in entry: year=null", message);
         }
         other => panic!("expected NullPointer, got {other:?}"),

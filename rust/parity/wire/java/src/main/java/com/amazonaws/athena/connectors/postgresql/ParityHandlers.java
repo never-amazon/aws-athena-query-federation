@@ -1,6 +1,8 @@
 package com.amazonaws.athena.connectors.postgresql;
 
 import com.amazonaws.athena.connector.lambda.handlers.CompositeHandler;
+import com.amazonaws.athena.connector.lambda.security.EncryptionKey;
+import com.amazonaws.athena.connector.lambda.security.LocalKeyFactory;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfigBuilder;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo;
@@ -8,6 +10,7 @@ import com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFact
 import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandler;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.services.athena.AthenaClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
@@ -89,7 +92,18 @@ public final class ParityHandlers implements AutoCloseable
     private static PostGreSqlMetadataHandler metadataHandler(DatabaseConnectionConfig dbConfig, Map<String, String> config,
             SecretsManagerClient secrets, AthenaClient athena)
     {
-        return new PostGreSqlMetadataHandler(dbConfig, secrets, athena, connectionFactory(dbConfig, config), config);
+        if ("true".equalsIgnoreCase(config.getOrDefault("disable_spill_encryption", "false"))) {
+            return new PostGreSqlMetadataHandler(dbConfig, secrets, athena, connectionFactory(dbConfig, config), config);
+        }
+        LocalKeyFactory keys = new LocalKeyFactory();
+        return new PostGreSqlMetadataHandler(dbConfig, secrets, athena, connectionFactory(dbConfig, config), config)
+        {
+            @Override
+            protected EncryptionKey makeEncryptionKey(AwsRequestOverrideConfiguration overrideConfiguration)
+            {
+                return keys.create(overrideConfiguration);
+            }
+        };
     }
 
     private static PostGreSqlRecordHandler recordHandler(DatabaseConnectionConfig dbConfig, Map<String, String> config,

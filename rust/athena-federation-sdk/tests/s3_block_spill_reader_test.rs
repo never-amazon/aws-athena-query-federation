@@ -12,6 +12,7 @@ use athena_federation_sdk::security::{
     EncryptionKeyFactory, LocalKeyFactory, NoOpBlockCrypto,
 };
 use athena_federation_sdk::FederationError;
+use aws_credential_types::Credentials;
 
 const BUCKET: &str = "test-bucket";
 const PREFIX: &str = "test-prefix";
@@ -57,6 +58,10 @@ impl S3Client for MockS3 {
 
     async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
         Ok(())
+    }
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn S3Client> {
+        unreachable!("this test does not pass FAS credentials")
     }
 }
 

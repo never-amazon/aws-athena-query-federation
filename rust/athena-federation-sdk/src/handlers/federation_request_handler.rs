@@ -124,8 +124,10 @@ pub trait FederationRequestHandler: Send + Sync {
     ) -> Arc<dyn S3Client> {
         aws_request_override_configuration
             .and_then(AwsRequestOverrideConfiguration::credentials)
-            .and_then(|credentials| default_s3.with_credentials(credentials))
-            .unwrap_or_else(|| Arc::clone(default_s3))
+            .map_or_else(
+                || Arc::clone(default_s3),
+                |credentials| default_s3.with_credentials(credentials),
+            )
     }
 
     fn get_athena_client(
@@ -135,8 +137,10 @@ pub trait FederationRequestHandler: Send + Sync {
     ) -> Arc<dyn AthenaClient> {
         aws_request_override_configuration
             .and_then(AwsRequestOverrideConfiguration::credentials)
-            .and_then(|credentials| default_athena.with_credentials(credentials))
-            .unwrap_or_else(|| Arc::clone(default_athena))
+            .map_or_else(
+                || Arc::clone(default_athena),
+                |credentials| default_athena.with_credentials(credentials),
+            )
     }
 
     fn is_request_federated(&self, request: &FederationRequest) -> bool {
@@ -189,8 +193,7 @@ fn fas_token(config_options: Option<&ConfigOptions>) -> Option<&str> {
 }
 
 fn null_fas_option() -> FederationError {
-    FederationError::NullPointer(
-        "Cannot invoke \"String.getBytes(java.nio.charset.Charset)\" because \"src\" is null"
-            .into(),
+    FederationError::null_pointer(
+        "Cannot invoke \"String.getBytes(java.nio.charset.Charset)\" because \"src\" is null",
     )
 }

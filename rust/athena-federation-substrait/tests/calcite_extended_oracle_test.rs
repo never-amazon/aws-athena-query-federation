@@ -82,7 +82,7 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
         let mut out = rewritten.to_sql_string(d).replace('\n', "\\n");
         for v in &accumulator {
             let class = v.value().java_class_name();
-            let simple = class.rsplit('.').next().unwrap_or(class);
+            let simple = class.rsplit(['.', '$']).next().unwrap_or(class);
             write!(
                 out,
                 "\t{}|{}|{}|{}",

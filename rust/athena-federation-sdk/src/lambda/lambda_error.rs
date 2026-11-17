@@ -13,7 +13,7 @@ const ATHENA_CONNECTOR_EXCEPTION: &str =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LambdaErrorCause {
     error_type: String,
-    error_message: String,
+    error_message: Option<String>,
 }
 
 impl LambdaErrorCause {
@@ -21,15 +21,15 @@ impl LambdaErrorCause {
         &self.error_type
     }
 
-    pub fn error_message(&self) -> &str {
-        &self.error_message
+    pub fn error_message(&self) -> Option<&str> {
+        self.error_message.as_deref()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LambdaError {
     error_type: String,
-    error_message: String,
+    error_message: Option<String>,
     error_code: Option<String>,
     causes: Vec<LambdaErrorCause>,
 }
@@ -44,13 +44,13 @@ impl LambdaError {
         while let Some(cause) = next {
             causes.push(LambdaErrorCause {
                 error_type: java_class_of(cause),
-                error_message: cause.to_string(),
+                error_message: java_message_of(cause),
             });
             next = java_cause(cause);
         }
         LambdaError {
             error_type: error.java_class_name(),
-            error_message: error.to_string(),
+            error_message: error.java_message(),
             error_code,
             causes,
         }
@@ -60,8 +60,8 @@ impl LambdaError {
         &self.error_type
     }
 
-    pub fn error_message(&self) -> &str {
-        &self.error_message
+    pub fn error_message(&self) -> Option<&str> {
+        self.error_message.as_deref()
     }
 
     pub fn error_code(&self) -> Option<&str> {
@@ -76,7 +76,7 @@ impl LambdaError {
         let mut text = format!(
             "errorType: {}\nerrorMessage: {}\n",
             self.error_type,
-            one_line(&self.error_message)
+            one_line(self.error_message.as_deref())
         );
         if let Some(code) = &self.error_code {
             text.push_str("errorCode: ");
@@ -87,7 +87,7 @@ impl LambdaError {
             text.push_str("cause: ");
             text.push_str(&cause.error_type);
             text.push_str(": ");
-            text.push_str(&one_line(&cause.error_message));
+            text.push_str(&one_line(cause.error_message.as_deref()));
             text.push('\n');
         }
         text
@@ -96,7 +96,10 @@ impl LambdaError {
 
 impl fmt::Display for LambdaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.error_type, self.error_message)
+        match &self.error_message {
+            Some(message) => write!(f, "{}: {message}", self.error_type),
+            None => f.write_str(&self.error_type),
+        }
     }
 }
 
@@ -116,20 +119,35 @@ impl From<FederationError> for LambdaError {
 
 impl From<LambdaError> for lambda_runtime::Diagnostic {
     fn from(error: LambdaError) -> Self {
+        let error_message = error
+            .error_message
+            .unwrap_or_else(|| error.error_type.clone());
         lambda_runtime::Diagnostic {
             error_type: error.error_type,
-            error_message: error.error_message,
+            error_message,
         }
     }
 }
 
-fn one_line(message: &str) -> String {
-    message.replace('\r', "\\r").replace('\n', "\\n")
+fn one_line(message: Option<&str>) -> String {
+    message.map_or_else(
+        || "null".to_string(),
+        |m| m.replace('\r', "\\r").replace('\n', "\\n"),
+    )
+}
+
+fn java_message_of(error: &(dyn StdError + 'static)) -> Option<String> {
+    match as_federation(error) {
+        Some(federation) => federation.java_message(),
+        None => Some(error.to_string()),
+    }
 }
 
 fn federation_cause(error: &FederationError) -> Option<&(dyn StdError + 'static)> {
     match error {
         FederationError::Wrapped { source, .. } => source.source(),
+        FederationError::IoError(source) => source.source(),
+        FederationError::Arrow(source) => source.source(),
         FederationError::RuntimeWrapper { source } => Some(source.as_ref()),
         other => other.source(),
     }

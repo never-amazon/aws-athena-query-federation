@@ -80,9 +80,9 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
                 Ok(())
             }
             Err(ex) => Err(FederationError::AthenaConnector(
-                AthenaConnectorException::with_cause(
-                    format!("Error while checking bucket ownership for {bucket}"),
+                AthenaConnectorException::with_response(
                     std::sync::Arc::new(ex),
+                    format!("Error while checking bucket ownership for {bucket}"),
                     ErrorDetails::of(FederationSourceErrorCode::AccessDeniedException),
                 ),
             )),

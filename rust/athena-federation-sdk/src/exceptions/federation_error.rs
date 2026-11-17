@@ -58,8 +58,8 @@ pub enum FederationError {
     UnsupportedOperation(String),
     #[error("{0}")]
     ClassCast(String),
-    #[error("{0}")]
-    NullPointer(String),
+    #[error("{}", .0.as_deref().unwrap_or("null"))]
+    NullPointer(Option<String>),
     #[error("{0}")]
     Arithmetic(String),
     #[error("{0}")]
@@ -90,7 +90,10 @@ pub enum FederationError {
 }
 
 fn java_to_string(error: &FederationError) -> String {
-    format!("{}: {}", error.java_class_name(), error)
+    match error.java_message() {
+        Some(message) => format!("{}: {message}", error.java_class_name()),
+        None => error.java_class_name(),
+    }
 }
 
 pub type Result<T> = std::result::Result<T, FederationError>;
@@ -136,6 +139,10 @@ impl FederationError {
         FederationError::IllegalArgument(message.into())
     }
 
+    pub fn null_pointer(message: impl Into<String>) -> FederationError {
+        FederationError::NullPointer(Some(message.into()))
+    }
+
     pub fn illegal_state(message: impl Into<String>) -> FederationError {
         FederationError::IllegalState(message.into())
     }
@@ -147,6 +154,13 @@ impl FederationError {
         FederationError::Wrapped {
             kind,
             source: Arc::new(source),
+        }
+    }
+
+    pub fn java_message(&self) -> Option<String> {
+        match self {
+            FederationError::NullPointer(None) => None,
+            other => Some(other.to_string()),
         }
     }
 

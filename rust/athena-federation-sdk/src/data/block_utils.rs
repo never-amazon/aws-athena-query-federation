@@ -201,7 +201,7 @@ impl BlockUtils {
         for next in values {
             let next: Value = next.into();
             let vector = block.get_field_vector_mut(column_name).ok_or_else(|| {
-                FederationError::NullPointer(format!("missing vector {column_name}"))
+                FederationError::null_pointer(format!("missing vector {column_name}"))
             })?;
             if let Err(ex) = BlockUtils::set_value(vector, count, &next) {
                 return Err(FederationError::connector_with_details(
@@ -428,7 +428,7 @@ impl BlockUtils {
     }
 
     pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
-        let npe = || FederationError::NullPointer("null value".into());
+        let npe = || FederationError::null_pointer("null value");
         let minor = reader.minor_type();
         Ok(match minor {
             MinorType::DATEDAY => {
@@ -530,7 +530,7 @@ impl BlockUtils {
             for (dst_offset, i) in (start..).zip(first_row..=last_row) {
                 let name = src.field().name().clone();
                 let dst = dst_block.get_field_vector_mut(&name).ok_or_else(|| {
-                    FederationError::NullPointer(format!("No vector found for field {name}"))
+                    FederationError::null_pointer(format!("No vector found for field {name}"))
                 })?;
                 src.set_position(i);
                 BlockUtils::set_value(dst, dst_offset, &src.read_object())?;

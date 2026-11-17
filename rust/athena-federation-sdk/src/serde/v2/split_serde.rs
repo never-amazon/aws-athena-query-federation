@@ -58,13 +58,13 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<Split> {
                 jparser.next_token()?;
                 let value = jparser.get_value_as_string();
                 let key = key.ok_or_else(|| {
-                    FederationError::NullPointer(format!(
+                    FederationError::null_pointer(format!(
                         "null key in entry: null={}",
                         value.as_deref().unwrap_or("null")
                     ))
                 })?;
                 let value = value.ok_or_else(|| {
-                    FederationError::NullPointer(format!("null value in entry: {key}=null"))
+                    FederationError::null_pointer(format!("null value in entry: {key}=null"))
                 })?;
                 if properties.contains_key(&key) {
                     return Err(FederationError::IllegalArgument(format!(

@@ -152,7 +152,19 @@ async fn test_get_session_credentials() {
         .get_session_credentials("test-key-id", TOKEN, s.handler.kms_encryption_provider())
         .await
         .unwrap();
-    assert_eq!(FAS_ACCESS, result.access_key_id());
+    assert_eq!(
+        Credentials::new(
+            FAS_ACCESS,
+            "fas-secret",
+            Some("fas-session".to_string()),
+            None,
+            "FASToken"
+        ),
+        result
+    );
+    assert_eq!(Some("fas-session"), result.session_token());
+    assert_eq!("fas-secret", result.secret_access_key());
+    assert_eq!(None, result.expiry());
     let calls = s.fakes.crypto.calls.lock().unwrap().clone();
     assert_eq!(
         vec![("test-key-id".to_string(), b"test-token".to_vec())],

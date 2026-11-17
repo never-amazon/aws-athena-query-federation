@@ -390,7 +390,7 @@ where
     pub fn build(self) -> Result<ThrottlingInvoker<E>> {
         let filter = self
             .filter
-            .ok_or_else(|| FederationError::NullPointer("filter was null".into()))?;
+            .ok_or_else(|| FederationError::null_pointer("filter was null"))?;
         ThrottlingInvoker::new(
             self.initial_delay_ms,
             self.max_delay_ms,

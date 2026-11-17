@@ -34,7 +34,7 @@ fn constructor_with_response_message_and_error_details_should_set_fields_correct
     );
     assert_eq!(
         ERROR_MESSAGE,
-        exception.get_message(),
+        exception.message(),
         "Error message should match"
     );
     assert_eq!(
@@ -59,7 +59,7 @@ fn constructor_with_message_and_error_details_should_set_fields_correctly() {
     let exception = AthenaConnectorException::new(ERROR_MESSAGE, error_details.clone());
     assert_eq!(
         ERROR_MESSAGE,
-        exception.get_message(),
+        exception.message(),
         "Error message should match"
     );
     assert!(
@@ -90,7 +90,7 @@ fn constructor_with_response_message_cause_and_error_details_should_set_fields_c
     );
     assert_eq!(
         ERROR_MESSAGE,
-        exception.get_message(),
+        exception.message(),
         "Error message should match"
     );
     assert!(

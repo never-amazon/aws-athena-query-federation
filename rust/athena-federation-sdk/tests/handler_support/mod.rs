@@ -87,10 +87,10 @@ impl AthenaClient for FakeAthena {
         Ok(Some("RUNNING".to_string()))
     }
 
-    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
-        Some(Arc::new(FakeAthena {
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn AthenaClient> {
+        Arc::new(FakeAthena {
             credentials: Some(credentials.clone()),
-        }))
+        })
     }
 }
 
@@ -132,12 +132,12 @@ impl S3Client for FakeS3 {
         Ok(())
     }
 
-    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn S3Client>> {
-        Some(Arc::new(FakeS3 {
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn S3Client> {
+        Arc::new(FakeS3 {
             objects: Arc::clone(&self.objects),
             head_bucket_calls: Arc::clone(&self.head_bucket_calls),
             credentials: Some(credentials.clone()),
-        }))
+        })
     }
 }
 

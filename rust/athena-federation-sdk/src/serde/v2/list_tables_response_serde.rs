@@ -44,7 +44,7 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRe
     if jparser.next_token()? != Some(JsonToken::EndObject) {
         let name = jparser
             .current_name()
-            .ok_or_else(|| FederationError::NullPointer("Cannot invoke \"String.equals(Object)\" because the return value of \"getCurrentName()\" is null".into()))?;
+            .ok_or_else(|| FederationError::null_pointer("Cannot invoke \"String.equals(Object)\" because the return value of \"getCurrentName()\" is null"))?;
         if name == NEXT_TOKEN_FIELD {
             jparser.next_token()?;
             next_token = jparser.get_value_as_string();

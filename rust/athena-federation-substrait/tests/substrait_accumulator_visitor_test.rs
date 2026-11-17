@@ -3,6 +3,7 @@ use athena_federation_substrait::SqlTypeName;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::{operators, SqlKind, SqlOperator};
 use athena_federation_substrait::{RelDataType, RelDataTypeSystem};
+use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
 use athena_federation_substrait::{SqlIdentifier, SqlLiteral, SqlNode, SqlSelect};
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
 
@@ -448,4 +449,23 @@ fn test_visit_like_with_concat() {
     assert_eq!(acc[0].get_type(), SqlTypeName::Varchar);
     assert_eq!(acc[0].value(), &SubstraitValue::String("a".to_string()));
     assert_eq!(acc[0].column_name(), "cc_call_center_id");
+}
+
+#[test]
+fn scalar_subquery_binds_each_literal_once() {
+    let plan = include_str!("fixtures/scalar-subquery-bool-where.plan").trim();
+    let dialect = SqlDialect::ansi();
+    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
+    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
+    let mut accumulator = Vec::new();
+    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
+        .visit(&node)
+        .unwrap();
+    let sql = rewritten.to_sql_string(&dialect);
+    assert!(sql.ends_with("WHERE `bool_col` = ?))))"), "{sql}");
+    assert!(!sql.contains("(`bool_col` = ?) = ?"), "{sql}");
+    assert_eq!(1, accumulator.len());
+    assert_eq!(SqlTypeName::Boolean, accumulator[0].get_type());
+    assert_eq!(&SubstraitValue::Boolean(true), accumulator[0].value());
+    assert_eq!("bool_col", accumulator[0].column_name());
 }

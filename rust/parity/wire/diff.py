@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import json
 import os
 import re
@@ -82,8 +83,8 @@ class ArrowDecoder(object):
         self.cache = {}
         self.pending = []
 
-    def request(self, schema, records):
-        key = (schema, records)
+    def request(self, schema, records, crypto=None):
+        key = (schema, records) + (crypto or (None, None))
         if key not in self.cache:
             self.cache[key] = None
             self.pending.append(key)
@@ -95,7 +96,7 @@ class ArrowDecoder(object):
         argfile = os.path.join(JAVA_DIR, "target", "argfile")
         if not os.path.exists(argfile):
             raise SystemExit("diff.py: %s is missing; run run.sh once to build the Java helper" % argfile)
-        lines = [json.dumps({"schema": s, "records": r}) for s, r in self.pending]
+        lines = [json.dumps({"schema": s, "records": r, "key": k, "nonce": n}) for s, r, k, n in self.pending]
         cmd = ["java", "--add-opens=java.base/java.nio=ALL-UNNAMED",
                "-Dlog4j2.configurationFile=parity-log4j2.xml",
                "-Dparity.log.file=" + os.devnull,
@@ -149,7 +150,17 @@ def walk_arrow(node, decoder, resolve):
     return node
 
 
-def walk_s3(aws, response, decoder, resolve):
+def split_crypto(request):
+    if not isinstance(request, dict):
+        return None
+    split = request.get("split")
+    key = split.get("encryptionKey") if isinstance(split, dict) else None
+    if isinstance(key, dict) and isinstance(key.get("key"), str) and isinstance(key.get("nonce"), str):
+        return (key["key"], key["nonce"])
+    return None
+
+
+def walk_s3(aws, response, decoder, resolve, crypto=None):
     schema = None
     if isinstance(response, dict):
         schema = schema_text(response.get("schema"))
@@ -160,7 +171,7 @@ def walk_s3(aws, response, decoder, resolve):
         if obj["path"].endswith(".schema"):
             key = decoder.request(obj["bytes"], None)
         elif schema is not None:
-            key = decoder.request(schema, obj["bytes"])
+            key = decoder.request(schema, obj["bytes"], crypto)
         else:
             key = None
         if resolve and key is not None:
@@ -170,7 +181,19 @@ def walk_s3(aws, response, decoder, resolve):
     return aws
 
 
+def mask_base64(value):
+    if not isinstance(value, str):
+        return value
+    try:
+        size = len(base64.b64decode(value, validate=True))
+    except ValueError:
+        return value
+    return "<%d bytes>" % size
+
+
 def apply_rule(rule, doc):
+    if rule.action == "mask-base64":
+        return apply_at(doc, rule.path, mask_base64)
     if rule.action == "replace":
         literal = json.loads(rule.argument)
         return apply_at(doc, rule.path, lambda v: v if v is None else literal)
@@ -187,7 +210,8 @@ def apply_rule(rule, doc):
 
 
 class Case(object):
-    def __init__(self, name, side, response, error, aws, raw_response):
+    def __init__(self, name, side, response, error, aws, raw_response, request=None):
+        self.request = request
         self.name = name
         self.side = side
         self.response = response
@@ -201,6 +225,20 @@ def find_side(case_dir):
         for suffix in ("-response.json", "-error.txt"):
             if os.path.exists(os.path.join(case_dir, side + suffix)):
                 return side
+    return None
+
+
+def load_request(case_dir, name):
+    candidates = [os.path.join(case_dir, "request.json")]
+    corpus = os.environ.get("PARITY_WIRE_CORPUS", os.path.join(WIRE, "corpus"))
+    candidates.append(os.path.join(corpus, name, "request.json"))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return json.load(f)
+            except ValueError:
+                return None
     return None
 
 
@@ -233,7 +271,7 @@ def load_tree(tree):
             if os.path.exists(path):
                 with open(path, encoding="utf-8") as f:
                     aws = json.load(f)
-        cases[name] = Case(name, side, response, error, aws, raw)
+        cases[name] = Case(name, side, response, error, aws, raw, load_request(case_dir, name))
     return cases
 
 
@@ -242,19 +280,20 @@ def normalize_tree(tree, rules):
     decoder = ArrowDecoder()
     decode_response = any(r.action == "decode-arrow" and r.scope == "response" for r in rules)
     decode_s3 = any(r.action == "decode-arrow" and r.scope == "aws" for r in rules)
+    decrypt_s3 = any(r.action == "decrypt-with-split-key" for r in rules)
     for case in cases.values():
         if decode_response and case.response is not None:
             walk_arrow(case.response, decoder, False)
         if decode_s3 and case.aws is not None:
-            walk_s3(case.aws, case.response, decoder, False)
+            walk_s3(case.aws, case.response, decoder, False, split_crypto(case.request) if decrypt_s3 else None)
     decoder.run()
     for case in cases.values():
         if decode_s3 and case.aws is not None:
-            case.aws = walk_s3(case.aws, case.response, decoder, True)
+            case.aws = walk_s3(case.aws, case.response, decoder, True, split_crypto(case.request) if decrypt_s3 else None)
         if decode_response and case.response is not None:
             case.response = walk_arrow(case.response, decoder, True)
         for rule in rules:
-            if rule.action == "decode-arrow":
+            if rule.action in ("decode-arrow", "decrypt-with-split-key"):
                 continue
             if rule.scope == "response" and case.response is not None:
                 case.response = apply_rule(rule, case.response)

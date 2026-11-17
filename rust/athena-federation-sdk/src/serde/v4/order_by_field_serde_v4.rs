@@ -35,8 +35,8 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<OrderByField> {
             )))
         }
         None => {
-            return Err(FederationError::NullPointer(
-                "Cannot invoke \"String.hashCode()\" because \"direction\" is null".into(),
+            return Err(FederationError::null_pointer(
+                "Cannot invoke \"String.hashCode()\" because \"direction\" is null",
             ))
         }
     };

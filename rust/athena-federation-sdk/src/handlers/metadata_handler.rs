@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Schema};
+use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use tokio::sync::Mutex;
@@ -11,6 +11,7 @@ use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::{ConfigOptions, FederationRequestHandler};
 use crate::connection::EnvironmentConstants;
+use crate::data::types::java_field_to_string;
 use crate::data::{
     BlockAllocator, BlockAllocatorImpl, BlockUtils, BlockWriter, S3Client, S3HeadBucketClient,
     SchemaBuilder, SimpleBlockWriter, SupportedTypes,
@@ -240,10 +241,7 @@ impl MetadataHandlerBase {
 
 pub(crate) fn require_identity(identity: Option<&FederatedIdentity>) -> Result<&FederatedIdentity> {
     identity.ok_or_else(|| {
-        FederationError::NullPointer(
-            "Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getConfigOptions()\" because \"federatedIdentity\" is null"
-                .into(),
-        )
+        FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getConfigOptions()\" because \"federatedIdentity\" is null")
     })
 }
 
@@ -260,7 +258,21 @@ pub(crate) fn java_class_of_request(request: &FederationRequest) -> String {
     )
 }
 
-fn is_blank(value: Option<&String>) -> bool {
+fn find_field<'a>(schema: &'a Schema, name: &str) -> Result<&'a Field> {
+    schema.field_with_name(name).map_err(|_| {
+        let fields: Vec<String> = schema
+            .fields()
+            .iter()
+            .map(|f| java_field_to_string(f))
+            .collect();
+        FederationError::IllegalArgument(format!(
+            "field {name} not found in [{}]",
+            fields.join(", ")
+        ))
+    })
+}
+
+fn is_blank(value: Option<&str>) -> bool {
     value.is_none_or(|v| v.trim().is_empty())
 }
 
@@ -300,19 +312,19 @@ pub trait MetadataHandler: FederationRequestHandler {
                 .filter_map(|(k, v)| v.clone().map(|v| (k.clone(), v)))
                 .collect()
         };
-        let prefix = if is_blank(config_options.get(SPILL_PREFIX_ENV)) {
+        let prefix = if is_blank(config_options.get(SPILL_PREFIX_ENV).map(String::as_str)) {
             base.spill_prefix().map(str::to_string)
         } else {
             config_options.get(SPILL_PREFIX_ENV).cloned()
         };
-        let bucket = if is_blank(config_options.get(SPILL_BUCKET_ENV)) {
+        let bucket = if is_blank(config_options.get(SPILL_BUCKET_ENV).map(String::as_str)) {
             base.spill_bucket().map(str::to_string)
         } else {
             config_options.get(SPILL_BUCKET_ENV).cloned()
         };
         let request_query_id = request.query_id().ok_or_else(|| {
-            FederationError::NullPointer(
-                "Cannot invoke \"java.lang.CharSequence.toString()\" because \"s\" is null".into(),
+            FederationError::null_pointer(
+                "Cannot invoke \"java.lang.CharSequence.toString()\" because \"s\" is null",
             )
         })?;
         let mut query_id = request_query_id.to_string();
@@ -368,15 +380,7 @@ pub trait MetadataHandler: FederationRequestHandler {
         let mut constraint_schema = SchemaBuilder::new_builder();
         let mut partition_schema_builder = SchemaBuilder::new_builder();
         for next_part_col in request.partition_cols() {
-            let partition_col = request
-                .schema()
-                .field_with_name(next_part_col)
-                .map_err(|_| {
-                    FederationError::NullPointer(
-                        "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getType()\" because \"partitionCol\" is null"
-                            .into(),
-                    )
-                })?;
+            let partition_col = find_field(request.schema(), next_part_col)?;
             partition_schema_builder
                 .add_field_with_type(next_part_col, partition_col.data_type().clone());
             constraint_schema.add_field_with_type(next_part_col, partition_col.data_type().clone());
@@ -529,9 +533,9 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                 ex
             } else {
                 let message = ex.to_string();
-                FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-                    message,
+                FederationError::AthenaConnector(AthenaConnectorException::with_response(
                     Arc::new(ex),
+                    message,
                     ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
                 ))
             }

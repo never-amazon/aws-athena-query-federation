@@ -20,7 +20,7 @@ fn column_type(block: &Block) -> Result<ArrowType> {
         .get_field_reader(DEFAULT_COLUMN)
         .map(|r| r.field().data_type().clone())
         .ok_or_else(|| {
-            FederationError::NullPointer(format!("value block has no column {DEFAULT_COLUMN}"))
+            FederationError::null_pointer(format!("value block has no column {DEFAULT_COLUMN}"))
         })
 }
 

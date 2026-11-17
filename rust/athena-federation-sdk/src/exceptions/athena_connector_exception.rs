@@ -70,7 +70,7 @@ impl AthenaConnectorException {
         AthenaConnectorException::new(message, ErrorDetails::of(code))
     }
 
-    pub fn get_message(&self) -> &str {
+    pub fn message(&self) -> &str {
         &self.message
     }
 

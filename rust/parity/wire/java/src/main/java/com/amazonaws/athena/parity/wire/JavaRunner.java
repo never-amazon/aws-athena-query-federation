@@ -60,6 +60,8 @@ public final class JavaRunner
             }
         }
         System.out.println("cases=" + cases.size() + " errors=" + errors);
+        System.out.flush();
+        System.exit(0);
     }
 
     private static boolean runCase(Path caseDir, Path outDir) throws IOException

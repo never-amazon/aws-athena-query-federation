@@ -93,7 +93,7 @@ impl Marker {
         null_value: bool,
     ) -> Result<Marker> {
         let reader = block.get_field_reader(DEFAULT_COLUMN).ok_or_else(|| {
-            FederationError::NullPointer(format!("block has no column {DEFAULT_COLUMN}"))
+            FederationError::null_pointer(format!("block has no column {DEFAULT_COLUMN}"))
         })?;
         let arrow_type = reader.field().data_type().clone();
         let value = if null_value {
@@ -276,7 +276,7 @@ impl Marker {
 
     fn require_value(value: &Value) -> Result<()> {
         if value.is_null() {
-            return Err(FederationError::NullPointer("value is null".into()));
+            return Err(FederationError::null_pointer("value is null"));
         }
         Ok(())
     }

@@ -13,7 +13,9 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
     FederationRequestHandler, MetadataHandler, MetadataHandlerBase, MetadataHandlerExt,
+    MetadataStreamHandler,
 };
+use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest,
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
@@ -71,6 +73,9 @@ impl MetadataHandler for TestHandler {
         request: &ListTablesRequest,
     ) -> Result<ListTablesResponse> {
         let schema_name = request.schema_name().unwrap_or_default();
+        if schema_name == "throw_io" {
+            return Err(std::io::Error::other("io boom").into());
+        }
         let tables = vec![
             TableName::new(schema_name, "table1"),
             TableName::new(schema_name, "table2"),
@@ -228,6 +233,78 @@ async fn test_list_tables_request() {
 }
 
 #[tokio::test]
+async fn checked_exception_becomes_connector_exception_with_response_and_no_cause() {
+    let s = set_up();
+    let request = ListTablesRequest::new(
+        Some(identity()),
+        Some(QUERY_ID.into()),
+        CATALOG,
+        Some("throw_io".into()),
+        None,
+        10,
+    );
+    let err = round_trip(&s, request.into()).await.unwrap_err();
+    assert_eq!(
+        "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
+         errorMessage: io boom\n\
+         errorCode: InternalServiceException\n",
+        LambdaError::new(&err).to_report()
+    );
+    let exception = err.as_connector_exception().unwrap();
+    assert!(std::error::Error::source(exception).is_none());
+    let response = exception
+        .response()
+        .and_then(|r| r.downcast_ref::<FederationError>())
+        .unwrap();
+    assert_eq!("java.io.IOException", response.java_class_name());
+}
+
+#[tokio::test]
+async fn do_get_table_layout_with_missing_partition_column() {
+    let s = set_up();
+    let request = layout_request(
+        SchemaBuilder::new_builder()
+            .add_int_field("c1")
+            .add_int_field("p")
+            .build(),
+        &["zz"],
+    );
+    let err = s
+        .handler
+        .do_get_table_layout(&s.block_allocator, &request)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "errorType: java.lang.IllegalArgumentException\n\
+         errorMessage: field zz not found in [c1: Int(32, true), p: Int(32, true)]\n",
+        LambdaError::new(&err).to_report()
+    );
+}
+
+#[tokio::test]
+async fn java_field_not_found_message_lists_children_and_nullability() {
+    let schema = arrow::datatypes::Schema::new(vec![
+        arrow::datatypes::Field::new("x", arrow::datatypes::DataType::Int32, false),
+        arrow::datatypes::Field::new_list(
+            "l",
+            arrow::datatypes::Field::new("item", arrow::datatypes::DataType::Utf8, true),
+            true,
+        ),
+    ]);
+    let request = layout_request(schema, &["zz"]);
+    let s = set_up();
+    let err = s
+        .handler
+        .do_get_table_layout(&s.block_allocator, &request)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "field zz not found in [x: Int(32, true) not null, l: List<item: Utf8>]",
+        err.to_string()
+    );
+}
+
+#[tokio::test]
 async fn test_get_table_request() {
     let s = set_up();
     let request = GetTableRequest::new(
@@ -303,3 +380,49 @@ async fn ping_handle_request() {
     let response = round_trip(&s, ping_request.into()).await.unwrap();
     assert!(matches!(response, FederationResponse::Ping(_)));
 }
+
+#[tokio::test]
+async fn metadata_handler_runs_as_request_stream_handler() {
+    let Setup {
+        handler,
+        block_allocator,
+    } = set_up();
+    let stream_handler = MetadataStreamHandler::new(handler);
+    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&block_allocator));
+    let request: FederationRequest =
+        GetDataSourceCapabilitiesRequest::new(Some(identity()), Some(QUERY_ID.into()), CATALOG)
+            .into();
+    let input = object_mapper.write_value_as_bytes(&request).unwrap();
+    let output = RequestStreamHandler::handle_request(&stream_handler, &input, None)
+        .await
+        .unwrap();
+    assert!(matches!(
+        object_mapper.read_response(&output).unwrap(),
+        FederationResponse::GetDataSourceCapabilities(_)
+    ));
+    let wrong: FederationRequest = ReadRecordsRequest::new(
+        Some(identity()),
+        CATALOG,
+        QUERY_ID,
+        TableName::new(SCHEMA_NAME, TABLE_NAME),
+        SchemaBuilder::new_builder().build(),
+        Split::new_builder(None, None).build(),
+        Constraints::empty(),
+        100,
+        100,
+    )
+    .into();
+    let input = object_mapper.write_value_as_bytes(&wrong).unwrap();
+    let err = RequestStreamHandler::handle_request(&stream_handler, &input, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
+         errorMessage: Expected a MetadataRequest but found class com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest\n\
+         errorCode: InvalidInputException\n",
+        LambdaError::new(&err).to_report()
+    );
+    assert_runnable(&stream_handler);
+}
+
+fn assert_runnable<H: RequestStreamHandler + 'static>(_handler: &H) {}

@@ -31,7 +31,7 @@ impl MarkerFactory {
 
     pub fn create(&self, arrow_type: &ArrowType, value: &Value, bound: Bound) -> Result<Marker> {
         if value.is_null() {
-            return Err(FederationError::NullPointer("value is null".into()));
+            return Err(FederationError::null_pointer("value is null"));
         }
         self.create_nullable(arrow_type, value, bound)
     }

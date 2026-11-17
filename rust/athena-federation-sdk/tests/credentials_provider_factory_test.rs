@@ -63,7 +63,7 @@ impl OAuthFlow for InvalidOAuthProvider {
     }
 
     fn build_token_request(&self, _secret_map: &HashMap<String, String>) -> Result<HttpRequest> {
-        Err(FederationError::NullPointer("no request".into()))
+        Err(FederationError::null_pointer("no request"))
     }
 }
 

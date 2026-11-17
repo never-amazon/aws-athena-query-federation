@@ -1,6 +1,7 @@
 use arrow::datatypes::Field;
 use athena_federation_sdk::data::{arrow_type_to_string, get_children, minor_type_of, MinorType};
 use athena_federation_sdk::metadata::glue::GlueFieldLexer;
+use athena_federation_sdk::FederationError;
 
 fn lex(name: &str, input: &str) -> Field {
     GlueFieldLexer::lex(name, input).unwrap().unwrap()
@@ -233,11 +234,7 @@ fn basic_lex_decimal_test() {
         java_field_to_string(&field2)
     );
     let err = GlueFieldLexer::lex("testField2", "DECIMAL(13,7,8)").unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("Unsupported decimal type decimal(13,7,8)"),
-        "{err}"
-    );
+    assert_unsupported_decimal_width(&err);
     let field3 = lex("testField3", "DECIMAL");
     assert_eq!(
         "testField3: Decimal(38, 18, 128)",
@@ -265,7 +262,15 @@ fn lex_extra_inner_closing_fields_decimals_test() {
     );
     assert_eq!(expected_field_to_string, java_field_to_string(&field));
     let java_widths = "struct<mapinner0:struct<numberset_deep:set<decimal(23,3,8)>>>";
-    assert!(GlueFieldLexer::lex("testAsdf2", java_widths).is_err());
+    assert_unsupported_decimal_width(&GlueFieldLexer::lex("testAsdf2", java_widths).unwrap_err());
+}
+
+fn assert_unsupported_decimal_width(err: &FederationError) {
+    assert_eq!("java.lang.IllegalArgumentException", err.java_class_name());
+    assert_eq!(
+        "Library only supports 128-bit and 256-bit decimal values",
+        err.to_string()
+    );
 }
 
 #[test]
@@ -287,4 +292,45 @@ fn lex_map_test() {
     let field2 = lex("SomeMap2", &input2);
     let expected_field_to_string2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>>> not null>> not null>";
     assert_eq!(expected_field_to_string2, java_field_to_string(&field2));
+
+    let java_input2 = input2.replace("decimal(23,3,64)", "decimal(23,3,8)");
+    assert_unsupported_decimal_width(&GlueFieldLexer::lex("SomeMap2", &java_input2).unwrap_err());
+}
+
+#[test]
+fn lex_treats_first_character_as_escaped_like_java() {
+    assert_eq!(None, GlueFieldLexer::lex("col", "<int>").unwrap());
+}
+
+#[test]
+fn lex_map_without_value_type_reports_java_null_pointer() {
+    for input in ["map<string>", "map<int,unknowntype>"] {
+        let err = GlueFieldLexer::lex("col", input).unwrap_err();
+        assert_eq!("java.lang.NullPointerException", err.java_class_name());
+        assert_eq!(
+            "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getField(com.google.flatbuffers.FlatBufferBuilder)\" because the return value of \"java.util.List.get(int)\" is null",
+            err.to_string(),
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn lex_decimal_widths_java_accepts_and_arrow_rs_cannot_hold() {
+    for input in ["decimal(10,2,3)", "decimal(10,2,8)", "decimal(300,2,8)"] {
+        assert_unsupported_decimal_width(&GlueFieldLexer::lex("col", input).unwrap_err());
+    }
+    for input in ["decimal(300,2)", "decimal(10,200)"] {
+        let err = GlueFieldLexer::lex("col", input).unwrap_err();
+        assert_eq!(
+            format!(
+                "Unsupported decimal type {input}: arrow-rs supports precision up to 255 and scale up to 127"
+            ),
+            err.to_string()
+        );
+    }
+    assert_eq!(
+        "col: Decimal(255, 127, 128)",
+        java_field_to_string(&lex("col", "decimal(255,127)"))
+    );
 }

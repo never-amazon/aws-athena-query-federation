@@ -66,9 +66,7 @@ pub trait QueryPassthroughSignature {
                 received_signature.as_deref().unwrap_or("null")
             );
             let received_signature = received_signature.as_deref().ok_or_else(|| {
-                FederationError::NullPointer(
-                    "Cannot invoke \"String.equalsIgnoreCase(String)\" because \"receivedSignature\" is null".into(),
-                )
+                FederationError::null_pointer("Cannot invoke \"String.equalsIgnoreCase(String)\" because \"receivedSignature\" is null")
             })?;
             return Ok(
                 received_signature.to_lowercase() == self.get_function_signature().to_lowercase()

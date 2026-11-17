@@ -31,7 +31,7 @@ impl CrossAccountCredentialsProvider {
                     FederationError::from(AwsServiceError::from_sdk_error(AwsService::Sts, &e))
                 })?;
             let credentials = response.credentials().ok_or_else(|| {
-                FederationError::NullPointer("AssumeRole returned no credentials".into())
+                FederationError::null_pointer("AssumeRole returned no credentials")
             })?;
             let session_credentials = Credentials::new(
                 credentials.access_key_id(),

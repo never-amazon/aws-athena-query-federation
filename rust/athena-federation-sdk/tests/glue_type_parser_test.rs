@@ -66,3 +66,18 @@ fn token_to_string_matches_java() {
         Token::new("x", None, 1).to_string()
     );
 }
+
+#[test]
+fn parse_treats_first_character_as_escaped_like_java() {
+    assert_tokens(
+        "<int>",
+        &[Token::new("<int", Some(GlueTypeParser::FIELD_END), 5)],
+    );
+    assert_tokens(
+        ":a,b",
+        &[
+            Token::new(":a", Some(GlueTypeParser::FIELD_SEP), 3),
+            Token::new("b", None, 4),
+        ],
+    );
+}

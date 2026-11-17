@@ -99,7 +99,7 @@ impl GlueTypeParser {
                 }
                 value.push(last);
             } else if !GlueTypeParser::is_token(last)
-                || (read_pos >= 2 && last_escape_char == Some(read_pos - 2))
+                || last_escape_char.map_or(read_pos == 1, |escape| escape + 2 == read_pos)
             {
                 if last == GlueTypeParser::FIELD_PARAM_START {
                     field_params_context = true;

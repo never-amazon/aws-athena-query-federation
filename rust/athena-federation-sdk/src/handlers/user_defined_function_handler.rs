@@ -245,33 +245,25 @@ pub trait UserDefinedFunctionHandler: Send + Sync {
             let field_reader = input_records
                 .get_field_reader(field.name())
                 .ok_or_else(|| {
-                    FederationError::NullPointer(format!("No field reader for {}", field.name()))
+                    FederationError::null_pointer(format!("No field reader for {}", field.name()))
                 })?;
             value_projectors.push(ProjectorUtils::create_arrow_value_projector(field_reader)?);
         }
         let output_field = output_schema.fields().first().ok_or_else(|| {
             FederationError::IndexOutOfBounds("Index 0 out of bounds for length 0".into())
         })?;
-        let output_minor_type = MinorType::get_minor_type_for_arrow_type(output_field.data_type());
-        if make_extractor(output_minor_type, &Arc::new(Vec::new())).is_none() {
-            make_factory(output_minor_type, &Arc::new(Vec::new()))?;
-        }
-        let mut results = Vec::with_capacity(row_count);
+        let mut output_row_writer =
+            create_output_row_writer(output_field.name(), output_field.data_type())?;
+        let mut output_records = allocator.create_block(Arc::new(output_schema.clone()));
+        output_records.set_row_count(row_count);
         let mut arguments = Vec::with_capacity(value_projectors.len());
         for row_num in 0..row_count {
             arguments.clear();
             for projector in &value_projectors {
                 arguments.push(projector.project(row_num)?);
             }
-            results.push(udf_method.invoke(&arguments)?);
-        }
-        let results = Arc::new(results);
-        let mut output_row_writer =
-            create_output_row_writer(output_field.name(), output_field.data_type(), &results)?;
-        let mut output_records = allocator.create_block(Arc::new(output_schema.clone()));
-        output_records.set_row_count(row_count);
-        for row_num in 0..row_count {
-            output_row_writer.write_row(&mut output_records, row_num, &row_num)?;
+            let result = udf_method.invoke(&arguments)?;
+            output_row_writer.write_row(&mut output_records, row_num, &result)?;
         }
         Ok(output_records)
     }
@@ -425,11 +417,10 @@ fn extract_scalar_function_method<'a>(
     Ok(udf_method)
 }
 
-fn row_of(context: &dyn Any) -> Result<usize> {
+fn result_of(context: &dyn Any) -> Result<&Value> {
     context
-        .downcast_ref::<usize>()
-        .copied()
-        .ok_or_else(|| FederationError::ClassCast("context is not an input row number".into()))
+        .downcast_ref::<Value>()
+        .ok_or_else(|| FederationError::ClassCast("context is not a UDF result".into()))
 }
 
 fn class_cast(value: &Value, target: &str) -> FederationError {
@@ -442,23 +433,20 @@ fn class_cast(value: &Value, target: &str) -> FederationError {
 fn create_output_row_writer(
     field_name: &str,
     arrow_type: &crate::data::ArrowType,
-    results: &Arc<Vec<Value>>,
 ) -> Result<GeneratedRowWriter> {
     let builder = GeneratedRowWriter::new_builder();
     let minor_type = MinorType::get_minor_type_for_arrow_type(arrow_type);
-    Ok(match make_extractor(minor_type, results) {
+    Ok(match make_extractor(minor_type) {
         Some(extractor) => builder.with_extractor(field_name, extractor),
-        None => builder.with_field_writer_factory(field_name, make_factory(minor_type, results)?),
+        None => builder.with_field_writer_factory(field_name, make_factory(minor_type)?),
     }
     .build())
 }
 
 macro_rules! extractor {
-    ($results:expr, $ctor:ident, $holder:ty, |$value:ident| $convert:expr) => {{
-        let results = Arc::clone($results);
+    ($ctor:ident, $holder:ty, |$value:ident| $convert:expr) => {{
         Extractor::$ctor(move |context: &dyn Any, dst: &mut $holder| {
-            let row = row_of(context)?;
-            match results.get(row).unwrap_or(&Value::Null) {
+            match result_of(context)? {
                 Value::Null => dst.is_set = 0,
                 $value => {
                     dst.is_set = 1;
@@ -470,58 +458,58 @@ macro_rules! extractor {
     }};
 }
 
-fn make_extractor(minor_type: MinorType, results: &Arc<Vec<Value>>) -> Option<Extractor> {
+fn make_extractor(minor_type: MinorType) -> Option<Extractor> {
     Some(match minor_type {
-        MinorType::INT => extractor!(results, int, NullableIntHolder, |v| match v {
+        MinorType::INT => extractor!(int, NullableIntHolder, |v| match v {
             Value::Int(i) => *i,
             other => return Err(class_cast(other, "java.lang.Integer")),
         }),
         MinorType::DATEMILLI => {
-            extractor!(results, date_milli, NullableDateMilliHolder, |v| match v {
+            extractor!(date_milli, NullableDateMilliHolder, |v| match v {
                 Value::LocalDateTime(dt) => local_date_time_to_epoch_milli_utc(dt),
                 other => return Err(class_cast(other, "java.time.LocalDateTime")),
             })
         }
-        MinorType::DATEDAY => extractor!(results, date_day, NullableDateDayHolder, |v| match v {
+        MinorType::DATEDAY => extractor!(date_day, NullableDateDayHolder, |v| match v {
             Value::LocalDate(d) => i32::try_from(local_date_to_epoch_day(d)).unwrap_or(i32::MIN),
             other => return Err(class_cast(other, "java.time.LocalDate")),
         }),
-        MinorType::TINYINT => extractor!(results, tiny_int, NullableTinyIntHolder, |v| match v {
+        MinorType::TINYINT => extractor!(tiny_int, NullableTinyIntHolder, |v| match v {
             Value::Byte(b) => *b,
             other => return Err(class_cast(other, "java.lang.Byte")),
         }),
         MinorType::SMALLINT => {
-            extractor!(results, small_int, NullableSmallIntHolder, |v| match v {
+            extractor!(small_int, NullableSmallIntHolder, |v| match v {
                 Value::Short(s) => *s,
                 other => return Err(class_cast(other, "java.lang.Short")),
             })
         }
-        MinorType::FLOAT4 => extractor!(results, float4, NullableFloat4Holder, |v| match v {
+        MinorType::FLOAT4 => extractor!(float4, NullableFloat4Holder, |v| match v {
             Value::Float(f) => *f,
             other => return Err(class_cast(other, "java.lang.Float")),
         }),
-        MinorType::FLOAT8 => extractor!(results, float8, NullableFloat8Holder, |v| match v {
+        MinorType::FLOAT8 => extractor!(float8, NullableFloat8Holder, |v| match v {
             Value::Double(d) => *d,
             other => return Err(class_cast(other, "java.lang.Double")),
         }),
-        MinorType::DECIMAL => extractor!(results, decimal, NullableDecimalHolder, |v| match v {
+        MinorType::DECIMAL => extractor!(decimal, NullableDecimalHolder, |v| match v {
             Value::Decimal(d) => d.clone(),
             other => return Err(class_cast(other, "java.math.BigDecimal")),
         }),
-        MinorType::BIT => extractor!(results, bit, NullableBitHolder, |v| match v {
+        MinorType::BIT => extractor!(bit, NullableBitHolder, |v| match v {
             Value::Boolean(b) => i32::from(*b),
             other => return Err(class_cast(other, "java.lang.Boolean")),
         }),
-        MinorType::BIGINT => extractor!(results, big_int, NullableBigIntHolder, |v| match v {
+        MinorType::BIGINT => extractor!(big_int, NullableBigIntHolder, |v| match v {
             Value::Long(l) => *l,
             other => return Err(class_cast(other, "java.lang.Long")),
         }),
-        MinorType::VARCHAR => extractor!(results, var_char, NullableVarCharHolder, |v| match v {
+        MinorType::VARCHAR => extractor!(var_char, NullableVarCharHolder, |v| match v {
             Value::String(s) => s.clone(),
             other => return Err(class_cast(other, "java.lang.String")),
         }),
         MinorType::VARBINARY => {
-            extractor!(results, var_binary, NullableVarBinaryHolder, |v| match v {
+            extractor!(var_binary, NullableVarBinaryHolder, |v| match v {
                 Value::Bytes(b) => b.clone(),
                 other => return Err(class_cast(other, "[B")),
             })
@@ -530,9 +518,7 @@ fn make_extractor(minor_type: MinorType, results: &Arc<Vec<Value>>) -> Option<Ex
     })
 }
 
-struct ComplexValueWriter {
-    results: Arc<Vec<Value>>,
-}
+struct ComplexValueWriter;
 
 impl FieldWriter for ComplexValueWriter {
     fn write(
@@ -541,16 +527,13 @@ impl FieldWriter for ComplexValueWriter {
         context: &dyn Any,
         row_num: usize,
     ) -> Result<bool> {
-        let input_row = row_of(context)?;
-        let value = self.results.get(input_row).unwrap_or(&Value::Null);
+        let value = result_of(context)?;
         BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, value)?;
         Ok(true)
     }
 }
 
-struct ComplexValueWriterFactory {
-    results: Arc<Vec<Value>>,
-}
+struct ComplexValueWriterFactory;
 
 impl FieldWriterFactory for ComplexValueWriterFactory {
     fn create(
@@ -559,20 +542,13 @@ impl FieldWriterFactory for ComplexValueWriterFactory {
         _extractor: Option<&Extractor>,
         _constraint: Option<Arc<dyn ConstraintProjector>>,
     ) -> Result<Box<dyn FieldWriter>> {
-        Ok(Box::new(ComplexValueWriter {
-            results: Arc::clone(&self.results),
-        }))
+        Ok(Box::new(ComplexValueWriter))
     }
 }
 
-fn make_factory(
-    minor_type: MinorType,
-    results: &Arc<Vec<Value>>,
-) -> Result<Arc<dyn FieldWriterFactory>> {
+fn make_factory(minor_type: MinorType) -> Result<Arc<dyn FieldWriterFactory>> {
     match minor_type {
-        MinorType::LIST | MinorType::STRUCT => Ok(Arc::new(ComplexValueWriterFactory {
-            results: Arc::clone(results),
-        })),
+        MinorType::LIST | MinorType::STRUCT => Ok(Arc::new(ComplexValueWriterFactory)),
         other => Err(FederationError::invalid_input(format!(
             "Unsupported type {other}"
         ))),

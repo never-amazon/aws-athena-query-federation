@@ -221,7 +221,7 @@ impl ObjectMapper {
             None => Err(FederationError::Io(format!(
                 "No content to map due to end-of-input for {type_label}"
             ))),
-            Some(JsonToken::ValueNull) => Err(FederationError::NullPointer(format!(
+            Some(JsonToken::ValueNull) => Err(FederationError::null_pointer(format!(
                 "readValue returned null for {type_label}"
             ))),
             Some(_) => Ok(jparser),

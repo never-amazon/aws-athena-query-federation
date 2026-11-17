@@ -6,6 +6,7 @@ mod federation_request_handler;
 mod glue_metadata_handler;
 mod metadata_handler;
 mod record_handler;
+mod stream_handlers;
 mod user_defined_function_handler;
 
 pub use athena_exception_filter::{AthenaExceptionFilter, ATHENA_EXCEPTION_FILTER};
@@ -27,6 +28,9 @@ pub use metadata_handler::{
 };
 pub use record_handler::{
     default_do_read_records, RecordHandler, RecordHandlerBase, RecordHandlerExt,
+};
+pub use stream_handlers::{
+    MetadataStreamHandler, RecordStreamHandler, UserDefinedFunctionStreamHandler,
 };
 pub use user_defined_function_handler::{
     JavaType, UdfFunction, UdfMethod, UdfMethods, UserDefinedFunctionHandler,
