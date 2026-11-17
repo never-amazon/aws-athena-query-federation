@@ -9,7 +9,14 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use super::sql_exception::SqlException;
+use super::sql_exception::{SqlException, SQL_EXCEPTION_CLASS};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderedKind {
+    Typed,
+    JavaDateMillis(i64),
+    InvalidElement(&'static str),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlValue {
@@ -29,11 +36,40 @@ pub enum SqlValue {
     Timestamp(NaiveDateTime),
     TimestampTz(DateTime<FixedOffset>),
     Array(Vec<SqlValue>),
-    Rendered { value: Box<SqlValue>, text: String },
+    Rendered {
+        value: Box<SqlValue>,
+        text: String,
+        exception_class: &'static str,
+        kind: RenderedKind,
+    },
 }
 
 fn bad_value(type_name: &str, value: &SqlValue) -> SqlException {
-    SqlException::new(format!("Bad value for type {type_name} : {value}"))
+    let class_name = match value {
+        SqlValue::Rendered {
+            exception_class, ..
+        } => exception_class,
+        _ => SQL_EXCEPTION_CLASS,
+    };
+    SqlException::with_class_name(
+        class_name,
+        format!("Bad value for type {type_name} : {value}"),
+    )
+}
+
+fn first_invalid_element(items: &[SqlValue]) -> Option<&SqlValue> {
+    items.iter().find_map(|item| match item {
+        SqlValue::Rendered {
+            kind: RenderedKind::InvalidElement(_),
+            ..
+        } => Some(item),
+        SqlValue::Array(nested) => first_invalid_element(nested),
+        SqlValue::Rendered { value, .. } => match value.as_ref() {
+            SqlValue::Array(nested) => first_invalid_element(nested),
+            _ => None,
+        },
+        _ => None,
+    })
 }
 
 fn truncate_decimal(value: &BigDecimal) -> BigDecimal {
@@ -60,7 +96,11 @@ fn parse_timestamp(text: &str) -> Option<NaiveDateTime> {
     ]
     .iter()
     .find_map(|format| NaiveDateTime::parse_from_str(text, format).ok())
-    .or_else(|| parse_date(text).and_then(|d| d.and_hms_opt(0, 0, 0)))
+    .or_else(|| {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d")
+            .ok()
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+    })
 }
 
 fn parse_date(text: &str) -> Option<NaiveDate> {
@@ -74,7 +114,57 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(value),
             text: text.into(),
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::Typed,
         }
+    }
+
+    pub fn java_date_millis(millis: i64, text: impl Into<String>) -> SqlValue {
+        let text = text.into();
+        SqlValue::Rendered {
+            value: Box::new(SqlValue::String(text.clone())),
+            text,
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::JavaDateMillis(millis),
+        }
+    }
+
+    pub fn invalid_element(java_type: &'static str, text: impl Into<String>) -> SqlValue {
+        let text = text.into();
+        SqlValue::Rendered {
+            value: Box::new(SqlValue::String(text.clone())),
+            text,
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::InvalidElement(java_type),
+        }
+    }
+
+    #[must_use]
+    pub fn with_exception_class(self, class_name: &'static str) -> SqlValue {
+        match self {
+            SqlValue::Rendered {
+                value, text, kind, ..
+            } => SqlValue::Rendered {
+                value,
+                text,
+                exception_class: class_name,
+                kind,
+            },
+            other => other,
+        }
+    }
+
+    pub fn to_timestamp_millis(&self) -> Result<Option<i64>, SqlException> {
+        if let SqlValue::Rendered {
+            kind: RenderedKind::JavaDateMillis(millis),
+            ..
+        } = self
+        {
+            return Ok(Some(*millis));
+        }
+        Ok(self
+            .to_timestamp()?
+            .map(|ts| ts.and_utc().timestamp_millis()))
     }
 
     pub fn is_null(&self) -> bool {
@@ -279,7 +369,17 @@ impl SqlValue {
 
     pub fn to_array(&self) -> Result<Option<Vec<SqlValue>>, SqlException> {
         if let SqlValue::Rendered { value, .. } = self {
-            return value.to_array().map_err(|_| bad_value("array", self));
+            let items = value.to_array().map_err(|_| bad_value("array", self))?;
+            if let Some(
+                invalid @ SqlValue::Rendered {
+                    kind: RenderedKind::InvalidElement(java_type),
+                    ..
+                },
+            ) = items.as_deref().and_then(first_invalid_element)
+            {
+                return Err(bad_value(java_type, invalid));
+            }
+            return Ok(items);
         }
         match self {
             SqlValue::Null => Ok(None),
@@ -306,7 +406,11 @@ impl SqlValue {
             SqlValue::Timestamp(ts) => Value::Date(ts.and_utc().timestamp_millis()),
             SqlValue::TimestampTz(ts) => Value::Date(ts.timestamp_millis()),
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
-            SqlValue::Rendered { value, text } => match value.as_ref() {
+            SqlValue::Rendered {
+                kind: RenderedKind::JavaDateMillis(millis),
+                ..
+            } => Value::Date(*millis),
+            SqlValue::Rendered { value, text, .. } => match value.as_ref() {
                 SqlValue::Array(_) => Value::String(text.clone()),
                 other => other.to_value(),
             },
