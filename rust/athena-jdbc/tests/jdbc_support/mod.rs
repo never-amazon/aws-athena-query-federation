@@ -91,6 +91,13 @@ pub struct GetColumnsCall {
     pub column_name_pattern: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct GetPrimaryKeysCall {
+    pub catalog: Option<String>,
+    pub schema: Option<String>,
+    pub table: String,
+}
+
 #[derive(Default)]
 pub struct MetaDataState {
     pub schemas: Mutex<Option<MetaResult>>,
@@ -103,6 +110,7 @@ pub struct MetaDataState {
     pub user_name: Mutex<Option<String>>,
     pub get_tables_calls: Mutex<Vec<GetTablesCall>>,
     pub get_columns_calls: Mutex<Vec<GetColumnsCall>>,
+    pub get_primary_keys_calls: Mutex<Vec<GetPrimaryKeysCall>>,
     pub get_schemas_calls: AtomicUsize,
 }
 
@@ -142,6 +150,10 @@ impl FakeDatabaseMetaData {
 
     pub fn get_columns_calls(&self) -> Vec<GetColumnsCall> {
         self.state.get_columns_calls.lock().unwrap().clone()
+    }
+
+    pub fn get_primary_keys_calls(&self) -> Vec<GetPrimaryKeysCall> {
+        self.state.get_primary_keys_calls.lock().unwrap().clone()
     }
 
     fn take(slot: &Mutex<Option<MetaResult>>, labels: &[&str]) -> Result<ResultSet, SqlException> {
@@ -219,10 +231,19 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
 
     async fn get_primary_keys(
         &self,
-        _catalog: Option<&str>,
-        _schema: Option<&str>,
-        _table: &str,
+        catalog: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
     ) -> Result<ResultSet, SqlException> {
+        self.state
+            .get_primary_keys_calls
+            .lock()
+            .unwrap()
+            .push(GetPrimaryKeysCall {
+                catalog: catalog.map(ToString::to_string),
+                schema: schema.map(ToString::to_string),
+                table: table.to_string(),
+            });
         FakeDatabaseMetaData::take(&self.state.primary_keys, &["COLUMN_NAME"])
     }
 

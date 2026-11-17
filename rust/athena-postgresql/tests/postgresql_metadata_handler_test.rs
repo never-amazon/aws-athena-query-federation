@@ -28,7 +28,8 @@ use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue
 use athena_postgresql::PostGreSqlMetadataHandler;
 use indexmap::IndexMap;
 use jdbc_support::{
-    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, ResultSetData,
+    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetPrimaryKeysCall,
+    ResultSetData,
 };
 
 const CATALOG_NAME: &str = "testCatalog";
@@ -56,6 +57,7 @@ const SCHEMA_SQL: &str =
     "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?";
 const TABLE_SQL: &str = "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?";
 const MATVIEW_LOOKUP_SQL: &str = "select matviewname as \"table_name\" from pg_catalog.pg_matviews mv where schemaname = ? and lower(matviewname) = ?";
+const DATA_TYPE_SQL: &str = "SELECT data_type FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ?";
 const CHAR_COLUMNS_SQL: &str = "SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND data_type = 'character'";
 
 struct Fixture {
@@ -326,37 +328,62 @@ fn verify_common_capabilities(response: &GetDataSourceCapabilitiesResponse) {
         && !s.properties().is_empty()));
 }
 
+fn wrapped(column: &str) -> String {
+    format!("\"{}\"", column.replace('"', "\"\""))
+}
+
+fn min_max_sql(column: &str) -> String {
+    let column = wrapped(column);
+    format!("select min({column}), max({column}) from \"testSchema\".\"testTable\"")
+}
+
+fn min_max(min: i32, max: i32) -> ResultSetData {
+    ResultSetData::of_columns(
+        vec![
+            ColumnMetadata::new("min", Types::INTEGER),
+            ColumnMetadata::new("max", Types::INTEGER),
+        ],
+        vec![vec![SqlValue::Integer(min), SqlValue::Integer(max)]],
+    )
+}
+
 fn split_clause_routes(
     connection: &FakeConnection,
     primary_key: Option<&str>,
     data_type: Option<&'static str>,
-    min_max: Option<(i32, i32)>,
+    bounds: Option<(i32, i32)>,
 ) {
     connection.meta.set_primary_keys(Ok(match primary_key {
         Some(pk) => single_column("COLUMN_NAME", &[pk]),
         None => ResultSetData::empty(&["COLUMN_NAME"]),
     }));
+    let bounds_sql = primary_key.map(min_max_sql);
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
-        if sql.contains("SELECT data_type FROM information_schema.columns") {
+        if sql == DATA_TYPE_SQL {
             return Ok(match data_type {
                 Some(t) => single_column("data_type", &[t]),
                 None => ResultSetData::empty(&["data_type"]),
             });
         }
-        if sql.contains("min(") {
-            if let Some((min, max)) = min_max {
-                return Ok(ResultSetData::of_columns(
-                    vec![
-                        ColumnMetadata::new("min", Types::INTEGER),
-                        ColumnMetadata::new("max", Types::INTEGER),
-                    ],
-                    vec![vec![SqlValue::Integer(min), SqlValue::Integer(max)]],
-                ));
+        if bounds_sql.as_deref() == Some(sql) {
+            if let Some((min, max)) = bounds {
+                return Ok(min_max(min, max));
             }
         }
         Ok(ResultSetData::empty(&[]))
     });
+}
+
+fn assert_primary_keys_lookup(connection: &FakeConnection, table: &str) {
+    assert_eq!(
+        connection.meta.get_primary_keys_calls(),
+        [GetPrimaryKeysCall {
+            catalog: None,
+            schema: Some(TEST_SCHEMA.to_string()),
+            table: table.to_string(),
+        }]
+    );
 }
 
 fn all_array_types_builder() -> SchemaBuilder {
@@ -1032,43 +1059,72 @@ async fn test_do_get_splits_with_partition_splitter() {
     connection
         .meta
         .set_primary_keys(Ok(single_column("COLUMN_NAME", &["id"])));
-    connection.on_query(|statement: &PreparedStatement| {
+    let bounds_sql = min_max_sql("id");
+    connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
         if sql == PostGreSqlMetadataHandler::GET_PARTITIONS_QUERY {
             return Ok(partitions(&[("*", "*")]));
         }
-        if sql.contains("min(") {
-            return Ok(ResultSetData::of_columns(
-                vec![
-                    ColumnMetadata::new("min", Types::INTEGER),
-                    ColumnMetadata::new("max", Types::INTEGER),
-                ],
-                vec![vec![SqlValue::Integer(1), SqlValue::Integer(100)]],
-            ));
+        if sql == bounds_sql {
+            return Ok(min_max(1, 100));
         }
-        Ok(ResultSetData::empty(&["data_type"]))
+        if sql == DATA_TYPE_SQL {
+            return Ok(ResultSetData::empty(&["data_type"]));
+        }
+        Err(SqlException::new(format!("unexpected query {sql}")))
     });
     let layout = handler
         .do_get_table_layout(&allocator, &layout_request(&handler, constraints.clone()))
         .await
         .unwrap();
     let request = splits_request(&handler, identity(), &layout, constraints, None);
-    let expected_clauses = handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
     let response = handler.do_get_splits(&allocator, &request).await.unwrap();
-    assert!(expected_clauses.len() > 1);
-    assert_eq!(expected_clauses.len(), response.splits().len());
+    let expected_clauses = [
+        "(\"id\" >= 1 AND \"id\" <= 5)",
+        "(\"id\" >= 6 AND \"id\" <= 10)",
+        "(\"id\" >= 11 AND \"id\" <= 15)",
+        "(\"id\" >= 16 AND \"id\" <= 20)",
+        "(\"id\" >= 21 AND \"id\" <= 25)",
+        "(\"id\" >= 26 AND \"id\" <= 30)",
+        "(\"id\" >= 31 AND \"id\" <= 35)",
+        "(\"id\" >= 36 AND \"id\" <= 40)",
+        "(\"id\" >= 41 AND \"id\" <= 45)",
+        "(\"id\" >= 46 AND \"id\" <= 50)",
+        "(\"id\" >= 51 AND \"id\" <= 55)",
+        "(\"id\" >= 56 AND \"id\" <= 60)",
+        "(\"id\" >= 61 AND \"id\" <= 65)",
+        "(\"id\" >= 66 AND \"id\" <= 70)",
+        "(\"id\" >= 71 AND \"id\" <= 75)",
+        "(\"id\" >= 76 AND \"id\" <= 80)",
+        "(\"id\" >= 81 AND \"id\" <= 85)",
+        "(\"id\" >= 86 AND \"id\" <= 90)",
+        "(\"id\" >= 91 AND \"id\" <= 95)",
+        "(\"id\" >= 96 AND \"id\" <= 100)",
+    ];
+    assert_eq!(20, response.splits().len(), "Expected 20 splits");
+    let mut names: Vec<String> = Vec::new();
     for split in response.splits() {
         assert_eq!(
             Some("*"),
             split.get_property(BLOCK_PARTITION_SCHEMA_COLUMN_NAME)
         );
-        let name = split.get_property(BLOCK_PARTITION_COLUMN_NAME).unwrap();
-        assert!(expected_clauses.iter().any(|c| c == name));
-        assert!(!split.properties().is_empty());
+        names.push(
+            split
+                .get_property(BLOCK_PARTITION_COLUMN_NAME)
+                .unwrap()
+                .to_string(),
+        );
+        assert!(
+            !split.properties().is_empty(),
+            "Split should have properties"
+        );
     }
-    assert!(response.splits().len() <= MAX_SPLITS_PER_REQUEST);
+    names.sort_by_key(|name| expected_clauses.iter().position(|c| c == name));
+    assert_eq!(expected_clauses.as_slice(), names.as_slice());
+    assert!(
+        response.splits().len() <= MAX_SPLITS_PER_REQUEST,
+        "Number of splits should not exceed max splits"
+    );
 }
 
 #[tokio::test]
@@ -1167,22 +1223,20 @@ async fn get_split_clauses_no_primary_key_returns_empty_list() {
         .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
         .await;
     assert!(result.is_empty());
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
 
 #[tokio::test]
 async fn get_split_clauses_uuid_primary_key_returns_empty_list() {
     let f = setup();
-    split_clause_routes(&f.connection, Some("id"), Some("uuid"), Some((1, 100)));
+    split_clause_routes(&f.connection, Some("id"), Some("uuid"), None);
     let result = f
         .handler
         .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
         .await;
     assert!(result.is_empty());
-    assert!(!f
-        .connection
-        .prepared_sql()
-        .iter()
-        .any(|s| s.contains("min(")));
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
+    assert_eq!(f.connection.prepared_sql(), [DATA_TYPE_SQL]);
 }
 
 #[tokio::test]
@@ -1199,6 +1253,7 @@ async fn get_split_clauses_integer_primary_key_returns_split_clauses() {
         .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
         .await;
     assert!(!result.is_empty());
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
 
 #[tokio::test]
@@ -1212,6 +1267,7 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
         .get_split_clauses(&TableName::new(TEST_SCHEMA, "errorTable"), None)
         .await;
     assert!(result.is_empty());
+    assert_primary_keys_lookup(&f.connection, "errorTable");
 }
 
 #[tokio::test]
@@ -1223,6 +1279,7 @@ async fn get_split_clauses_uuid_check_returns_false_generates_splits() {
         .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
         .await;
     assert!(!result.is_empty());
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
 
 #[tokio::test]
@@ -1230,7 +1287,7 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
     let f = setup();
     split_clause_routes(&f.connection, Some("id"), None, Some((1, 100)));
     f.connection.on_prepare(|sql| {
-        if sql.contains("SELECT data_type FROM information_schema.columns") {
+        if sql == DATA_TYPE_SQL {
             Err(SqlException::new("UUID check failed"))
         } else {
             Ok(PreparedStatement::new(sql))
@@ -1241,6 +1298,7 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
         .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
         .await;
     assert!(!result.is_empty());
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
 
 #[tokio::test]
@@ -1264,6 +1322,7 @@ async fn get_split_clauses_malicious_primary_key_column_name_is_quoted_and_escap
     );
     assert!(!bounds_sql.contains("min(id\");"), "{bounds_sql}");
     assert!(!result.is_empty());
+    assert_primary_keys_lookup(&f.connection, TEST_TABLE);
     for clause in &result {
         assert!(clause.contains(&wrapped_column), "{clause}");
         assert!(!clause.contains("id\") "), "{clause}");
