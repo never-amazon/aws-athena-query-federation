@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["athena-federation-sdk", "athena-federation-substrait", "athena-jdbc"]
+members = [
+    "athena-federation-sdk",
+    "athena-federation-substrait",
+    "athena-jdbc",
+    "athena-snowflake",
+]
 
 [workspace.package]
 edition = "2021"
@@ -44,6 +49,13 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 athena-federation-sdk = { path = "athena-federation-sdk" }
 athena-federation-substrait = { path = "athena-federation-substrait" }
 athena-jdbc = { path = "athena-jdbc" }
+athena-snowflake = { path = "athena-snowflake" }
+snowflake-connector-rs = { version = "=1.1.1", default-features = false, features = ["key-pair-auth", "pkcs8-3des"] }
+pkcs8 = { version = "0.10", features = ["encryption", "pem", "3des", "sha1-insecure", "std"] }
+rsa = "0.9"
+parquet = { version = "60", default-features = false, features = ["arrow", "snap"] }
+bytes = "1"
+url = "2.5"
 prost = { version = "0.14.6", features = ["no-recursion-limit"] }
 prost-types = "0.14.6"
 prost-build = "0.14.6"
