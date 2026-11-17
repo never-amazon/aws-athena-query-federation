@@ -131,18 +131,6 @@ fn start_scram(
     channel_binding: ChannelBinding,
     peer_certificate: Option<&[u8]>,
 ) -> Result<(&'static str, ScramSha256), StartupError> {
-    if mechanisms.is_empty() {
-        return Err(rejected(
-            "Received AuthenticationSASL message with 0 mechanisms!",
-        ));
-    }
-    if channel_binding == ChannelBinding::Require
-        && !mechanisms.iter().any(|m| m.ends_with("-PLUS"))
-    {
-        return Err(rejected(
-            "Channel Binding is required, but server did not offer an authentication method that supports channel binding",
-        ));
-    }
     let cbind_data = match (channel_binding, peer_certificate) {
         (ChannelBinding::Require, None) => {
             return Err(rejected(
@@ -157,6 +145,18 @@ fn start_scram(
     if channel_binding == ChannelBinding::Require && cbind_data.is_none() {
         return Err(rejected(
             "Channel Binding is required, but could not extract channel binding data from SSL session",
+        ));
+    }
+    if mechanisms.is_empty() {
+        return Err(rejected(
+            "Received AuthenticationSASL message with 0 mechanisms!",
+        ));
+    }
+    if channel_binding == ChannelBinding::Require
+        && !mechanisms.iter().any(|m| m.ends_with("-PLUS"))
+    {
+        return Err(rejected(
+            "Channel Binding is required, but server did not offer an authentication method that supports channel binding",
         ));
     }
     let plus_offered = mechanisms.iter().any(|m| m == SCRAM_SHA_256_PLUS);
@@ -175,6 +175,18 @@ fn start_scram(
         )));
     }
     Ok((mechanism, ScramSha256::new(password.as_bytes(), binding)))
+}
+
+async fn scram_update(
+    mut client: ScramSha256,
+    data: Vec<u8>,
+) -> Result<(ScramSha256, io::Result<()>), StartupError> {
+    tokio::task::spawn_blocking(move || {
+        let result = client.update(&data);
+        (client, result)
+    })
+    .await
+    .map_err(|e| StartupError::Io(io::Error::other(e)))
 }
 
 fn sasl_error(error: &io::Error) -> String {
@@ -312,14 +324,13 @@ impl Authenticator<'_> {
         session: &mut Session,
         data: &[u8],
     ) -> Result<(), StartupError> {
-        let state = self.scram.as_mut().ok_or_else(|| {
+        let state = self.scram.take().ok_or_else(|| {
             StartupError::Sql(protocol_violation("Unexpected SASL continue message"))
         })?;
         check_iterations(data, self.settings.scram_max_iterations)?;
-        state
-            .client
-            .update(data)
-            .map_err(|e| scram_failed(sasl_error(&e)))?;
+        let (client, result) = scram_update(state.client, data.to_vec()).await?;
+        let state = self.scram.insert(ScramState { client, ..state });
+        result.map_err(|e| scram_failed(sasl_error(&e)))?;
         frontend::sasl_response(state.client.message(), session.output()?).map_err(io_failure)?;
         flush(session).await
     }
@@ -494,6 +505,58 @@ mod tests {
                     .unwrap()
             ),
             "Channel Binding is required, but SSL is not in use"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn scram_key_derivation_runs_off_the_async_thread() {
+        let mut client = ScramSha256::new(b"pw", ScramBinding::unsupported());
+        let first = String::from_utf8(client.message().to_vec()).unwrap();
+        let nonce = first.rsplit("r=").next().unwrap().to_string();
+        let server_first = format!("r={nonce}server,s=c2FsdHNhbHQ=,i=100000");
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ticker = tokio::spawn({
+            let ticks = ticks.clone();
+            async move {
+                loop {
+                    ticks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    tokio::task::yield_now().await;
+                }
+            }
+        });
+        tokio::task::yield_now().await;
+        let before = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        let (updated, result) = scram_update(client, server_first.into_bytes())
+            .await
+            .unwrap();
+        client = updated;
+        let during = ticks.load(std::sync::atomic::Ordering::SeqCst) - before;
+        ticker.abort();
+        result.unwrap();
+        assert!(client.message().starts_with(b"c=biws,r="));
+        assert!(during > 1, "ticks while deriving the key: {during}");
+    }
+
+    #[test]
+    fn channel_binding_without_ssl_is_reported_before_the_offered_mechanisms() {
+        let bare = vec![SCRAM_SHA_256.to_string()];
+        for mechanisms in [bare, Vec::new()] {
+            assert_eq!(
+                message(
+                    start_scram(&mechanisms, "pw", ChannelBinding::Require, None)
+                        .err()
+                        .unwrap()
+                ),
+                "Channel Binding is required, but SSL is not in use"
+            );
+        }
+        assert_eq!(
+            message(
+                start_scram(&[], "pw", ChannelBinding::Prefer, None)
+                    .err()
+                    .unwrap()
+            ),
+            "Received AuthenticationSASL message with 0 mechanisms!"
         );
     }
 }
