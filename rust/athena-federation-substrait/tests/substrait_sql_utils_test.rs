@@ -11,7 +11,10 @@ fn encoded_plan(query: &str) -> String {
     let mut lines = include_str!("fixtures/calcite-extended.tsv").lines();
     while let Some(line) = lines.next() {
         if line == format!("QUERY\tstd\t{query}") {
-            let plan = lines.next().and_then(|l| l.strip_prefix("PLAN\t")).expect("plan row");
+            let plan = lines
+                .next()
+                .and_then(|l| l.strip_prefix("PLAN\t"))
+                .expect("plan row");
             return plan.to_string();
         }
     }
@@ -34,16 +37,24 @@ fn test_get_table_schema_from_substrait_plan_all_arrow_types() {
     .expect("schema");
     assert!(schema.get_field_count() > 0);
     let names = schema.get_field_names();
-    assert!(names.contains(&"bool_col".to_string()), "Missing boolean type");
-    assert!(names.contains(&"array_col".to_string()), "Missing array type");
+    assert!(
+        names.contains(&"bool_col".to_string()),
+        "Missing boolean type"
+    );
+    assert!(
+        names.contains(&"array_col".to_string()),
+        "Missing array type"
+    );
     assert!(names.contains(&"map_col".to_string()), "Missing map type");
 }
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_basic_types() {
-    let schema =
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan(&encoded_plan("SELECT * FROM test_table"), &dialect())
-            .expect("schema");
+    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
+        &encoded_plan("SELECT * FROM test_table"),
+        &dialect(),
+    )
+    .expect("schema");
     assert!(!schema.get_field_list().is_empty());
     let names = schema.get_field_names();
     assert!(names.contains(&"varchar_col".to_string()));
@@ -63,7 +74,9 @@ fn test_get_table_schema_from_substrait_plan_with_where_clause() {
 #[test]
 fn test_get_table_schema_from_substrait_plan_complex_query() {
     let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
-        &encoded_plan("SELECT * FROM test_table WHERE varchar_col LIKE 'A%' ORDER BY int_col DESC LIMIT 10"),
+        &encoded_plan(
+            "SELECT * FROM test_table WHERE varchar_col LIKE 'A%' ORDER BY int_col DESC LIMIT 10",
+        ),
         &dialect(),
     )
     .expect("schema");
@@ -72,38 +85,53 @@ fn test_get_table_schema_from_substrait_plan_complex_query() {
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_invalid_base64() {
-    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan("This is not valid base64!!!@#$", &dialect())
-        .expect_err("invalid base64");
+    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan(
+        "This is not valid base64!!!@#$",
+        &dialect(),
+    )
+    .expect_err("invalid base64");
     assert!(err.message().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_empty_string() {
-    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan("", &dialect()).expect_err("empty");
+    let err =
+        SubstraitSqlUtils::get_sql_node_from_substrait_plan("", &dialect()).expect_err("empty");
     assert!(err.message().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_invalid_protobuf() {
     let encoded = base64::engine::general_purpose::STANDARD.encode(b"invalid protobuf data");
-    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan(&encoded, &dialect()).expect_err("invalid proto");
+    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan(&encoded, &dialect())
+        .expect_err("invalid proto");
     assert!(
         err.message().contains("Failed to parse Substrait plan")
-            || err.message().contains("Failed to convert from Substrait plan to RelNode")
+            || err
+                .message()
+                .contains("Failed to convert from Substrait plan to RelNode")
     );
 }
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_invalid_base64() {
-    let err = SubstraitSqlUtils::get_table_schema_from_substrait_plan("Not valid base64 content!!!", &dialect())
-        .expect_err("invalid base64");
-    assert!(err.message().contains("Failed to extract table schema from Substrait plan"));
+    let err = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
+        "Not valid base64 content!!!",
+        &dialect(),
+    )
+    .expect_err("invalid base64");
+    assert!(err
+        .message()
+        .contains("Failed to extract table schema from Substrait plan"));
 }
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_empty_plan() {
-    let err = SubstraitSqlUtils::get_table_schema_from_substrait_plan("", &dialect()).expect_err("empty");
-    assert!(err.message().contains("Failed to extract table schema from Substrait plan"));
+    let err =
+        SubstraitSqlUtils::get_table_schema_from_substrait_plan("", &dialect()).expect_err("empty");
+    assert!(err
+        .message()
+        .contains("Failed to extract table schema from Substrait plan"));
 }
 
 #[test]
@@ -138,7 +166,10 @@ fn test_sql_conversion_not_in() {
 
 #[test]
 fn test_sql_conversion_having() {
-    assert!(!sql("SELECT varchar_col, COUNT(*) FROM test_table GROUP BY varchar_col HAVING COUNT(*) > 5").is_empty());
+    assert!(!sql(
+        "SELECT varchar_col, COUNT(*) FROM test_table GROUP BY varchar_col HAVING COUNT(*) > 5"
+    )
+    .is_empty());
 }
 
 #[test]

@@ -107,7 +107,12 @@ pub struct RelDataType {
 }
 
 impl RelDataType {
-    pub fn basic(type_name: SqlTypeName, precision: i32, scale: i32, nullable: bool) -> RelDataType {
+    pub fn basic(
+        type_name: SqlTypeName,
+        precision: i32,
+        scale: i32,
+        nullable: bool,
+    ) -> RelDataType {
         RelDataType {
             type_name,
             precision,
@@ -127,7 +132,12 @@ impl RelDataType {
                 system.default_precision(type_name),
             );
         }
-        RelDataType::basic(type_name, PRECISION_NOT_SPECIFIED, SCALE_NOT_SPECIFIED, false)
+        RelDataType::basic(
+            type_name,
+            PRECISION_NOT_SPECIFIED,
+            SCALE_NOT_SPECIFIED,
+            false,
+        )
     }
 
     pub fn create_sql_type_with_precision(
@@ -144,7 +154,11 @@ impl RelDataType {
             );
         }
         let max = system.max_precision(type_name);
-        let precision = if max >= 0 && precision > max { max } else { precision };
+        let precision = if max >= 0 && precision > max {
+            max
+        } else {
+            precision
+        };
         RelDataType::basic(type_name, precision, SCALE_NOT_SPECIFIED, false)
     }
 
@@ -162,6 +176,23 @@ impl RelDataType {
             }
         }
         RelDataType::basic(type_name, precision, scale, false)
+    }
+
+    pub fn interval(type_name: SqlTypeName, fractional_second_precision: i32) -> RelDataType {
+        RelDataType::basic(
+            type_name,
+            PRECISION_NOT_SPECIFIED,
+            fractional_second_precision,
+            false,
+        )
+    }
+
+    pub fn interval_qualifier(&self) -> String {
+        match self.type_name {
+            SqlTypeName::IntervalYearMonth => "YEAR TO MONTH".to_string(),
+            _ if self.scale == PRECISION_NOT_SPECIFIED => "DAY TO SECOND".to_string(),
+            _ => format!("DAY TO SECOND({})", self.scale),
+        }
     }
 
     pub fn array(component: RelDataType, nullable: bool) -> RelDataType {
@@ -263,7 +294,12 @@ impl RelDataType {
         self.value.as_deref()
     }
 
-    pub fn get_field(&self, name: &str, case_sensitive: bool, elide_record: bool) -> Option<&RelDataTypeField> {
+    pub fn get_field(
+        &self,
+        name: &str,
+        case_sensitive: bool,
+        elide_record: bool,
+    ) -> Option<&RelDataTypeField> {
         for f in &self.fields {
             let matches = if case_sensitive {
                 f.name == name
@@ -326,6 +362,9 @@ impl RelDataType {
                     .collect();
                 format!("RecordType({})", inner.join(", "))
             }
+            SqlTypeName::IntervalYearMonth | SqlTypeName::IntervalDaySecond => {
+                format!("INTERVAL {}", self.interval_qualifier())
+            }
             t => {
                 let mut s = t.name().to_string();
                 if self.precision != PRECISION_NOT_SPECIFIED && t.allows_prec() {
@@ -364,7 +403,8 @@ impl RelDataTypeBuilder {
 
     pub fn add_all(&mut self, fields: &[RelDataTypeField]) -> &mut Self {
         for f in fields {
-            self.fields.push((f.get_name().to_string(), f.get_type().clone()));
+            self.fields
+                .push((f.get_name().to_string(), f.get_type().clone()));
         }
         self
     }

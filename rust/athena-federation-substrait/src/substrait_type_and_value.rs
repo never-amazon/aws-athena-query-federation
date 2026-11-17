@@ -4,8 +4,8 @@ use bigdecimal::BigDecimal;
 
 use crate::calcite::sql_type_name::SqlTypeName;
 use crate::calcite::values::{
-    java_big_decimal_to_string, java_double_to_string, java_float_to_string, BitString, DateString, TimeString,
-    TimestampString,
+    java_big_decimal_to_string, java_double_to_string, java_float_to_string, BitString, DateString,
+    TimeString, TimestampString,
 };
 use crate::error::{Result, SubstraitError};
 
@@ -48,7 +48,11 @@ impl SubstraitValue {
                     return None;
                 }
                 let bytes = unscaled.to_signed_bytes_le();
-                let mut buf = [if unscaled.sign() == num_bigint::Sign::Minus { 0xFF } else { 0 }; 8];
+                let mut buf = [if unscaled.sign() == num_bigint::Sign::Minus {
+                    0xFF
+                } else {
+                    0
+                }; 8];
                 for (i, b) in bytes.iter().take(8).enumerate() {
                     buf[i] = *b;
                 }
@@ -206,6 +210,10 @@ impl SubstraitTypeAndValue {
 
 impl fmt::Display for SubstraitTypeAndValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TypeAndValue{{type={}, value={}}}", self.type_name, self.value)
+        write!(
+            f,
+            "TypeAndValue{{type={}, value={}}}",
+            self.type_name, self.value
+        )
     }
 }

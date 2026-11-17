@@ -28,8 +28,8 @@ pub use calcite::rel_data_type::{
 };
 pub use calcite::sql_dialect::{Conformance, DatabaseProduct, SqlDialect};
 pub use calcite::sql_node::{
-    LiteralObject, SqlCall, SqlCase, SqlDataTypeSpec, SqlIdentifier, SqlLiteral, SqlLiteralValue, SqlNode,
-    SqlSelect, SqlWindow,
+    LiteralObject, SqlCall, SqlCase, SqlDataTypeSpec, SqlIdentifier, SqlLiteral, SqlLiteralValue,
+    SqlNode, SqlSelect, SqlWindow,
 };
 pub use calcite::sql_type_name::SqlTypeName;
 pub use calcite::values::{BitString, DateString, TimeString, TimestampString};
@@ -46,5 +46,7 @@ pub use substrait_literal_converter::{LiteralValue, SubstraitLiteralConverter};
 pub use substrait_metadata_parser::SubstraitMetadataParser;
 pub use substrait_rel_utils::{SubstraitRelUtils, PLAN_PARSER_RECURSION_LIMIT};
 pub use substrait_sql_utils::SubstraitSqlUtils;
-pub use substrait_type_and_value::{SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue};
+pub use substrait_type_and_value::{
+    SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue,
+};
 pub use util::limit_and_sort_helper::{GenericSortField, LimitAndSortHelper};

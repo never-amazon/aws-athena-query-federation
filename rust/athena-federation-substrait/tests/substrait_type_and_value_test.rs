@@ -1,8 +1,8 @@
 #![allow(clippy::approx_constant)]
 
+use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
-use athena_federation_substrait::ErrorKind;
 use bigdecimal::BigDecimal;
 use std::str::FromStr;
 
@@ -12,7 +12,11 @@ fn tv(t: SqlTypeName, v: SubstraitValue, c: &str) -> SubstraitTypeAndValue {
 
 #[test]
 fn test_constructor_with_valid_parameters() {
-    let tav = tv(SqlTypeName::Integer, SubstraitValue::Integer(123), "test_column");
+    let tav = tv(
+        SqlTypeName::Integer,
+        SubstraitValue::Integer(123),
+        "test_column",
+    );
     assert_eq!(tav.get_type(), SqlTypeName::Integer);
     assert_eq!(tav.get_value(), &SubstraitValue::Integer(123));
     assert_eq!(tav.get_column_name(), "test_column");
@@ -31,7 +35,8 @@ fn test_constructor_with_null_type() {
 
 #[test]
 fn test_constructor_with_null_value() {
-    let err = SubstraitTypeAndValue::new(SqlTypeName::Integer, SubstraitValue::Null, "test_column").expect_err("null value");
+    let err = SubstraitTypeAndValue::new(SqlTypeName::Integer, SubstraitValue::Null, "test_column")
+        .expect_err("null value");
     assert_eq!(err.kind(), ErrorKind::NullPointer);
     assert_eq!(err.message(), "value is null");
 }
@@ -175,7 +180,12 @@ fn test_getters_with_char_type() {
 
 #[test]
 fn test_to_string() {
-    let result = tv(SqlTypeName::Integer, SubstraitValue::Integer(123), "test_column").to_string();
+    let result = tv(
+        SqlTypeName::Integer,
+        SubstraitValue::Integer(123),
+        "test_column",
+    )
+    .to_string();
     assert!(result.contains("TypeAndValue"));
     assert!(result.contains("type=INTEGER"));
     assert!(result.contains("value=123"));
@@ -184,7 +194,12 @@ fn test_to_string() {
 
 #[test]
 fn test_to_string_with_string_value() {
-    let result = tv(SqlTypeName::Varchar, SubstraitValue::String("hello world".to_string()), "varchar_column").to_string();
+    let result = tv(
+        SqlTypeName::Varchar,
+        SubstraitValue::String("hello world".to_string()),
+        "varchar_column",
+    )
+    .to_string();
     assert!(result.contains("TypeAndValue"));
     assert!(result.contains("type=VARCHAR"));
     assert!(result.contains("value=hello world"));
@@ -201,8 +216,16 @@ fn test_to_string_with_complex_value() {
 
 #[test]
 fn test_multiple_instances_with_same_values() {
-    let a = tv(SqlTypeName::Integer, SubstraitValue::Integer(42), "test_column");
-    let b = tv(SqlTypeName::Integer, SubstraitValue::Integer(42), "test_column");
+    let a = tv(
+        SqlTypeName::Integer,
+        SubstraitValue::Integer(42),
+        "test_column",
+    );
+    let b = tv(
+        SqlTypeName::Integer,
+        SubstraitValue::Integer(42),
+        "test_column",
+    );
     assert_eq!(a.get_type(), b.get_type());
     assert_eq!(a.get_value(), b.get_value());
     assert_eq!(a.get_column_name(), b.get_column_name());
@@ -211,7 +234,11 @@ fn test_multiple_instances_with_same_values() {
 #[test]
 fn test_multiple_instances_with_different_values() {
     let a = tv(SqlTypeName::Integer, SubstraitValue::Integer(123), "col1");
-    let b = tv(SqlTypeName::Varchar, SubstraitValue::String("test".to_string()), "col2");
+    let b = tv(
+        SqlTypeName::Varchar,
+        SubstraitValue::String("test".to_string()),
+        "col2",
+    );
     assert_eq!(a.get_type(), SqlTypeName::Integer);
     assert_eq!(b.get_type(), SqlTypeName::Varchar);
     assert_eq!(a.get_value(), &SubstraitValue::Integer(123));

@@ -4,10 +4,8 @@ use arrow_schema::{DataType, TimeUnit};
 use athena_federation_substrait::proto::expression::literal::{Decimal, LiteralType, VarChar};
 use athena_federation_substrait::proto::expression::{Literal, RexType};
 use athena_federation_substrait::proto::Expression;
-use athena_federation_substrait::{
-    LiteralValue, SubstraitLiteralConverter,
-};
 use athena_federation_substrait::ErrorKind;
+use athena_federation_substrait::{LiteralValue, SubstraitLiteralConverter};
 use bigdecimal::BigDecimal;
 use chrono::{FixedOffset, TimeZone};
 use std::str::FromStr;

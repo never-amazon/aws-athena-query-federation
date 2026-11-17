@@ -15,7 +15,10 @@ use crate::substrait_rel_utils::SubstraitRelUtils;
 pub struct SubstraitSqlUtils;
 
 impl SubstraitSqlUtils {
-    pub fn get_sql_node_from_substrait_plan(plan_string: &str, sql_dialect: &SqlDialect) -> Result<SqlNode> {
+    pub fn get_sql_node_from_substrait_plan(
+        plan_string: &str,
+        sql_dialect: &SqlDialect,
+    ) -> Result<SqlNode> {
         let attempt = || -> Result<SqlNode> {
             let plan = SubstraitRelUtils::deserialize_substrait_plan(plan_string)?;
             Self::get_sql_node_from_plan(&plan, sql_dialect)
@@ -33,7 +36,10 @@ impl SubstraitSqlUtils {
         Ok(result.as_statement(sql_dialect))
     }
 
-    pub fn get_table_schema_from_substrait_plan(plan_string: &str, sql_dialect: &SqlDialect) -> Result<RelDataType> {
+    pub fn get_table_schema_from_substrait_plan(
+        plan_string: &str,
+        sql_dialect: &SqlDialect,
+    ) -> Result<RelDataType> {
         let attempt = || -> Result<RelDataType> {
             let plan = SubstraitRelUtils::deserialize_substrait_plan(plan_string)?;
             Self::get_table_schema_from_plan(&plan, sql_dialect)
@@ -53,15 +59,17 @@ impl SubstraitSqlUtils {
         let rel_node = Self::get_rel_node_from_substrait_plan(&plan, sql_dialect)?;
         let mut builder = RelDataTypeBuilder::new();
         traverse(&rel_node, &mut builder, &mut column_remapping);
-        tracing::debug!("Column rename mapping (original to renamed): {:?}", column_remapping);
+        tracing::debug!(
+            "Column rename mapping (original to renamed): {:?}",
+            column_remapping
+        );
         Ok(column_remapping)
     }
 
     fn get_table_schema_from_plan(plan: &Plan, sql_dialect: &SqlDialect) -> Result<RelDataType> {
-        let first = plan
-            .relations
-            .first()
-            .ok_or_else(|| SubstraitError::index_out_of_bounds("Index 0 out of bounds for length 0"))?;
+        let first = plan.relations.first().ok_or_else(|| {
+            SubstraitError::index_out_of_bounds("Index 0 out of bounds for length 0")
+        })?;
         let rel = match &first.rel_type {
             Some(PlanRelType::Root(root)) => root.input.as_ref(),
             _ => None,
@@ -86,7 +94,11 @@ impl SubstraitSqlUtils {
     }
 }
 
-fn traverse(node: &RelNode, builder: &mut RelDataTypeBuilder, rename_mapping: &mut IndexMap<String, Option<String>>) {
+fn traverse(
+    node: &RelNode,
+    builder: &mut RelDataTypeBuilder,
+    rename_mapping: &mut IndexMap<String, Option<String>>,
+) {
     match node {
         RelNode::TableScan { .. } | RelNode::Values { .. } => {
             builder.add_all(node.row_type().get_field_list());
@@ -139,7 +151,10 @@ fn traverse(node: &RelNode, builder: &mut RelDataTypeBuilder, rename_mapping: &m
                 output_idx += 1;
             }
         }
-        RelNode::Filter { .. } | RelNode::Sort { .. } => {}
+        RelNode::Filter { .. }
+        | RelNode::Sort { .. }
+        | RelNode::Join { .. }
+        | RelNode::SetOp { .. } => {}
     }
     for input in node.inputs() {
         traverse(input, builder, rename_mapping);

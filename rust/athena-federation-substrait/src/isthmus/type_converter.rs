@@ -1,4 +1,4 @@
-use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem};
+use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED};
 use crate::calcite::sql_type_name::SqlTypeName;
 use crate::error::{Result, SubstraitError};
 use crate::proto::r#type::{Kind, Nullability};
@@ -16,7 +16,12 @@ fn tp(system: RelDataTypeSystem, nullable: bool, name: SqlTypeName, precision: i
     RelDataType::create_sql_type_with_precision(system, name, precision).with_nullability(nullable)
 }
 
-fn check_precision(system: RelDataTypeSystem, name: SqlTypeName, label: &str, precision: i32) -> Result<()> {
+fn check_precision(
+    system: RelDataTypeSystem,
+    name: SqlTypeName,
+    label: &str,
+    precision: i32,
+) -> Result<()> {
     let max = system.max_precision(name);
     if precision > max {
         return Err(SubstraitError::unsupported(format!(
@@ -125,7 +130,12 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
             tp(system, n, SqlTypeName::Time, p.precision)
         }
         Kind::PrecisionTimestamp(p) => {
-            check_precision(system, SqlTypeName::Timestamp, "precision_timestamp", p.precision)?;
+            check_precision(
+                system,
+                SqlTypeName::Timestamp,
+                "precision_timestamp",
+                p.precision,
+            )?;
             tp(system, n, SqlTypeName::Timestamp, p.precision)
         }
         Kind::PrecisionTimestampTz(p) => {
@@ -135,17 +145,31 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
                 "precision_timestamp_tz",
                 p.precision,
             )?;
-            tp(system, n, SqlTypeName::TimestampWithLocalTimeZone, p.precision)
+            tp(
+                system,
+                n,
+                SqlTypeName::TimestampWithLocalTimeZone,
+                p.precision,
+            )
         }
-        Kind::IntervalYear(_) => t(system, n, SqlTypeName::IntervalYearMonth),
-        Kind::IntervalDay(_) => t(system, n, SqlTypeName::IntervalDaySecond),
+        Kind::IntervalYear(_) => {
+            RelDataType::interval(SqlTypeName::IntervalYearMonth, PRECISION_NOT_SPECIFIED)
+                .with_nullability(n)
+        }
+        Kind::IntervalDay(d) => {
+            RelDataType::interval(SqlTypeName::IntervalDaySecond, d.precision.unwrap_or(6))
+                .with_nullability(n)
+        }
         Kind::FixedChar(c) => tp(system, n, SqlTypeName::Char, c.length),
         Kind::Varchar(c) => tp(system, n, SqlTypeName::Varchar, c.length),
         Kind::FixedBinary(c) => tp(system, n, SqlTypeName::Binary, c.length),
-        Kind::Decimal(d) => {
-            RelDataType::create_sql_type_with_scale(system, SqlTypeName::Decimal, d.precision, d.scale)
-                .with_nullability(n)
-        }
+        Kind::Decimal(d) => RelDataType::create_sql_type_with_scale(
+            system,
+            SqlTypeName::Decimal,
+            d.precision,
+            d.scale,
+        )
+        .with_nullability(n),
         Kind::Struct(s) => {
             let mut fields = Vec::with_capacity(s.types.len());
             for (i, f) in s.types.iter().enumerate() {

@@ -71,6 +71,18 @@ pub enum SqlKind {
     ArrayValueConstructor,
     MapValueConstructor,
     Row,
+    Values,
+    Exists,
+    Unique,
+    ScalarQuery,
+    FieldAccess,
+    Join,
+    Union,
+    Intersect,
+    Except,
+    Rollup,
+    Cube,
+    GroupingSets,
     IntervalQualifier,
     DataType,
     NodeList,
@@ -156,7 +168,12 @@ impl SqlKind {
     pub fn is_aggregate(self) -> bool {
         matches!(
             self,
-            SqlKind::Count | SqlKind::Sum | SqlKind::Sum0 | SqlKind::Min | SqlKind::Max | SqlKind::Avg
+            SqlKind::Count
+                | SqlKind::Sum
+                | SqlKind::Sum0
+                | SqlKind::Min
+                | SqlKind::Max
+                | SqlKind::Avg
         )
     }
 }
@@ -279,8 +296,7 @@ pub static NOT: SqlOperator = prefix("NOT", SqlKind::Not, 26);
 pub static EQUALS: SqlOperator = binary("=", SqlKind::Equals, 30, true);
 pub static NOT_EQUALS: SqlOperator = binary("<>", SqlKind::NotEquals, 30, true);
 pub static GREATER_THAN: SqlOperator = binary(">", SqlKind::GreaterThan, 30, true);
-pub static GREATER_THAN_OR_EQUAL: SqlOperator =
-    binary(">=", SqlKind::GreaterThanOrEqual, 30, true);
+pub static GREATER_THAN_OR_EQUAL: SqlOperator = binary(">=", SqlKind::GreaterThanOrEqual, 30, true);
 pub static LESS_THAN: SqlOperator = binary("<", SqlKind::LessThan, 30, true);
 pub static LESS_THAN_OR_EQUAL: SqlOperator = binary("<=", SqlKind::LessThanOrEqual, 30, true);
 pub static IS_DISTINCT_FROM: SqlOperator =
@@ -289,6 +305,14 @@ pub static IS_NOT_DISTINCT_FROM: SqlOperator =
     binary("IS NOT DISTINCT FROM", SqlKind::IsNotDistinctFrom, 30, true);
 pub static PLUS: SqlOperator = binary("+", SqlKind::Plus, 40, true);
 pub static MINUS: SqlOperator = binary("-", SqlKind::Minus, 40, true);
+pub static DATETIME_PLUS: SqlOperator = SqlOperator {
+    syntax: SqlSyntax::Special,
+    ..binary("+", SqlKind::Plus, 40, true)
+};
+pub static MINUS_DATE: SqlOperator = SqlOperator {
+    syntax: SqlSyntax::Special,
+    ..binary("-", SqlKind::Minus, 40, true)
+};
 pub static MULTIPLY: SqlOperator = binary("*", SqlKind::Times, 60, true);
 pub static DIVIDE: SqlOperator = binary("/", SqlKind::Divide, 60, true);
 pub static CONCAT: SqlOperator = binary("||", SqlKind::Other, 60, true);
@@ -304,6 +328,54 @@ pub static DESC: SqlOperator = postfix("DESC", SqlKind::Descending, 20);
 pub static NULLS_FIRST: SqlOperator = postfix("NULLS FIRST", SqlKind::NullsFirst, 18);
 pub static NULLS_LAST: SqlOperator = postfix("NULLS LAST", SqlKind::NullsLast, 18);
 pub static IN: SqlOperator = binary("IN", SqlKind::In, 32, true);
+pub static EXISTS: SqlOperator = prefix("EXISTS", SqlKind::Exists, 40);
+pub static UNIQUE: SqlOperator = prefix("UNIQUE", SqlKind::Unique, 40);
+pub static SCALAR_QUERY: SqlOperator = SqlOperator {
+    name: "$SCALAR_QUERY",
+    kind: SqlKind::ScalarQuery,
+    left_prec: 1,
+    right_prec: 0,
+    syntax: SqlSyntax::Special,
+    aggregate: false,
+    negated: false,
+};
+pub static UNION: SqlOperator = binary("UNION", SqlKind::Union, 12, true);
+pub static UNION_ALL: SqlOperator = binary("UNION ALL", SqlKind::Union, 12, true);
+pub static INTERSECT: SqlOperator = binary("INTERSECT", SqlKind::Intersect, 14, true);
+pub static INTERSECT_ALL: SqlOperator = binary("INTERSECT ALL", SqlKind::Intersect, 14, true);
+pub static EXCEPT: SqlOperator = binary("EXCEPT", SqlKind::Except, 12, true);
+pub static EXCEPT_ALL: SqlOperator = binary("EXCEPT ALL", SqlKind::Except, 12, true);
+const fn join(name: &'static str) -> SqlOperator {
+    SqlOperator {
+        name,
+        kind: SqlKind::Join,
+        left_prec: 16,
+        right_prec: 17,
+        syntax: SqlSyntax::Special,
+        aggregate: false,
+        negated: false,
+    }
+}
+pub static INNER_JOIN: SqlOperator = join("INNER JOIN");
+pub static LEFT_JOIN: SqlOperator = join("LEFT JOIN");
+pub static RIGHT_JOIN: SqlOperator = join("RIGHT JOIN");
+pub static FULL_JOIN: SqlOperator = join("FULL JOIN");
+pub static CROSS_JOIN: SqlOperator = join("CROSS JOIN");
+pub static COMMA_JOIN: SqlOperator = join(",");
+const fn grouping(name: &'static str, kind: SqlKind) -> SqlOperator {
+    SqlOperator {
+        name,
+        kind,
+        left_prec: 4,
+        right_prec: 5,
+        syntax: SqlSyntax::Special,
+        aggregate: false,
+        negated: false,
+    }
+}
+pub static ROLLUP: SqlOperator = grouping("ROLLUP", SqlKind::Rollup);
+pub static CUBE: SqlOperator = grouping("CUBE", SqlKind::Cube);
+pub static GROUPING_SETS: SqlOperator = grouping("GROUPING SETS", SqlKind::GroupingSets);
 pub static NOT_IN: SqlOperator = binary("NOT IN", SqlKind::NotIn, 32, true);
 pub static LIKE: SqlOperator = SqlOperator {
     name: "LIKE",
@@ -440,7 +512,8 @@ pub static SUM0: SqlOperator = agg("$SUM0", SqlKind::Sum0);
 pub static MIN: SqlOperator = agg("MIN", SqlKind::Min);
 pub static MAX: SqlOperator = agg("MAX", SqlKind::Max);
 pub static AVG: SqlOperator = agg("AVG", SqlKind::Avg);
-pub static APPROX_COUNT_DISTINCT: SqlOperator = agg("APPROX_COUNT_DISTINCT", SqlKind::OtherFunction);
+pub static APPROX_COUNT_DISTINCT: SqlOperator =
+    agg("APPROX_COUNT_DISTINCT", SqlKind::OtherFunction);
 pub static BOOL_OR: SqlOperator = agg("BOOL_OR", SqlKind::OtherFunction);
 pub static BOOL_AND: SqlOperator = agg("BOOL_AND", SqlKind::OtherFunction);
 pub static BOOLOR_AGG: SqlOperator = agg("BOOLOR_AGG", SqlKind::OtherFunction);
@@ -485,7 +558,10 @@ impl SqlOperator {
     pub fn is_symmetrical(&self) -> bool {
         matches!(
             self.kind,
-            SqlKind::Equals | SqlKind::NotEquals | SqlKind::IsDistinctFrom | SqlKind::IsNotDistinctFrom
+            SqlKind::Equals
+                | SqlKind::NotEquals
+                | SqlKind::IsDistinctFrom
+                | SqlKind::IsNotDistinctFrom
         )
     }
 }

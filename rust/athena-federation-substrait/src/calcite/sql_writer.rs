@@ -1,7 +1,10 @@
 use super::operators::{self, SqlKind, SqlOperator, SqlSyntax};
 use super::sql_dialect::SqlDialect;
-use super::sql_node::{SqlCall, SqlCase, SqlDataTypeSpec, SqlIdentifier, SqlLiteral, SqlLiteralValue, SqlNode, SqlSelect, SqlWindow};
-use super::values::java_big_decimal_to_string;
+use super::sql_node::{
+    SqlCall, SqlCase, SqlDataTypeSpec, SqlIdentifier, SqlLiteral, SqlLiteralValue, SqlNode,
+    SqlSelect, SqlWindow,
+};
+use super::values::java_big_decimal_to_plain_string;
 
 const NL: &str = "\n";
 
@@ -10,7 +13,8 @@ const COMMA_RIGHT_PREC: i32 = 2;
 const FETCH_PREC: i32 = 10;
 const ORDER_BY_LEFT_PREC: i32 = 0;
 const ORDER_BY_RIGHT_PREC: i32 = 1;
-const JOIN_COMMA_PREC: i32 = 18;
+const JOIN_LEFT_PREC: i32 = 16;
+const JOIN_RIGHT_PREC: i32 = 17;
 
 const FUNCTION_ID_NAMES: [&str; 13] = [
     "USER",
@@ -45,6 +49,9 @@ pub enum FrameType {
     Case,
     Window,
     As,
+    Join,
+    SetOp,
+    Values,
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +110,7 @@ impl<'a> SqlWriter<'a> {
     pub fn in_query(&self) -> bool {
         match &self.frame {
             None => true,
-            Some(f) => f.frame_type == FrameType::Select,
+            Some(f) => matches!(f.frame_type, FrameType::Select | FrameType::SetOp),
         }
     }
 
@@ -141,6 +148,13 @@ impl<'a> SqlWriter<'a> {
             FrameType::FromList => {
                 f.from_list = true;
                 f.newline_before_sep = true;
+            }
+            FrameType::Join => {
+                f.newline_before_sep = true;
+            }
+            FrameType::SetOp => {
+                f.newline_before_sep = true;
+                f.newline_after_sep = true;
             }
             _ => {}
         }
@@ -245,7 +259,8 @@ impl<'a> SqlWriter<'a> {
         let Some(mut f) = self.frame.take() else {
             return;
         };
-        let (before, after) = if f.from_list && sep == "," {
+        let comma_list = f.from_list || matches!(f.frame_type, FrameType::Join | FrameType::Values);
+        let (before, after) = if comma_list && sep == "," {
             (false, true)
         } else {
             (f.newline_before_sep, f.newline_after_sep)
@@ -271,7 +286,14 @@ impl<'a> SqlWriter<'a> {
         self.start_list(FrameType::FunCall, "(", ")");
     }
 
-    fn list(&mut self, frame_type: FrameType, sep: &str, sep_left_prec: i32, sep_right_prec: i32, list: &[SqlNode]) {
+    fn list(
+        &mut self,
+        frame_type: FrameType,
+        sep: &str,
+        sep_left_prec: i32,
+        sep_right_prec: i32,
+        list: &[SqlNode],
+    ) {
         self.start_list(frame_type, "", "");
         for node in list {
             self.sep_with(sep, false);
@@ -347,7 +369,7 @@ fn unparse_literal(w: &mut SqlWriter<'_>, l: &SqlLiteral) {
     match &l.value {
         SqlLiteralValue::Null => w.keyword("NULL"),
         SqlLiteralValue::Boolean(b) => w.keyword(if *b { "TRUE" } else { "FALSE" }),
-        SqlLiteralValue::Exact(d) => w.literal(&java_big_decimal_to_string(d)),
+        SqlLiteralValue::Exact(d) => w.literal(&java_big_decimal_to_plain_string(d)),
         SqlLiteralValue::Approx(d) => w.literal(&super::values::java_big_decimal_to_scientific(d)),
         SqlLiteralValue::Char(s) => {
             let q = w.dialect().quote_string_literal(s);
@@ -365,7 +387,11 @@ fn unparse_literal(w: &mut SqlWriter<'_>, l: &SqlLiteral) {
         }
         SqlLiteralValue::Binary(b) => w.literal(&format!("X'{}'", b.to_hex_string())),
         SqlLiteralValue::Symbol(s) => w.keyword(s),
-        SqlLiteralValue::Interval { sign, text, qualifier } => {
+        SqlLiteralValue::Interval {
+            sign,
+            text,
+            qualifier,
+        } => {
             w.keyword("INTERVAL");
             if *sign == -1 {
                 w.print("-");
@@ -509,8 +535,91 @@ fn unparse_operator(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, right
             w.end_list();
             return;
         }
-        SqlKind::Row => {
+        SqlKind::Plus | SqlKind::Minus if op.syntax == SqlSyntax::Special => {
+            w.start_list(FrameType::Simple, "(", ")");
+            if let Some(o0) = call.operands.first() {
+                unparse(w, o0, left_prec, right_prec);
+            }
+            w.sep(op.name);
+            if let Some(o1) = call.operands.get(1) {
+                unparse(w, o1, left_prec, right_prec);
+            }
+            w.end_list();
+            for o in call.operands.iter().skip(2) {
+                unparse(w, o, left_prec, right_prec);
+            }
+            return;
+        }
+        SqlKind::Join => {
+            w.start_list(FrameType::Join, "", "");
+            if let Some(left) = call.operands.first() {
+                unparse(w, left, left_prec, op.left_prec);
+            }
+            w.sep_with(op.name, true);
+            if let Some(right) = call.operands.get(1) {
+                unparse(w, right, op.right_prec, right_prec);
+            }
+            if let Some(condition) = call.operands.get(2) {
+                w.keyword("ON");
+                unparse(w, condition, left_prec, right_prec);
+            }
+            w.end_list();
+            return;
+        }
+        SqlKind::Union | SqlKind::Intersect | SqlKind::Except => {
+            w.start_list(FrameType::SetOp, "", "");
+            if let Some(o0) = call.operands.first() {
+                unparse(w, o0, left_prec, op.left_prec);
+            }
+            w.set_need_whitespace(true);
+            w.sep(op.name);
+            w.set_need_whitespace(true);
+            if let Some(o1) = call.operands.get(1) {
+                unparse(w, o1, op.right_prec, right_prec);
+            }
+            w.end_list();
+            return;
+        }
+        SqlKind::ScalarQuery => {
+            w.start_list(FrameType::Simple, "(", ")");
+            if let Some(o0) = call.operands.first() {
+                unparse(w, o0, 0, 0);
+            }
+            w.end_list();
+            return;
+        }
+        SqlKind::Rollup | SqlKind::Cube | SqlKind::GroupingSets => {
+            w.keyword(op.name);
             w.start_list(FrameType::FunCall, "(", ")");
+            for o in &call.operands {
+                w.sep(",");
+                match o {
+                    SqlNode::Call(row) if row.op.kind == SqlKind::Row => {
+                        w.start_list(FrameType::Simple, "(", ")");
+                        for o2 in &row.operands {
+                            w.sep(",");
+                            unparse(w, o2, 0, 0);
+                        }
+                        w.end_list();
+                    }
+                    SqlNode::NodeList(l) if l.is_empty() => w.keyword("()"),
+                    other => unparse(w, other, 0, 0),
+                }
+            }
+            w.end_list();
+            return;
+        }
+        SqlKind::Values => {
+            w.start_list(FrameType::Values, "VALUES", "");
+            for o in &call.operands {
+                w.sep(",");
+                unparse(w, o, 0, 0);
+            }
+            w.end_list();
+            return;
+        }
+        SqlKind::Row => {
+            w.start_list(FrameType::Simple, "(", ")");
             for o in &call.operands {
                 w.sep(",");
                 unparse(w, o, 0, 0);
@@ -606,7 +715,11 @@ fn unparse_window(w: &mut SqlWriter<'_>, win: &SqlWindow) {
             unparse(w, lower, 0, 0);
         }
         (Some(lower), Some(upper)) => {
-            w.sep(if win.is_rows { "ROWS BETWEEN" } else { "RANGE BETWEEN" });
+            w.sep(if win.is_rows {
+                "ROWS BETWEEN"
+            } else {
+                "RANGE BETWEEN"
+            });
             unparse(w, lower, 0, 0);
             w.keyword("AND");
             unparse(w, upper, 0, 0);
@@ -643,7 +756,8 @@ fn unparse_select_node(w: &mut SqlWriter<'_>, select: &SqlSelect, left_prec: i32
     let wrap = !w.in_query()
         || (select.fetch.is_some() && (left_prec > FETCH_PREC || right_prec > FETCH_PREC))
         || (select.offset.is_some() && (left_prec > FETCH_PREC || right_prec > FETCH_PREC))
-        || (select.order_by.is_some() && (left_prec > ORDER_BY_LEFT_PREC || right_prec > ORDER_BY_RIGHT_PREC));
+        || (select.order_by.is_some()
+            && (left_prec > ORDER_BY_LEFT_PREC || right_prec > ORDER_BY_RIGHT_PREC));
     if wrap {
         w.start_list(FrameType::SubQuery, "(", ")");
         unparse_select(w, select);
@@ -676,11 +790,17 @@ fn unparse_select(w: &mut SqlWriter<'_>, select: &SqlSelect) {
     for k in &select.keyword_list {
         unparse(w, k, 0, 0);
     }
-    w.list(FrameType::SelectList, ",", COMMA_LEFT_PREC, COMMA_RIGHT_PREC, &select.select_list);
+    w.list(
+        FrameType::SelectList,
+        ",",
+        COMMA_LEFT_PREC,
+        COMMA_RIGHT_PREC,
+        &select.select_list,
+    );
     if let Some(from) = &select.from {
         w.sep("FROM");
         w.start_list(FrameType::FromList, "", "");
-        unparse(w, from, JOIN_COMMA_PREC - 1, JOIN_COMMA_PREC);
+        unparse(w, from, JOIN_LEFT_PREC - 1, JOIN_RIGHT_PREC - 1);
         w.end_list();
     }
     if let Some(where_clause) = &select.where_clause {
@@ -690,15 +810,33 @@ fn unparse_select(w: &mut SqlWriter<'_>, select: &SqlSelect) {
             _ => (SqlKind::And, &operators::AND),
         };
         let list = flatten_where(where_clause, kind);
-        w.list(FrameType::WhereList, sep_op.name, sep_op.left_prec, sep_op.right_prec, &list);
+        w.list(
+            FrameType::WhereList,
+            sep_op.name,
+            sep_op.left_prec,
+            sep_op.right_prec,
+            &list,
+        );
     }
     if let Some(group_by) = &select.group_by {
         w.sep("GROUP BY");
         if group_by.is_empty() {
             let singleton = vec![SqlNode::NodeList(Vec::new())];
-            w.list(FrameType::GroupByList, ",", COMMA_LEFT_PREC, COMMA_RIGHT_PREC, &singleton);
+            w.list(
+                FrameType::GroupByList,
+                ",",
+                COMMA_LEFT_PREC,
+                COMMA_RIGHT_PREC,
+                &singleton,
+            );
         } else {
-            w.list(FrameType::GroupByList, ",", COMMA_LEFT_PREC, COMMA_RIGHT_PREC, group_by);
+            w.list(
+                FrameType::GroupByList,
+                ",",
+                COMMA_LEFT_PREC,
+                COMMA_RIGHT_PREC,
+                group_by,
+            );
         }
     }
     if let Some(having) = &select.having {
@@ -712,7 +850,13 @@ fn unparse_select(w: &mut SqlWriter<'_>, select: &SqlSelect) {
     if let Some(order_by) = &select.order_by {
         if !order_by.is_empty() {
             w.sep("ORDER BY");
-            w.list(FrameType::OrderByList, ",", COMMA_LEFT_PREC, COMMA_RIGHT_PREC, order_by);
+            w.list(
+                FrameType::OrderByList,
+                ",",
+                COMMA_LEFT_PREC,
+                COMMA_RIGHT_PREC,
+                order_by,
+            );
         }
     }
     if select.fetch.is_some() || select.offset.is_some() {

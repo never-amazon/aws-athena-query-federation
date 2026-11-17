@@ -1,7 +1,4 @@
 use arrow_schema::DataType;
-use athena_federation_substrait::{ColumnPredicate, PredicateValue};
-use athena_federation_substrait::SubstraitFunctionNames;
-use athena_federation_substrait::SubstraitOperator;
 use athena_federation_substrait::proto::expression::field_reference::{
     ReferenceType, RootReference, RootType,
 };
@@ -16,9 +13,12 @@ use athena_federation_substrait::proto::extensions::simple_extension_declaration
 use athena_federation_substrait::proto::extensions::SimpleExtensionDeclaration;
 use athena_federation_substrait::proto::function_argument::ArgType;
 use athena_federation_substrait::proto::{Expression, FunctionArgument};
-use athena_federation_substrait::SubstraitFunctionParser;
-use athena_federation_substrait::LiteralValue;
 use athena_federation_substrait::ErrorKind;
+use athena_federation_substrait::LiteralValue;
+use athena_federation_substrait::SubstraitFunctionNames;
+use athena_federation_substrait::SubstraitFunctionParser;
+use athena_federation_substrait::SubstraitOperator;
+use athena_federation_substrait::{ColumnPredicate, PredicateValue};
 
 fn column_names() -> Vec<String> {
     ["id", "name", "age", "active"]

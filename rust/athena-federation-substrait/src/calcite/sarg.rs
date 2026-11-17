@@ -60,7 +60,9 @@ impl SargValue {
         match (self, other) {
             (SargValue::Boolean(a), SargValue::Boolean(b)) => a.cmp(b),
             (SargValue::Exact(a), SargValue::Exact(b)) => a.cmp(b),
-            (SargValue::Approx(a), SargValue::Approx(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (SargValue::Approx(a), SargValue::Approx(b)) => {
+                a.partial_cmp(b).unwrap_or(Ordering::Equal)
+            }
             (SargValue::Exact(a), SargValue::Approx(b)) => {
                 let fa: f64 = a.to_string().parse().unwrap_or(0.0);
                 fa.partial_cmp(b).unwrap_or(Ordering::Equal)
@@ -296,7 +298,9 @@ impl RangeSet {
 
     pub fn span_encloses_all(&self) -> bool {
         match (self.ranges.first(), self.ranges.last()) {
-            (Some(f), Some(l)) => matches!(f.lower, Cut::BelowAll) && matches!(l.upper, Cut::AboveAll),
+            (Some(f), Some(l)) => {
+                matches!(f.lower, Cut::BelowAll) && matches!(l.upper, Cut::AboveAll)
+            }
             _ => false,
         }
     }
@@ -344,15 +348,28 @@ impl Sarg {
     pub fn is_complemented_points(&self) -> bool {
         self.range_set.span_encloses_all()
             && !self.range_set.is_all()
-            && self.range_set.complement().as_ranges().iter().all(Range::is_point)
+            && self
+                .range_set
+                .complement()
+                .as_ranges()
+                .iter()
+                .all(Range::is_point)
     }
 
     pub fn complexity(&self) -> usize {
         if self.is_all() {
-            return if self.null_as == RexUnknownAs::True { 2 } else { 1 };
+            return if self.null_as == RexUnknownAs::True {
+                2
+            } else {
+                1
+            };
         }
         if self.is_none() {
-            return if self.null_as == RexUnknownAs::False { 0 } else { 1 };
+            return if self.null_as == RexUnknownAs::False {
+                0
+            } else {
+                1
+            };
         }
         let complement = self.range_set.complement();
         let mut complexity = if self.range_set.as_ranges().len() == 2

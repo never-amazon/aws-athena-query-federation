@@ -1,6 +1,7 @@
 use bigdecimal::BigDecimal;
 
 use super::operators::{self, SqlKind, SqlOperator};
+use super::rel::RelNode;
 use super::rel_data_type::{RelDataType, RelDataTypeSystem};
 use super::sarg::{Sarg, SargValue};
 use super::sql_type_name::SqlTypeName;
@@ -193,12 +194,37 @@ pub struct RexOver {
     pub ignore_nulls: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubQueryKind {
+    In,
+    Exists,
+    Unique,
+    Scalar,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RexSubQuery {
+    pub kind: SubQueryKind,
+    pub operands: Vec<RexNode>,
+    pub rel: RelNode,
+    pub ty: RelDataType,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RexNode {
-    InputRef { index: usize, ty: RelDataType },
+    InputRef {
+        index: usize,
+        ty: RelDataType,
+    },
     Literal(RexLiteral),
     Call(RexCall),
     Over(Box<RexOver>),
+    SubQuery(Box<RexSubQuery>),
+    CorrelField {
+        correl: usize,
+        index: usize,
+        ty: RelDataType,
+    },
 }
 
 impl RexNode {
@@ -208,6 +234,8 @@ impl RexNode {
             RexNode::Literal(l) => &l.ty,
             RexNode::Call(c) => &c.ty,
             RexNode::Over(o) => &o.ty,
+            RexNode::SubQuery(q) => &q.ty,
+            RexNode::CorrelField { ty, .. } => ty,
         }
     }
 
@@ -217,6 +245,13 @@ impl RexNode {
             RexNode::Literal(_) => SqlKind::Literal,
             RexNode::Call(c) => c.op.kind,
             RexNode::Over(o) => o.op.kind,
+            RexNode::SubQuery(q) => match q.kind {
+                SubQueryKind::In => SqlKind::In,
+                SubQueryKind::Exists => SqlKind::Exists,
+                SubQueryKind::Unique => SqlKind::Unique,
+                SubQueryKind::Scalar => SqlKind::ScalarQuery,
+            },
+            RexNode::CorrelField { .. } => SqlKind::FieldAccess,
         }
     }
 
@@ -238,16 +273,49 @@ impl RexNode {
         match self {
             RexNode::Call(c) => &c.operands,
             RexNode::Over(o) => &o.operands,
+            RexNode::SubQuery(q) => &q.operands,
             _ => &[],
         }
     }
 
     pub fn is_always_true(&self) -> bool {
-        matches!(self, RexNode::Literal(RexLiteral { value: LiteralValue::Boolean(true), .. }))
+        match self {
+            RexNode::Literal(RexLiteral {
+                value: LiteralValue::Boolean(b),
+                ..
+            }) => *b,
+            RexNode::Call(c) => match c.op.kind {
+                SqlKind::IsNotNull => !c.operands[0].get_type().is_nullable(),
+                SqlKind::IsNotTrue | SqlKind::IsFalse | SqlKind::Not => {
+                    c.operands[0].is_always_false()
+                }
+                SqlKind::IsNotFalse | SqlKind::IsTrue | SqlKind::Cast => {
+                    c.operands[0].is_always_true()
+                }
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     pub fn is_always_false(&self) -> bool {
-        matches!(self, RexNode::Literal(RexLiteral { value: LiteralValue::Boolean(false), .. }))
+        match self {
+            RexNode::Literal(RexLiteral {
+                value: LiteralValue::Boolean(b),
+                ..
+            }) => !*b,
+            RexNode::Call(c) => match c.op.kind {
+                SqlKind::IsNull => !c.operands[0].get_type().is_nullable(),
+                SqlKind::IsNotTrue | SqlKind::IsFalse | SqlKind::Not => {
+                    c.operands[0].is_always_true()
+                }
+                SqlKind::IsNotFalse | SqlKind::IsTrue | SqlKind::Cast => {
+                    c.operands[0].is_always_false()
+                }
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     pub fn is_null_literal(&self) -> bool {
@@ -283,17 +351,30 @@ impl RexNode {
             RexNode::Call(c) => c.operands.iter().for_each(|o| o.collect_input_refs(out)),
             RexNode::Over(o) => {
                 o.operands.iter().for_each(|x| x.collect_input_refs(out));
-                o.window.partition_keys.iter().for_each(|x| x.collect_input_refs(out));
-                o.window.order_keys.iter().for_each(|x| x.expr.collect_input_refs(out));
+                o.window
+                    .partition_keys
+                    .iter()
+                    .for_each(|x| x.collect_input_refs(out));
+                o.window
+                    .order_keys
+                    .iter()
+                    .for_each(|x| x.expr.collect_input_refs(out));
             }
-            RexNode::Literal(_) => {}
+            RexNode::SubQuery(q) => q.operands.iter().for_each(|o| o.collect_input_refs(out)),
+            RexNode::Literal(_) | RexNode::CorrelField { .. } => {}
         }
     }
 
     pub fn shift_refs(&self, map: &dyn Fn(usize) -> RexNode) -> RexNode {
         match self {
             RexNode::InputRef { index, .. } => map(*index),
-            RexNode::Literal(_) => self.clone(),
+            RexNode::Literal(_) | RexNode::CorrelField { .. } => self.clone(),
+            RexNode::SubQuery(q) => RexNode::SubQuery(Box::new(RexSubQuery {
+                kind: q.kind,
+                operands: q.operands.iter().map(|o| o.shift_refs(map)).collect(),
+                rel: q.rel.clone(),
+                ty: q.ty.clone(),
+            })),
             RexNode::Call(c) => RexNode::Call(RexCall {
                 op: c.op,
                 operands: c.operands.iter().map(|o| o.shift_refs(map)).collect(),
@@ -304,7 +385,12 @@ impl RexNode {
                 operands: o.operands.iter().map(|x| x.shift_refs(map)).collect(),
                 ty: o.ty.clone(),
                 window: RexWindow {
-                    partition_keys: o.window.partition_keys.iter().map(|x| x.shift_refs(map)).collect(),
+                    partition_keys: o
+                        .window
+                        .partition_keys
+                        .iter()
+                        .map(|x| x.shift_refs(map))
+                        .collect(),
                     order_keys: o
                         .window
                         .order_keys
@@ -396,7 +482,10 @@ impl RexBuilder {
             | SqlKind::IsDistinctFrom
             | SqlKind::IsNotDistinctFrom => self.boolean_type(false),
             SqlKind::Search => {
-                let nullable = operands.first().map(|o| o.get_type().is_nullable()).unwrap_or(false)
+                let nullable = operands
+                    .first()
+                    .map(|o| o.get_type().is_nullable())
+                    .unwrap_or(false)
                     && match operands.get(1) {
                         Some(RexNode::Literal(RexLiteral {
                             value: LiteralValue::Sarg(s),
@@ -431,7 +520,12 @@ impl RexBuilder {
         RexNode::Call(RexCall { op, operands, ty })
     }
 
-    pub fn make_call_typed(&self, ty: RelDataType, op: &'static SqlOperator, operands: Vec<RexNode>) -> RexNode {
+    pub fn make_call_typed(
+        &self,
+        ty: RelDataType,
+        op: &'static SqlOperator,
+        operands: Vec<RexNode>,
+    ) -> RexNode {
         RexNode::Call(RexCall { op, operands, ty })
     }
 
@@ -444,7 +538,11 @@ impl RexBuilder {
     }
 
     pub fn make_cast(&self, ty: RelDataType, operand: RexNode, safe: bool) -> RexNode {
-        let op = if safe { &operators::SAFE_CAST } else { &operators::CAST };
+        let op = if safe {
+            &operators::SAFE_CAST
+        } else {
+            &operators::CAST
+        };
         RexNode::Call(RexCall {
             op,
             operands: vec![operand],
@@ -496,7 +594,9 @@ pub fn compose_conjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode
     }
     match list.len() {
         0 => builder.make_bool_literal(true),
-        1 => list.pop().unwrap_or_else(|| builder.make_bool_literal(true)),
+        1 => list
+            .pop()
+            .unwrap_or_else(|| builder.make_bool_literal(true)),
         _ => {
             if list.iter().any(RexNode::is_always_false) {
                 return builder.make_bool_literal(false);
@@ -522,7 +622,9 @@ pub fn compose_disjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode
     }
     match list.len() {
         0 => builder.make_bool_literal(false),
-        1 => list.pop().unwrap_or_else(|| builder.make_bool_literal(false)),
+        1 => list
+            .pop()
+            .unwrap_or_else(|| builder.make_bool_literal(false)),
         _ => {
             if list.iter().any(RexNode::is_always_true) {
                 return builder.make_bool_literal(true);
@@ -531,4 +633,3 @@ pub fn compose_disjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode
         }
     }
 }
-

@@ -101,10 +101,18 @@ impl From<SubstraitError> for athena_federation_sdk::FederationError {
         let message = error.message;
         match error.kind {
             ErrorKind::Runtime => athena_federation_sdk::FederationError::Runtime(message),
-            ErrorKind::IllegalArgument => athena_federation_sdk::FederationError::IllegalArgument(message),
-            ErrorKind::IllegalState => athena_federation_sdk::FederationError::IllegalState(message),
-            ErrorKind::UnsupportedOperation => athena_federation_sdk::FederationError::UnsupportedOperation(message),
-            ErrorKind::IndexOutOfBounds => athena_federation_sdk::FederationError::IndexOutOfBounds(message),
+            ErrorKind::IllegalArgument => {
+                athena_federation_sdk::FederationError::IllegalArgument(message)
+            }
+            ErrorKind::IllegalState => {
+                athena_federation_sdk::FederationError::IllegalState(message)
+            }
+            ErrorKind::UnsupportedOperation => {
+                athena_federation_sdk::FederationError::UnsupportedOperation(message)
+            }
+            ErrorKind::IndexOutOfBounds => {
+                athena_federation_sdk::FederationError::IndexOutOfBounds(message)
+            }
             ErrorKind::NullPointer => athena_federation_sdk::FederationError::NullPointer(message),
         }
     }

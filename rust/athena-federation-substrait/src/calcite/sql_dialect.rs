@@ -1,4 +1,6 @@
-use super::rel_data_type::{RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED, SCALE_NOT_SPECIFIED};
+use super::rel_data_type::{
+    RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED, SCALE_NOT_SPECIFIED,
+};
 use super::rex::{Direction, NullDirection};
 use super::sql_node::SqlDataTypeSpec;
 use super::sql_type_name::SqlTypeName;
@@ -163,7 +165,12 @@ impl SqlDialect {
         }
     }
 
-    pub fn supports_implicit_type_coercion(&self, cast_type: &RelDataType, operand_type: &RelDataType, operand_is_literal: bool) -> bool {
+    pub fn supports_implicit_type_coercion(
+        &self,
+        cast_type: &RelDataType,
+        operand_type: &RelDataType,
+        operand_is_literal: bool,
+    ) -> bool {
         let base = operand_type.get_sql_type_name().is_character();
         match self.product {
             DatabaseProduct::Postgresql => {

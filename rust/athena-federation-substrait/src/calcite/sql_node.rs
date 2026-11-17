@@ -2,7 +2,9 @@ use bigdecimal::BigDecimal;
 
 use super::operators::{self, SqlKind, SqlOperator};
 use super::sql_type_name::SqlTypeName;
-use super::values::{java_big_decimal_to_string, BitString, DateString, TimeString, TimestampString};
+use super::values::{
+    java_big_decimal_to_string, BitString, DateString, TimeString, TimestampString,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlIdentifier {
@@ -45,7 +47,13 @@ impl SqlIdentifier {
     pub fn to_dotted(&self) -> String {
         self.names
             .iter()
-            .map(|n| if n.is_empty() { "*".to_string() } else { n.clone() })
+            .map(|n| {
+                if n.is_empty() {
+                    "*".to_string()
+                } else {
+                    n.clone()
+                }
+            })
             .collect::<Vec<_>>()
             .join(".")
     }
@@ -63,7 +71,11 @@ pub enum SqlLiteralValue {
     Timestamp(TimestampString, i32),
     Binary(BitString),
     Symbol(String),
-    Interval { sign: i32, text: String, qualifier: String },
+    Interval {
+        sign: i32,
+        text: String,
+        qualifier: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -149,7 +161,9 @@ impl SqlLiteral {
         match &self.value {
             SqlLiteralValue::Null => LiteralObject::Null,
             SqlLiteralValue::Boolean(b) => LiteralObject::Boolean(*b),
-            SqlLiteralValue::Exact(d) | SqlLiteralValue::Approx(d) => LiteralObject::Decimal(d.clone()),
+            SqlLiteralValue::Exact(d) | SqlLiteralValue::Approx(d) => {
+                LiteralObject::Decimal(d.clone())
+            }
             SqlLiteralValue::Char(s) => LiteralObject::String(s.clone()),
             SqlLiteralValue::Date(d) => LiteralObject::Date(d.clone()),
             SqlLiteralValue::Time(t, _) => LiteralObject::Time(t.clone()),
@@ -164,7 +178,7 @@ impl SqlLiteral {
         match &self.value {
             SqlLiteralValue::Null => "NULL".to_string(),
             SqlLiteralValue::Boolean(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
-            SqlLiteralValue::Exact(d) => java_big_decimal_to_string(d),
+            SqlLiteralValue::Exact(d) => super::values::java_big_decimal_to_plain_string(d),
             SqlLiteralValue::Approx(d) => super::values::java_big_decimal_to_scientific(d),
             SqlLiteralValue::Char(s) => s.clone(),
             other => format!("{:?}", other),
@@ -280,7 +294,8 @@ impl SqlSelect {
 }
 
 pub fn is_singleton_star(list: &[SqlNode]) -> bool {
-    list.len() == 1 && matches!(&list[0], SqlNode::Identifier(id) if id.names.len() == 1 && id.names[0].is_empty())
+    list.len() == 1
+        && matches!(&list[0], SqlNode::Identifier(id) if id.names.len() == 1 && id.names[0].is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -321,7 +336,11 @@ impl SqlNode {
         })
     }
 
-    pub fn call_with_quantifier(op: &'static SqlOperator, quantifier: Option<String>, operands: Vec<SqlNode>) -> SqlNode {
+    pub fn call_with_quantifier(
+        op: &'static SqlOperator,
+        quantifier: Option<String>,
+        operands: Vec<SqlNode>,
+    ) -> SqlNode {
         SqlNode::Call(SqlCall {
             op,
             operands,
@@ -376,12 +395,19 @@ impl SqlNode {
     }
 
     pub fn is_null_literal(&self) -> bool {
-        matches!(self, SqlNode::Literal(SqlLiteral { value: SqlLiteralValue::Null }))
+        matches!(
+            self,
+            SqlNode::Literal(SqlLiteral {
+                value: SqlLiteralValue::Null
+            })
+        )
     }
 
     pub fn alias(&self) -> Option<String> {
         match self {
-            SqlNode::Call(c) if c.op.kind == SqlKind::As => c.operands.get(1).map(SqlNode::to_plain_string),
+            SqlNode::Call(c) if c.op.kind == SqlKind::As => {
+                c.operands.get(1).map(SqlNode::to_plain_string)
+            }
             SqlNode::Call(c) if c.op.kind == SqlKind::Over => None,
             SqlNode::Identifier(id) => id.names.last().cloned(),
             _ => None,
@@ -403,10 +429,16 @@ impl SqlNode {
                 c.value.as_ref().map(|v| v.contains_agg()).unwrap_or(false)
                     || c.when_list.iter().any(SqlNode::contains_agg)
                     || c.then_list.iter().any(SqlNode::contains_agg)
-                    || c.else_expr.as_ref().map(|v| v.contains_agg()).unwrap_or(false)
+                    || c.else_expr
+                        .as_ref()
+                        .map(|v| v.contains_agg())
+                        .unwrap_or(false)
             }
             SqlNode::NodeList(l) => l.iter().any(SqlNode::contains_agg),
-            SqlNode::Window(w) => w.partition_list.iter().any(SqlNode::contains_agg) || w.order_list.iter().any(SqlNode::contains_agg),
+            SqlNode::Window(w) => {
+                w.partition_list.iter().any(SqlNode::contains_agg)
+                    || w.order_list.iter().any(SqlNode::contains_agg)
+            }
             _ => false,
         }
     }

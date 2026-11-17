@@ -119,7 +119,11 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
         }
     }
 
-    fn visit_opt_list(&mut self, list: Option<&[SqlNode]>, changed: &mut bool) -> Result<Option<Vec<SqlNode>>> {
+    fn visit_opt_list(
+        &mut self,
+        list: Option<&[SqlNode]>,
+        changed: &mut bool,
+    ) -> Result<Option<Vec<SqlNode>>> {
         match list {
             None => Ok(None),
             Some(l) => match self.visit_list(l)? {
@@ -135,8 +139,12 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     fn visit_case(&mut self, case: &SqlCase) -> Result<Visited> {
         let mut changed = false;
         let value = self.visit_opt(case.value.as_deref(), &mut changed)?;
-        let when_list = self.visit_opt_list(Some(&case.when_list), &mut changed)?.unwrap_or_default();
-        let then_list = self.visit_opt_list(Some(&case.then_list), &mut changed)?.unwrap_or_default();
+        let when_list = self
+            .visit_opt_list(Some(&case.when_list), &mut changed)?
+            .unwrap_or_default();
+        let then_list = self
+            .visit_opt_list(Some(&case.then_list), &mut changed)?
+            .unwrap_or_default();
         let else_expr = self.visit_opt(case.else_expr.as_deref(), &mut changed)?;
         Ok(changed.then(|| {
             SqlNode::Case(Box::new(SqlCase {
@@ -153,7 +161,9 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
         let partition_list = self
             .visit_opt_list(Some(&window.partition_list), &mut changed)?
             .unwrap_or_default();
-        let order_list = self.visit_opt_list(Some(&window.order_list), &mut changed)?.unwrap_or_default();
+        let order_list = self
+            .visit_opt_list(Some(&window.order_list), &mut changed)?
+            .unwrap_or_default();
         let lower_bound = self.visit_opt(window.lower_bound.as_deref(), &mut changed)?;
         let upper_bound = self.visit_opt(window.upper_bound.as_deref(), &mut changed)?;
         Ok(changed.then(|| {
@@ -168,7 +178,9 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     }
 
     fn super_visit_call(&mut self, call: &SqlCall) -> Result<Visited> {
-        Ok(self.visit_list(&call.operands)?.map(|operands| rebuild(call, operands)))
+        Ok(self
+            .visit_list(&call.operands)?
+            .map(|operands| rebuild(call, operands)))
     }
 
     fn visit_call(&mut self, call: &SqlCall) -> Result<Visited> {
@@ -218,10 +230,17 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
         let literal = SqlLiteral::boolean(value);
         self.add_to_accumulator(name, &literal)?;
         let param = SqlNode::DynamicParam(self.accumulator.len() - 1);
-        Ok(SqlNode::call(&operators::EQUALS, vec![identifier.clone(), param]))
+        Ok(SqlNode::call(
+            &operators::EQUALS,
+            vec![identifier.clone(), param],
+        ))
     }
 
-    fn with_column<T>(&mut self, column: &str, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    fn with_column<T>(
+        &mut self,
+        column: &str,
+        f: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
         self.column_stack.push(column.to_string());
         let out = f(self);
         self.column_stack.pop();
@@ -232,7 +251,9 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
         let left = call.operands.first();
         let right = call.operands.get(1);
         let target = match (left, right) {
-            (Some(l), Some(r)) if simple_name(l).is_some() => simple_name(l).map(|n| (n.to_string(), r, 1)),
+            (Some(l), Some(r)) if simple_name(l).is_some() => {
+                simple_name(l).map(|n| (n.to_string(), r, 1))
+            }
             (Some(l), Some(r)) => simple_name(r).map(|n| (n.to_string(), l, 0)),
             _ => None,
         };
@@ -248,20 +269,33 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     }
 
     fn handle_in(&mut self, call: &SqlCall) -> Result<Visited> {
-        let Some(column_name) = call.operands.first().and_then(simple_name).map(str::to_string) else {
+        let Some(column_name) = call
+            .operands
+            .first()
+            .and_then(simple_name)
+            .map(str::to_string)
+        else {
             return self.super_visit_call(call);
         };
         if let Some(SqlNode::NodeList(values)) = call.operands.get(1) {
             let new_list = self.with_column(&column_name, |v| v.visit_list(values))?;
             if let Some(list) = new_list {
-                return Ok(Some(rebuild(call, vec![call.operands[0].clone(), SqlNode::NodeList(list)])));
+                return Ok(Some(rebuild(
+                    call,
+                    vec![call.operands[0].clone(), SqlNode::NodeList(list)],
+                )));
             }
         }
         self.super_visit_call(call)
     }
 
     fn handle_between(&mut self, call: &SqlCall) -> Result<Visited> {
-        let Some(column_name) = call.operands.first().and_then(simple_name).map(str::to_string) else {
+        let Some(column_name) = call
+            .operands
+            .first()
+            .and_then(simple_name)
+            .map(str::to_string)
+        else {
             return self.super_visit_call(call);
         };
         let (Some(lower), Some(upper)) = (call.operands.get(1), call.operands.get(2)) else {
@@ -283,7 +317,12 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     }
 
     fn handle_like(&mut self, call: &SqlCall) -> Result<Visited> {
-        let Some(column_name) = call.operands.first().and_then(simple_name).map(str::to_string) else {
+        let Some(column_name) = call
+            .operands
+            .first()
+            .and_then(simple_name)
+            .map(str::to_string)
+        else {
             return self.super_visit_call(call);
         };
         let Some(pattern) = call.operands.get(1) else {
@@ -380,12 +419,15 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
     }
 
     fn add_to_accumulator(&mut self, column_name: &str, literal: &SqlLiteral) -> Result<()> {
-        let field = self.schema.get_field(column_name, true, true).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
-                "field {column_name} not found in schema with fields: [{}]",
-                self.schema.get_field_names().join(", ")
-            ))
-        })?;
+        let field = self
+            .schema
+            .get_field(column_name, true, true)
+            .ok_or_else(|| {
+                SubstraitError::illegal_argument(format!(
+                    "field {column_name} not found in schema with fields: [{}]",
+                    self.schema.get_field_names().join(", ")
+                ))
+            })?;
         let type_name: SqlTypeName = field.get_type().get_sql_type_name();
         let value = literal_value(literal);
         self.accumulator

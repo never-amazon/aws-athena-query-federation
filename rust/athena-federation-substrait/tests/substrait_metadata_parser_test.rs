@@ -1,7 +1,7 @@
-use athena_federation_substrait::SubstraitRelModel;
 use athena_federation_substrait::proto::r#type::{self, Kind};
 use athena_federation_substrait::proto::{NamedStruct, ReadRel, Type};
 use athena_federation_substrait::SubstraitMetadataParser;
+use athena_federation_substrait::SubstraitRelModel;
 
 fn create_rel_model(names: &[&str], types: Vec<Type>) -> SubstraitRelModel {
     let named_struct = NamedStruct {

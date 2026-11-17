@@ -47,7 +47,11 @@ fn round_to(v: &str, base_len: usize, precision: usize) -> String {
 }
 
 fn fixed_precision(v: &str, base_len: usize, precision: usize) -> String {
-    let p = if v.len() <= base_len { 0 } else { v.len() - base_len - 1 };
+    let p = if v.len() <= base_len {
+        0
+    } else {
+        v.len() - base_len - 1
+    };
     match precision.cmp(&p) {
         Ordering::Less => fixed_precision(&round_to(v, base_len, precision), base_len, precision),
         Ordering::Greater => {
@@ -88,7 +92,11 @@ impl DateString {
     }
 
     pub fn get_days_since_epoch(&self) -> i32 {
-        let y = self.0.get(0..4).and_then(|s| s.parse().ok()).unwrap_or(1970);
+        let y = self
+            .0
+            .get(0..4)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1970);
         let m = self.0.get(5..7).and_then(|s| s.parse().ok()).unwrap_or(1);
         let d = self.0.get(8..10).and_then(|s| s.parse().ok()).unwrap_or(1);
         days_from_ymd(y, m, d) as i32
@@ -187,7 +195,8 @@ impl TimestampString {
 
     pub fn get_millis_since_epoch(&self) -> i64 {
         let v = &self.0;
-        let num = |a: usize, b: usize| -> i64 { v.get(a..b).and_then(|s| s.parse().ok()).unwrap_or(0) };
+        let num =
+            |a: usize, b: usize| -> i64 { v.get(a..b).and_then(|s| s.parse().ok()).unwrap_or(0) };
         let days = days_from_ymd(num(0, 4) as i32, num(5, 7) as u32, num(8, 10) as u32);
         let ms = match v.len() {
             19 => 0,
@@ -195,7 +204,11 @@ impl TimestampString {
             22 => num(20, 22) * 10,
             _ => num(20, 23),
         };
-        days * MILLIS_PER_DAY + num(11, 13) * 3_600_000 + num(14, 16) * 60_000 + num(17, 19) * 1000 + ms
+        days * MILLIS_PER_DAY
+            + num(11, 13) * 3_600_000
+            + num(14, 16) * 60_000
+            + num(17, 19) * 1000
+            + ms
     }
 
     pub fn as_str(&self) -> &str {
@@ -289,7 +302,11 @@ fn plain_digits(digits: &str, scale: i64) -> String {
     }
     let scale = scale as usize;
     if digits.len() > scale {
-        format!("{}.{}", &digits[..digits.len() - scale], &digits[digits.len() - scale..])
+        format!(
+            "{}.{}",
+            &digits[..digits.len() - scale],
+            &digits[digits.len() - scale..]
+        )
     } else {
         format!("0.{}{}", "0".repeat(scale - digits.len()), digits)
     }
@@ -332,10 +349,18 @@ pub fn java_double_to_string(d: f64) -> String {
         return "NaN".to_string();
     }
     if d.is_infinite() {
-        return if d > 0.0 { "Infinity".to_string() } else { "-Infinity".to_string() };
+        return if d > 0.0 {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
     }
     if d == 0.0 {
-        return if d.is_sign_negative() { "-0.0".to_string() } else { "0.0".to_string() };
+        return if d.is_sign_negative() {
+            "-0.0".to_string()
+        } else {
+            "0.0".to_string()
+        };
     }
     let abs = d.abs();
     if (1e-3..1e7).contains(&abs) {
@@ -362,10 +387,18 @@ pub fn java_float_to_string(f: f32) -> String {
         return "NaN".to_string();
     }
     if f.is_infinite() {
-        return if f > 0.0 { "Infinity".to_string() } else { "-Infinity".to_string() };
+        return if f > 0.0 {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
     }
     if f == 0.0 {
-        return if f.is_sign_negative() { "-0.0".to_string() } else { "0.0".to_string() };
+        return if f.is_sign_negative() {
+            "-0.0".to_string()
+        } else {
+            "0.0".to_string()
+        };
     }
     let abs = f.abs();
     if (1e-3..1e7).contains(&abs) {

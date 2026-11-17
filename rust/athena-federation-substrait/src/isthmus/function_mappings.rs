@@ -20,12 +20,16 @@ impl FunctionDecl {
 }
 
 const NUMERIC_OUTPUTS: [&str; 7] = ["i8", "i16", "i32", "i64", "fp32", "fp64", "dec"];
+const DATETIME_PLUS_OUTPUTS: [&str; 3] = ["date", "time", "timestamp"];
+const MINUS_DATE_OUTPUTS: [&str; 3] = ["date", "timestamp_tz", "timestamp"];
 
 pub(crate) fn scalar_operator(name: &str, output_type: &str) -> Option<&'static SqlOperator> {
     let op: &'static SqlOperator = match name {
         "add" => {
             if NUMERIC_OUTPUTS.contains(&output_type) {
                 &operators::PLUS
+            } else if DATETIME_PLUS_OUTPUTS.contains(&output_type) {
+                &operators::DATETIME_PLUS
             } else {
                 return None;
             }
@@ -33,6 +37,8 @@ pub(crate) fn scalar_operator(name: &str, output_type: &str) -> Option<&'static 
         "subtract" => {
             if NUMERIC_OUTPUTS.contains(&output_type) {
                 &operators::MINUS
+            } else if MINUS_DATE_OUTPUTS.contains(&output_type) {
+                &operators::MINUS_DATE
             } else {
                 return None;
             }
