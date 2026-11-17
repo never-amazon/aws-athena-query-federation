@@ -552,4 +552,125 @@ mod tests {
         );
         assert_eq!(Types::ARRAY, cache().sql_type(1007));
     }
+
+    fn epoch_day(value: &SqlValue) -> i64 {
+        value
+            .to_date()
+            .unwrap()
+            .unwrap()
+            .signed_duration_since(NaiveDate::default())
+            .num_days()
+    }
+
+    fn millis(value: &SqlValue) -> i64 {
+        value.to_timestamp_millis().unwrap().unwrap()
+    }
+
+    fn array_value(oid: u32, text: &str) -> athena_federation_sdk::data::Value {
+        let value = Decoder::for_type(&cache(), oid).decode(Some(text.as_bytes()));
+        athena_federation_sdk::data::Value::List(
+            value
+                .to_array()
+                .unwrap()
+                .unwrap()
+                .iter()
+                .map(SqlValue::to_value)
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
+        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        assert_eq!(day("0001-01-01 BC"), -719_162);
+        assert_eq!(day("infinity"), 2_565_691);
+        assert_eq!(day("-infinity"), 2_588_078);
+        assert_eq!(day("10000-01-01"), -719_528);
+        assert_eq!(day("1582-10-04"), -141_438);
+        assert_eq!(day("9999-12-31"), 2_932_896);
+        let value = Decoder::Date.decode(Some(b"infinity"));
+        assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn timestamps_decode_to_java_sql_timestamp_millis() {
+        let ts = |text: &str| millis(&Decoder::Timestamp.decode(Some(text.as_bytes())));
+        assert_eq!(ts("1000-01-01 12:00:00"), -30_609_748_800_000);
+        assert_eq!(ts("0044-03-15 12:00:00 BC"), -63_517_953_600_000);
+        assert_eq!(ts("1582-10-04 23:59:59.999"), -12_219_292_800_001);
+        assert_eq!(ts("10000-01-01 00:00:00"), 253_402_300_800_000);
+        assert_eq!(ts("infinity"), 9_223_372_036_825_200_000);
+        let tz = |text: &str| millis(&Decoder::TimestampTz.decode(Some(text.as_bytes())));
+        assert_eq!(tz("-infinity"), -9_223_372_036_832_400_000);
+        assert_eq!(tz("0001-01-01 00:00:00+00 BC"), -719_530 * 86_400_000);
+        assert_eq!(tz("1900-01-01 00:00:00-04:56:02"), -2_208_971_038_000);
+        let infinite = Decoder::Timestamp.decode(Some(b"infinity"));
+        assert_eq!(
+            infinite.to_timestamp().unwrap_err().message(),
+            "Bad value for type timestamp : infinity"
+        );
+        assert_eq!(
+            infinite.to_timestamp().unwrap_err().class_name(),
+            "org.postgresql.util.PSQLException"
+        );
+    }
+
+    #[test]
+    fn date_arrays_write_java_date_millis_like_the_java_record_handler() {
+        use athena_federation_sdk::data::Value;
+        assert_eq!(
+            array_value(1182, "{infinity}"),
+            Value::List(vec![Value::Date(9_223_372_036_825_200_000)])
+        );
+        assert_eq!(
+            array_value(1182, "{0001-01-01 BC,1970-01-01,NULL}"),
+            Value::List(vec![
+                Value::Date(-719_530 * 86_400_000),
+                Value::Date(0),
+                Value::Null
+            ])
+        );
+    }
+
+    #[test]
+    fn numeric_nan_fails_like_pgjdbc() {
+        let nan = Decoder::Numeric.decode(Some(b"NaN"));
+        let error = nan.to_big_decimal().unwrap_err();
+        assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
+        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+        assert!(nan.to_double().unwrap().unwrap().is_nan());
+        let array = Decoder::for_type(&cache(), 1231).decode(Some(b"{1.5,NaN}"));
+        let error = array.to_array().unwrap_err();
+        assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
+        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+    }
+
+    #[test]
+    fn money_text_is_trimmed_for_numeric_getters() {
+        let money = Decoder::Text.decode(Some(b"$1,001.50"));
+        assert_eq!(money.to_java_string().as_deref(), Some("$1,001.50"));
+        assert!(money.to_double().is_err());
+        let money = Decoder::Text.decode(Some(b"-$1.50"));
+        assert_eq!(money.to_double().unwrap(), Some(-1.5));
+        assert_eq!(
+            money.to_big_decimal().unwrap().unwrap().to_string(),
+            "-1.50"
+        );
+        let money = Decoder::Text.decode(Some(b"($2.25)"));
+        assert_eq!(money.to_double().unwrap(), Some(-2.25));
+        assert_eq!(
+            Decoder::Text.decode(Some(b"$")).to_java_string().as_deref(),
+            Some("$")
+        );
+    }
+
+    #[test]
+    fn array_nesting_is_capped_at_six_levels() {
+        let six = format!("{}1{}", "{".repeat(6), "}".repeat(6));
+        assert!(parse_array(&six, b',').is_some());
+        let seven = format!("{}1{}", "{".repeat(7), "}".repeat(7));
+        assert!(parse_array(&seven, b',').is_none());
+        let deep = format!("{}1{}", "{".repeat(100_000), "}".repeat(100_000));
+        assert!(parse_array(&deep, b',').is_none());
+    }
 }
