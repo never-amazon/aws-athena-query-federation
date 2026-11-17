@@ -12,6 +12,9 @@ use super::block_allocator::BlockAllocator;
 use crate::exceptions::{FederationError, Result};
 
 const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
+const NULL_BODY_SLICE_MESSAGE: &str =
+    "Cannot invoke \"org.apache.arrow.memory.ArrowBuf.slice(long, long)\" because \"body\" is null";
+const NULL_BODY_RELEASE_MESSAGE: &str = "Cannot invoke \"org.apache.arrow.memory.ArrowBuf.getReferenceManager()\" because \"body\" is null";
 
 pub struct AthenaFederationIpcOption;
 
@@ -53,9 +56,18 @@ impl ArrowRecordBatch {
                 message.header_type()
             )));
         }
-        let length = message
-            .header_as_record_batch()
-            .map_or(0, |b| usize::try_from(b.length()).unwrap_or_default());
+        let header = message.header_as_record_batch();
+        if body.is_empty() {
+            let has_buffers = header
+                .and_then(|b| b.buffers())
+                .is_some_and(|buffers| !buffers.is_empty());
+            return Err(FederationError::null_pointer(if has_buffers {
+                NULL_BODY_SLICE_MESSAGE
+            } else {
+                NULL_BODY_RELEASE_MESSAGE
+            }));
+        }
+        let length = header.map_or(0, |b| usize::try_from(b.length()).unwrap_or_default());
         let version = message.version();
         Ok(ArrowRecordBatch {
             length,
