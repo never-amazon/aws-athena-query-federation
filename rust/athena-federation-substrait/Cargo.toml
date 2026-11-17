@@ -1,0 +1,8 @@
+[package]
+name = "athena-federation-substrait"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+athena-federation-sdk = { path = "../athena-federation-sdk" }

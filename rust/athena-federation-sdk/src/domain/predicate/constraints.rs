@@ -1,0 +1,110 @@
+use std::collections::HashMap;
+use std::fmt;
+
+use indexmap::IndexMap;
+
+use super::expression::FederationExpression;
+use super::order_by_field::OrderByField;
+use super::query_plan::QueryPlan;
+use super::value_set::ValueSet;
+
+pub const DEFAULT_NO_LIMIT: i64 = -1;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Constraints {
+    summary: IndexMap<String, ValueSet>,
+    expression: Vec<FederationExpression>,
+    order_by_clause: Vec<OrderByField>,
+    limit: i64,
+    query_passthrough_arguments: HashMap<String, String>,
+    query_plan: Option<QueryPlan>,
+}
+
+impl Default for Constraints {
+    fn default() -> Self {
+        Constraints::empty()
+    }
+}
+
+impl Constraints {
+    pub fn new(
+        summary: IndexMap<String, ValueSet>,
+        expression: Vec<FederationExpression>,
+        order_by_clause: Vec<OrderByField>,
+        limit: i64,
+        query_passthrough_arguments: HashMap<String, String>,
+        query_plan: Option<QueryPlan>,
+    ) -> Constraints {
+        Constraints {
+            summary,
+            expression,
+            order_by_clause,
+            limit,
+            query_passthrough_arguments,
+            query_plan,
+        }
+    }
+
+    pub fn empty() -> Constraints {
+        Constraints::new(IndexMap::new(), Vec::new(), Vec::new(), DEFAULT_NO_LIMIT, HashMap::new(), None)
+    }
+
+    pub fn get_summary(&self) -> &IndexMap<String, ValueSet> {
+        &self.summary
+    }
+
+    pub fn get_expression(&self) -> &[FederationExpression] {
+        &self.expression
+    }
+
+    pub fn get_limit(&self) -> i64 {
+        self.limit
+    }
+
+    pub fn has_limit(&self) -> bool {
+        self.limit > DEFAULT_NO_LIMIT
+    }
+
+    pub fn get_order_by_clause(&self) -> &[OrderByField] {
+        &self.order_by_clause
+    }
+
+    pub fn has_non_empty_order_by_clause(&self) -> bool {
+        !self.order_by_clause.is_empty()
+    }
+
+    pub fn get_query_passthrough_arguments(&self) -> &HashMap<String, String> {
+        &self.query_passthrough_arguments
+    }
+
+    pub fn get_query_plan(&self) -> Option<&QueryPlan> {
+        self.query_plan.as_ref()
+    }
+
+    pub fn is_query_pass_through(&self) -> bool {
+        !self.query_passthrough_arguments.is_empty()
+    }
+}
+
+impl fmt::Display for Constraints {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let summary: Vec<String> = self.summary.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+        let expression: Vec<String> = self.expression.iter().map(|e| e.to_string()).collect();
+        let order_by: Vec<String> = self.order_by_clause.iter().map(|o| o.to_string()).collect();
+        let qpt: Vec<String> = self
+            .query_passthrough_arguments
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+        write!(
+            f,
+            "Constraints{{summary={{{}}}expression=[{}]orderByClause=[{}]limit={}queryPassthroughArguments={{{}}}queryPlan={}}}",
+            summary.join(", "),
+            expression.join(", "),
+            order_by.join(", "),
+            self.limit,
+            qpt.join(", "),
+            self.query_plan.as_ref().map(|q| q.to_string()).unwrap_or_else(|| "null".into())
+        )
+    }
+}
