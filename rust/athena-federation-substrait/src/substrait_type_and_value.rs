@@ -28,6 +28,7 @@ pub enum SubstraitValue {
     Timestamp(TimestampString),
     Bits(BitString),
     Symbol(String),
+    Interval(String),
 }
 
 impl SubstraitValue {
@@ -104,6 +105,9 @@ impl SubstraitValue {
             SubstraitValue::Timestamp(_) => "org.apache.calcite.util.TimestampString",
             SubstraitValue::Bits(_) => "org.apache.calcite.util.BitString",
             SubstraitValue::Symbol(_) => "java.lang.Enum",
+            SubstraitValue::Interval(_) => {
+                "org.apache.calcite.sql.SqlIntervalLiteral$IntervalValue"
+            }
         }
     }
 }
@@ -120,7 +124,9 @@ impl fmt::Display for SubstraitValue {
             SubstraitValue::Float(v) => f.write_str(&java_float_to_string(*v)),
             SubstraitValue::Double(v) => f.write_str(&java_double_to_string(*v)),
             SubstraitValue::Decimal(d) => f.write_str(&java_big_decimal_to_string(d)),
-            SubstraitValue::String(s) | SubstraitValue::Symbol(s) => f.write_str(s),
+            SubstraitValue::String(s) | SubstraitValue::Symbol(s) | SubstraitValue::Interval(s) => {
+                f.write_str(s)
+            }
             SubstraitValue::Bytes(b) => write!(f, "{b:?}"),
             SubstraitValue::Date(d) => write!(f, "{d}"),
             SubstraitValue::Time(t) => write!(f, "{t}"),

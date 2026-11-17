@@ -49,7 +49,7 @@ fn rebuild(call: &SqlCall, operands: Vec<SqlNode>) -> SqlNode {
 
 fn literal_value(literal: &SqlLiteral) -> SubstraitValue {
     if let SqlLiteralValue::Interval { text, .. } = &literal.value {
-        return SubstraitValue::String(text.clone());
+        return SubstraitValue::Interval(text.clone());
     }
     match literal.get_value() {
         LiteralObject::Null => SubstraitValue::Null,

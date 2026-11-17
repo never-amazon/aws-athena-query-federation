@@ -77,7 +77,7 @@ fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
         let mut out = esc(&rewritten.to_sql_string(d));
         for v in &accumulator {
             let class = v.value().java_class_name();
-            let simple = class.rsplit('.').next().unwrap_or(class);
+            let simple = class.rsplit(['.', '$']).next().unwrap_or(class);
             write!(
                 out,
                 "\t{}|{}|{}|{}",
@@ -187,7 +187,7 @@ fn calcite_verifier_oracle_matches() {
 #[test]
 fn calcite_verifier_extra_oracle_matches() {
     let cases = parse(include_str!("fixtures/calcite-verifier-extra.tsv"));
-    assert_eq!(cases.len(), 41);
+    assert_eq!(cases.len(), 43);
     check(&cases);
 }
 
