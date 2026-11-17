@@ -31,6 +31,7 @@ import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connector.lambda.request.FederationRequest;
 import com.amazonaws.athena.connector.lambda.request.PingRequest;
 import com.amazonaws.athena.connector.lambda.security.FederatedIdentity;
+import com.amazonaws.athena.connector.lambda.security.LocalKeyFactory;
 import com.amazonaws.athena.connector.lambda.serde.VersionedObjectMapperFactory;
 import com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest;
 import com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType;
@@ -138,6 +139,8 @@ public final class CorpusGen
         CorpusGen gen = new CorpusGen();
         gen.define();
         gen.write(out);
+        System.out.flush();
+        System.exit(0);
     }
 
     private void add(String group, String variant, int minVersion, String description, Function<String, FederationRequest> request)
@@ -268,6 +271,14 @@ public final class CorpusGen
     private static Split split(String queryId, String partitionSchema, String partitionName)
     {
         return Split.newBuilder(spill(queryId, "split-0001"), null)
+                .add("partition_schema_name", partitionSchema)
+                .add("partition_name", partitionName)
+                .build();
+    }
+
+    private static Split encryptedSplit(String queryId, String partitionSchema, String partitionName)
+    {
+        return Split.newBuilder(spill(queryId, "split-0001"), new LocalKeyFactory().create())
                 .add("partition_schema_name", partitionSchema)
                 .add("partition_name", partitionName)
                 .build();
@@ -539,6 +550,12 @@ public final class CorpusGen
         add("get_splits", "identity_spill_override", 1, "GetSplits with spill bucket and prefix taken from identity config options",
                 q -> splitsRequest(q, CATALOG, "parity", "small_pk", partitions(all), null, constraints(Map.of()),
                         identity(Map.of("spill_bucket", "identity-bucket", "spill_prefix", "identity-prefix"))));
+        add("get_splits", "spill_encryption_on", 1, "single", Map.of("disable_spill_encryption", "false"),
+                "GetSplits on the partitioned table with spill encryption on, so each split carries a random key",
+                q -> splitsRequest(q, CATALOG, "parity", "sales", partitions(salesParts), null, constraints(Map.of()), identity()));
+        add("get_splits", "spill_encryption_on_pk", 1, "single", Map.of("disable_spill_encryption", "false"),
+                "GetSplits on a primary key range table with spill encryption on",
+                q -> splitsRequest(q, CATALOG, "parity", "all_types", partitions(all), null, constraints(Map.of()), identity()));
         add("get_splits", "mux_named", 1, "mux", Map.of(), "GetSplits through a named mux catalog",
                 q -> splitsRequest(q, MUX_CATALOG, "parity", "sales", partitions(salesParts), null, constraints(Map.of()), identity()));
         add("get_splits", "qpt", 5, "GetSplits for a query passthrough request",
@@ -763,6 +780,14 @@ public final class CorpusGen
         add("read_records", "spill_inline_threshold", 1, "ReadRecords whose block passes the inline limit and spills once",
                 q -> read(q, CATALOG, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", clauses.get(0)),
                         constraints(Map.of()), BIG_BLOCK, 100L));
+        add("read_records", "spill_multi_block_encrypted", 1, "ReadRecords that spills several blocks with a random spill encryption key in the split",
+                q -> read(q, CATALOG, allTypes, Schemas.allTypes(), encryptedSplit(q, "*", "*"), constraints(Map.of()), 200_000L, 0L));
+        add("read_records", "spill_inline_threshold_encrypted", 1, "ReadRecords that spills one block with a random spill encryption key in the split",
+                q -> read(q, CATALOG, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), encryptedSplit(q, "*", clauses.get(0)),
+                        constraints(Map.of()), BIG_BLOCK, 100L));
+        add("read_records", "inline_encrypted", 1, "ReadRecords with a random spill encryption key in the split and a result small enough to stay inline",
+                q -> read(q, CATALOG, new TableName("parity", "small_pk"), Schemas.smallPk(), encryptedSplit(q, "*", "*"), constraints(Map.of()),
+                        BIG_BLOCK, BIG_BLOCK));
         add("read_records", "secret_credentials", 1, "single", Map.of("default", SECRET_CONNECTION),
                 "ReadRecords with credentials from the Secrets Manager stub",
                 q -> read(q, new TableName("parity", "small_pk"), Schemas.smallPk(), split(q, "*", "*"), constraints(Map.of())));

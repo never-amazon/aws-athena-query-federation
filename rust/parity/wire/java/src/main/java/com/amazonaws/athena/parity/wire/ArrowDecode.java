@@ -30,6 +30,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
 public final class ArrowDecode
 {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -66,6 +70,10 @@ public final class ArrowDecode
     {
         Schema schema = MessageSerializer.deserializeSchema(channel(request.get("schema").asText()));
         result.set("schema", schemaJson(schema));
+        if (schema.getCustomMetadata() != null && !schema.getCustomMetadata().isEmpty()) {
+            ObjectNode metadata = result.putObject("schemaMetadata");
+            new TreeMap<>(schema.getCustomMetadata()).forEach(metadata::put);
+        }
         JsonNode records = request.get("records");
         if (records == null || records.isNull()) {
             return;
@@ -75,7 +83,16 @@ public final class ArrowDecode
             result.put("rowCount", 0);
             return;
         }
-        try (ArrowRecordBatch batch = MessageSerializer.deserializeRecordBatch(channel(records.asText()), allocator);
+        byte[] recordBytes = Base64.getDecoder().decode(records.asText());
+        JsonNode key = request.get("key");
+        if (key != null && !key.isNull()) {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(Base64.getDecoder().decode(key.asText()), "AES"),
+                    new GCMParameterSpec(128, Base64.getDecoder().decode(request.get("nonce").asText())));
+            recordBytes = cipher.doFinal(recordBytes);
+            result.put("decrypted", true);
+        }
+        try (ArrowRecordBatch batch = MessageSerializer.deserializeRecordBatch(channel(recordBytes), allocator);
                 VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
             new VectorLoader(root).load(batch);
             result.put("rowCount", root.getRowCount());
@@ -90,7 +107,12 @@ public final class ArrowDecode
 
     private static ReadChannel channel(String base64)
     {
-        return new ReadChannel(Channels.newChannel(new ByteArrayInputStream(Base64.getDecoder().decode(base64))));
+        return channel(Base64.getDecoder().decode(base64));
+    }
+
+    private static ReadChannel channel(byte[] bytes)
+    {
+        return new ReadChannel(Channels.newChannel(new ByteArrayInputStream(bytes)));
     }
 
     private static ArrayNode schemaJson(Schema schema)
