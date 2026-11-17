@@ -103,7 +103,7 @@ impl Setup {
         config_options: HashMap<String, String>,
     ) -> PutObjectRequest {
         let block_writer = self.create_block_spiller(config_options);
-        block_writer.write(&self.expected).await.unwrap();
+        block_writer.write(self.expected.clone()).await.unwrap();
         assert_eq!(1, self.mock_s3.put_count());
         let captured_request = self.mock_s3.last_put();
         block_writer.close().await;
@@ -210,7 +210,7 @@ async fn spill_test() {
     let key0 = format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}.0");
     let key1 = format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}.1");
 
-    let block_location = s.block_writer.write(&s.expected).await.unwrap();
+    let block_location = s.block_writer.write(s.expected.clone()).await.unwrap();
     let SpillLocation::S3(block_location) = block_location;
     assert_eq!(BUCKET, block_location.bucket());
     assert_eq!(key0, block_location.key());
@@ -218,7 +218,7 @@ async fn spill_test() {
     assert_eq!(BUCKET, s.mock_s3.last_put().bucket());
     assert_eq!(key0, s.mock_s3.last_put().key());
 
-    let block_location2 = s.block_writer.write(&s.expected).await.unwrap();
+    let block_location2 = s.block_writer.write(s.expected.clone()).await.unwrap();
     let SpillLocation::S3(block_location2) = block_location2;
     assert_eq!(BUCKET, block_location2.bucket());
     assert_eq!(key1, block_location2.key());

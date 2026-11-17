@@ -30,7 +30,7 @@ impl FederationThrottleException {
         }
     }
 
-    pub fn get_message(&self) -> Option<&str> {
+    pub fn message(&self) -> Option<&str> {
         self.message.as_deref()
     }
 

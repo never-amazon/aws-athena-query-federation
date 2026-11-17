@@ -78,7 +78,7 @@ mod tests {
             Some(FederationSourceErrorCode::InternalServiceException),
             exception.error_code()
         );
-        assert_eq!("Ipc error: bad ipc", exception.get_message());
+        assert_eq!("Ipc error: bad ipc", exception.message());
         assert!(exception.source().is_none());
         let response = exception
             .response()

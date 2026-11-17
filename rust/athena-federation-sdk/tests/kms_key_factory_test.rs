@@ -108,7 +108,7 @@ async fn test_not_found_exception() {
         Some(FederationSourceErrorCode::EntityNotFoundException),
         connector.error_code()
     );
-    assert_eq!("Key not found", connector.get_message());
+    assert_eq!("Key not found", connector.message());
 }
 
 #[tokio::test]

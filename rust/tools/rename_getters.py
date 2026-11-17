@@ -377,14 +377,7 @@ def decide(defs, methods_by_owner):
     for name in sorted(renamed):
         info = renamed[name]
         info["async_twin"] = any(d.is_async for d in zero if d.name == name)
-        owners = sorted(set(label.split("::")[0] for label, _ in kept.get(name, [])
-                            if info["new"] in methods_by_owner[label.split("::")[0]]))
-        if owners:
-            reason = ("`{}` already exists on {}, so call sites of the other types cannot be "
-                      "told apart by name".format(info["new"], ", ".join(owners)))
-            for d in info["defs"]:
-                kept[name].append(("{}::{}".format(d.owner, d.name), reason))
-            del renamed[name]
+        info["kept_twin"] = bool(kept.get(name))
     return renamed, kept
 
 
@@ -393,7 +386,8 @@ def rewrite_text(src, masked, renamed, def_positions):
     for pos in def_positions:
         name = re.match(r"get_\w+", masked[pos:]).group(0)
         edits.append((pos, pos + len(name), renamed[name]["new"]))
-    names = "|".join(sorted(renamed, key=len, reverse=True))
+    names = "|".join(sorted((n for n in renamed if not renamed[n]["kept_twin"]), key=len,
+                            reverse=True))
     if names:
         call = re.compile(r"\.\s*(" + names + r")\b(?=\s*\(\s*\))")
         for m in call.finditer(masked):
@@ -486,6 +480,31 @@ def main():
             shift += len(new) - (end - start)
             line, col = line_col(new_src, new_start)
             sites[(path, line, col)] = (new_start, new, "get_" + new)
+
+    twins = {"get_" + info["new"]: info["new"] for info in renamed.values()
+             if info["kept_twin"]}
+    rounds = 0
+    while twins and not args.no_check:
+        rounds += 1
+        fixed = 0
+        errors = sorted(set(cargo_errors()), key=lambda e: (e[0], e[1], -e[2]))
+        for path, l1, c1, l2, c2, message in errors:
+            m = re.match(r"no (?:method|function or associated item) named `(\w+)` found",
+                         message)
+            if not m or m.group(1) not in twins or l1 != l2:
+                continue
+            old = m.group(1)
+            with open(path, encoding="utf-8") as fh:
+                lines = fh.read().split("\n")
+            line = lines[l1 - 1]
+            if line[c1 - 1:c1 - 1 + len(old)] != old:
+                continue
+            lines[l1 - 1] = line[:c1 - 1] + twins[old] + line[c1 - 1 + len(old):]
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines))
+            fixed += 1
+        if not fixed or rounds > 10:
+            break
 
     reverted = []
     rounds = 0

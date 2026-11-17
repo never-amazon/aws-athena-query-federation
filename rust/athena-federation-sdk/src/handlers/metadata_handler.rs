@@ -272,7 +272,7 @@ fn find_field<'a>(schema: &'a Schema, name: &str) -> Result<&'a Field> {
     })
 }
 
-fn is_blank(value: Option<&String>) -> bool {
+fn is_blank(value: Option<&str>) -> bool {
     value.is_none_or(|v| v.trim().is_empty())
 }
 
@@ -312,12 +312,12 @@ pub trait MetadataHandler: FederationRequestHandler {
                 .filter_map(|(k, v)| v.clone().map(|v| (k.clone(), v)))
                 .collect()
         };
-        let prefix = if is_blank(config_options.get(SPILL_PREFIX_ENV)) {
+        let prefix = if is_blank(config_options.get(SPILL_PREFIX_ENV).map(String::as_str)) {
             base.spill_prefix().map(str::to_string)
         } else {
             config_options.get(SPILL_PREFIX_ENV).cloned()
         };
-        let bucket = if is_blank(config_options.get(SPILL_BUCKET_ENV)) {
+        let bucket = if is_blank(config_options.get(SPILL_BUCKET_ENV).map(String::as_str)) {
             base.spill_bucket().map(str::to_string)
         } else {
             config_options.get(SPILL_BUCKET_ENV).cloned()

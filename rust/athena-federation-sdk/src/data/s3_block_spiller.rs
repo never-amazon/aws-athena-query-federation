@@ -300,8 +300,8 @@ impl S3BlockSpiller {
         slot.get_or_insert_with(|| self.new_block())
     }
 
-    pub async fn write(&self, block: &Block) -> Result<SpillLocation> {
-        self.writer.write(block.clone()).await
+    pub async fn write(&self, block: Block) -> Result<SpillLocation> {
+        self.writer.write(block).await
     }
 
     pub async fn read(

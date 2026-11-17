@@ -596,7 +596,7 @@ mod lambda_function_exception_ser_de_test {
             format!("{error_message}. Stack trace: {stack_trace}\nErrorType: {error_type}");
         let text = fixture_v2("LambdaFunctionException.json");
         let actual: LambdaException = t.mapper.read_value(text.as_bytes()).expect("deserialize");
-        assert_eq!(Some(expected_message.as_str()), actual.get_message());
+        assert_eq!(Some(expected_message.as_str()), actual.message());
         assert!(actual.cause().is_none());
     }
 }

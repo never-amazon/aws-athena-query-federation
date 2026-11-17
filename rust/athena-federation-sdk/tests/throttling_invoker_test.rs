@@ -167,7 +167,7 @@ async fn invoke_with_throttle_no_spill() {
         connector.error_code()
     );
     assert!(connector
-        .get_message()
+        .message()
         .starts_with("ThrottlingInvoker requesting slow down due to"));
 }
 

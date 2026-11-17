@@ -292,6 +292,9 @@ fn lex_map_test() {
     let field2 = lex("SomeMap2", &input2);
     let expected_field_to_string2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>>> not null>> not null>";
     assert_eq!(expected_field_to_string2, java_field_to_string(&field2));
+
+    let java_input2 = input2.replace("decimal(23,3,64)", "decimal(23,3,8)");
+    assert_unsupported_decimal_width(&GlueFieldLexer::lex("SomeMap2", &java_input2).unwrap_err());
 }
 
 #[test]
