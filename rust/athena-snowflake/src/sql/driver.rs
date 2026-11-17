@@ -1,20 +1,24 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::connection::{JdbcDriver, JdbcProperties};
 use athena_jdbc::sql::{JdbcConnection, SqlException};
 use snowflake_connector_rs::{
-    AuthConfig, Client, ClientConfig, EndpointConfig, KeyPairConfig, PasswordConfig, SessionConfig,
+    AuthConfig, Client, ClientConfig, EndpointConfig, KeyPairConfig, PasswordConfig, QueryConfig,
+    SessionConfig,
 };
 use url::Url;
 
-use super::connection::SnowflakeConnection;
+use super::connection::{positive_seconds, SnowflakeConnection};
 use super::executor::{from_connector_error, snowflake_exception, ConnectorExecutor};
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::utils::SnowflakePrivateKey;
 
 const URL_PREFIX: &str = "jdbc:snowflake://";
+const QUERY_TIMEOUT: &str = "QUERYTIMEOUT";
+pub const QUERY_RESPONSE_TIMEOUT: Duration = Duration::from_mins(15);
 
 const CLIENT_SIDE_PROPERTIES: [&str; 24] = [
     "USER",
@@ -68,6 +72,17 @@ impl SnowflakeConnectionSettings {
             .iter()
             .filter(|(key, _)| !CLIENT_SIDE_PROPERTIES.contains(&key.as_str()))
             .map(|(key, value)| (key.as_str(), value.as_str()))
+    }
+
+    pub fn query_timeout(&self) -> Result<Option<Duration>, SqlException> {
+        let Some(value) = self.get(QUERY_TIMEOUT) else {
+            return Ok(None);
+        };
+        value.parse::<i32>().map(positive_seconds).map_err(|_| {
+            snowflake_exception(
+                "Invalid parameter value java.lang.String for parameter type java.lang.Integer.",
+            )
+        })
     }
 
     pub fn session_config(&self) -> SessionConfig {
@@ -135,6 +150,7 @@ impl SnowflakeConnectionSettings {
         Ok(
             ClientConfig::new(user, &self.account, self.auth_config(private_key)?)
                 .with_session(self.session_config())
+                .with_query(QueryConfig::new().with_query_response_timeout(QUERY_RESPONSE_TIMEOUT))
                 .with_endpoint(EndpointConfig::CustomBaseUrl(self.base_url.clone())),
         )
     }
@@ -245,16 +261,20 @@ impl SnowflakeJdbcDriver {
         private_key: Option<&SnowflakePrivateKey>,
     ) -> Result<Box<dyn JdbcConnection>, SqlException> {
         let settings = parse_connection_settings(url, properties)?;
+        let query_timeout = settings.query_timeout()?;
         let config = settings.client_config(private_key)?;
         let client = Client::new(config).map_err(|e| from_connector_error(&e))?;
         let session = client
             .create_session()
             .await
             .map_err(|e| from_connector_error(&e))?;
-        Ok(Box::new(SnowflakeConnection::new(
-            Arc::new(ConnectorExecutor::new(session)),
-            settings.user().map(ToString::to_string),
-        )))
+        Ok(Box::new(
+            SnowflakeConnection::new(
+                Arc::new(ConnectorExecutor::new(session)),
+                settings.user().map(ToString::to_string),
+            )
+            .with_query_timeout(query_timeout),
+        ))
     }
 }
 

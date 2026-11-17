@@ -39,7 +39,7 @@ uuid = { workspace = true }
 [dev-dependencies]
 aws-credential-types = { workspace = true }
 aws-sdk-kms = { workspace = true }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util"] }
 
 [lints]
 workspace = true

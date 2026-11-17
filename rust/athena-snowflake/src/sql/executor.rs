@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -314,6 +315,30 @@ fn bind_statement(
     Ok(statement)
 }
 
+const CANCEL_GRACE_PERIOD: Duration = Duration::from_secs(30);
+
+pub(crate) async fn run_with_query_timeout<T, Cancel, CancelFuture>(
+    execution: impl Future<Output = T>,
+    timeout: Option<Duration>,
+    cancel: Cancel,
+) -> T
+where
+    Cancel: FnOnce() -> CancelFuture,
+    CancelFuture: Future<Output = ()>,
+{
+    let Some(timeout) = timeout else {
+        return execution.await;
+    };
+    let mut execution = std::pin::pin!(execution);
+    tokio::select! {
+        result = &mut execution => result,
+        () = tokio::time::sleep(timeout) => {
+            cancel().await;
+            execution.await
+        }
+    }
+}
+
 pub struct ConnectorExecutor {
     session: Session,
 }
@@ -335,13 +360,20 @@ impl SnowflakeExecutor for ConnectorExecutor {
         let statement = bind_statement(sql, binds)?;
         let mut options = QueryOptions::new();
         if let Some(timeout) = timeout {
-            options = options.with_query_response_timeout(timeout);
+            options = options.with_query_response_timeout(timeout + CANCEL_GRACE_PERIOD);
         }
-        let cursor = self
+        let handle = self
             .session
-            .query_with_options(statement, options)
-            .await
+            .query_handle_with_options(statement, options)
             .map_err(|e| from_connector_error(&e))?;
+        let canceller = handle.canceller();
+        let cursor = run_with_query_timeout(handle.execute(), timeout, || async move {
+            if let Err(error) = canceller.cancel().await {
+                tracing::warn!("Snowflake query cancel failed: {error}");
+            }
+        })
+        .await
+        .map_err(|e| from_connector_error(&e))?;
         let columns = cursor
             .schema()
             .columns()
