@@ -469,3 +469,64 @@ fn scalar_subquery_binds_each_literal_once() {
     assert_eq!(&SubstraitValue::Boolean(true), accumulator[0].value());
     assert_eq!("bool_col", accumulator[0].column_name());
 }
+
+fn extended_plan(query: &str) -> String {
+    let mut lines = include_str!("fixtures/calcite-extended.tsv").lines();
+    while let Some(line) = lines.next() {
+        if line == format!("QUERY\tstd\t{query}") {
+            return lines
+                .next()
+                .and_then(|l| l.strip_prefix("PLAN\t"))
+                .expect("plan row")
+                .to_string();
+        }
+    }
+    panic!("no fixture plan for {query}");
+}
+
+fn parameterize(plan: &str) -> (String, Vec<SubstraitTypeAndValue>) {
+    let dialect = SqlDialect::ansi();
+    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
+    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
+    let mut accumulator = Vec::new();
+    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
+        .visit(&node)
+        .unwrap();
+    (rewritten.to_sql_string(&dialect), accumulator)
+}
+
+#[test]
+fn test_scalar_subquery_where_visited_once() {
+    let (sql, accumulator) = parameterize(&extended_plan(
+        "SELECT * FROM test_table WHERE int_col = (SELECT MIN(int_col) FROM test_table WHERE bool_col AND bigint_col = 3)",
+    ));
+    assert!(
+        sql.ends_with("WHERE `bool_col` = ? AND `bigint_col` = ?)))"),
+        "{sql}"
+    );
+    assert_eq!(2, accumulator.len());
+    assert_eq!(SqlTypeName::Boolean, accumulator[0].get_type());
+    assert_eq!(&SubstraitValue::Boolean(true), accumulator[0].value());
+    assert_eq!("bool_col", accumulator[0].column_name());
+    assert_eq!(SqlTypeName::Bigint, accumulator[1].get_type());
+    assert_eq!("3", accumulator[1].value().to_string());
+    assert_eq!("bigint_col", accumulator[1].column_name());
+}
+
+#[test]
+fn scalar_subquery_not_bool_with_literal_binds_once() {
+    let (sql, accumulator) = parameterize(&extended_plan(
+        "SELECT * FROM test_table WHERE int_col = (SELECT MIN(int_col) FROM test_table WHERE NOT bool_col AND bigint_col = 3)",
+    ));
+    assert!(
+        sql.ends_with("WHERE `bigint_col` = ? AND `bool_col` = ?)))"),
+        "{sql}"
+    );
+    assert_eq!(2, accumulator.len());
+    assert_eq!(SqlTypeName::Bigint, accumulator[0].get_type());
+    assert_eq!("3", accumulator[0].value().to_string());
+    assert_eq!("bigint_col", accumulator[0].column_name());
+    assert_eq!(SqlTypeName::Boolean, accumulator[1].get_type());
+    assert_eq!(&SubstraitValue::Boolean(false), accumulator[1].value());
+    assert_eq!("bool_col", accumulator[1].column_name());
+}

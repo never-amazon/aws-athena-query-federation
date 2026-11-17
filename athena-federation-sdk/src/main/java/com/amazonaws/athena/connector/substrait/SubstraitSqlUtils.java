@@ -32,14 +32,20 @@ import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlCharStringLiteral;
 import org.apache.calcite.sql.SqlDialect;
+import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
+import org.apache.calcite.sql.util.SqlShuttle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +86,7 @@ public final class SubstraitSqlUtils
     {
         final RelNode node = getRelNodeFromSubstraitPlan(protoPlan, sqlDialect);
         final RelToSqlConverter converter = new RelToSqlConverter(sqlDialect);
-        return converter.visitRoot(node).asStatement();
+        return converter.visitRoot(node).asStatement().accept(new Utf8LiteralShuttle());
     }
 
     public static RelDataType getTableSchemaFromSubstraitPlan(final String planString, final SqlDialect sqlDialect)
@@ -130,7 +136,7 @@ public final class SubstraitSqlUtils
 
             final SubstraitToCalcite substraitToCalcite = new SubstraitToCalcite(
                     SimpleExtension.loadDefaults(),
-                    new SqlTypeFactoryImpl(sqlDialect.getTypeSystem())
+                    new Utf8TypeFactory(sqlDialect.getTypeSystem())
             );
 
             return substraitToCalcite.convert(substraitPlan.getRoots().get(0).getInput());
@@ -225,6 +231,33 @@ public final class SubstraitSqlUtils
             if (intermediate != null && renameMapping.containsKey(intermediate)) {
                 entry.setValue(renameMapping.get(intermediate));
             }
+        }
+    }
+
+    private static final class Utf8TypeFactory extends SqlTypeFactoryImpl
+    {
+        Utf8TypeFactory(final RelDataTypeSystem typeSystem)
+        {
+            super(typeSystem);
+        }
+
+        @Override
+        public Charset getDefaultCharset()
+        {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    private static final class Utf8LiteralShuttle extends SqlShuttle
+    {
+        @Override
+        public SqlNode visit(final SqlLiteral literal)
+        {
+            if (literal instanceof SqlCharStringLiteral
+                    && StandardCharsets.UTF_8.name().equals(((SqlCharStringLiteral) literal).getNlsString().getCharsetName())) {
+                return SqlLiteral.createCharString(literal.toValue(), literal.getParserPosition());
+            }
+            return literal;
         }
     }
 }

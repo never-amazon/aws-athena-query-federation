@@ -19,11 +19,14 @@
  */
 package com.amazonaws.athena.connector.substrait;
 
+import com.amazonaws.athena.connector.util.EncodedSubstraitPlanStringGenerator;
+import io.substrait.proto.Plan;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.sql.SqlBinaryOperator;
 import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
@@ -44,6 +47,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -604,5 +608,28 @@ public class SubstraitAccumulatorVisitorTest
         assertEquals(SqlTypeName.VARCHAR, accumulator.get(0).getType());
         assertEquals("a", accumulator.get(0).getValue());
         assertEquals("cc_call_center_id", accumulator.get(0).getColumnName());
+    }
+
+    @Test
+    public void testScalarSubqueryWhereVisitedOnce() throws Exception
+    {
+        Plan plan = EncodedSubstraitPlanStringGenerator.convertSqlToSubstraitPlan(
+                "SELECT * FROM test_table WHERE int_col = (SELECT MIN(int_col) FROM test_table WHERE bool_col AND bigint_col = 3)");
+        String encodedPlan = Base64.getEncoder().encodeToString(plan.toByteArray());
+        SqlDialect dialect = EncodedSubstraitPlanStringGenerator.DIALECT;
+        SqlNode node = SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(encodedPlan, dialect);
+        RelDataType planSchema = SubstraitSqlUtils.getTableSchemaFromSubstraitPlan(encodedPlan, dialect);
+
+        SqlNode result = new SubstraitAccumulatorVisitor(accumulator, planSchema).visit((SqlSelect) node);
+
+        String sql = result.toSqlString(dialect).getSql();
+        assertTrue(sql.endsWith("WHERE `bool_col` = ? AND `bigint_col` = ?)))"), sql);
+        assertEquals(2, accumulator.size());
+        assertEquals(SqlTypeName.BOOLEAN, accumulator.get(0).getType());
+        assertEquals(true, accumulator.get(0).getValue());
+        assertEquals("bool_col", accumulator.get(0).getColumnName());
+        assertEquals(SqlTypeName.BIGINT, accumulator.get(1).getType());
+        assertEquals("3", accumulator.get(1).getValue().toString());
+        assertEquals("bigint_col", accumulator.get(1).getColumnName());
     }
 }
