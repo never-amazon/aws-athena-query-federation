@@ -491,6 +491,64 @@ async fn get_partitions_with_s3_export() {
 
 #[tokio::test]
 async fn do_get_splits() {
+    let f = fixture();
+    let mut builder = SchemaBuilder::new_builder();
+    builder
+        .add_int_field("day")
+        .add_int_field("month")
+        .add_int_field("year")
+        .add_string_field("preparedStmt")
+        .add_string_field("queryId")
+        .add_string_field(PARTITION);
+    let num_partitions = 10;
+    let mut partitions = BlockAllocatorImpl::new().create_block_from_schema(&builder.build());
+    for i in 0..num_partitions {
+        let n = i32::try_from(i).unwrap();
+        partitions.set_value("day", i, 2016 + n).unwrap();
+        partitions.set_value("month", i, (n % 12) + 1).unwrap();
+        partitions.set_value("year", i, (n % 28) + 1).unwrap();
+        partitions
+            .set_value("preparedStmt", i, "SELECT * FROM table")
+            .unwrap();
+        partitions.set_value("queryId", i, i.to_string()).unwrap();
+        partitions
+            .set_value(PARTITION, i, format!("partition_{i}"))
+            .unwrap();
+    }
+    partitions.set_row_count(num_partitions);
+    let request = splits_request(
+        identity(),
+        partitions,
+        vec!["preparedStmt".to_string(), "queryId".to_string()],
+        constraints(),
+    );
+    let response = f
+        .handler
+        .do_get_splits(&f.allocator, &request)
+        .await
+        .unwrap();
+    assert_eq!(num_partitions, response.splits().len());
+    for split in response.splits() {
+        assert!(split.spill_location().is_some());
+    }
+    let mut partition_values: Vec<&str> = response
+        .splits()
+        .iter()
+        .filter_map(|split| split.get_property(PARTITION))
+        .collect();
+    partition_values.sort_unstable();
+    let mut expected: Vec<String> = (0..num_partitions)
+        .map(|i| format!("partition_{i}"))
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(expected, partition_values);
+    assert!(response.continuation_token().is_none());
+    assert!(f.connection.executed().is_empty());
+    assert!(f.lister.calls().is_empty());
+}
+
+#[tokio::test]
+async fn do_get_splits_with_s3_export() {
     let f = fixture_with(
         FakeS3Lister::with_keys(&[
             "0/part_0.csv",
