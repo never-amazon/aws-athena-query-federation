@@ -28,7 +28,7 @@ impl fmt::Debug for PreparedStatementBuilder<'_> {
 fn not_empty(parameters: Option<&[String]>) -> Result<&[String]> {
     match parameters {
         None => Err(FederationError::null_pointer(PARAMETERS_MESSAGE)),
-        Some(p) if p.is_empty() => Err(FederationError::IllegalArgument(
+        Some([]) => Err(FederationError::IllegalArgument(
             PARAMETERS_MESSAGE.to_string(),
         )),
         Some(p) => Ok(p),

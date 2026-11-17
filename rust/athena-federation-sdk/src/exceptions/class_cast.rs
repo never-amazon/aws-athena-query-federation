@@ -14,9 +14,7 @@ fn java_base_class(name: &str) -> bool {
     if let Some(element) = name.strip_prefix('[') {
         let element = element.trim_start_matches('[');
         return match element.strip_prefix('L') {
-            Some(class) => class
-                .strip_suffix(';')
-                .is_some_and(|class| java_base_class(class)),
+            Some(class) => class.strip_suffix(';').is_some_and(java_base_class),
             None => matches!(element, "Z" | "B" | "C" | "S" | "I" | "J" | "F" | "D"),
         };
     }

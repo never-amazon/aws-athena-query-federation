@@ -752,10 +752,12 @@ impl SubstraitToCalcite {
                 .expr
                 .as_ref()
                 .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
-            let index = ex
-                .convert(e, row_type)?
-                .input_ref_index()
-                .ok_or_else(|| SubstraitError::class_cast("org.apache.calcite.rex.RexCall", "org.apache.calcite.rex.RexSlot"))?;
+            let index = ex.convert(e, row_type)?.input_ref_index().ok_or_else(|| {
+                SubstraitError::class_cast(
+                    "org.apache.calcite.rex.RexCall",
+                    "org.apache.calcite.rex.RexSlot",
+                )
+            })?;
             let (direction, null_direction) = match sort_direction(s)? {
                 SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
                 SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),

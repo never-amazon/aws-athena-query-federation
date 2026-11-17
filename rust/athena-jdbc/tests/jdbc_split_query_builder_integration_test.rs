@@ -174,16 +174,20 @@ fn java_plan(sql: &str) -> String {
     probe_lines()
         .into_iter()
         .find(|f| f[0] == "plan" && f[1] == sql)
-        .map(|f| f[2].clone())
-        .unwrap_or_else(|| panic!("the Java probe has no plan for {sql}"))
+        .map_or_else(
+            || panic!("the Java probe has no plan for {sql}"),
+            |f| f[2].clone(),
+        )
 }
 
 fn java_generate_error(sql: &str) -> String {
     probe_lines()
         .into_iter()
         .find(|f| f[0] == "generate_error" && f[1] == sql)
-        .map(|f| f[2].clone())
-        .unwrap_or_else(|| panic!("the Java probe has no plan generation error for {sql}"))
+        .map_or_else(
+            || panic!("the Java probe has no plan generation error for {sql}"),
+            |f| f[2].clone(),
+        )
 }
 
 fn java_run(header: &[&str]) -> Vec<Vec<String>> {
