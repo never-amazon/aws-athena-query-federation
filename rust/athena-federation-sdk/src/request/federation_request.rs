@@ -2,8 +2,8 @@ use std::fmt;
 
 use super::{FederatedIdentity, PingRequest};
 use crate::metadata::{
-    GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest, ListSchemasRequest,
-    ListTablesRequest, MetadataRequest,
+    GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
+    ListSchemasRequest, ListTablesRequest, MetadataRequest,
 };
 use crate::records::{ReadRecordsRequest, RecordRequest};
 use crate::udf::UserDefinedFunctionRequest;

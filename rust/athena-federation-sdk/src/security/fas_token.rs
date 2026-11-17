@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FasToken {
     #[serde(rename = "accessToken")]
-    access_token: String,
+    access: String,
     #[serde(rename = "secretToken")]
-    secret_token: String,
+    secret: String,
     #[serde(rename = "securityToken")]
-    security_token: String,
+    security: String,
 }
 
 impl FasToken {
@@ -17,21 +17,21 @@ impl FasToken {
         security_token: impl Into<String>,
     ) -> FasToken {
         FasToken {
-            access_token: access_token.into(),
-            secret_token: secret_token.into(),
-            security_token: security_token.into(),
+            access: access_token.into(),
+            secret: secret_token.into(),
+            security: security_token.into(),
         }
     }
 
     pub fn get_access_token(&self) -> &str {
-        &self.access_token
+        &self.access
     }
 
     pub fn get_secret_token(&self) -> &str {
-        &self.secret_token
+        &self.secret
     }
 
     pub fn get_security_token(&self) -> &str {
-        &self.security_token
+        &self.security
     }
 }

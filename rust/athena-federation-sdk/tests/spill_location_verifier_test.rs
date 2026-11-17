@@ -2,8 +2,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use athena_federation_sdk::domain::spill::{BucketState, HeadBucketClient, SpillLocationVerifier};
-use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode};
 use athena_federation_sdk::security::{AwsService, AwsServiceError};
+use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
 
 struct MockS3 {
     buckets: Vec<String>,
@@ -17,15 +17,25 @@ impl HeadBucketClient for MockS3 {
             return Ok(());
         }
         if bucket == "forbidden" {
-            Err(AwsServiceError::service(AwsService::S3, None, Some("Forbidden".into())).with_status_code(403))
+            Err(
+                AwsServiceError::service(AwsService::S3, None, Some("Forbidden".into()))
+                    .with_status_code(403),
+            )
         } else {
-            Err(AwsServiceError::service(AwsService::S3, None, Some("Not Found".into())).with_status_code(404))
+            Err(
+                AwsServiceError::service(AwsService::S3, None, Some("Not Found".into()))
+                    .with_status_code(404),
+            )
         }
     }
 }
 
 fn setup() -> (SpillLocationVerifier<MockS3>, Vec<String>, Arc<AtomicUsize>) {
-    let bucket_names = vec!["bucket1".to_string(), "bucket2".to_string(), "bucket3".to_string()];
+    let bucket_names = vec![
+        "bucket1".to_string(),
+        "bucket2".to_string(),
+        "bucket3".to_string(),
+    ];
     let calls = Arc::new(AtomicUsize::new(0));
     let mock = MockS3 {
         buckets: bucket_names.clone(),
@@ -36,8 +46,7 @@ fn setup() -> (SpillLocationVerifier<MockS3>, Vec<String>, Arc<AtomicUsize>) {
 
 fn invalid_message(bucket: &str) -> String {
     format!(
-        "spill_bucket: \"{}\" not found under your account. Please make sure you have access to the bucket and spill_bucket input has no trailing '/'",
-        bucket
+        "spill_bucket: \"{bucket}\" not found under your account. Please make sure you have access to the bucket and spill_bucket input has no trailing '/'"
     )
 }
 
@@ -46,12 +55,14 @@ async fn check_bucket_auth_z() {
     let (mut spy_verifier, bucket_names, update_bucket_state_calls) = setup();
     let index = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0) as usize)
+        .map_or(0, |d| d.subsec_nanos()) as usize)
         % bucket_names.len();
 
     assert!(
-        spy_verifier.check_bucket_auth_z(Some(&bucket_names[index])).await.is_ok(),
+        spy_verifier
+            .check_bucket_auth_z(Some(&bucket_names[index]))
+            .await
+            .is_ok(),
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
@@ -59,7 +70,10 @@ async fn check_bucket_auth_z() {
     assert!(spy_verifier.pass_or_fail().is_ok());
 
     assert!(
-        spy_verifier.check_bucket_auth_z(Some(&bucket_names[index])).await.is_ok(),
+        spy_verifier
+            .check_bucket_auth_z(Some(&bucket_names[index]))
+            .await
+            .is_ok(),
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
@@ -70,7 +84,10 @@ async fn check_bucket_auth_z() {
         "checkBucketAuthZ failed"
     );
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
-    assert_eq!(Some(bucket_names[index].as_str()), spy_verifier.get_bucket());
+    assert_eq!(
+        Some(bucket_names[index].as_str()),
+        spy_verifier.get_bucket()
+    );
     assert_eq!(BucketState::Valid, spy_verifier.get_state());
 }
 
@@ -88,7 +105,10 @@ async fn check_bucket_auth_z_fail() {
     assert_eq!(BucketState::Invalid, spy_verifier.get_state());
     assert_eq!(
         invalid_message(bucket_not_own),
-        spy_verifier.pass_or_fail().expect_err("passOrFail should fail").to_string()
+        spy_verifier
+            .pass_or_fail()
+            .expect_err("passOrFail should fail")
+            .to_string()
     );
 
     let err = spy_verifier
@@ -112,22 +132,37 @@ impl HeadBucketClient for FailingS3 {
 #[tokio::test]
 async fn client_error_passes_through_unchanged() {
     let error = AwsServiceError::client("Unable to execute HTTP request: Connect timed out");
-    let mut verifier = SpillLocationVerifier::new(FailingS3 { error: error.clone() });
+    let mut verifier = SpillLocationVerifier::new(FailingS3 {
+        error: error.clone(),
+    });
     let result = verifier.check_bucket_auth_z(Some("bucket1")).await;
     match result {
         Err(FederationError::AwsService(e)) => assert_eq!(error, e),
-        other => panic!("expected the client error unchanged, got {:?}", other),
+        other => panic!("expected the client error unchanged, got {other:?}"),
     }
     assert_eq!(BucketState::Unchecked, verifier.get_state());
 }
 
 #[tokio::test]
 async fn s3_error_other_than_403_or_404_raises_access_denied() {
-    let error = AwsServiceError::service(AwsService::S3, Some("InternalError".into()), Some("We encountered an internal error.".into()))
-        .with_error_details()
-        .with_status_code(500);
+    let error = AwsServiceError::service(
+        AwsService::S3,
+        Some("InternalError".into()),
+        Some("We encountered an internal error.".into()),
+    )
+    .with_error_details()
+    .with_status_code(500);
     let mut verifier = SpillLocationVerifier::new(FailingS3 { error });
-    let e = verifier.check_bucket_auth_z(Some("bucket1")).await.unwrap_err();
-    assert_eq!(Some(FederationSourceErrorCode::AccessDeniedException), e.error_code());
-    assert_eq!("Error while checking bucket ownership for bucket1", e.to_string());
+    let e = verifier
+        .check_bucket_auth_z(Some("bucket1"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        Some(FederationSourceErrorCode::AccessDeniedException),
+        e.error_code()
+    );
+    assert_eq!(
+        "Error while checking bucket ownership for bucket1",
+        e.to_string()
+    );
 }

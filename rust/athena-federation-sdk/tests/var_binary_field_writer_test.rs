@@ -4,7 +4,6 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::VarBinaryExtractor;
@@ -25,14 +24,20 @@ struct Fixture {
     projector: Arc<MockConstraintProjector>,
 }
 
-fn configure_extractor(value: Vec<u8>, is_set: i32, calls: &CallCounter) -> Arc<dyn VarBinaryExtractor> {
+fn configure_extractor(
+    value: Vec<u8>,
+    is_set: i32,
+    calls: &CallCounter,
+) -> Arc<dyn VarBinaryExtractor> {
     let counter = calls.0.clone();
-    Arc::new(move |_ctx: &dyn Any, holder: &mut NullableVarBinaryHolder| {
-        counter.fetch_add(1, Ordering::SeqCst);
-        holder.is_set = is_set;
-        holder.value = value.clone();
-        Ok(())
-    })
+    Arc::new(
+        move |_ctx: &dyn Any, holder: &mut NullableVarBinaryHolder| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            holder.is_set = is_set;
+            holder.value.clone_from(&value);
+            Ok(())
+        },
+    )
 }
 
 fn set_up() -> Fixture {
@@ -43,9 +48,21 @@ fn set_up() -> Fixture {
     }
 }
 
-fn writer(fx: &Fixture, value: Vec<u8>, is_set: i32, with_constraint: bool) -> VarBinaryFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    VarBinaryFieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+fn writer(
+    fx: &Fixture,
+    value: Vec<u8>,
+    is_set: i32,
+    with_constraint: bool,
+) -> VarBinaryFieldWriter {
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    VarBinaryFieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
@@ -56,23 +73,33 @@ fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
 #[test]
 fn write_with_valid_var_binary_value_should_write_successfully() {
     let mut fx = set_up();
-    fx.projector.when_apply(Value::Bytes(expected().clone()), true);
+    fx.projector
+        .when_apply(Value::Bytes(expected().clone()), true);
     let mut w = writer(&fx, expected(), 1, true);
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, true, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Bytes(expected().clone())), 1);
+    assert_eq!(
+        fx.projector
+            .times_called_with(&Value::Bytes(expected().clone())),
+        1
+    );
 }
 
 #[test]
 fn write_with_constraint_failure_should_return_false() {
     let mut fx = set_up();
-    fx.projector.when_apply(Value::Bytes(expected().clone()), false);
+    fx.projector
+        .when_apply(Value::Bytes(expected().clone()), false);
     let mut w = writer(&fx, expected(), 1, true);
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, false, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Bytes(expected().clone())), 1);
+    assert_eq!(
+        fx.projector
+            .times_called_with(&Value::Bytes(expected().clone())),
+        1
+    );
 }
 
 #[test]
@@ -107,11 +134,16 @@ fn write_with_non_null_value_marked_null_should_mark_vector_as_null() {
 #[test]
 fn write_with_constraint_failure_despite_is_set_should_return_false() {
     let mut fx = set_up();
-    fx.projector.when_apply(Value::Bytes(expected().clone()), false);
+    fx.projector
+        .when_apply(Value::Bytes(expected().clone()), false);
     let mut w = writer(&fx, expected(), 1, true);
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     assert!(!result);
     assert!(!fx.vector.is_null(0));
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Bytes(expected().clone())), 1);
+    assert_eq!(
+        fx.projector
+            .times_called_with(&Value::Bytes(expected().clone())),
+        1
+    );
 }

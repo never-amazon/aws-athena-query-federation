@@ -14,7 +14,12 @@ impl<'a> StructArrowValueProjector<'a> {
     pub fn new(struct_reader: FieldReader<'a>) -> Result<StructArrowValueProjector<'a>> {
         let projections = get_children(struct_reader.get_field())
             .iter()
-            .map(|child| Ok((child.name().clone(), create_value_projection(minor_type_of(child.data_type()))?)))
+            .map(|child| {
+                Ok((
+                    child.name().clone(),
+                    create_value_projection(minor_type_of(child.data_type()))?,
+                ))
+            })
             .collect::<Result<Vec<_>>>()?;
         Ok(StructArrowValueProjector {
             struct_reader,
@@ -25,10 +30,9 @@ impl<'a> StructArrowValueProjector<'a> {
     pub fn do_project(&self) -> Result<Value> {
         let mut name_to_values = Vec::with_capacity(self.projections.len());
         for (name, projection) in &self.projections {
-            let sub_reader = self
-                .struct_reader
-                .reader_named(name)
-                .ok_or_else(|| FederationError::illegal_state(format!("struct reader has no child {}", name)))?;
+            let sub_reader = self.struct_reader.reader_named(name).ok_or_else(|| {
+                FederationError::illegal_state(format!("struct reader has no child {name}"))
+            })?;
             name_to_values.push((Value::String(name.clone()), projection(&sub_reader)?));
         }
         Ok(Value::Map(name_to_values))

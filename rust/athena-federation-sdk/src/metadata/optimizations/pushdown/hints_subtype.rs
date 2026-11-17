@@ -5,9 +5,7 @@ pub enum HintsSubtype {
 
 impl HintsSubtype {
     pub fn values() -> &'static [HintsSubtype] {
-        &[
-            HintsSubtype::NonDefaultCollate,
-        ]
+        &[HintsSubtype::NonDefaultCollate]
     }
 
     pub fn name(&self) -> &'static str {

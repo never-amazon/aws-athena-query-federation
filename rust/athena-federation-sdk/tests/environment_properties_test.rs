@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use athena_federation_sdk::connection::{EnvironmentConstants, EnvironmentProperties, GlueConnectionClient};
+use athena_federation_sdk::connection::{
+    EnvironmentConstants, EnvironmentProperties, GlueConnectionClient,
+};
 use athena_federation_sdk::security::AwsServiceError;
 use aws_sdk_glue::types::{AuthenticationConfiguration, Connection, ConnectionPropertyKey};
 
@@ -28,10 +30,15 @@ impl GlueConnectionClient for FakeGlue {
 #[tokio::test]
 async fn test_create_environment_with_overridden_env() {
     let fake_env = HashMap::from([
-        (EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(), GLUE_CONN_NAME.to_string()),
+        (
+            EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
+            GLUE_CONN_NAME.to_string(),
+        ),
         ("OVERRIDE_VAR".to_string(), LAMBDA_VALUE.to_string()),
     ]);
-    let auth_config = AuthenticationConfiguration::builder().secret_arn(SECRET_ARN).build();
+    let auth_config = AuthenticationConfiguration::builder()
+        .secret_arn(SECRET_ARN)
+        .build();
     let glue_connection = Connection::builder()
         .name(GLUE_CONN_NAME)
         .connection_properties(ConnectionPropertyKey::Database, TEST_VALUE)
@@ -46,15 +53,39 @@ async fn test_create_environment_with_overridden_env() {
 
     let result = spy_props.create_environment().await.unwrap();
 
-    assert_eq!(Some(GLUE_CONN_NAME), result.get(EnvironmentConstants::DEFAULT_GLUE_CONNECTION).map(String::as_str));
-    assert_eq!(Some(TEST_VALUE), result.get(EnvironmentConstants::DATABASE).map(String::as_str));
-    assert_eq!(Some(EXPECTED_SECRET_NAME), result.get(EnvironmentConstants::SECRET_NAME).map(String::as_str));
-    assert_eq!(Some(KMS_KEY_ID), result.get(EnvironmentConstants::KMS_KEY_ID).map(String::as_str));
-    assert_eq!(Some(LAMBDA_VALUE), result.get("OVERRIDE_VAR").map(String::as_str));
+    assert_eq!(
+        Some(GLUE_CONN_NAME),
+        result
+            .get(EnvironmentConstants::DEFAULT_GLUE_CONNECTION)
+            .map(String::as_str)
+    );
+    assert_eq!(
+        Some(TEST_VALUE),
+        result
+            .get(EnvironmentConstants::DATABASE)
+            .map(String::as_str)
+    );
+    assert_eq!(
+        Some(EXPECTED_SECRET_NAME),
+        result
+            .get(EnvironmentConstants::SECRET_NAME)
+            .map(String::as_str)
+    );
+    assert_eq!(
+        Some(KMS_KEY_ID),
+        result
+            .get(EnvironmentConstants::KMS_KEY_ID)
+            .map(String::as_str)
+    );
+    assert_eq!(
+        Some(LAMBDA_VALUE),
+        result.get("OVERRIDE_VAR").map(String::as_str)
+    );
 }
 
 #[tokio::test]
-async fn test_create_environment_with_overridden_env_glue_connection_fails_throws_runtime_exception() {
+async fn test_create_environment_with_overridden_env_glue_connection_fails_throws_runtime_exception(
+) {
     let fake_env = HashMap::from([(
         EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
         GLUE_CONN_NAME.to_string(),

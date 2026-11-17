@@ -1,6 +1,5 @@
 use std::fmt;
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataRequestType {
     ListTables,
@@ -35,7 +34,10 @@ impl MetadataRequestType {
     }
 
     pub fn value_of(name: &str) -> Option<MetadataRequestType> {
-        MetadataRequestType::values().iter().copied().find(|v| v.name() == name)
+        MetadataRequestType::values()
+            .iter()
+            .copied()
+            .find(|v| v.name() == name)
     }
 }
 

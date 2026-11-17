@@ -1,6 +1,8 @@
 use crate::exceptions::Result;
 use crate::records::ReadRecordsRequest;
-use crate::serde::base::{assert_field_name, get_next_string_field, parse_java_long, require_non_null};
+use crate::serde::base::{
+    assert_field_name, get_next_string_field, parse_java_long, require_non_null,
+};
 use crate::serde::federated_identity_serde;
 use crate::serde::json::{JsonGenerator, JsonParser};
 use crate::serde::SerDeContext;
@@ -15,7 +17,11 @@ const CONSTRAINTS_FIELD: &str = "constraints";
 const MAX_BLOCK_SIZE_FIELD: &str = "maxBlockSize";
 const MAX_INLINE_BLOCK_SIZE_FIELD: &str = "maxInlineBlockSize";
 
-pub fn do_typed_serialize(request: &ReadRecordsRequest, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_typed_serialize(
+    request: &ReadRecordsRequest,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
     federated_identity_serde::serialize(request.get_identity(), jgen)?;
     jgen.write_string_field(QUERY_ID_FIELD, Some(request.get_query_id()))?;
@@ -28,11 +34,20 @@ pub fn do_typed_serialize(request: &ReadRecordsRequest, jgen: &mut JsonGenerator
     super::split_serde::serialize(Some(request.get_split()), jgen)?;
     jgen.write_field_name(CONSTRAINTS_FIELD)?;
     super::constraints_serde::serialize(Some(request.get_constraints()), jgen, version)?;
-    jgen.write_string_field(MAX_BLOCK_SIZE_FIELD, Some(&request.get_max_block_size().to_string()))?;
-    jgen.write_string_field(MAX_INLINE_BLOCK_SIZE_FIELD, Some(&request.get_max_inline_block_size().to_string()))
+    jgen.write_string_field(
+        MAX_BLOCK_SIZE_FIELD,
+        Some(&request.get_max_block_size().to_string()),
+    )?;
+    jgen.write_string_field(
+        MAX_INLINE_BLOCK_SIZE_FIELD,
+        Some(&request.get_max_inline_block_size().to_string()),
+    )
 }
 
-pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<ReadRecordsRequest> {
+pub fn do_typed_deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<ReadRecordsRequest> {
     assert_field_name(jparser, Some(IDENTITY_FIELD))?;
     let identity = federated_identity_serde::deserialize(jparser)?;
     let query_id = get_next_string_field(jparser, QUERY_ID_FIELD)?;
@@ -45,8 +60,10 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>
     let split = super::split_serde::deserialize(jparser)?;
     assert_field_name(jparser, Some(CONSTRAINTS_FIELD))?;
     let constraints = super::constraints_serde::deserialize(jparser, ctx)?;
-    let max_block_size = parse_java_long(get_next_string_field(jparser, MAX_BLOCK_SIZE_FIELD)?.as_deref())?;
-    let max_inline_block_size = parse_java_long(get_next_string_field(jparser, MAX_INLINE_BLOCK_SIZE_FIELD)?.as_deref())?;
+    let max_block_size =
+        parse_java_long(get_next_string_field(jparser, MAX_BLOCK_SIZE_FIELD)?.as_deref())?;
+    let max_inline_block_size =
+        parse_java_long(get_next_string_field(jparser, MAX_INLINE_BLOCK_SIZE_FIELD)?.as_deref())?;
     Ok(ReadRecordsRequest::new(
         identity,
         require_non_null(catalog_name, "catalogName is null")?,

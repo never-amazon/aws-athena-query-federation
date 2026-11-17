@@ -1,5 +1,3 @@
-#![allow(clippy::approx_constant)]
-
 use arrow_schema::{DataType, TimeUnit};
 use athena_federation_substrait::proto::expression::literal::{Decimal, LiteralType, VarChar};
 use athena_federation_substrait::proto::expression::{Literal, RexType};
@@ -23,8 +21,8 @@ fn extract(literal_type: LiteralType) -> (LiteralValue, DataType) {
     SubstraitLiteralConverter::extract_literal_value(&literal_expr(Some(literal_type))).unwrap()
 }
 
-fn created_literal(value: LiteralValue, arrow_type: DataType) -> LiteralType {
-    let expr = SubstraitLiteralConverter::create_literal_expression(&value, &arrow_type).unwrap();
+fn created_literal(value: &LiteralValue, arrow_type: &DataType) -> LiteralType {
+    let expr = SubstraitLiteralConverter::create_literal_expression(value, arrow_type).unwrap();
     match expr.rex_type {
         Some(RexType::Literal(l)) => {
             assert!(l.nullable);
@@ -55,6 +53,7 @@ fn test_extract_boolean_literal() {
     assert_eq!(DataType::Boolean, arrow_type);
 }
 
+#[allow(clippy::approx_constant, reason = "test values match the Java test")]
 #[test]
 fn test_extract_floating_point_literals() {
     let (value, arrow_type) = extract(LiteralType::Fp64(3.14));
@@ -79,7 +78,7 @@ fn test_extract_fp32_literal() {
 fn test_create_string_literal() {
     assert_eq!(
         LiteralType::String("hello".to_string()),
-        created_literal(LiteralValue::String("hello".to_string()), DataType::Utf8)
+        created_literal(&LiteralValue::String("hello".to_string()), &DataType::Utf8)
     );
 }
 
@@ -87,7 +86,7 @@ fn test_create_string_literal() {
 fn test_create_integer_literal() {
     assert_eq!(
         LiteralType::I32(123),
-        created_literal(LiteralValue::Int(123), DataType::Int32)
+        created_literal(&LiteralValue::Int(123), &DataType::Int32)
     );
 }
 
@@ -95,14 +94,14 @@ fn test_create_integer_literal() {
 fn test_create_boolean_literal() {
     assert_eq!(
         LiteralType::Boolean(false),
-        created_literal(LiteralValue::Boolean(false), DataType::Boolean)
+        created_literal(&LiteralValue::Boolean(false), &DataType::Boolean)
     );
 }
 
 #[test]
 fn test_create_decimal_literal() {
     let value = BigDecimal::from_str("123.45").unwrap();
-    let literal = created_literal(LiteralValue::Decimal(value), DataType::Decimal128(10, 2));
+    let literal = created_literal(&LiteralValue::Decimal(value), &DataType::Decimal128(10, 2));
     let mut bytes = vec![0u8; 16];
     bytes[0] = 0x39;
     bytes[1] = 0x30;
@@ -138,10 +137,13 @@ fn test_extract_date_literal() {
 }
 
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "builds deprecated Substrait proto fields, as the Java test does"
+)]
 fn test_extract_timestamp_literal() {
-    let (value, arrow_type) = extract(LiteralType::Timestamp(1609459200000000));
-    assert_eq!(LiteralValue::Long(1609459200000000), value);
+    let (value, arrow_type) = extract(LiteralType::Timestamp(1_609_459_200_000_000));
+    assert_eq!(LiteralValue::Long(1_609_459_200_000_000), value);
     assert_eq!(DataType::Timestamp(TimeUnit::Microsecond, None), arrow_type);
 }
 
@@ -200,7 +202,7 @@ fn test_extract_decimal_literal() {
 fn test_create_i8_literal() {
     assert_eq!(
         LiteralType::I8(8),
-        created_literal(LiteralValue::Int(8), DataType::Int8)
+        created_literal(&LiteralValue::Int(8), &DataType::Int8)
     );
 }
 
@@ -208,7 +210,7 @@ fn test_create_i8_literal() {
 fn test_create_i16_literal() {
     assert_eq!(
         LiteralType::I16(16),
-        created_literal(LiteralValue::Int(16), DataType::Int16)
+        created_literal(&LiteralValue::Int(16), &DataType::Int16)
     );
 }
 
@@ -216,23 +218,25 @@ fn test_create_i16_literal() {
 fn test_create_i64_literal() {
     assert_eq!(
         LiteralType::I64(64),
-        created_literal(LiteralValue::Long(64), DataType::Int64)
+        created_literal(&LiteralValue::Long(64), &DataType::Int64)
     );
 }
 
+#[allow(clippy::approx_constant, reason = "test values match the Java test")]
 #[test]
 fn test_create_fp32_literal() {
     assert_eq!(
         LiteralType::Fp32(3.14),
-        created_literal(LiteralValue::Float(3.14), DataType::Float32)
+        created_literal(&LiteralValue::Float(3.14), &DataType::Float32)
     );
 }
 
+#[allow(clippy::approx_constant, reason = "test values match the Java test")]
 #[test]
 fn test_create_fp64_literal() {
     assert_eq!(
         LiteralType::Fp64(3.14),
-        created_literal(LiteralValue::Double(3.14), DataType::Float64)
+        created_literal(&LiteralValue::Double(3.14), &DataType::Float64)
     );
 }
 
@@ -240,7 +244,7 @@ fn test_create_fp64_literal() {
 fn test_create_binary_literal() {
     assert_eq!(
         LiteralType::Binary(vec![1, 2, 3]),
-        created_literal(LiteralValue::Bytes(vec![1, 2, 3]), DataType::Binary)
+        created_literal(&LiteralValue::Bytes(vec![1, 2, 3]), &DataType::Binary)
     );
 }
 
@@ -248,24 +252,30 @@ fn test_create_binary_literal() {
 fn test_create_date_literal() {
     assert_eq!(
         LiteralType::Date(18628),
-        created_literal(LiteralValue::Long(18628), DataType::Date32)
+        created_literal(&LiteralValue::Long(18628), &DataType::Date32)
     );
 }
 
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "builds deprecated Substrait proto fields, as the Java test does"
+)]
 fn test_create_timestamp_literal() {
     assert_eq!(
-        LiteralType::Timestamp(1609459200000000),
+        LiteralType::Timestamp(1_609_459_200_000_000),
         created_literal(
-            LiteralValue::Long(1609459200000000),
-            DataType::Timestamp(TimeUnit::Microsecond, None)
+            &LiteralValue::Long(1_609_459_200_000_000),
+            &DataType::Timestamp(TimeUnit::Microsecond, None)
         )
     );
 }
 
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "builds deprecated Substrait proto fields, as the Java test does"
+)]
 fn test_create_timestamp_tz_literal() {
     let zoned = FixedOffset::east_opt(0)
         .unwrap()
@@ -274,8 +284,8 @@ fn test_create_timestamp_tz_literal() {
     assert_eq!(
         LiteralType::TimestampTz(0),
         created_literal(
-            LiteralValue::ZonedDateTime(zoned),
-            DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into()))
+            &LiteralValue::ZonedDateTime(zoned),
+            &DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into()))
         )
     );
 }
@@ -284,7 +294,7 @@ fn test_create_timestamp_tz_literal() {
 fn test_create_integer_default_bit_width() {
     assert_eq!(
         LiteralType::I32(42),
-        created_literal(LiteralValue::Int(42), DataType::UInt32)
+        created_literal(&LiteralValue::Int(42), &DataType::UInt32)
     );
 }
 

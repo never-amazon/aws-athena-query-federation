@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
-use athena_federation_sdk::data::{Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value};
+use athena_federation_sdk::data::{
+    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+};
 use athena_federation_sdk::security::{
     AesGcmBlockCrypto, BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
 };
@@ -28,7 +30,12 @@ async fn setup() -> Setup {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(block.get_field_vector_mut(field).unwrap(), row, &value.into()).unwrap();
+    BlockUtils::set_value(
+        block.get_field_vector_mut(field).unwrap(),
+        row,
+        &value.into(),
+    )
+    .unwrap();
 }
 
 #[tokio::test]
@@ -48,7 +55,10 @@ async fn test() {
     expected.set_row_count(2);
 
     let cypher = s.crypto.encrypt(Some(&s.key), &expected).unwrap();
-    let actual = s.crypto.decrypt_with_schema(Some(&s.key), &cypher, schema).unwrap();
+    let actual = s
+        .crypto
+        .decrypt_with_schema(Some(&s.key), &cypher, schema)
+        .unwrap();
     assert_eq!(expected, actual);
 }
 
@@ -58,7 +68,13 @@ async fn encrypt_raw_bytes_round_trip() {
     let plain = "hello spill".as_bytes();
     let encrypted = s.crypto.encrypt_with_bytes(Some(&s.key), plain).unwrap();
     assert_eq!(plain.len() + 16, encrypted.len());
-    assert_eq!(plain, s.crypto.decrypt(Some(&s.key), &encrypted).unwrap().as_slice());
+    assert_eq!(
+        plain,
+        s.crypto
+            .decrypt(Some(&s.key), &encrypted)
+            .unwrap()
+            .as_slice()
+    );
 }
 
 #[tokio::test]
@@ -71,7 +87,10 @@ async fn decrypt_with_invalid_bytes() {
         .decrypt(Some(&key), &invalid_bytes)
         .expect_err("Expected AthenaConnectorException was not thrown");
     assert!(ex.as_connector_exception().is_some());
-    assert!(ex.to_string().to_lowercase().contains("mac check in gcm failed"));
+    assert!(ex
+        .to_string()
+        .to_lowercase()
+        .contains("mac check in gcm failed"));
 }
 
 #[tokio::test]

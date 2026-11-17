@@ -7,7 +7,6 @@ use crate::exceptions::{FederationError, Result};
 
 pub type ArrowType = DataType;
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MinorType {
     NULL,
@@ -50,7 +49,7 @@ pub enum MinorType {
     LIST,
     LISTVIEW,
     LARGELIST,
-    #[allow(non_camel_case_types)]
+    #[allow(non_camel_case_types, reason = "mirrors the Java MinorType constant")]
     FIXED_SIZE_LIST,
     UNION,
     DENSEUNION,
@@ -64,13 +63,21 @@ pub enum MinorType {
 
 impl fmt::Display for MinorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
 impl MinorType {
     pub fn get_minor_type_for_arrow_type(arrow_type: &ArrowType) -> MinorType {
-        use MinorType::*;
+        use MinorType::{
+            BIGINT, BIT, DATEDAY, DATEMILLI, DECIMAL, DECIMAL256, DENSEUNION, DURATION,
+            EXTENSIONTYPE, FIXEDSIZEBINARY, FIXED_SIZE_LIST, FLOAT2, FLOAT4, FLOAT8, INT,
+            INTERVALDAY, INTERVALMONTHDAYNANO, INTERVALYEAR, LARGELIST, LARGEVARBINARY,
+            LARGEVARCHAR, LIST, LISTVIEW, MAP, NULL, SMALLINT, STRUCT, TIMEMICRO, TIMEMILLI,
+            TIMENANO, TIMESEC, TIMESTAMPMICRO, TIMESTAMPMICROTZ, TIMESTAMPMILLI, TIMESTAMPMILLITZ,
+            TIMESTAMPNANO, TIMESTAMPNANOTZ, TIMESTAMPSEC, TIMESTAMPSECTZ, TINYINT, UINT1, UINT2,
+            UINT4, UINT8, UNION, VARBINARY, VARCHAR, VIEWVARBINARY, VIEWVARCHAR,
+        };
         match arrow_type {
             DataType::Null => NULL,
             DataType::Struct(_) => STRUCT,
@@ -100,7 +107,9 @@ impl MinorType {
             DataType::BinaryView => VIEWVARBINARY,
             DataType::FixedSizeBinary(_) => FIXEDSIZEBINARY,
             DataType::Boolean => BIT,
-            DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) => DECIMAL,
+            DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) => {
+                DECIMAL
+            }
             DataType::Decimal256(_, _) => DECIMAL256,
             DataType::Date32 => DATEDAY,
             DataType::Date64 => DATEMILLI,
@@ -128,7 +137,13 @@ impl MinorType {
     }
 
     pub fn get_type(&self) -> Result<ArrowType> {
-        use MinorType::*;
+        use MinorType::{
+            BIGINT, BIT, DATEDAY, DATEMILLI, FLOAT2, FLOAT4, FLOAT8, INT, INTERVALDAY,
+            INTERVALMONTHDAYNANO, INTERVALYEAR, LARGELIST, LARGEVARBINARY, LARGEVARCHAR, LIST,
+            NULL, SMALLINT, STRUCT, TIMEMICRO, TIMEMILLI, TIMENANO, TIMESEC, TIMESTAMPMICRO,
+            TIMESTAMPMILLI, TIMESTAMPNANO, TIMESTAMPSEC, TINYINT, UINT1, UINT2, UINT4, UINT8,
+            VARBINARY, VARCHAR, VIEWVARBINARY, VIEWVARCHAR,
+        };
         Ok(match self {
             NULL => DataType::Null,
             STRUCT => DataType::Struct(Fields::empty()),
@@ -167,8 +182,7 @@ impl MinorType {
             LARGELIST => DataType::LargeList(Arc::new(Field::new("$data$", DataType::Null, true))),
             other => {
                 return Err(FederationError::UnsupportedOperation(format!(
-                    "Cannot get simple type for type {}",
-                    other
+                    "Cannot get simple type for type {other}"
                 )))
             }
         })
@@ -196,17 +210,30 @@ pub fn get_children(field: &Field) -> Vec<FieldRef> {
 pub fn with_children(arrow_type: &ArrowType, children: Vec<FieldRef>) -> ArrowType {
     match arrow_type {
         DataType::Struct(_) => DataType::Struct(Fields::from(children)),
-        DataType::List(old) => DataType::List(children.into_iter().next().unwrap_or_else(|| old.clone())),
-        DataType::LargeList(old) => DataType::LargeList(children.into_iter().next().unwrap_or_else(|| old.clone())),
-        DataType::FixedSizeList(old, n) => {
-            DataType::FixedSizeList(children.into_iter().next().unwrap_or_else(|| old.clone()), *n)
+        DataType::List(old) => {
+            DataType::List(children.into_iter().next().unwrap_or_else(|| old.clone()))
         }
-        DataType::Map(old, sorted) => DataType::Map(children.into_iter().next().unwrap_or_else(|| old.clone()), *sorted),
+        DataType::LargeList(old) => {
+            DataType::LargeList(children.into_iter().next().unwrap_or_else(|| old.clone()))
+        }
+        DataType::FixedSizeList(old, n) => DataType::FixedSizeList(
+            children.into_iter().next().unwrap_or_else(|| old.clone()),
+            *n,
+        ),
+        DataType::Map(old, sorted) => DataType::Map(
+            children.into_iter().next().unwrap_or_else(|| old.clone()),
+            *sorted,
+        ),
         other => other.clone(),
     }
 }
 
-pub fn new_field(name: impl Into<String>, nullable: bool, arrow_type: ArrowType, children: Option<Vec<FieldRef>>) -> Field {
+pub fn new_field(
+    name: impl Into<String>,
+    nullable: bool,
+    arrow_type: ArrowType,
+    children: Option<Vec<FieldRef>>,
+) -> Field {
     let dt = match children {
         Some(c) if !c.is_empty() => with_children(&arrow_type, c),
         _ => arrow_type,
@@ -214,7 +241,11 @@ pub fn new_field(name: impl Into<String>, nullable: bool, arrow_type: ArrowType,
     Field::new(name, dt, nullable)
 }
 
-pub fn nullable_field(name: impl Into<String>, arrow_type: ArrowType, children: Option<Vec<FieldRef>>) -> Field {
+pub fn nullable_field(
+    name: impl Into<String>,
+    arrow_type: ArrowType,
+    children: Option<Vec<FieldRef>>,
+) -> Field {
     new_field(name, true, arrow_type, children)
 }
 
@@ -237,9 +268,10 @@ pub fn timestamp_tz(unit: TimeUnit, tz: &str) -> ArrowType {
 
 pub fn decimal_precision_scale(arrow_type: &ArrowType) -> Option<(u8, i8)> {
     match arrow_type {
-        DataType::Decimal32(p, s) | DataType::Decimal64(p, s) | DataType::Decimal128(p, s) | DataType::Decimal256(p, s) => {
-            Some((*p, *s))
-        }
+        DataType::Decimal32(p, s)
+        | DataType::Decimal64(p, s)
+        | DataType::Decimal128(p, s)
+        | DataType::Decimal256(p, s) => Some((*p, *s)),
         _ => None,
     }
 }
@@ -251,7 +283,7 @@ pub fn timestamp_timezone(arrow_type: &ArrowType) -> Option<&str> {
     }
 }
 
-fn time_unit_name(unit: &TimeUnit) -> &'static str {
+fn time_unit_name(unit: TimeUnit) -> &'static str {
     match unit {
         TimeUnit::Second => "SECOND",
         TimeUnit::Millisecond => "MILLISECOND",
@@ -279,27 +311,28 @@ pub fn arrow_type_to_string(arrow_type: &ArrowType) -> String {
         DataType::LargeUtf8 => "LargeUtf8".into(),
         DataType::Binary => "Binary".into(),
         DataType::LargeBinary => "LargeBinary".into(),
-        DataType::FixedSizeBinary(n) => format!("FixedSizeBinary({})", n),
-        DataType::Decimal128(p, s) => format!("Decimal({}, {}, 128)", p, s),
-        DataType::Decimal256(p, s) => format!("Decimal({}, {}, 256)", p, s),
+        DataType::FixedSizeBinary(n) => format!("FixedSizeBinary({n})"),
+        DataType::Decimal128(p, s) => format!("Decimal({p}, {s}, 128)"),
+        DataType::Decimal256(p, s) => format!("Decimal({p}, {s}, 256)"),
         DataType::Date32 => "Date(DAY)".into(),
         DataType::Date64 => "Date(MILLISECOND)".into(),
         DataType::Timestamp(unit, tz) => format!(
             "Timestamp({}, {})",
-            time_unit_name(unit),
-            tz.as_ref().map(|t| t.to_string()).unwrap_or_else(|| "null".into())
+            time_unit_name(*unit),
+            tz.as_ref()
+                .map_or_else(|| "null".into(), std::string::ToString::to_string)
         ),
-        DataType::Time32(unit) => format!("Time({}, 32)", time_unit_name(unit)),
-        DataType::Time64(unit) => format!("Time({}, 64)", time_unit_name(unit)),
-        DataType::Duration(unit) => format!("Duration({})", time_unit_name(unit)),
+        DataType::Time32(unit) => format!("Time({}, 32)", time_unit_name(*unit)),
+        DataType::Time64(unit) => format!("Time({}, 64)", time_unit_name(*unit)),
+        DataType::Duration(unit) => format!("Duration({})", time_unit_name(*unit)),
         DataType::Interval(IntervalUnit::DayTime) => "Interval(DAY_TIME)".into(),
         DataType::Interval(IntervalUnit::YearMonth) => "Interval(YEAR_MONTH)".into(),
         DataType::Interval(IntervalUnit::MonthDayNano) => "Interval(MONTH_DAY_NANO)".into(),
         DataType::List(_) => "List".into(),
         DataType::LargeList(_) => "LargeList".into(),
-        DataType::FixedSizeList(_, n) => format!("FixedSizeList({})", n),
+        DataType::FixedSizeList(_, n) => format!("FixedSizeList({n})"),
         DataType::Struct(_) => "Struct".into(),
-        DataType::Map(_, sorted) => format!("Map({})", sorted),
-        other => format!("{:?}", other),
+        DataType::Map(_, sorted) => format!("Map({sorted})"),
+        other => format!("{other:?}"),
     }
 }

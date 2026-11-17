@@ -5,6 +5,8 @@ use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate};
 use num_bigint::{BigInt, Sign};
 
+use crate::java_cast::long_to_int;
+
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 const MILLIS_PER_DAY: i64 = 86_400_000;
 
@@ -67,15 +69,25 @@ fn fixed_precision(v: &str, base_len: usize, precision: usize) -> String {
 }
 
 fn ymd_from_days(days: i64) -> (i32, u32, u32) {
-    let d = NaiveDate::from_num_days_from_ce_opt((days + DAYS_FROM_CE_TO_EPOCH) as i32)
+    let d = i32::try_from(days + DAYS_FROM_CE_TO_EPOCH)
+        .ok()
+        .and_then(NaiveDate::from_num_days_from_ce_opt)
         .unwrap_or(NaiveDate::MIN);
     (d.year(), d.month(), d.day())
 }
 
+fn millis_of_second(millis: i64) -> u32 {
+    u32::try_from(millis.rem_euclid(1000)).unwrap_or_default()
+}
+
+fn digit_count(digits: &str) -> i64 {
+    i64::try_from(digits.len()).unwrap_or(i64::MAX)
+}
+
 fn days_from_ymd(y: i32, m: u32, d: u32) -> i64 {
-    NaiveDate::from_ymd_opt(y, m, d)
-        .map(|nd| i64::from(nd.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH)
-        .unwrap_or(0)
+    NaiveDate::from_ymd_opt(y, m, d).map_or(0, |nd| {
+        i64::from(nd.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -99,7 +111,7 @@ impl DateString {
             .unwrap_or(1970);
         let m = self.0.get(5..7).and_then(|s| s.parse().ok()).unwrap_or(1);
         let d = self.0.get(8..10).and_then(|s| s.parse().ok()).unwrap_or(1);
-        days_from_ymd(y, m, d) as i32
+        long_to_int(days_from_ymd(y, m, d))
     }
 
     pub fn as_str(&self) -> &str {
@@ -127,17 +139,20 @@ impl TimeString {
         let h = secs / 3600;
         let m = (secs / 60) % 60;
         let s = secs % 60;
-        TimeString(format!("{h:02}:{m:02}:{s:02}")).with_millis(ms.rem_euclid(1000) as u32)
+        TimeString(format!("{h:02}:{m:02}:{s:02}")).with_millis(millis_of_second(ms))
     }
 
+    #[must_use]
     pub fn with_millis(&self, millis: u32) -> TimeString {
         TimeString(with_fraction(&self.0, &format!("{millis:03}")))
     }
 
+    #[must_use]
     pub fn with_nanos(&self, nanos: u32) -> TimeString {
         TimeString(with_fraction(&self.0, &format!("{nanos:09}")))
     }
 
+    #[must_use]
     pub fn round(&self, precision: usize) -> TimeString {
         TimeString(round_to(&self.0, 8, precision))
     }
@@ -174,17 +189,20 @@ impl TimestampString {
         let mi = (secs / 60) % 60;
         let s = secs % 60;
         TimestampString(format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}"))
-            .with_millis(millis.rem_euclid(1000) as u32)
+            .with_millis(millis_of_second(millis))
     }
 
+    #[must_use]
     pub fn with_millis(&self, millis: u32) -> TimestampString {
         TimestampString(with_fraction(&self.0, &format!("{millis:03}")))
     }
 
+    #[must_use]
     pub fn with_nanos(&self, nanos: u32) -> TimestampString {
         TimestampString(with_fraction(&self.0, &format!("{nanos:09}")))
     }
 
+    #[must_use]
     pub fn round(&self, precision: usize) -> TimestampString {
         TimestampString(round_to(&self.0, 19, precision))
     }
@@ -197,7 +215,11 @@ impl TimestampString {
         let v = &self.0;
         let num =
             |a: usize, b: usize| -> i64 { v.get(a..b).and_then(|s| s.parse().ok()).unwrap_or(0) };
-        let days = days_from_ymd(num(0, 4) as i32, num(5, 7) as u32, num(8, 10) as u32);
+        let days = days_from_ymd(
+            i32::try_from(num(0, 4)).unwrap_or_default(),
+            u32::try_from(num(5, 7)).unwrap_or_default(),
+            u32::try_from(num(8, 10)).unwrap_or_default(),
+        );
         let ms = match v.len() {
             19 => 0,
             21 => num(20, 21) * 100,
@@ -243,11 +265,23 @@ impl BitString {
     }
 
     pub fn to_hex_string(&self) -> String {
-        self.bytes.iter().map(|b| format!("{b:02X}")).collect()
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        let mut s = String::with_capacity(self.bytes.len() * 2);
+        for b in &self.bytes {
+            s.push(char::from(HEX[usize::from(b >> 4)]));
+            s.push(char::from(HEX[usize::from(b & 0x0F)]));
+        }
+        s
     }
 
     pub fn to_bit_string(&self) -> String {
-        self.bytes.iter().map(|b| format!("{b:08b}")).collect()
+        let mut s = String::with_capacity(self.bytes.len() * 8);
+        for b in &self.bytes {
+            for bit in (0..8).rev() {
+                s.push(if (b >> bit) & 1 == 1 { '1' } else { '0' });
+            }
+        }
+        s
     }
 }
 
@@ -261,7 +295,7 @@ pub fn java_big_decimal_to_string(value: &BigDecimal) -> String {
     let (unscaled, scale) = value.as_bigint_and_exponent();
     let negative = unscaled.sign() == Sign::Minus;
     let digits = unscaled.magnitude().to_string();
-    let adjusted = digits.len() as i64 - 1 - scale;
+    let adjusted = digit_count(&digits) - 1 - scale;
     let sign = if negative { "-" } else { "" };
     if scale >= 0 && adjusted >= -6 {
         return format!("{sign}{}", plain_digits(&digits, scale));
@@ -291,7 +325,8 @@ pub fn java_big_decimal_to_plain_string(value: &BigDecimal) -> String {
         if digits == "0" {
             return "0".to_string();
         }
-        return format!("{sign}{digits}{}", "0".repeat((-scale) as usize));
+        let zeros = usize::try_from(scale.unsigned_abs()).unwrap_or(usize::MAX);
+        return format!("{sign}{digits}{}", "0".repeat(zeros));
     }
     format!("{sign}{}", plain_digits(&digits, scale))
 }
@@ -300,7 +335,7 @@ fn plain_digits(digits: &str, scale: i64) -> String {
     if scale <= 0 {
         return digits.to_string();
     }
-    let scale = scale as usize;
+    let scale = usize::try_from(scale).unwrap_or(usize::MAX);
     if digits.len() > scale {
         format!(
             "{}.{}",
@@ -316,7 +351,7 @@ pub fn java_big_decimal_to_scientific(value: &BigDecimal) -> String {
     let (unscaled, scale) = value.as_bigint_and_exponent();
     let negative = unscaled.sign() == Sign::Minus;
     let mut digits = unscaled.magnitude().to_string();
-    let len = digits.len() as i64;
+    let len = digit_count(&digits);
     let mut e = len - scale - 1;
     if unscaled == BigInt::from(0) {
         e = 0;

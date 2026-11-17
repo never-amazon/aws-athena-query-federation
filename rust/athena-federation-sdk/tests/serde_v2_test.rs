@@ -8,12 +8,17 @@ use athena_federation_sdk::data::{Block, SchemaBuilder};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::metadata::{
-    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest, GetTableResponse,
-    ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
+    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse,
+    GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
+    ListTablesResponse,
 };
-use athena_federation_sdk::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
+use athena_federation_sdk::records::{
+    ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse,
+};
 use athena_federation_sdk::request::{FederationRequest, FederationResponse};
-use athena_federation_sdk::udf::{UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType};
+use athena_federation_sdk::udf::{
+    UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType,
+};
 use indexmap::IndexSet;
 use serde_support::*;
 
@@ -21,16 +26,20 @@ fn fixture_v2(name: &str) -> String {
     fixture("serde/v2", name)
 }
 
-fn assert_request_roundtrip_from_fixture(t: &TypedSerDe, text: &str, expected: FederationRequest) {
+fn assert_request_roundtrip_from_fixture(t: &TypedSerDe, text: &str, expected: &FederationRequest) {
     let actual: FederationRequest = t.mapper.read_value(text.as_bytes()).expect("deserialize");
     assert_eq!(expected.type_name(), actual.type_name());
-    assert_eq!(expected, actual);
+    assert_eq!(*expected, actual);
 }
 
-fn assert_response_roundtrip_from_fixture(t: &TypedSerDe, text: &str, expected: FederationResponse) {
+fn assert_response_roundtrip_from_fixture(
+    t: &TypedSerDe,
+    text: &str,
+    expected: &FederationResponse,
+) {
     let actual: FederationResponse = t.mapper.read_value(text.as_bytes()).expect("deserialize");
     assert_eq!(expected.type_name(), actual.type_name());
-    assert_eq!(expected, actual);
+    assert_eq!(*expected, actual);
 }
 
 mod get_table_layout_request_ser_de_test {
@@ -52,13 +61,21 @@ mod get_table_layout_request_ser_de_test {
     fn serialize() {
         let t = TypedSerDe::before();
         let actual = write_request(&t.mapper, expected(&t));
-        assert_serialized_matches(&fixture_v2("GetTableLayoutRequest.json"), &actual, &t.mapper);
+        assert_serialized_matches(
+            &fixture_v2("GetTableLayoutRequest.json"),
+            &actual,
+            &t.mapper,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("GetTableLayoutRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetTableLayoutRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -81,13 +98,21 @@ mod get_table_layout_response_ser_de_test {
     fn serialize() {
         let t = TypedSerDe::before();
         let actual = write_response(&t.mapper, expected(&t));
-        assert_serialized_matches(&fixture_v2("GetTableLayoutResponse.json"), &actual, &t.mapper);
+        assert_serialized_matches(
+            &fixture_v2("GetTableLayoutResponse.json"),
+            &actual,
+            &t.mapper,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("GetTableLayoutResponse.json"), expected(&t).into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetTableLayoutResponse.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -119,7 +144,11 @@ mod get_splits_request_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("GetSplitsRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetSplitsRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -127,11 +156,14 @@ mod get_splits_response_ser_de_test {
     use super::*;
 
     fn split(split_id: &str, key: &str, nonce: &str, day: &str) -> Split {
-        Split::new_builder(Some(spill_location(split_id)), Some(encryption_key(key, nonce)))
-            .add("year", "2017")
-            .add("month", "11")
-            .add("day", day)
-            .build()
+        Split::new_builder(
+            Some(spill_location(split_id)),
+            Some(encryption_key(key, nonce)),
+        )
+        .add("year", "2017")
+        .add("month", "11")
+        .add("day", day)
+        .build()
     }
 
     fn expected() -> GetSplitsResponse {
@@ -155,7 +187,11 @@ mod get_splits_response_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("GetSplitsResponse.json"), expected().into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetSplitsResponse.json"),
+            &expected().into(),
+        );
     }
 }
 
@@ -182,7 +218,11 @@ mod get_table_request_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("GetTableRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetTableRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -196,7 +236,10 @@ mod get_table_response_ser_de_test {
             .add_field_with_type("day", DataType::Int32)
             .add_field_with_type("col3", DataType::Utf8)
             .build();
-        let partition_columns: IndexSet<String> = ["year", "month", "day"].iter().map(|s| s.to_string()).collect();
+        let partition_columns: IndexSet<String> = ["year", "month", "day"]
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         GetTableResponse::new("test-catalog", table_name(), schema, partition_columns)
     }
 
@@ -210,7 +253,11 @@ mod get_table_response_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("GetTableResponse.json"), expected().into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("GetTableResponse.json"),
+            &expected().into(),
+        );
     }
 }
 
@@ -218,7 +265,11 @@ mod list_schemas_request_ser_de_test {
     use super::*;
 
     fn expected(t: &TypedSerDe) -> ListSchemasRequest {
-        ListSchemasRequest::new(Some(t.federated_identity.clone()), Some("test-query-id".to_string()), "test-catalog")
+        ListSchemasRequest::new(
+            Some(t.federated_identity.clone()),
+            Some("test-query-id".to_string()),
+            "test-catalog",
+        )
     }
 
     #[test]
@@ -231,7 +282,11 @@ mod list_schemas_request_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("ListSchemasRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ListSchemasRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -239,7 +294,10 @@ mod list_schemas_response_ser_de_test {
     use super::*;
 
     fn expected() -> ListSchemasResponse {
-        ListSchemasResponse::new("test-catalog", vec!["schema1".to_string(), "schema2".to_string()])
+        ListSchemasResponse::new(
+            "test-catalog",
+            vec!["schema1".to_string(), "schema2".to_string()],
+        )
     }
 
     #[test]
@@ -252,7 +310,11 @@ mod list_schemas_response_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("ListSchemasResponse.json"), expected().into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ListSchemasResponse.json"),
+            &expected().into(),
+        );
     }
 }
 
@@ -280,7 +342,11 @@ mod list_tables_request_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("ListTablesRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ListTablesRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -290,7 +356,10 @@ mod list_tables_response_ser_de_test {
     fn expected() -> ListTablesResponse {
         ListTablesResponse::new(
             "test-catalog",
-            vec![TableName::new("schema1", "table1"), TableName::new("schema1", "table2")],
+            vec![
+                TableName::new("schema1", "table1"),
+                TableName::new("schema1", "table2"),
+            ],
             Some("table3".to_string()),
         )
     }
@@ -305,7 +374,11 @@ mod list_tables_response_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("ListTablesResponse.json"), expected().into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ListTablesResponse.json"),
+            &expected().into(),
+        );
     }
 }
 
@@ -339,7 +412,11 @@ mod read_records_request_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("ReadRecordsRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ReadRecordsRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -371,7 +448,11 @@ mod read_records_response_ser_de_test {
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("ReadRecordsResponse.json"), expected(&t).into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("ReadRecordsResponse.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -387,7 +468,10 @@ mod remote_read_records_response_ser_de_test {
         RemoteReadRecordsResponse::new(
             "test-catalog",
             schema,
-            vec![spill_location("test-split-id-1"), spill_location("test-split-id-2")],
+            vec![
+                spill_location("test-split-id-1"),
+                spill_location("test-split-id-2"),
+            ],
             Some(encryption_key("test-key", "test-nonce")),
         )
     }
@@ -396,13 +480,21 @@ mod remote_read_records_response_ser_de_test {
     fn serialize() {
         let t = TypedSerDe::before();
         let actual = write_response(&t.mapper, expected());
-        assert_serialized_matches(&fixture_v2("RemoteReadRecordsResponse.json"), &actual, &t.mapper);
+        assert_serialized_matches(
+            &fixture_v2("RemoteReadRecordsResponse.json"),
+            &actual,
+            &t.mapper,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("RemoteReadRecordsResponse.json"), expected().into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("RemoteReadRecordsResponse.json"),
+            &expected().into(),
+        );
     }
 }
 
@@ -435,13 +527,21 @@ mod user_defined_function_request_ser_de_test {
     fn serialize() {
         let t = TypedSerDe::before();
         let actual = write_request(&t.mapper, expected(&t));
-        assert_serialized_matches(&fixture_v2("UserDefinedFunctionRequest.json"), &actual, &t.mapper);
+        assert_serialized_matches(
+            &fixture_v2("UserDefinedFunctionRequest.json"),
+            &actual,
+            &t.mapper,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_request_roundtrip_from_fixture(&t, &fixture_v2("UserDefinedFunctionRequest.json"), expected(&t).into());
+        assert_request_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("UserDefinedFunctionRequest.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -454,7 +554,7 @@ mod user_defined_function_response_ser_de_test {
             .build();
         let mut records = t.alloc().create_block(Arc::new(output_schema));
         for i in 0..10usize {
-            set(&mut records, "product", i, (i as i32) * 2);
+            set(&mut records, "product", i, i32::try_from(i).unwrap() * 2);
         }
         records.set_row_count(10);
         UserDefinedFunctionResponse::new(records, "test-method")
@@ -464,13 +564,21 @@ mod user_defined_function_response_ser_de_test {
     fn serialize() {
         let t = TypedSerDe::before();
         let actual = write_response(&t.mapper, expected(&t));
-        assert_serialized_matches(&fixture_v2("UserDefinedFunctionResponse.json"), &actual, &t.mapper);
+        assert_serialized_matches(
+            &fixture_v2("UserDefinedFunctionResponse.json"),
+            &actual,
+            &t.mapper,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        assert_response_roundtrip_from_fixture(&t, &fixture_v2("UserDefinedFunctionResponse.json"), expected(&t).into());
+        assert_response_roundtrip_from_fixture(
+            &t,
+            &fixture_v2("UserDefinedFunctionResponse.json"),
+            &expected(&t).into(),
+        );
     }
 }
 
@@ -484,7 +592,8 @@ mod lambda_function_exception_ser_de_test {
         let error_type = "com.amazonaws.services.dynamodbv2.model.ResourceNotFoundException";
         let error_message = "Requested resource not found (Service: AmazonDynamoDBv2; Status Code: 400; Error Code: ResourceNotFoundException; Request ID: RIB6NOH4BNMAK6KQG88R5VE583VV4KQNSO5AEMVJF66Q9ASUAAJG)";
         let stack_trace = "[[com.amazonaws.http.AmazonHttpClient$RequestExecutor.handleErrorResponse(AmazonHttpClient.java:1701)], [com.amazonaws.http.AmazonHttpClient$RequestExecutor.executeOneRequest(AmazonHttpClient.java:1356)]]";
-        let expected_message = format!("{}. Stack trace: {}\nErrorType: {}", error_message, stack_trace, error_type);
+        let expected_message =
+            format!("{error_message}. Stack trace: {stack_trace}\nErrorType: {error_type}");
         let text = fixture_v2("LambdaFunctionException.json");
         let actual: LambdaException = t.mapper.read_value(text.as_bytes()).expect("deserialize");
         assert_eq!(Some(expected_message.as_str()), actual.get_message());
@@ -494,28 +603,32 @@ mod lambda_function_exception_ser_de_test {
 
 mod arrow_ser_de_test {
     use athena_federation_sdk::data::SupportedTypes;
-    use athena_federation_sdk::serde::v2::arrow_type_serde::{get_delegate_ser_de_map, java_type_name};
+    use athena_federation_sdk::serde::v2::arrow_type_serde::{
+        get_delegate_ser_de_map, java_type_name,
+    };
 
-    fn arrow_type_class(supported_type: &SupportedTypes) -> String {
+    fn arrow_type_class(supported_type: SupportedTypes) -> String {
         match supported_type.get_arrow_minor_type().get_type() {
             Ok(arrow_type) => java_type_name(&arrow_type).to_string(),
             Err(_) => match supported_type {
-                SupportedTypes::TIMESTAMPMILLITZ | SupportedTypes::TIMESTAMPMICROTZ => "Timestamp".to_string(),
-                other => format!("{:?}", other),
+                SupportedTypes::TIMESTAMPMILLITZ | SupportedTypes::TIMESTAMPMICROTZ => {
+                    "Timestamp".to_string()
+                }
+                other => format!("{other:?}"),
             },
         }
     }
 
     fn assert_all_supported_types_covered(kind: &str) {
-        let delegates: Vec<String> = get_delegate_ser_de_map().iter().map(|s| s.to_lowercase()).collect();
+        let delegates: Vec<String> = get_delegate_ser_de_map()
+            .iter()
+            .map(|s| s.to_lowercase())
+            .collect();
         for supported_type in SupportedTypes::values() {
-            let class = arrow_type_class(supported_type);
+            let class = arrow_type_class(*supported_type);
             assert!(
                 delegates.contains(&class.to_lowercase()),
-                "No {} for supported type {:?} with ArrowType {}",
-                kind,
-                supported_type,
-                class
+                "No {kind} for supported type {supported_type:?} with ArrowType {class}"
             );
         }
     }
@@ -541,15 +654,31 @@ mod object_mapper_factory_v2_test {
 
     #[test]
     fn test_strict_serializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(Arc::new(BlockAllocatorImpl::new()), SERDE_VERSION_TWO).unwrap();
+        let mapper = VersionedObjectMapperFactory::create_with_version(
+            Arc::new(BlockAllocatorImpl::new()),
+            SERDE_VERSION_TWO,
+        )
+        .unwrap();
         let result = mapper.write_value_as_string(&DataType::Null);
-        assert!(matches!(result, Err(FederationError::AthenaConnector(_))), "{:?}", result);
+        assert!(
+            matches!(result, Err(FederationError::AthenaConnector(_))),
+            "{result:?}"
+        );
     }
 
     #[test]
     fn test_strict_deserializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(Arc::new(BlockAllocatorImpl::new()), SERDE_VERSION_TWO).unwrap();
-        let result = mapper.read_value_from_str::<DataType>("{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}");
-        assert!(matches!(result, Err(FederationError::AthenaConnector(_))), "{:?}", result);
+        let mapper = VersionedObjectMapperFactory::create_with_version(
+            Arc::new(BlockAllocatorImpl::new()),
+            SERDE_VERSION_TWO,
+        )
+        .unwrap();
+        let result = mapper.read_value_from_str::<DataType>(
+            "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
+        );
+        assert!(
+            matches!(result, Err(FederationError::AthenaConnector(_))),
+            "{result:?}"
+        );
     }
 }

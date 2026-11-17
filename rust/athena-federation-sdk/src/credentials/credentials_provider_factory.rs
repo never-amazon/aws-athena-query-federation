@@ -28,8 +28,13 @@ impl CredentialsProviderFactory {
         secrets_manager: &Arc<CachableSecretsManager>,
         provider: Option<Box<dyn InitializableCredentialsProvider>>,
     ) -> Result<Option<Box<dyn CredentialsProvider>>> {
-        Self::create_credential_provider_with_request_override_configuration(secret_name, secrets_manager, provider, None)
-            .await
+        Self::create_credential_provider_with_request_override_configuration(
+            secret_name,
+            secrets_manager,
+            provider,
+            None,
+        )
+        .await
     }
 
     pub async fn create_credential_provider_with_request_override_configuration(
@@ -55,13 +60,22 @@ impl CredentialsProviderFactory {
             })?;
 
         if let Some(provider) = provider {
-            if let Ok(mut oauth_provider) = provider.into_any().downcast::<OAuthCredentialsProvider>() {
-                let oauth_result = oauth_provider.is_oauth_configured(&secret_map).and_then(|configured| {
-                    if configured {
-                        oauth_provider.initialize(secret_name, secret_map.clone(), secrets_manager.clone())?;
-                    }
-                    Ok(configured)
-                });
+            if let Ok(mut oauth_provider) =
+                provider.into_any().downcast::<OAuthCredentialsProvider>()
+            {
+                let oauth_result =
+                    oauth_provider
+                        .is_oauth_configured(&secret_map)
+                        .and_then(|configured| {
+                            if configured {
+                                oauth_provider.initialize(
+                                    secret_name,
+                                    secret_map.clone(),
+                                    secrets_manager.clone(),
+                                )?;
+                            }
+                            Ok(configured)
+                        });
                 match oauth_result {
                     Ok(true) => return Ok(Some(oauth_provider)),
                     Ok(false) => {}
@@ -69,13 +83,15 @@ impl CredentialsProviderFactory {
                         let message = e.to_string();
                         return Err(FederationError::connector_with_details(
                             FederationSourceErrorCode::InternalServiceException,
-                            format!("Failed to create OAuth provider: {}", message),
+                            format!("Failed to create OAuth provider: {message}"),
                             message,
                         ));
                     }
                 }
             }
         }
-        Ok(Some(Box::new(DefaultCredentialsProvider::new(&secret_string)?)))
+        Ok(Some(Box::new(DefaultCredentialsProvider::new(
+            &secret_string,
+        )?)))
     }
 }

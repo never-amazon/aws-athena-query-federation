@@ -11,7 +11,10 @@ pub fn serialize(batch: &ArrowRecordBatch, jgen: &mut JsonGenerator) -> Result<(
     serialize_object(jgen, |j| j.write_binary(&out))
 }
 
-pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<ArrowRecordBatch> {
+pub fn deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<ArrowRecordBatch> {
     if jparser.next_token()? != Some(JsonToken::ValueEmbeddedObject) {
         return Err(FederationError::invalid_input(format!(
             "Expecting {} but found {}",

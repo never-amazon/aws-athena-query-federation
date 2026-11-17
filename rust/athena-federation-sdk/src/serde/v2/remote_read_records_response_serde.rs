@@ -1,6 +1,9 @@
 use crate::exceptions::{FederationError, Result};
 use crate::records::RemoteReadRecordsResponse;
-use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null, validate_array_start, validate_object_end, validate_object_start_token};
+use crate::serde::base::{
+    assert_field_name, get_next_string_field, require_non_null, validate_array_start,
+    validate_object_end, validate_object_start_token,
+};
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 use crate::serde::SerDeContext;
 
@@ -9,7 +12,11 @@ const SCHEMA_FIELD: &str = "schema";
 const REMOTE_BLOCKS_FIELD: &str = "remoteBlocks";
 const ENCRYPTION_KEY_FIELD: &str = "encryptionKey";
 
-pub fn do_typed_serialize(response: &RemoteReadRecordsResponse, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_typed_serialize(
+    response: &RemoteReadRecordsResponse,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
     jgen.write_field_name(SCHEMA_FIELD)?;
     crate::serde::v3::schema_serde_v3::serialize_for_version(response.get_schema(), jgen, version)?;
@@ -22,7 +29,10 @@ pub fn do_typed_serialize(response: &RemoteReadRecordsResponse, jgen: &mut JsonG
     super::encryption_key_serde::serialize(response.get_encryption_key(), jgen)
 }
 
-pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<RemoteReadRecordsResponse> {
+pub fn do_typed_deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<RemoteReadRecordsResponse> {
     let catalog_name = get_next_string_field(jparser, CATALOG_NAME_FIELD)?;
     assert_field_name(jparser, Some(SCHEMA_FIELD))?;
     let schema = super::block_serde::deserialize_schema_for_version(jparser, ctx.version)?;
@@ -32,7 +42,11 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>
     loop {
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                ))
+            }
             token => {
                 validate_object_start_token(token)?;
                 remote_blocks.push(super::spill_location_serde::do_deserialize(jparser)?);

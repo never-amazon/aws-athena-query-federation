@@ -27,7 +27,13 @@ where
 
     pub fn stream(fetch_page: F, get_token: G) -> impl Iterator<Item = T> {
         let mut it = PaginatedRequestIterator::new(fetch_page, get_token);
-        std::iter::from_fn(move || if it.has_next() { it.next_page().ok() } else { None })
+        std::iter::from_fn(move || {
+            if it.has_next() {
+                it.next_page().ok()
+            } else {
+                None
+            }
+        })
     }
 
     pub fn has_next(&self) -> bool {

@@ -5,7 +5,7 @@ use athena_federation_substrait::SubstraitRelModel;
 
 fn create_rel_model(names: &[&str], types: Vec<Type>) -> SubstraitRelModel {
     let named_struct = NamedStruct {
-        names: names.iter().map(|s| s.to_string()).collect(),
+        names: names.iter().map(std::string::ToString::to_string).collect(),
         r#struct: Some(r#type::Struct {
             types,
             ..Default::default()

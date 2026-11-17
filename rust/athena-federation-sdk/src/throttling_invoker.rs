@@ -8,6 +8,7 @@ use tokio::time::Instant;
 
 use crate::data::BlockSpiller;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
+use crate::java_cast::{double_to_long, long_to_double};
 
 pub const THROTTLE_INITIAL_DELAY_MS: &str = "throttle_initial_delay_ms";
 pub const THROTTLE_MAX_DELAY_MS: &str = "throttle_max_delay_ms";
@@ -66,7 +67,7 @@ pub struct ThrottlingInvoker<E = FederationError> {
 
 fn java_double(value: f64) -> String {
     if value.is_finite() && value.fract() == 0.0 {
-        format!("{:.1}", value)
+        format!("{value:.1}")
     } else {
         value.to_string()
     }
@@ -75,7 +76,7 @@ fn java_double(value: f64) -> String {
 fn parse_long(value: &str) -> Result<i64> {
     value
         .parse::<i64>()
-        .map_err(|_| FederationError::Runtime(format!("For input string: \"{}\"", value)))
+        .map_err(|_| FederationError::Runtime(format!("For input string: \"{value}\"")))
 }
 
 impl<E> ThrottlingInvoker<E>
@@ -102,7 +103,7 @@ where
             Some(v) => v
                 .trim()
                 .parse::<f64>()
-                .map_err(|_| FederationError::Runtime(format!("For input string: \"{}\"", v)))?,
+                .map_err(|_| FederationError::Runtime(format!("For input string: \"{v}\"")))?,
             None => DEFAULT_DECREASE_FACTOR,
         };
         let increase = match config_options.get(THROTTLE_INCREASE_MS) {
@@ -133,14 +134,12 @@ where
         }
         if max_delay_ms < 1 {
             return Err(FederationError::invalid_input(format!(
-                "maxDelayMs was {} but must be >= 1",
-                max_delay_ms
+                "maxDelayMs was {max_delay_ms} but must be >= 1"
             )));
         }
         if increase < 1 {
             return Err(FederationError::invalid_input(format!(
-                "increase was {} but must be >= 1",
-                increase
+                "increase was {increase} but must be >= 1"
             )));
         }
         Ok(ThrottlingInvoker {
@@ -231,17 +230,22 @@ where
     }
 
     fn lock_throttle(&self) -> MutexGuard<'_, Throttle> {
-        self.throttle.lock().unwrap_or_else(|e| e.into_inner())
+        self.throttle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn lock_spiller(&self) -> MutexGuard<'_, Option<Arc<dyn BlockSpiller>>> {
-        self.spiller.lock().unwrap_or_else(|e| e.into_inner())
+        self.spiller
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     async fn handle_throttle(&self, ex: &E) -> std::result::Result<(), E> {
         {
             let mut throttle = self.lock_throttle();
-            let mut new_delay = (throttle.delay as f64 / self.decrease).ceil() as i64;
+            let mut new_delay =
+                double_to_long((long_to_double(throttle.delay) / self.decrease).ceil());
             if new_delay == 0 {
                 new_delay = self.initial_delay_ms;
             } else if new_delay > self.max_delay_ms {
@@ -251,7 +255,7 @@ where
                 "handleThrottle: Encountered a Throttling event[{}] adjusting delay to {} ms @ {} TPS",
                 ex,
                 new_delay,
-                1000f64 / new_delay as f64
+                1000f64 / long_to_double(new_delay)
             );
             throttle.state = State::Congested;
             throttle.delay = new_delay;
@@ -261,7 +265,7 @@ where
             if !spiller.spilled().await.map_err(E::from)? {
                 return Err(E::from(FederationError::connector(
                     FederationSourceErrorCode::ThrottlingException,
-                    format!("ThrottlingInvoker requesting slow down due to {}", ex),
+                    format!("ThrottlingInvoker requesting slow down due to {ex}"),
                 )));
             }
         }
@@ -292,18 +296,22 @@ where
     async fn apply_sleep(&self) {
         let delay = self.get_delay();
         if delay > 0 {
-            tokio::time::sleep(Duration::from_millis(delay as u64)).await;
+            tokio::time::sleep(Duration::from_millis(delay.unsigned_abs())).await;
         }
     }
 
     fn is_timed_out(start_time: Instant, timeout_millis: i64) -> bool {
-        timeout_millis > 0 && start_time.elapsed().as_millis() as i64 > timeout_millis
+        timeout_millis > 0
+            && i64::try_from(start_time.elapsed().as_millis()).unwrap_or(i64::MAX) > timeout_millis
     }
 }
 
 impl<E> fmt::Display for ThrottlingInvoker<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let throttle = self.throttle.lock().unwrap_or_else(|e| e.into_inner());
+        let throttle = self
+            .throttle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         write!(
             f,
             "ThrottlingInvoker{{initialDelayMs={}, maxDelayMs={}, decrease={}, increase={}, delay={}, state={}}}",
@@ -343,31 +351,37 @@ impl<E> ThrottlingInvokerBuilder<E>
 where
     E: From<FederationError> + fmt::Display + Send,
 {
+    #[must_use]
     pub fn with_initial_delay_ms(mut self, initial_delay_ms: i64) -> Self {
         self.initial_delay_ms = initial_delay_ms;
         self
     }
 
+    #[must_use]
     pub fn with_max_delay_ms(mut self, max_delay_ms: i64) -> Self {
         self.max_delay_ms = max_delay_ms;
         self
     }
 
+    #[must_use]
     pub fn with_decrease(mut self, decrease: f64) -> Self {
         self.decrease = decrease;
         self
     }
 
+    #[must_use]
     pub fn with_increase(mut self, increase: i64) -> Self {
         self.increase = increase;
         self
     }
 
+    #[must_use]
     pub fn with_filter(mut self, filter: Arc<dyn ExceptionFilter<E>>) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    #[must_use]
     pub fn with_spiller(mut self, spiller: Arc<dyn BlockSpiller>) -> Self {
         self.spiller = Some(spiller);
         self

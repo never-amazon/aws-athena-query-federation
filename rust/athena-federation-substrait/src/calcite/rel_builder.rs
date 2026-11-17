@@ -24,6 +24,100 @@ pub struct RelBuilder {
     bloat: usize,
 }
 
+fn resolve_group_sets(
+    extra: &[RexNode],
+    group_set: &[usize],
+    group_expr_lists: Option<&[Vec<RexNode>]>,
+) -> Result<Vec<Vec<usize>>> {
+    let Some(lists) = group_expr_lists else {
+        return Ok(vec![group_set.to_vec()]);
+    };
+    let mut sets = Vec::with_capacity(lists.len());
+    for list in lists {
+        let mut set = Vec::with_capacity(list.len());
+        for e in list {
+            let idx = extra.iter().position(|x| x == e).ok_or_else(|| {
+                SubstraitError::illegal_argument("group set element must be a subset of group key")
+            })?;
+            set.push(idx);
+        }
+        set.sort_unstable();
+        set.dedup();
+        sets.push(set);
+    }
+    sets.sort_by(|a, b| bit_set_compare(a, b));
+    if sets.windows(2).any(|w| w[0] == w[1]) {
+        return Err(SubstraitError::unsupported(
+            "Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter",
+        ));
+    }
+    Ok(sets)
+}
+
+fn prune_project(
+    r: RelNode,
+    group_set: &[usize],
+    group_sets: &mut [Vec<usize>],
+    calls: &mut [AggregateCall],
+) -> (RelNode, Vec<usize>) {
+    let mut group_after = group_set.to_vec();
+    let r = match r {
+        RelNode::Project {
+            input: p_input,
+            exprs,
+            row_type,
+        } => {
+            let mut used: Vec<usize> = group_set.to_vec();
+            for c in calls.iter() {
+                used.extend(c.args.iter().copied());
+                if let Some(f) = c.filter_arg {
+                    used.push(f);
+                }
+                used.extend(c.collation.iter().map(|fc| fc.field_index));
+            }
+            used.sort_unstable();
+            used.dedup();
+            if used.is_empty() {
+                *p_input
+            } else if used.len() < row_type.get_field_count() {
+                let map = |source: usize| used.iter().position(|u| *u == source).unwrap_or(source);
+                group_after = group_set.iter().map(|g| map(*g)).collect();
+                for set in group_sets.iter_mut() {
+                    *set = set.iter().map(|g| map(*g)).collect();
+                }
+                group_sets.sort_by(|a, b| bit_set_compare(a, b));
+                for c in calls.iter_mut() {
+                    c.args = c.args.iter().map(|a| map(*a)).collect();
+                    c.filter_arg = c.filter_arg.map(map);
+                    for fc in &mut c.collation {
+                        fc.field_index = map(fc.field_index);
+                    }
+                }
+                let mut builder = RelDataTypeBuilder::new();
+                let mut new_exprs = Vec::new();
+                for &i in &used {
+                    new_exprs.push(exprs[i].clone());
+                    let f = &row_type.get_field_list()[i];
+                    builder.add(f.get_name(), f.get_type().clone());
+                }
+                RelNode::Project {
+                    input: p_input,
+                    exprs: new_exprs,
+                    row_type: builder.build(),
+                }
+            } else {
+                RelNode::Project {
+                    input: p_input,
+                    exprs,
+                    row_type,
+                }
+            }
+        }
+        other => other,
+    };
+    (r, group_after)
+}
+
 fn is_identity(nodes: &[RexNode], row_type: &RelDataType) -> bool {
     let fields = row_type.get_field_list();
     nodes.len() == fields.len()
@@ -90,21 +184,21 @@ impl RelBuilder {
         }
     }
 
-    pub fn scan(&self, qualified_name: Vec<String>, row_type: RelDataType) -> RelNode {
+    pub fn scan(qualified_name: Vec<String>, row_type: RelDataType) -> RelNode {
         RelNode::TableScan {
             qualified_name,
             row_type,
         }
     }
 
-    pub fn empty(&self, input: &RelNode) -> RelNode {
+    pub fn empty(input: &RelNode) -> RelNode {
         RelNode::Values {
             row_type: input.row_type().clone(),
             tuples: Vec::new(),
         }
     }
 
-    pub fn values(&self, row_type: RelDataType, tuples: Vec<Vec<RexLiteral>>) -> RelNode {
+    pub fn values(row_type: RelDataType, tuples: Vec<Vec<RexLiteral>>) -> RelNode {
         RelNode::Values { row_type, tuples }
     }
 
@@ -120,8 +214,8 @@ impl RelBuilder {
     ) -> RelNode {
         let simplified = self.simplifier.simplify_filter_predicates(predicates);
         match simplified {
-            None => self.empty(&input),
-            Some(c) if c.is_always_false() => self.empty(&input),
+            None => Self::empty(&input),
+            Some(c) if c.is_always_false() => Self::empty(&input),
             Some(c) if c.is_always_true() => input,
             Some(c) => RelNode::Filter {
                 input: Box::new(input),
@@ -136,9 +230,9 @@ impl RelBuilder {
         left: RelNode,
         right: RelNode,
         join_type: JoinType,
-        condition: RexNode,
+        condition: &RexNode,
     ) -> RelNode {
-        let condition = self.simplifier.simplify_unknown_as_false(&condition);
+        let condition = self.simplifier.simplify_unknown_as_false(condition);
         let row_type = derive_join_row_type(left.row_type(), right.row_type(), join_type);
         RelNode::Join {
             left: Box::new(left),
@@ -149,7 +243,7 @@ impl RelBuilder {
         }
     }
 
-    pub fn set_op(&self, kind: SetOpKind, all: bool, inputs: Vec<RelNode>) -> Result<RelNode> {
+    pub fn set_op(kind: SetOpKind, all: bool, inputs: Vec<RelNode>) -> Result<RelNode> {
         let mut inputs = inputs;
         if inputs.len() == 1 {
             return inputs.pop().ok_or_else(|| {
@@ -189,28 +283,28 @@ impl RelBuilder {
         })
     }
 
-    pub fn project(&self, input: RelNode, nodes: Vec<RexNode>) -> RelNode {
+    pub fn project(&self, input: RelNode, nodes: &[RexNode]) -> RelNode {
         self.project_(input, nodes, Vec::new(), false)
     }
 
     pub fn project_named(
         &self,
         input: RelNode,
-        nodes: Vec<RexNode>,
+        nodes: &[RexNode],
         names: Vec<Option<String>>,
         force: bool,
     ) -> RelNode {
         self.project_(input, nodes, names, force)
     }
 
-    fn infer_alias(&self, input_row_type: &RelDataType, expr: &RexNode) -> Option<String> {
+    fn infer_alias(input_row_type: &RelDataType, expr: &RexNode) -> Option<String> {
         match expr {
             RexNode::InputRef { index, .. } => input_row_type
                 .get_field_list()
                 .get(*index)
                 .map(|f| f.get_name().to_string()),
             RexNode::Call(c) if c.op.kind == super::operators::SqlKind::Cast => {
-                self.infer_alias(input_row_type, &c.operands[0])
+                Self::infer_alias(input_row_type, &c.operands[0])
             }
             _ => None,
         }
@@ -219,12 +313,12 @@ impl RelBuilder {
     fn project_(
         &self,
         input: RelNode,
-        nodes: Vec<RexNode>,
+        nodes: &[RexNode],
         field_names: Vec<Option<String>>,
         force: bool,
     ) -> RelNode {
         let input_row_type = input.row_type().clone();
-        if !force && field_names.is_empty() && is_identity(&nodes, &input_row_type) {
+        if !force && field_names.is_empty() && is_identity(nodes, &input_row_type) {
             return input;
         }
         let mut names = field_names;
@@ -250,11 +344,11 @@ impl RelBuilder {
             let over_conflict = nodes.iter().any(RexNode::contains_over)
                 && bottom_exprs.iter().any(RexNode::contains_over);
             if !over_conflict {
-                let merged = push_past_project(&nodes, bottom_exprs);
-                if node_count(&merged) <= node_count(bottom_exprs) + node_count(&nodes) + self.bloat
+                let merged = push_past_project(nodes, bottom_exprs);
+                if node_count(&merged) <= node_count(bottom_exprs) + node_count(nodes) + self.bloat
                 {
                     let bottom = (**bottom_input).clone();
-                    return self.project_(bottom, merged, names, force);
+                    return self.project_(bottom, &merged, names, force);
                 }
             }
         }
@@ -264,7 +358,7 @@ impl RelBuilder {
             .collect();
         for (i, name) in names.iter_mut().enumerate() {
             if name.is_none() {
-                *name = self.infer_alias(&input_row_type, &nodes[i]);
+                *name = Self::infer_alias(&input_row_type, &nodes[i]);
             }
         }
         let final_names = uniquify_names(names);
@@ -303,21 +397,21 @@ impl RelBuilder {
         }
     }
 
-    fn fields(&self, input: &RelNode) -> Vec<RexNode> {
+    fn fields(input: &RelNode) -> Vec<RexNode> {
         input
             .row_type()
             .get_field_list()
             .iter()
             .enumerate()
-            .map(|(i, f)| self.rex_builder.make_input_ref(i, f.get_type().clone()))
+            .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))
             .collect()
     }
 
     pub fn aggregate(
         &self,
         input: RelNode,
-        group_exprs: Vec<RexNode>,
-        group_expr_lists: Option<Vec<Vec<RexNode>>>,
+        group_exprs: &[RexNode],
+        group_expr_lists: Option<&[Vec<RexNode>]>,
         agg_calls: Vec<AggregateCall>,
     ) -> Result<RelNode> {
         if group_exprs.is_empty() && agg_calls.is_empty() {
@@ -332,116 +426,33 @@ impl RelBuilder {
                 tuples: vec![vec![lit]],
             });
         }
-        let original = self.fields(&input);
+        let original = Self::fields(&input);
         let mut extra = original.clone();
         let mut group_list: Vec<usize> = Vec::new();
-        for g in &group_exprs {
-            let idx = match extra.iter().position(|e| e == g) {
-                Some(i) => i,
-                None => {
-                    extra.push(g.clone());
-                    extra.len() - 1
-                }
+        for g in group_exprs {
+            let idx = if let Some(i) = extra.iter().position(|e| e == g) {
+                i
+            } else {
+                extra.push(g.clone());
+                extra.len() - 1
             };
             group_list.push(idx);
         }
         let mut group_set: Vec<usize> = group_list.clone();
         group_set.sort_unstable();
         group_set.dedup();
-        let mut group_sets: Vec<Vec<usize>> = match &group_expr_lists {
-            None => vec![group_set.clone()],
-            Some(lists) => {
-                let mut sets = Vec::with_capacity(lists.len());
-                for list in lists {
-                    let mut set = Vec::with_capacity(list.len());
-                    for e in list {
-                        let idx = extra.iter().position(|x| x == e).ok_or_else(|| {
-                            SubstraitError::illegal_argument(
-                                "group set element must be a subset of group key",
-                            )
-                        })?;
-                        set.push(idx);
-                    }
-                    set.sort_unstable();
-                    set.dedup();
-                    sets.push(set);
-                }
-                sets.sort_by(|a, b| bit_set_compare(a, b));
-                if sets.windows(2).any(|w| w[0] == w[1]) {
-                    return Err(SubstraitError::unsupported(
-                        "Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter",
-                    ));
-                }
-                sets
-            }
-        };
-        let r = self.project(input, extra);
+        let mut group_sets = resolve_group_sets(&extra, &group_set, group_expr_lists)?;
+        let r = self.project(input, &extra);
         let mut calls = agg_calls;
-        let mut group_after = group_set.clone();
-        let r = match r {
-            RelNode::Project {
-                input: p_input,
-                exprs,
-                row_type,
-            } => {
-                let mut used: Vec<usize> = group_set.clone();
-                for c in &calls {
-                    used.extend(c.args.iter().copied());
-                    if let Some(f) = c.filter_arg {
-                        used.push(f);
-                    }
-                    used.extend(c.collation.iter().map(|fc| fc.field_index));
-                }
-                used.sort_unstable();
-                used.dedup();
-                if used.is_empty() {
-                    *p_input
-                } else if used.len() < row_type.get_field_count() {
-                    let map =
-                        |source: usize| used.iter().position(|u| *u == source).unwrap_or(source);
-                    group_after = group_set.iter().map(|g| map(*g)).collect();
-                    for set in group_sets.iter_mut() {
-                        *set = set.iter().map(|g| map(*g)).collect();
-                    }
-                    group_sets.sort_by(|a, b| bit_set_compare(a, b));
-                    for c in calls.iter_mut() {
-                        c.args = c.args.iter().map(|a| map(*a)).collect();
-                        c.filter_arg = c.filter_arg.map(map);
-                        for fc in c.collation.iter_mut() {
-                            fc.field_index = map(fc.field_index);
-                        }
-                    }
-                    let mut builder = RelDataTypeBuilder::new();
-                    let mut new_exprs = Vec::new();
-                    for &i in &used {
-                        new_exprs.push(exprs[i].clone());
-                        let f = &row_type.get_field_list()[i];
-                        builder.add(f.get_name(), f.get_type().clone());
-                    }
-                    RelNode::Project {
-                        input: p_input,
-                        exprs: new_exprs,
-                        row_type: builder.build(),
-                    }
-                } else {
-                    RelNode::Project {
-                        input: p_input,
-                        exprs,
-                        row_type,
-                    }
-                }
-            }
-            other => other,
-        };
+        let (r, group_after) = prune_project(r, &group_set, &mut group_sets, &mut calls);
         let mut distinct_calls: Vec<AggregateCall> = Vec::new();
         let mut positions: Vec<(usize, Option<String>)> = Vec::new();
         for c in &calls {
-            match distinct_calls.iter().position(|d| d == c) {
-                Some(i) => positions.push((i, c.name.clone())),
-                None => {
-                    distinct_calls.push(c.clone());
-                    positions.push((distinct_calls.len() - 1, c.name.clone()));
-                }
+            if let Some(i) = distinct_calls.iter().position(|d| d == c) {
+                positions.push((i, c.name.clone()));
+            } else {
+                distinct_calls.push(c.clone());
+                positions.push((distinct_calls.len() - 1, c.name.clone()));
             }
         }
         if distinct_calls.len() == calls.len() {
@@ -465,7 +476,7 @@ impl RelBuilder {
             agg_calls: distinct_calls,
             row_type,
         };
-        let agg_fields = self.fields(&agg);
+        let agg_fields = Self::fields(&agg);
         let mut nodes = Vec::new();
         let mut names = Vec::new();
         for field in agg_fields.iter().take(group_count) {
@@ -476,7 +487,7 @@ impl RelBuilder {
             nodes.push(agg_fields[group_count + i].clone());
             names.push(name);
         }
-        Ok(self.project_(agg, nodes, names, false))
+        Ok(self.project_(agg, &nodes, names, false))
     }
 
     pub fn sort_limit(
@@ -492,7 +503,7 @@ impl RelBuilder {
         let fetch_node = fetch
             .filter(|f| *f >= 0)
             .map(|f| self.rex_builder.make_exact_int(f));
-        let original = self.fields(&input);
+        let original = Self::fields(&input);
         let mut extra = original.clone();
         let mut collations: Vec<RelFieldCollation> = Vec::new();
         for k in keys {
@@ -513,7 +524,7 @@ impl RelBuilder {
         }
         let added = extra.len() - original.len();
         if offset_node.is_none() && fetch == Some(0) {
-            return self.empty(&input);
+            return Self::empty(&input);
         }
         if offset_node.is_none() && fetch_node.is_none() && collations.is_empty() {
             return input;
@@ -565,7 +576,7 @@ impl RelBuilder {
             }
         }
         let base = if added > 0 {
-            self.project(input, extra)
+            self.project(input, &extra)
         } else {
             input
         };
@@ -576,7 +587,7 @@ impl RelBuilder {
             fetch: fetch_node,
         };
         if added > 0 {
-            self.project(sort, original)
+            self.project(sort, &original)
         } else {
             sort
         }

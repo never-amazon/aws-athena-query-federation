@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::{Block, BlockSpiller, RowWriter};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::SpillLocation;
-use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode, FederationThrottleException};
+use athena_federation_sdk::{
+    exceptions::{FederationSourceErrorCode, FederationThrottleException},
+    FederationError,
+};
 use athena_federation_sdk::{
     ExceptionFilter, State, ThrottlingInvoker, THROTTLE_DECREASE_FACTOR, THROTTLE_INCREASE_MS,
     THROTTLE_INITIAL_DELAY_MS, THROTTLE_MAX_DELAY_MS,
@@ -17,14 +20,20 @@ fn throttle_filter() -> Arc<dyn ExceptionFilter<FederationError>> {
 }
 
 fn throttling_error() -> FederationError {
-    FederationError::connector(FederationSourceErrorCode::ThrottlingException, "Throttling error")
+    FederationError::connector(
+        FederationSourceErrorCode::ThrottlingException,
+        "Throttling error",
+    )
 }
 
 struct MockSpiller;
 
 #[async_trait]
 impl BlockSpiller for MockSpiller {
-    async fn write_rows(&self, _row_writer: &mut (dyn RowWriter + Send)) -> athena_federation_sdk::Result<()> {
+    async fn write_rows(
+        &self,
+        _row_writer: &mut (dyn RowWriter + Send),
+    ) -> athena_federation_sdk::Result<()> {
         Ok(())
     }
 
@@ -89,7 +98,9 @@ async fn invoke_with_throttle() {
                     let count = count.clone();
                     async move {
                         if count.fetch_add(1, Ordering::SeqCst) + 1 < 4 {
-                            return Err(FederationError::Throttle(FederationThrottleException::new()));
+                            return Err(FederationError::Throttle(
+                                FederationThrottleException::new(),
+                            ));
                         }
                         Ok(val)
                     }
@@ -119,7 +130,10 @@ async fn invoke_with_throttle_timeout() {
         .unwrap();
 
     let ex = invoker
-        .invoke_with_timeout_millis(|| async { Err::<i32, FederationError>(throttling_error()) }, 2_000)
+        .invoke_with_timeout_millis(
+            || async { Err::<i32, FederationError>(throttling_error()) },
+            2_000,
+        )
         .await
         .unwrap_err();
     assert!(ex.as_connector_exception().is_some());
@@ -139,12 +153,22 @@ async fn invoke_with_throttle_no_spill() {
         .unwrap();
 
     let ex = invoker
-        .invoke_with_timeout_millis(|| async { Err::<i32, FederationError>(throttling_error()) }, 2_000)
+        .invoke_with_timeout_millis(
+            || async { Err::<i32, FederationError>(throttling_error()) },
+            2_000,
+        )
         .await
         .unwrap_err();
-    let connector = ex.as_connector_exception().expect("AthenaConnectorException");
-    assert_eq!(Some(FederationSourceErrorCode::ThrottlingException), connector.error_code());
-    assert!(connector.get_message().starts_with("ThrottlingInvoker requesting slow down due to"));
+    let connector = ex
+        .as_connector_exception()
+        .expect("AthenaConnectorException");
+    assert_eq!(
+        Some(FederationSourceErrorCode::ThrottlingException),
+        connector.error_code()
+    );
+    assert!(connector
+        .get_message()
+        .starts_with("ThrottlingInvoker requesting slow down due to"));
 }
 
 #[test]
@@ -155,9 +179,10 @@ fn test_default_builder_from_config() {
         (THROTTLE_DECREASE_FACTOR.to_string(), "0.1".to_string()),
         (THROTTLE_INCREASE_MS.to_string(), "500".to_string()),
     ]);
-    let builder = ThrottlingInvoker::new_default_builder(throttle_filter(), &config_option).unwrap();
+    let builder =
+        ThrottlingInvoker::new_default_builder(throttle_filter(), &config_option).unwrap();
     let invoker = builder.build().unwrap();
-    assert_eq!(0.1, invoker.get_decrease());
+    assert_eq!(0.1f64.to_bits(), invoker.get_decrease().to_bits());
     assert_eq!(500, invoker.get_increase());
     assert_eq!(100, invoker.get_default_initial_delay_ms());
     assert_eq!(10000, invoker.get_max_delay_ms());

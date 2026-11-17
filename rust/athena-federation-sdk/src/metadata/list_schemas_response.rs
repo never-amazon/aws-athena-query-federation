@@ -32,6 +32,10 @@ impl PartialEq for ListSchemasResponse {
 
 impl fmt::Display for ListSchemasResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ListSchemasResponse{{schemas=[{}]}}", self.schemas.join(", "))
+        write!(
+            f,
+            "ListSchemasResponse{{schemas=[{}]}}",
+            self.schemas.join(", ")
+        )
     }
 }

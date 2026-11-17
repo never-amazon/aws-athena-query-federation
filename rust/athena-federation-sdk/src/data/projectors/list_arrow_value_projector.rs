@@ -20,7 +20,10 @@ impl<'a> ListArrowValueProjector<'a> {
             )));
         }
         let projection = create_value_projection(minor_type_of(children[0].data_type()))?;
-        Ok(ListArrowValueProjector { list_reader, projection })
+        Ok(ListArrowValueProjector {
+            list_reader,
+            projection,
+        })
     }
 
     pub fn do_project(&self) -> Result<Value> {

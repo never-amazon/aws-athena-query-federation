@@ -16,8 +16,12 @@ fn rows(block: &Block) -> String {
 }
 
 fn load(allocator: &BlockAllocatorImpl, schema_bytes: &[u8], batch_bytes: &[u8]) -> Block {
-    let schema = SchemaSerDe::new().deserialize(&mut &schema_bytes[..]).unwrap();
-    let batch = RecordBatchSerDe::new(allocator).deserialize(batch_bytes).unwrap();
+    let schema = SchemaSerDe::new()
+        .deserialize(&mut &schema_bytes[..])
+        .unwrap();
+    let batch = RecordBatchSerDe::new(allocator)
+        .deserialize(batch_bytes)
+        .unwrap();
     let mut block = allocator.create_block(Arc::new(schema));
     block.load_arrow_record_batch(&batch).unwrap();
     block
@@ -37,7 +41,9 @@ fn rewrites_java_arrow_ipc_messages_without_loss() {
     let allocator = BlockAllocatorImpl::new();
     let block = load(&allocator, SCHEMA, BATCH);
     let mut schema_out = Vec::new();
-    SchemaSerDe::new().serialize(block.get_schema(), &mut schema_out).unwrap();
+    SchemaSerDe::new()
+        .serialize(block.get_schema(), &mut schema_out)
+        .unwrap();
     let mut batch_out = Vec::new();
     RecordBatchSerDe::new(&allocator)
         .serialize(&block.get_arrow_record_batch().unwrap(), &mut batch_out)
@@ -45,5 +51,8 @@ fn rewrites_java_arrow_ipc_messages_without_loss() {
     let again = load(&allocator, &schema_out, &batch_out);
     assert_eq!(block.get_schema(), again.get_schema());
     assert_eq!(rows(&block), rows(&again));
-    assert_eq!(block.get_record_batch().unwrap(), again.get_record_batch().unwrap());
+    assert_eq!(
+        block.get_record_batch().unwrap(),
+        again.get_record_batch().unwrap()
+    );
 }

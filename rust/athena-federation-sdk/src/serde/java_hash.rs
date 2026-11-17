@@ -4,7 +4,7 @@ const DEFAULT_INITIAL_CAPACITY: usize = 16;
 const MAXIMUM_CAPACITY: usize = 1 << 30;
 
 fn spread(key: &str) -> u32 {
-    let h = java_string_hash(key) as u32;
+    let h = java_string_hash(key).cast_unsigned();
     h ^ (h >> 16)
 }
 
@@ -12,23 +12,25 @@ fn table_size_for(cap: usize) -> usize {
     if cap <= 1 {
         return 1;
     }
-    let n = (cap - 1).next_power_of_two();
-    n.clamp(1, MAXIMUM_CAPACITY)
+    cap.next_power_of_two().min(MAXIMUM_CAPACITY)
 }
 
 fn final_table_size(initial_table: usize, distinct: usize) -> usize {
     let mut table = initial_table;
-    let mut threshold = (table as f64 * 0.75) as usize;
+    let mut threshold = table * 3 / 4;
     for size in 1..=distinct {
         if size > threshold && table < MAXIMUM_CAPACITY {
             table *= 2;
-            threshold = (table as f64 * 0.75) as usize;
+            threshold = table * 3 / 4;
         }
     }
     table
 }
 
-pub fn java_hash_order_with_table<'a, I>(keys_in_insertion_order: I, initial_table: usize) -> Vec<&'a str>
+pub fn java_hash_order_with_table<'a, I>(
+    keys_in_insertion_order: I,
+    initial_table: usize,
+) -> Vec<&'a str>
 where
     I: IntoIterator<Item = &'a str>,
 {
@@ -55,7 +57,10 @@ where
     java_hash_order_with_table(keys_in_insertion_order, DEFAULT_INITIAL_CAPACITY)
 }
 
-pub fn java_hash_order_with_capacity<'a, I>(keys_in_insertion_order: I, initial_capacity: usize) -> Vec<&'a str>
+pub fn java_hash_order_with_capacity<'a, I>(
+    keys_in_insertion_order: I,
+    initial_capacity: usize,
+) -> Vec<&'a str>
 where
     I: IntoIterator<Item = &'a str>,
 {
@@ -67,7 +72,7 @@ where
     I: IntoIterator<Item = &'a str>,
 {
     let keys: Vec<&'a str> = keys_in_insertion_order.into_iter().collect();
-    let capacity = std::cmp::max((keys.len() as f32 / 0.75f32) as usize + 1, 16);
+    let capacity = std::cmp::max(keys.len() * 4 / 3 + 1, 16);
     java_hash_order_with_capacity(keys, capacity)
 }
 
@@ -82,4 +87,19 @@ where
         .into_iter()
         .filter_map(|k| sorted.iter().find(|s| s.as_str() == k).copied())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::java_hash_set_copy_order;
+
+    #[test]
+    fn hash_set_copy_order_matches_java_for_twelve_keys() {
+        let keys: Vec<String> = (0..12).map(|i| format!("col{i}")).collect();
+        let order = java_hash_set_copy_order(keys.iter().map(String::as_str));
+        assert_eq!(
+            "col11,col8,col9,col6,col10,col7,col4,col5,col2,col3,col0,col1",
+            order.join(",")
+        );
+    }
 }

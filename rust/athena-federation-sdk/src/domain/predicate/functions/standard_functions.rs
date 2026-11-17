@@ -1,7 +1,10 @@
 use super::function_name::FunctionName;
 use super::operator_type::OperatorType;
 
-#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[allow(
+    non_camel_case_types,
+    reason = "variant names mirror the Java enum constants"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StandardFunctions {
     AND_FUNCTION_NAME,
@@ -29,7 +32,17 @@ pub enum StandardFunctions {
 
 impl StandardFunctions {
     pub fn values() -> &'static [StandardFunctions] {
-        use StandardFunctions::*;
+        use StandardFunctions::{
+            ADD_FUNCTION_NAME, AND_FUNCTION_NAME, ARRAY_CONSTRUCTOR_FUNCTION_NAME,
+            DIVIDE_FUNCTION_NAME, EQUAL_OPERATOR_FUNCTION_NAME,
+            GREATER_THAN_OPERATOR_FUNCTION_NAME, GREATER_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME,
+            IN_PREDICATE_FUNCTION_NAME, IS_DISTINCT_FROM_OPERATOR_FUNCTION_NAME,
+            IS_NULL_FUNCTION_NAME, LESS_THAN_OPERATOR_FUNCTION_NAME,
+            LESS_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME, LIKE_PATTERN_FUNCTION_NAME,
+            MODULUS_FUNCTION_NAME, MULTIPLY_FUNCTION_NAME, NEGATE_FUNCTION_NAME,
+            NOT_EQUAL_OPERATOR_FUNCTION_NAME, NOT_FUNCTION_NAME, NULLIF_FUNCTION_NAME,
+            OR_FUNCTION_NAME, SUBTRACT_FUNCTION_NAME,
+        };
         &[
             AND_FUNCTION_NAME,
             OR_FUNCTION_NAME,
@@ -55,9 +68,19 @@ impl StandardFunctions {
         ]
     }
 
-    fn parts(&self) -> (&'static str, OperatorType) {
-        use OperatorType::*;
-        use StandardFunctions::*;
+    fn parts(self) -> (&'static str, OperatorType) {
+        use OperatorType::{BINARY, UNARY, VARARG};
+        use StandardFunctions::{
+            ADD_FUNCTION_NAME, AND_FUNCTION_NAME, ARRAY_CONSTRUCTOR_FUNCTION_NAME,
+            DIVIDE_FUNCTION_NAME, EQUAL_OPERATOR_FUNCTION_NAME,
+            GREATER_THAN_OPERATOR_FUNCTION_NAME, GREATER_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME,
+            IN_PREDICATE_FUNCTION_NAME, IS_DISTINCT_FROM_OPERATOR_FUNCTION_NAME,
+            IS_NULL_FUNCTION_NAME, LESS_THAN_OPERATOR_FUNCTION_NAME,
+            LESS_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME, LIKE_PATTERN_FUNCTION_NAME,
+            MODULUS_FUNCTION_NAME, MULTIPLY_FUNCTION_NAME, NEGATE_FUNCTION_NAME,
+            NOT_EQUAL_OPERATOR_FUNCTION_NAME, NOT_FUNCTION_NAME, NULLIF_FUNCTION_NAME,
+            OR_FUNCTION_NAME, SUBTRACT_FUNCTION_NAME,
+        };
         match self {
             AND_FUNCTION_NAME => ("$and", VARARG),
             OR_FUNCTION_NAME => ("$or", VARARG),

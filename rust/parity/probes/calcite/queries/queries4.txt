@@ -1,0 +1,3 @@
+std	SELECT * FROM test_table WHERE char_col = CAST('ab' AS CHAR(5))
+std	SELECT * FROM test_table WHERE CAST(varchar_col AS CHAR(5)) = 'ab'
+std	SELECT * FROM test_table WHERE char_col IN ('', 'x')

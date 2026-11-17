@@ -3,7 +3,9 @@ use std::sync::Arc;
 use arrow::array::Int32Array;
 use arrow::datatypes::{DataType, Field, Schema};
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, BlockUtils, Value};
-use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory, NoOpBlockCrypto};
+use athena_federation_sdk::security::{
+    BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory, NoOpBlockCrypto,
+};
 
 struct Setup {
     allocator: Arc<BlockAllocatorImpl>,
@@ -44,7 +46,10 @@ async fn encrypt_with_null_key() {
 async fn encrypt_with_non_null_key_throws_exception() {
     let s = setup().await;
     let block = s.allocator.create_block(s.test_schema.clone());
-    let ex = s.no_op_block_crypto.encrypt(Some(&s.encryption_key), &block).unwrap_err();
+    let ex = s
+        .no_op_block_crypto
+        .encrypt(Some(&s.encryption_key), &block)
+        .unwrap_err();
     assert!(ex.as_connector_exception().is_some());
 }
 
@@ -54,7 +59,10 @@ async fn encrypt_bytes_passthrough() {
     let input_bytes = [1u8, 2, 3, 4, 5];
     assert_eq!(
         input_bytes.as_slice(),
-        s.no_op_block_crypto.encrypt_with_bytes(None, &input_bytes).unwrap().as_slice()
+        s.no_op_block_crypto
+            .encrypt_with_bytes(None, &input_bytes)
+            .unwrap()
+            .as_slice()
     );
 }
 
@@ -81,15 +89,27 @@ async fn decrypt_with_schema() {
     let s = setup().await;
     let schema = int_schema();
     let mut block = s.allocator.create_block(schema.clone());
-    BlockUtils::set_value(block.get_field_vector_mut("id").unwrap(), 0, &Value::Int(42)).unwrap();
+    BlockUtils::set_value(
+        block.get_field_vector_mut("id").unwrap(),
+        0,
+        &Value::Int(42),
+    )
+    .unwrap();
     block.set_row_count(1);
 
     let encrypted = s.no_op_block_crypto.encrypt(None, &block).unwrap();
-    let decrypted_block = s.no_op_block_crypto.decrypt_with_schema(None, &encrypted, schema.clone()).unwrap();
+    let decrypted_block = s
+        .no_op_block_crypto
+        .decrypt_with_schema(None, &encrypted, schema.clone())
+        .unwrap();
 
     assert_eq!(&schema, decrypted_block.get_schema());
     let batch = decrypted_block.get_record_batch().unwrap();
-    let result_vector = batch.column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+    let result_vector = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .unwrap();
     assert_eq!(1, result_vector.len());
     assert_eq!(42, result_vector.value(0));
 }

@@ -22,7 +22,7 @@ pub struct GetSplitsRequest {
 }
 
 impl GetSplitsRequest {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Java constructor")]
     pub fn new(
         identity: Option<FederatedIdentity>,
         query_id: Option<String>,
@@ -45,7 +45,10 @@ impl GetSplitsRequest {
         }
     }
 
-    pub fn with_continuation_token(clone: &GetSplitsRequest, continuation_token: Option<String>) -> GetSplitsRequest {
+    pub fn with_continuation_token(
+        clone: &GetSplitsRequest,
+        continuation_token: Option<String>,
+    ) -> GetSplitsRequest {
         let mut copy = clone.clone();
         copy.continuation_token = continuation_token;
         copy

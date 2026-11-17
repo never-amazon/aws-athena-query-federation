@@ -1,6 +1,9 @@
 use crate::domain::predicate::expression::FunctionCallExpression;
 use crate::exceptions::{FederationError, Result};
-use crate::serde::base::{assert_field_name, require_non_null, validate_array_start, validate_object_end, validate_object_start_token};
+use crate::serde::base::{
+    assert_field_name, require_non_null, validate_array_start, validate_object_end,
+    validate_object_start_token,
+};
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 use crate::serde::SerDeContext;
 
@@ -8,7 +11,11 @@ const FUNCTION_NAME_FIELD: &str = "functionName";
 const TYPE_FIELD: &str = "type";
 const ARGUMENTS_FIELD: &str = "arguments";
 
-pub fn do_typed_serialize(expression: &FunctionCallExpression, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_typed_serialize(
+    expression: &FunctionCallExpression,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     jgen.write_field_name(TYPE_FIELD)?;
     crate::serde::v2::arrow_type_serde::serialize(Some(expression.get_type()), jgen)?;
     jgen.write_field_name(FUNCTION_NAME_FIELD)?;
@@ -20,7 +27,10 @@ pub fn do_typed_serialize(expression: &FunctionCallExpression, jgen: &mut JsonGe
     jgen.write_end_array()
 }
 
-pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<FunctionCallExpression> {
+pub fn do_typed_deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<FunctionCallExpression> {
     assert_field_name(jparser, Some(TYPE_FIELD))?;
     let arrow_type = crate::serde::v2::arrow_type_serde::deserialize(jparser)?;
     assert_field_name(jparser, Some(FUNCTION_NAME_FIELD))?;
@@ -31,10 +41,16 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>
     loop {
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                ))
+            }
             token => {
                 validate_object_start_token(token)?;
-                arguments.push(super::federation_expression_serde_v4::do_deserialize(jparser, ctx)?);
+                arguments.push(super::federation_expression_serde_v4::do_deserialize(
+                    jparser, ctx,
+                )?);
                 validate_object_end(jparser)?;
             }
         }

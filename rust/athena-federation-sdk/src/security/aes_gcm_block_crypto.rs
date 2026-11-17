@@ -86,14 +86,24 @@ impl AesGcmBlockCrypto {
         }
         let bad_key = |_| internal_error("Key length not 128/192/256 bits.");
         let cipher = match key.get_key().len() {
-            16 => Cipher::Aes128(Box::new(Aes128Gcm::new_from_slice(key.get_key()).map_err(bad_key)?)),
-            24 => Cipher::Aes192(Box::new(Aes192Gcm::new_from_slice(key.get_key()).map_err(bad_key)?)),
-            32 => Cipher::Aes256(Box::new(Aes256Gcm::new_from_slice(key.get_key()).map_err(bad_key)?)),
+            16 => Cipher::Aes128(Box::new(
+                Aes128Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+            )),
+            24 => Cipher::Aes192(Box::new(
+                Aes192Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+            )),
+            32 => Cipher::Aes256(Box::new(
+                Aes256Gcm::new_from_slice(key.get_key()).map_err(bad_key)?,
+            )),
             _ => return Err(internal_error("Key length not 128/192/256 bits.")),
         };
         let nonce = Nonce::<U12>::try_from(key.get_nonce())
-            .map_err(|_| invalid_input(format!("Expected {} nonce bytes", NONCE_BYTES)))?;
-        Ok(GcmCipher { cipher, nonce, mode })
+            .map_err(|_| invalid_input(format!("Expected {NONCE_BYTES} nonce bytes")))?;
+        Ok(GcmCipher {
+            cipher,
+            nonce,
+            mode,
+        })
     }
 }
 
@@ -107,7 +117,12 @@ impl BlockCrypto for AesGcmBlockCrypto {
         Self::make_cipher(Mode::Encrypt, key)?.do_final(bytes)
     }
 
-    fn decrypt_with_schema(&self, key: Option<&EncryptionKey>, bytes: &[u8], schema: SchemaRef) -> Result<Block> {
+    fn decrypt_with_schema(
+        &self,
+        key: Option<&EncryptionKey>,
+        bytes: &[u8],
+        schema: SchemaRef,
+    ) -> Result<Block> {
         let clear = Self::make_cipher(Mode::Decrypt, key)?.do_final(bytes)?;
         deserialize_block(self.allocator.as_ref(), &clear, schema)
     }

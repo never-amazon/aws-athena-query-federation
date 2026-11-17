@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::domain::split::Split;
 use crate::exceptions::{FederationError, Result};
-use crate::serde::base::{assert_field_name, deserialize_nullable, serialize_nullable, validate_object_start_token};
+use crate::serde::base::{
+    assert_field_name, deserialize_nullable, serialize_nullable, validate_object_start_token,
+};
 use crate::serde::java_hash::java_hash_map_order;
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 
@@ -46,17 +48,28 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<Split> {
     loop {
         match jparser.next_token()? {
             Some(JsonToken::EndObject) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for OBJECT".into())),
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for OBJECT".into(),
+                ))
+            }
             Some(_) => {
                 let key = jparser.get_value_as_string();
                 jparser.next_token()?;
                 let value = jparser.get_value_as_string();
                 let key = key.ok_or_else(|| {
-                    FederationError::NullPointer(format!("null key in entry: null={}", value.as_deref().unwrap_or("null")))
+                    FederationError::NullPointer(format!(
+                        "null key in entry: null={}",
+                        value.as_deref().unwrap_or("null")
+                    ))
                 })?;
-                let value = value.ok_or_else(|| FederationError::NullPointer(format!("null value in entry: {}=null", key)))?;
+                let value = value.ok_or_else(|| {
+                    FederationError::NullPointer(format!("null value in entry: {key}=null"))
+                })?;
                 if properties.contains_key(&key) {
-                    return Err(FederationError::IllegalArgument(format!("Multiple entries with same key: {}", key)));
+                    return Err(FederationError::IllegalArgument(format!(
+                        "Multiple entries with same key: {key}"
+                    )));
                 }
                 properties.insert(key, value);
             }

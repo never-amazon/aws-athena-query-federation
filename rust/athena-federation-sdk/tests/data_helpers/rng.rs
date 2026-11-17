@@ -5,7 +5,9 @@ pub struct Rng {
 
 impl Rng {
     pub fn new(seed: u64) -> Rng {
-        Rng { state: seed ^ 0x9E37_79B9_7F4A_7C15 }
+        Rng {
+            state: seed ^ 0x9E37_79B9_7F4A_7C15,
+        }
     }
 
     pub fn next_u64(&mut self) -> u64 {
@@ -17,20 +19,27 @@ impl Rng {
     }
 
     pub fn between(&mut self, min: i64, max: i64) -> i64 {
-        let span = (max as i128 - min as i128 + 1) as u128;
-        (min as i128 + (self.next_u64() as u128 % span) as i128) as i64
+        let span = u128::try_from(i128::from(max) - i128::from(min) + 1).unwrap();
+        let offset = i128::try_from(u128::from(self.next_u64()) % span).unwrap();
+        i64::try_from(i128::from(min) + offset).unwrap()
     }
 
     pub fn between_i128(&mut self, min: i128, max: i128) -> i128 {
-        let span = (max - min + 1) as u128;
-        let wide = ((self.next_u64() as u128) << 64) | self.next_u64() as u128;
-        min + (wide % span) as i128
+        let span = u128::try_from(max - min + 1).unwrap();
+        let wide = (u128::from(self.next_u64()) << 64) | u128::from(self.next_u64());
+        min + i128::try_from(wide % span).unwrap()
     }
 
     pub fn string(&mut self, min_len: usize) -> String {
-        let len = self.between(min_len as i64, JQWIK_MAX_STRING_LENGTH as i64) as usize;
+        let len = usize::try_from(self.between(
+            i64::try_from(min_len).unwrap(),
+            i64::try_from(JQWIK_MAX_STRING_LENGTH).unwrap(),
+        ))
+        .unwrap();
         (0..len)
-            .map(|_| jqwik_char(self.between(0, JQWIK_CHAR_COUNT as i64 - 1) as u32))
+            .map(|_| {
+                jqwik_char(u32::try_from(self.between(0, i64::from(JQWIK_CHAR_COUNT) - 1)).unwrap())
+            })
             .collect()
     }
 }

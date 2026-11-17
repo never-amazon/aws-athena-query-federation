@@ -48,7 +48,13 @@ fn floating_point_type() -> BoxedStrategy<DataType> {
 }
 
 pub fn timestamp_type() -> BoxedStrategy<DataType> {
-    let zones = prop::sample::select(vec!["UTC", "America/Chicago", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"]);
+    let zones = prop::sample::select(vec![
+        "UTC",
+        "America/Chicago",
+        "Europe/Paris",
+        "Asia/Tokyo",
+        "Australia/Sydney",
+    ]);
     let units = prop::sample::select(vec![
         TimeUnit::Second,
         TimeUnit::Millisecond,
@@ -62,7 +68,13 @@ pub fn timestamp_type() -> BoxedStrategy<DataType> {
 
 fn decimal_type() -> BoxedStrategy<DataType> {
     (1u8..=20)
-        .prop_flat_map(|precision| (Just(precision), 0i8..(precision as i8), 0usize..3))
+        .prop_flat_map(|precision| {
+            (
+                Just(precision),
+                0i8..i8::try_from(precision).unwrap(),
+                0usize..3,
+            )
+        })
         .prop_map(|(p, s, width)| match width {
             0 => DataType::Decimal32(p, s),
             1 => DataType::Decimal64(p, s),
@@ -92,7 +104,10 @@ impl FieldsGenerator {
         }
     }
 
-    pub fn with_complex_keys(max_recursion_depth: usize, allow_complex_keys: bool) -> FieldsGenerator {
+    pub fn with_complex_keys(
+        max_recursion_depth: usize,
+        allow_complex_keys: bool,
+    ) -> FieldsGenerator {
         FieldsGenerator {
             allow_complex_keys,
             max_recursion_depth,
@@ -103,7 +118,12 @@ impl FieldsGenerator {
         self.field_at(0, None, DEFAULT_NULLABLE)
     }
 
-    fn field_at(self, depth: usize, name: Option<&'static str>, nullable: bool) -> BoxedStrategy<Field> {
+    fn field_at(
+        self,
+        depth: usize,
+        name: Option<&'static str>,
+        nullable: bool,
+    ) -> BoxedStrategy<Field> {
         let next = depth + 1;
         let name_strategy: BoxedStrategy<String> = match name {
             Some(n) => Just(n.to_string()).boxed(),
@@ -113,7 +133,7 @@ impl FieldsGenerator {
             )
                 .prop_map(|(chars, n)| {
                     let s: String = chars.into_iter().map(jqwik_char).collect();
-                    format!("{}{}", s, n)
+                    format!("{s}{n}")
                 })
                 .boxed(),
         };
@@ -123,50 +143,56 @@ impl FieldsGenerator {
         if next >= self.max_recursion_depth {
             return primitive;
         }
-        let complex = prop_oneof![Just(Complex::List), Just(Complex::Struct), Just(Complex::Map)]
-            .prop_flat_map(move |kind| {
-                let name_strategy = name_strategy.clone();
-                match kind {
-                    Complex::List => (name_strategy, self.field_at(next, None, DEFAULT_NULLABLE))
-                        .prop_map(move |(n, child)| Field::new(n, DataType::List(Arc::new(child)), nullable))
-                        .boxed(),
-                    Complex::Struct => (
-                        name_strategy,
-                        prop::collection::vec(self.field_at(next, None, DEFAULT_NULLABLE), 1..=3),
-                    )
-                        .prop_map(move |(n, children)| {
-                            let children: Vec<Field> = children
-                                .into_iter()
-                                .enumerate()
-                                .map(|(i, c)| {
-                                    let unique = format!("{}_{}", c.name(), i);
-                                    c.with_name(unique)
-                                })
-                                .collect();
-                            Field::new(n, DataType::Struct(Fields::from(children)), nullable)
-                        })
-                        .boxed(),
-                    Complex::Map => {
-                        let key = if self.allow_complex_keys {
-                            self.field_at(next, Some(MAP_KEY_NAME), false)
-                        } else {
-                            self.field_at(self.max_recursion_depth, Some(MAP_KEY_NAME), false)
-                        };
-                        let value = self.field_at(next, Some(MAP_VALUE_NAME), DEFAULT_NULLABLE);
-                        (name_strategy, key, value)
-                            .prop_map(move |(n, k, v)| {
-                                let entries = Field::new(
-                                    MAP_DATA_VECTOR_NAME,
-                                    DataType::Struct(Fields::from(vec![k, v])),
-                                    false,
-                                );
-                                Field::new(n, DataType::Map(Arc::new(entries), true), nullable)
+        let complex = prop_oneof![
+            Just(Complex::List),
+            Just(Complex::Struct),
+            Just(Complex::Map)
+        ]
+        .prop_flat_map(move |kind| {
+            let name_strategy = name_strategy.clone();
+            match kind {
+                Complex::List => (name_strategy, self.field_at(next, None, DEFAULT_NULLABLE))
+                    .prop_map(move |(n, child)| {
+                        Field::new(n, DataType::List(Arc::new(child)), nullable)
+                    })
+                    .boxed(),
+                Complex::Struct => (
+                    name_strategy,
+                    prop::collection::vec(self.field_at(next, None, DEFAULT_NULLABLE), 1..=3),
+                )
+                    .prop_map(move |(n, children)| {
+                        let children: Vec<Field> = children
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, c)| {
+                                let unique = format!("{}_{}", c.name(), i);
+                                c.with_name(unique)
                             })
-                            .boxed()
-                    }
+                            .collect();
+                        Field::new(n, DataType::Struct(Fields::from(children)), nullable)
+                    })
+                    .boxed(),
+                Complex::Map => {
+                    let key = if self.allow_complex_keys {
+                        self.field_at(next, Some(MAP_KEY_NAME), false)
+                    } else {
+                        self.field_at(self.max_recursion_depth, Some(MAP_KEY_NAME), false)
+                    };
+                    let value = self.field_at(next, Some(MAP_VALUE_NAME), DEFAULT_NULLABLE);
+                    (name_strategy, key, value)
+                        .prop_map(move |(n, k, v)| {
+                            let entries = Field::new(
+                                MAP_DATA_VECTOR_NAME,
+                                DataType::Struct(Fields::from(vec![k, v])),
+                                false,
+                            );
+                            Field::new(n, DataType::Map(Arc::new(entries), true), nullable)
+                        })
+                        .boxed()
                 }
-            })
-            .boxed();
+            }
+        })
+        .boxed();
         prop_oneof![primitive, complex].boxed()
     }
 }

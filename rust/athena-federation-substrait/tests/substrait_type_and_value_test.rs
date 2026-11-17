@@ -1,5 +1,3 @@
-#![allow(clippy::approx_constant)]
-
 use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
@@ -63,7 +61,7 @@ fn test_getters_with_integer_type() {
 
 #[test]
 fn test_getters_with_big_int_type() {
-    let value = SubstraitValue::Long(9223372036854775807);
+    let value = SubstraitValue::Long(9_223_372_036_854_775_807);
     let tav = tv(SqlTypeName::Bigint, value.clone(), "bigint_column");
     assert_eq!(tav.get_type(), SqlTypeName::Bigint);
     assert_eq!(tav.get_value(), &value);
@@ -79,15 +77,17 @@ fn test_getters_with_varchar_type() {
     assert_eq!(tav.get_column_name(), "varchar_column");
 }
 
+#[allow(clippy::approx_constant, reason = "test values match the Java test")]
 #[test]
 fn test_getters_with_double_type() {
-    let value = SubstraitValue::Double(3.141592653589793);
+    let value = SubstraitValue::Double(3.141_592_653_589_793);
     let tav = tv(SqlTypeName::Double, value.clone(), "double_column");
     assert_eq!(tav.get_type(), SqlTypeName::Double);
     assert_eq!(tav.get_value(), &value);
     assert_eq!(tav.get_column_name(), "double_column");
 }
 
+#[allow(clippy::approx_constant, reason = "test values match the Java test")]
 #[test]
 fn test_getters_with_float_type() {
     let value = SubstraitValue::Float(3.14f32);

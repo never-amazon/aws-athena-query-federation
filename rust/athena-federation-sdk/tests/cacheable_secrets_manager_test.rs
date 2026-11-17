@@ -40,13 +40,23 @@ impl SecretsManagerClient for MockSecretsManager {
         }
     }
 
-    async fn put_secret_value(&self, _secret_id: &str, _secret_string: &str) -> Result<(), AwsServiceError> {
+    async fn put_secret_value(
+        &self,
+        _secret_id: &str,
+        _secret_string: &str,
+    ) -> Result<(), AwsServiceError> {
         Ok(())
     }
 }
 
 fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap()
 }
 
 fn setup() -> (Arc<MockSecretsManager>, CachableSecretsManager) {
@@ -59,7 +69,10 @@ fn setup() -> (Arc<MockSecretsManager>, CachableSecretsManager) {
 async fn expiration_test() {
     let (mock_secrets_manager, cachable_secrets_manager) = setup();
     cachable_secrets_manager.add_cache_entry("test", "value", now());
-    assert_eq!("value", cachable_secrets_manager.get_secret("test").await.unwrap());
+    assert_eq!(
+        "value",
+        cachable_secrets_manager.get_secret("test").await.unwrap()
+    );
     assert_eq!(0, mock_secrets_manager.calls.load(Ordering::SeqCst));
 
     mock_secrets_manager.reset();
@@ -70,19 +83,29 @@ async fn expiration_test() {
         Err(AwsServiceError::new(""))
     }));
     cachable_secrets_manager.add_cache_entry("test", "value", 0);
-    assert_eq!("value2", cachable_secrets_manager.get_secret("test").await.unwrap());
+    assert_eq!(
+        "value2",
+        cachable_secrets_manager.get_secret("test").await.unwrap()
+    );
 }
 
 #[tokio::test]
 async fn eviction_test() {
     let (mock_secrets_manager, cachable_secrets_manager) = setup();
     for i in 0..CachableSecretsManager::MAX_CACHE_SIZE {
-        cachable_secrets_manager.add_cache_entry(format!("test{}", i), format!("value{}", i), now());
+        cachable_secrets_manager.add_cache_entry(format!("test{i}"), format!("value{i}"), now());
     }
-    mock_secrets_manager.when_get_secret_value(Box::new(|secret_id| Ok(Some(format!("{}_value", secret_id)))));
+    mock_secrets_manager
+        .when_get_secret_value(Box::new(|secret_id| Ok(Some(format!("{secret_id}_value")))));
 
-    assert_eq!("test_value", cachable_secrets_manager.get_secret("test").await.unwrap());
-    assert_eq!("test0_value", cachable_secrets_manager.get_secret("test0").await.unwrap());
+    assert_eq!(
+        "test_value",
+        cachable_secrets_manager.get_secret("test").await.unwrap()
+    );
+    assert_eq!(
+        "test0_value",
+        cachable_secrets_manager.get_secret("test0").await.unwrap()
+    );
     assert_eq!(2, mock_secrets_manager.calls.load(Ordering::SeqCst));
 }
 
@@ -101,18 +124,27 @@ async fn resolve_secrets() {
         async move { manager.resolve_secrets(Some(s)).await }
     };
 
-    assert_eq!(Some("OneSecret".to_string()), resolve("${OneSecret}").await.unwrap());
     assert_eq!(
-        Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets".to_string()),
-        resolve("ThisIsMyStringWith${TwoSecret}SuperSecret${Secrets}").await.unwrap()
+        Some("OneSecret".to_string()),
+        resolve("${OneSecret}").await.unwrap()
     );
     assert_eq!(
         Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets".to_string()),
-        resolve("ThisIsMyStringWithTwoSecretSuperSecretSecrets").await.unwrap()
+        resolve("ThisIsMyStringWith${TwoSecret}SuperSecret${Secrets}")
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets".to_string()),
+        resolve("ThisIsMyStringWithTwoSecretSuperSecretSecrets")
+            .await
+            .unwrap()
     );
     assert_eq!(
         Some("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets".to_string()),
-        resolve("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets").await.unwrap()
+        resolve("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets")
+            .await
+            .unwrap()
     );
     assert_eq!(
         Some("ThisIs/MyStringWith_AllOf+The@llowed=Special-Characters.".to_string()),
@@ -120,7 +152,10 @@ async fn resolve_secrets() {
             .await
             .unwrap()
     );
-    assert!(resolve("This${Unknown}").await.is_err(), "Should not see this!");
+    assert!(
+        resolve("This${Unknown}").await.is_err(),
+        "Should not see this!"
+    );
 }
 
 #[tokio::test]
@@ -130,7 +165,9 @@ async fn resolve_with_default_credentials() {
         if secret_id.eq_ignore_ascii_case("unknown") {
             return Err(AwsServiceError::new("Unknown secret!"));
         }
-        Ok(Some("{\"username\":\"testuser\", \"password\":\"testpassword\"}".to_string()))
+        Ok(Some(
+            "{\"username\":\"testuser\", \"password\":\"testpassword\"}".to_string(),
+        ))
     }));
 
     let resolve = |s: Option<&'static str>| {
@@ -138,18 +175,27 @@ async fn resolve_with_default_credentials() {
         async move { manager.resolve_with_default_credentials(s).await }
     };
 
-    assert_eq!(Some("testuser:testpassword".to_string()), resolve(Some("${OneSecret}")).await.unwrap());
+    assert_eq!(
+        Some("testuser:testpassword".to_string()),
+        resolve(Some("${OneSecret}")).await.unwrap()
+    );
     assert_eq!(
         Some("ThisIsMyStringWithtestuser:testpasswordSuperSecrettestuser:testpassword".to_string()),
-        resolve(Some("ThisIsMyStringWith${TwoSecret}SuperSecret${Secrets}")).await.unwrap()
+        resolve(Some("ThisIsMyStringWith${TwoSecret}SuperSecret${Secrets}"))
+            .await
+            .unwrap()
     );
     assert_eq!(
         Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets".to_string()),
-        resolve(Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets")).await.unwrap()
+        resolve(Some("ThisIsMyStringWithTwoSecretSuperSecretSecrets"))
+            .await
+            .unwrap()
     );
     assert_eq!(
         Some("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets".to_string()),
-        resolve(Some("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets")).await.unwrap()
+        resolve(Some("ThisIsM}yStringWi${thTwoSecretS{uperSecretSecrets"))
+            .await
+            .unwrap()
     );
     assert_eq!(
         Some(
@@ -160,6 +206,9 @@ async fn resolve_with_default_credentials() {
             .await
             .unwrap()
     );
-    assert!(resolve(Some("This${Unknown}")).await.is_err(), "Should not see this!");
+    assert!(
+        resolve(Some("This${Unknown}")).await.is_err(),
+        "Should not see this!"
+    );
     assert_eq!(None, resolve(None).await.unwrap());
 }

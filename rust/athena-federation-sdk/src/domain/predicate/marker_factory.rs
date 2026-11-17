@@ -11,9 +11,19 @@ impl MarkerFactory {
         MarkerFactory
     }
 
-    pub fn create_nullable(&self, arrow_type: &ArrowType, value: &Value, bound: Bound) -> Result<Marker> {
+    pub fn create_nullable(
+        &self,
+        arrow_type: &ArrowType,
+        value: &Value,
+        bound: Bound,
+    ) -> Result<Marker> {
         if value.is_null() {
-            return Ok(Marker::from_parts(arrow_type.clone(), bound, true, Value::Null));
+            return Ok(Marker::from_parts(
+                arrow_type.clone(),
+                bound,
+                true,
+                Value::Null,
+            ));
         }
         let stored = coerce_value(arrow_type, value)?;
         Ok(Marker::from_parts(arrow_type.clone(), bound, false, stored))

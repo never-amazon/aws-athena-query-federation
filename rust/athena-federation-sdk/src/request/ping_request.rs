@@ -10,7 +10,11 @@ pub struct PingRequest {
 }
 
 impl PingRequest {
-    pub fn new(identity: Option<FederatedIdentity>, catalog_name: impl Into<String>, query_id: impl Into<String>) -> PingRequest {
+    pub fn new(
+        identity: Option<FederatedIdentity>,
+        catalog_name: impl Into<String>,
+        query_id: impl Into<String>,
+    ) -> PingRequest {
         PingRequest {
             identity,
             catalog_name: catalog_name.into(),
@@ -39,6 +43,10 @@ impl PartialEq for PingRequest {
 
 impl fmt::Display for PingRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PingRequest{{catalogName='{}', queryId='{}'}}", self.catalog_name, self.query_id)
+        write!(
+            f,
+            "PingRequest{{catalogName='{}', queryId='{}'}}",
+            self.catalog_name, self.query_id
+        )
     }
 }

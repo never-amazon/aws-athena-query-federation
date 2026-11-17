@@ -5,9 +5,7 @@ pub enum TopNPushdownSubType {
 
 impl TopNPushdownSubType {
     pub fn values() -> &'static [TopNPushdownSubType] {
-        &[
-            TopNPushdownSubType::SupportsOrderBy,
-        ]
+        &[TopNPushdownSubType::SupportsOrderBy]
     }
 
     pub fn name(&self) -> &'static str {

@@ -19,25 +19,13 @@ fn ord(o: Ordering) -> i32 {
 pub fn java_string_compare(a: &str, b: &str) -> i32 {
     let mut ai = a.encode_utf16();
     let mut bi = b.encode_utf16();
-    let mut alen = 0i32;
-    let mut blen = 0i32;
+    let remaining = |n: usize| i32::try_from(1 + n).unwrap_or(i32::MAX);
     loop {
         match (ai.next(), bi.next()) {
-            (Some(x), Some(y)) => {
-                alen += 1;
-                blen += 1;
-                if x != y {
-                    return x as i32 - y as i32;
-                }
-            }
-            (Some(_), None) => {
-                alen += 1 + ai.count() as i32;
-                return alen - blen;
-            }
-            (None, Some(_)) => {
-                blen += 1 + bi.count() as i32;
-                return alen - blen;
-            }
+            (Some(x), Some(y)) if x != y => return i32::from(x) - i32::from(y),
+            (Some(_), Some(_)) => {}
+            (Some(_), None) => return remaining(ai.count()),
+            (None, Some(_)) => return -remaining(bi.count()),
             (None, None) => return 0,
         }
     }
@@ -73,65 +61,74 @@ impl ArrowTypeComparator {
             (false, true) => return Ok(-1),
             _ => {}
         }
-        let t = minor_type_of(arrow_type);
-        let err = || cast_err(t, lhs, rhs);
-        match t {
-            MinorType::INT | MinorType::UINT4 | MinorType::DATEDAY => match (lhs, rhs) {
-                (Value::Int(a), Value::Int(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::TINYINT | MinorType::UINT1 => match (lhs, rhs) {
-                (Value::Byte(a), Value::Byte(b)) => Ok(*a as i32 - *b as i32),
-                _ => Err(err()),
-            },
-            MinorType::SMALLINT => match (lhs, rhs) {
-                (Value::Short(a), Value::Short(b)) => Ok(*a as i32 - *b as i32),
-                _ => Err(err()),
-            },
-            MinorType::UINT2 => match (lhs, rhs) {
-                (Value::Char(a), Value::Char(b)) => Ok(*a as i32 - *b as i32),
-                _ => Err(err()),
-            },
-            MinorType::BIGINT | MinorType::UINT8 => match (lhs, rhs) {
-                (Value::Long(a), Value::Long(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::FLOAT8 => match (lhs, rhs) {
-                (Value::Double(a), Value::Double(b)) => Ok(ord(java_double_compare(*a, *b))),
-                _ => Err(err()),
-            },
-            MinorType::FLOAT4 => match (lhs, rhs) {
-                (Value::Float(a), Value::Float(b)) => Ok(ord(java_float_compare(*a, *b))),
-                _ => Err(err()),
-            },
-            MinorType::VARCHAR => Ok(java_string_compare(&lhs.java_to_string(), &rhs.java_to_string())),
-            MinorType::VARBINARY => match (lhs, rhs) {
-                (Value::Bytes(a), Value::Bytes(b)) => Ok(compare_unsigned_bytes(a, b)),
-                _ => Err(err()),
-            },
-            MinorType::DECIMAL => match (lhs, rhs) {
-                (Value::Decimal(a), Value::Decimal(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::BIT => match (lhs, rhs) {
-                (Value::Boolean(a), Value::Boolean(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::DATEMILLI => match (lhs, rhs) {
-                (Value::LocalDateTime(a), Value::LocalDateTime(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => match (lhs, rhs) {
-                (Value::Long(a), Value::Long(b)) => {
-                    let l = DateTimeFormatterUtil::construct_zoned_date_time(*a, arrow_type)?;
-                    let r = DateTimeFormatterUtil::construct_zoned_date_time(*b, arrow_type)?;
-                    Ok(ord(l.compare_to(&r)))
-                }
-                (Value::Long(_), _) => Err(err()),
-                (Value::LocalDateTime(a), Value::LocalDateTime(b)) => Ok(ord(a.cmp(b))),
-                _ => Err(err()),
-            },
-            MinorType::MAP | MinorType::LIST | MinorType::STRUCT => {
+        let minor = minor_type_of(arrow_type);
+        match (minor, lhs, rhs) {
+            (
+                MinorType::INT | MinorType::UINT4 | MinorType::DATEDAY,
+                Value::Int(a),
+                Value::Int(b),
+            ) => Ok(ord(a.cmp(b))),
+            (MinorType::TINYINT | MinorType::UINT1, Value::Byte(a), Value::Byte(b)) => {
+                Ok(i32::from(*a) - i32::from(*b))
+            }
+            (MinorType::SMALLINT, Value::Short(a), Value::Short(b)) => {
+                Ok(i32::from(*a) - i32::from(*b))
+            }
+            (MinorType::UINT2, Value::Char(a), Value::Char(b)) => Ok(i32::from(*a) - i32::from(*b)),
+            (MinorType::BIGINT | MinorType::UINT8, Value::Long(a), Value::Long(b)) => {
+                Ok(ord(a.cmp(b)))
+            }
+            (MinorType::FLOAT8, Value::Double(a), Value::Double(b)) => {
+                Ok(ord(java_double_compare(*a, *b)))
+            }
+            (MinorType::FLOAT4, Value::Float(a), Value::Float(b)) => {
+                Ok(ord(java_float_compare(*a, *b)))
+            }
+            (MinorType::VARCHAR, _, _) => Ok(java_string_compare(
+                &lhs.java_to_string(),
+                &rhs.java_to_string(),
+            )),
+            (MinorType::VARBINARY, Value::Bytes(a), Value::Bytes(b)) => {
+                Ok(compare_unsigned_bytes(a, b))
+            }
+            (MinorType::DECIMAL, Value::Decimal(a), Value::Decimal(b)) => Ok(ord(a.cmp(b))),
+            (MinorType::BIT, Value::Boolean(a), Value::Boolean(b)) => Ok(ord(a.cmp(b))),
+            (
+                MinorType::DATEMILLI | MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ,
+                Value::LocalDateTime(a),
+                Value::LocalDateTime(b),
+            ) => Ok(ord(a.cmp(b))),
+            (
+                MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ,
+                Value::Long(a),
+                Value::Long(b),
+            ) => {
+                let l = DateTimeFormatterUtil::construct_zoned_date_time(*a, arrow_type)?;
+                let r = DateTimeFormatterUtil::construct_zoned_date_time(*b, arrow_type)?;
+                Ok(ord(l.compare_to(&r)))
+            }
+            (
+                MinorType::INT
+                | MinorType::UINT4
+                | MinorType::DATEDAY
+                | MinorType::TINYINT
+                | MinorType::UINT1
+                | MinorType::SMALLINT
+                | MinorType::UINT2
+                | MinorType::BIGINT
+                | MinorType::UINT8
+                | MinorType::FLOAT8
+                | MinorType::FLOAT4
+                | MinorType::VARBINARY
+                | MinorType::DECIMAL
+                | MinorType::BIT
+                | MinorType::DATEMILLI
+                | MinorType::TIMESTAMPMICROTZ
+                | MinorType::TIMESTAMPMILLITZ,
+                _,
+                _,
+            ) => Err(cast_err(minor, lhs, rhs)),
+            (MinorType::MAP | MinorType::LIST | MinorType::STRUCT, _, _) => {
                 if lhs == rhs {
                     Ok(0)
                 } else if lhs.java_hash_code() < rhs.java_hash_code() {
@@ -140,8 +137,12 @@ impl ArrowTypeComparator {
                     Ok(1)
                 }
             }
-            other => {
-                tracing::warn!("compare: Unknown type {} object: {}", other, lhs.java_class_name());
+            (other, _, _) => {
+                tracing::warn!(
+                    "compare: Unknown type {} object: {}",
+                    other,
+                    lhs.java_class_name()
+                );
                 Err(FederationError::invalid_input(format!(
                     "Unknown type {} object: class {}",
                     other,

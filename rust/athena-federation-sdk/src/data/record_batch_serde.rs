@@ -46,7 +46,7 @@ impl ArrowRecordBatch {
 
     fn from_message(metadata: Vec<u8>, body: Vec<u8>) -> Result<ArrowRecordBatch> {
         let message = root_as_message(&metadata)
-            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {}", e)))?;
+            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
         if message.header_type() != MessageHeader::RecordBatch {
             return Err(FederationError::Io(format!(
                 "Expected RecordBatch but header was {:?}",
@@ -55,8 +55,7 @@ impl ArrowRecordBatch {
         }
         let length = message
             .header_as_record_batch()
-            .map(|b| b.length() as usize)
-            .unwrap_or(0);
+            .map_or(0, |b| usize::try_from(b.length()).unwrap_or_default());
         let version = message.version();
         Ok(ArrowRecordBatch {
             length,
@@ -76,12 +75,19 @@ impl ArrowRecordBatch {
 
     pub fn decode(&self, schema: SchemaRef) -> Result<RecordBatch> {
         let message = root_as_message(&self.metadata)
-            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {}", e)))?;
+            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
         let fb_batch = message
             .header_as_record_batch()
             .ok_or_else(|| FederationError::Io("Message is not a record batch".into()))?;
         let dictionaries = HashMap::new();
-        let batch = arrow::ipc::reader::read_record_batch(&self.body, fb_batch, schema, &dictionaries, None, &self.version)?;
+        let batch = arrow::ipc::reader::read_record_batch(
+            &self.body,
+            fb_batch,
+            schema,
+            &dictionaries,
+            None,
+            &self.version,
+        )?;
         Ok(batch)
     }
 
@@ -111,17 +117,23 @@ fn read_message(input: &mut dyn Read) -> Result<Option<(Vec<u8>, usize)>> {
     if len <= 0 {
         return Ok(None);
     }
-    let mut meta = vec![0u8; len as usize];
+    let mut meta = vec![0u8; len.unsigned_abs() as usize];
     input.read_exact(&mut meta)?;
     let message = root_as_message(&meta)
-        .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {}", e)))?;
-    let body_len = message.bodyLength() as usize;
+        .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+    let body_len = usize::try_from(message.bodyLength()).map_err(|_| {
+        FederationError::Io(format!(
+            "Invalid IPC message body length {}",
+            message.bodyLength()
+        ))
+    })?;
     Ok(Some((meta, body_len)))
 }
 
 pub fn deserialize_record_batch_message(input: &mut dyn Read) -> Result<ArrowRecordBatch> {
-    let (meta, body_len) =
-        read_message(input)?.ok_or_else(|| FederationError::Io("Unexpected end of input reading record batch".into()))?;
+    let (meta, body_len) = read_message(input)?.ok_or_else(|| {
+        FederationError::Io("Unexpected end of input reading record batch".into())
+    })?;
     let mut body = vec![0u8; body_len];
     input.read_exact(&mut body)?;
     ArrowRecordBatch::from_message(meta, body)
@@ -182,16 +194,20 @@ pub fn serialize_schema(schema: &Schema, out: &mut dyn Write) -> Result<()> {
 }
 
 pub fn deserialize_schema(input: &mut dyn Read) -> Result<Schema> {
-    let (meta, body_len) =
-        read_message(input)?.ok_or_else(|| FederationError::Io("Unexpected end of input reading schema".into()))?;
+    let (meta, body_len) = read_message(input)?
+        .ok_or_else(|| FederationError::Io("Unexpected end of input reading schema".into()))?;
     if body_len > 0 {
         let mut skip = vec![0u8; body_len];
         input.read_exact(&mut skip)?;
     }
-    let message = root_as_message(&meta).map_err(|e| FederationError::Io(format!("Unable to read IPC message: {}", e)))?;
-    let fb = message
-        .header_as_schema()
-        .ok_or_else(|| FederationError::Io(format!("Expected schema but header was {:?}", message.header_type())))?;
+    let message = root_as_message(&meta)
+        .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+    let fb = message.header_as_schema().ok_or_else(|| {
+        FederationError::Io(format!(
+            "Expected schema but header was {:?}",
+            message.header_type()
+        ))
+    })?;
     Ok(arrow::ipc::convert::try_fb_to_schema(fb)?)
 }
 

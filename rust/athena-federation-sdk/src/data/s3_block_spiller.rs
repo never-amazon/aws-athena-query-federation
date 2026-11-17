@@ -18,7 +18,10 @@ use super::spill_config::SpillConfig;
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::spill::{S3SpillLocation, SpillLocation};
 use crate::exceptions::{FederationError, Result};
-use crate::security::{AesGcmBlockCrypto, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey, NoOpBlockCrypto};
+use crate::java_cast::len_to_long;
+use crate::security::{
+    AesGcmBlockCrypto, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
+};
 
 const ASYNC_SHUTDOWN_MILLIS: u64 = 10_000;
 const MAX_ROWS_PER_CALL: i32 = 100;
@@ -26,7 +29,9 @@ const SPILL_QUEUE_CAPACITY: &str = "SPILL_QUEUE_CAPACITY";
 const SPILL_PUT_REQUEST_HEADERS_ENV: &str = "spill_put_request_headers";
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 struct SpillPool {
@@ -56,7 +61,9 @@ impl SpillWriter {
         else {
             return Vec::new();
         };
-        match serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(headers_from_env_str) {
+        match serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+            headers_from_env_str,
+        ) {
             Ok(map) => {
                 let mut headers = Vec::new();
                 for (name, value) in map {
@@ -112,20 +119,35 @@ impl SpillWriter {
             split_spill_location.get_key(),
             self.spill_number.fetch_add(1, Ordering::SeqCst)
         );
-        Ok(S3SpillLocation::new(split_spill_location.get_bucket(), block_key, false))
+        Ok(S3SpillLocation::new(
+            split_spill_location.get_bucket(),
+            block_key,
+            false,
+        ))
     }
 
-    async fn write_unrecorded(&self, spill_location: Result<S3SpillLocation>, block: &Block) -> Result<SpillLocation> {
+    async fn write_unrecorded(
+        &self,
+        spill_location: Result<S3SpillLocation>,
+        block: &Block,
+    ) -> Result<SpillLocation> {
         let spill_location = spill_location?;
         let encryption_key = self.spill_config.get_encryption_key();
-        tracing::info!("write: Started encrypting block for write to {}", spill_location);
+        tracing::info!(
+            "write: Started encrypting block for write to {}",
+            spill_location
+        );
         let bytes = self.block_crypto.encrypt(encryption_key, block)?;
-        self.total_bytes_spilled.fetch_add(bytes.len() as i64, Ordering::SeqCst);
-        tracing::info!("write: Started spilling block of size {} bytes", bytes.len());
+        self.total_bytes_spilled
+            .fetch_add(len_to_long(bytes.len()), Ordering::SeqCst);
+        tracing::info!(
+            "write: Started spilling block of size {} bytes",
+            bytes.len()
+        );
         let mut request = PutObjectRequest::builder()
             .bucket(spill_location.get_bucket())
             .key(spill_location.get_key())
-            .content_length(bytes.len() as i64);
+            .content_length(len_to_long(bytes.len()));
         if let Some(override_configuration) = self.create_request_override_config() {
             request = request.override_configuration(override_configuration);
         }
@@ -139,7 +161,11 @@ impl SpillWriter {
         self.write_to(self.make_spill_location(), block).await
     }
 
-    async fn write_to(&self, spill_location: Result<S3SpillLocation>, block: &Block) -> Result<SpillLocation> {
+    async fn write_to(
+        &self,
+        spill_location: Result<S3SpillLocation>,
+        block: &Block,
+    ) -> Result<SpillLocation> {
         match self.write_unrecorded(spill_location, block).await {
             Ok(location) => Ok(location),
             Err(ex) => {
@@ -231,21 +257,26 @@ impl S3BlockSpiller {
         self.max_rows_per_call
     }
 
-    fn make_async_spill_pool(config: &SpillConfig, config_options: &HashMap<String, String>) -> Result<SpillPool> {
-        let threads = config.get_num_spill_threads() as usize;
+    fn make_async_spill_pool(
+        config: &SpillConfig,
+        config_options: &HashMap<String, String>,
+    ) -> Result<SpillPool> {
+        let threads = usize::try_from(config.get_num_spill_threads()).unwrap_or_default();
         let mut spill_queue_capacity = threads;
         let capacity = config_options
             .get(SPILL_QUEUE_CAPACITY)
             .filter(|c| !c.trim().is_empty())
             .or_else(|| config_options.get(&SPILL_QUEUE_CAPACITY.to_lowercase()));
         if let Some(capacity) = capacity {
-            let parsed = capacity
-                .parse::<i32>()
-                .map_err(|_| FederationError::Runtime(format!("For input string: \"{}\"", capacity)))?;
+            let parsed = capacity.parse::<i32>().map_err(|_| {
+                FederationError::Runtime(format!("For input string: \"{capacity}\""))
+            })?;
             if parsed <= 0 {
-                return Err(FederationError::IllegalArgument(format!("Illegal queue capacity {}", parsed)));
+                return Err(FederationError::IllegalArgument(format!(
+                    "Illegal queue capacity {parsed}"
+                )));
             }
-            spill_queue_capacity = parsed as usize;
+            spill_queue_capacity = usize::try_from(parsed).unwrap_or_default();
             tracing::debug!("Setting Spill Queue Capacity to {}", spill_queue_capacity);
         }
         Ok(SpillPool {
@@ -282,51 +313,56 @@ impl S3BlockSpiller {
         let bytes = self
             .writer
             .amazon_s3
-            .get_object(GetObjectRequest::new(spill_location.get_bucket(), spill_location.get_key()))
+            .get_object(GetObjectRequest::new(
+                spill_location.get_bucket(),
+                spill_location.get_key(),
+            ))
             .await?;
         tracing::debug!("write: Completed reading block from S3");
         let schema = require_present(schema, "schema")?;
-        let block = self.writer.block_crypto.decrypt_with_schema(key, &bytes, schema)?;
+        let block = self
+            .writer
+            .block_crypto
+            .decrypt_with_schema(key, &bytes, schema)?;
         tracing::debug!("write: Completed decrypting block of size.");
         Ok(block)
     }
 
     async fn spill_block(&self, block: Block) -> Result<()> {
-        match &self.async_spill_pool {
-            Some(pool) => {
-                if pool.shutdown.load(Ordering::SeqCst) {
-                    return Err(FederationError::internal("The spill pool has been shut down."));
+        if let Some(pool) = &self.async_spill_pool {
+            if pool.shutdown.load(Ordering::SeqCst) {
+                return Err(FederationError::internal(
+                    "The spill pool has been shut down.",
+                ));
+            }
+            let read_guard = self.spill_lock.clone().read_owned().await;
+            let slot = pool
+                .slots
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| FederationError::internal(e.to_string()))?;
+            let workers = pool.workers.clone();
+            let writer = self.writer.clone();
+            let spill_location = writer.make_spill_location();
+            let handle = tokio::spawn(async move {
+                let _read_guard = read_guard;
+                let _slot = slot;
+                let Ok(_worker) = workers.acquire_owned().await else {
+                    return;
+                };
+                if let Ok(spill_location) = writer.write_to(spill_location, &block).await {
+                    lock(&writer.spill_locations).push(spill_location);
                 }
-                let read_guard = self.spill_lock.clone().read_owned().await;
-                let slot = pool
-                    .slots
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .map_err(|e| FederationError::internal(e.to_string()))?;
-                let workers = pool.workers.clone();
-                let writer = self.writer.clone();
-                let spill_location = writer.make_spill_location();
-                let handle = tokio::spawn(async move {
-                    let _read_guard = read_guard;
-                    let _slot = slot;
-                    let Ok(_worker) = workers.acquire_owned().await else {
-                        return;
-                    };
-                    if let Ok(spill_location) = writer.write_to(spill_location, &block).await {
-                        lock(&writer.spill_locations).push(spill_location);
-                    }
-                });
-                let mut tasks = lock(&pool.tasks);
-                tasks.retain(|t| !t.is_finished());
-                tasks.push(handle);
-                Ok(())
-            }
-            None => {
-                let spill_location = self.writer.write(&block).await?;
-                lock(&self.writer.spill_locations).push(spill_location);
-                Ok(())
-            }
+            });
+            let mut tasks = lock(&pool.tasks);
+            tasks.retain(|t| !t.is_finished());
+            tasks.push(handle);
+            Ok(())
+        } else {
+            let spill_location = self.writer.write(&block).await?;
+            lock(&self.writer.spill_locations).push(spill_location);
+            Ok(())
         }
     }
 
@@ -346,7 +382,7 @@ impl BlockSpiller for S3BlockSpiller {
             if rows > 0 {
                 block.set_row_count(row_count + rows);
             }
-            if block.get_size() as i64 > self.writer.spill_config.get_max_block_bytes() {
+            if len_to_long(block.get_size()) > self.writer.spill_config.get_max_block_bytes() {
                 tracing::info!(
                     "writeRow: Spilling block with {} rows and {} bytes and config {} bytes",
                     block.get_row_count(),
@@ -376,7 +412,8 @@ impl BlockSpiller for S3BlockSpiller {
         let mut slot = lock(&self.in_progress_block);
         let block = self.ensure_init(&mut slot);
         Ok(!lock(&self.writer.spill_locations).is_empty()
-            || block.get_size() as i64 >= self.writer.spill_config.get_max_inline_block_size())
+            || len_to_long(block.get_size())
+                >= self.writer.spill_config.get_max_inline_block_size())
     }
 
     async fn get_block(&self) -> Result<Block> {
@@ -437,13 +474,19 @@ impl BlockSpiller for S3BlockSpiller {
         };
         pool.shutdown.store(true, Ordering::SeqCst);
         let tasks = std::mem::take(&mut *lock(&pool.tasks));
-        let aborts: Vec<_> = tasks.iter().map(|t| t.abort_handle()).collect();
+        let aborts: Vec<_> = tasks
+            .iter()
+            .map(tokio::task::JoinHandle::abort_handle)
+            .collect();
         let all = async {
             for task in tasks {
                 let _ = task.await;
             }
         };
-        if tokio::time::timeout(Duration::from_millis(ASYNC_SHUTDOWN_MILLIS), all).await.is_err() {
+        if tokio::time::timeout(Duration::from_millis(ASYNC_SHUTDOWN_MILLIS), all)
+            .await
+            .is_err()
+        {
             for abort in aborts {
                 abort.abort();
             }

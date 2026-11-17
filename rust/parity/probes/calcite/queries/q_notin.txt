@@ -1,0 +1,1 @@
+std	SELECT * FROM test_table WHERE int_col NOT IN (7, NULL)

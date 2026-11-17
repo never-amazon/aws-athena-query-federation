@@ -5,8 +5,8 @@ use arrow::datatypes::{DataType, Field, Fields, IntervalUnit, TimeUnit, UnionFie
 use crate::data::ArrowType;
 use crate::exceptions::{FederationError, Result};
 use crate::serde::base::{
-    deserialize_nullable, get_next_bool_field, get_next_int_field, get_next_string_field, get_type, no_enum_constant,
-    no_serde_configured, serialize_nullable, write_type,
+    deserialize_nullable, get_next_bool_field, get_next_int_field, get_next_string_field, get_type,
+    no_enum_constant, no_serde_configured, serialize_nullable, write_type,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 
@@ -74,9 +74,10 @@ pub fn java_type_name(arrow_type: &ArrowType) -> &'static str {
         DataType::Struct(_) => "Struct",
         DataType::Union(_, _) => "Union",
         DataType::Dictionary(_, value) => java_type_name(value),
-        DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
-            "Decimal"
-        }
+        DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => "Decimal",
         DataType::Map(_, _) => "Map",
         DataType::RunEndEncoded(_, _) => "RunEndEncoded",
     }
@@ -95,7 +96,7 @@ pub fn do_serialize(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Result<
     match arrow_type {
         DataType::FixedSizeList(_, size) => jgen.write_number_field_i32(LIST_SIZE_FIELD, *size),
         DataType::Union(fields, mode) => {
-            let ids: Vec<i32> = fields.iter().map(|(id, _)| id as i32).collect();
+            let ids: Vec<i32> = fields.iter().map(|(id, _)| i32::from(id)).collect();
             jgen.write_string_field(MODE_FIELD, Some(&union_to_string(*mode, &ids)))?;
             jgen.write_array_field_start(TYPE_IDS_FIELD)?;
             for id in ids {
@@ -115,9 +116,12 @@ pub fn do_serialize(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Result<
         DataType::Float32 => jgen.write_string_field(PRECISION_FIELD, Some("SINGLE")),
         DataType::Float64 => jgen.write_string_field(PRECISION_FIELD, Some("DOUBLE")),
         DataType::FixedSizeBinary(width) => jgen.write_number_field_i32(BYTE_WIDTH_FIELD, *width),
-        DataType::Decimal32(p, s) | DataType::Decimal64(p, s) | DataType::Decimal128(p, s) | DataType::Decimal256(p, s) => {
-            jgen.write_number_field_i32(PRECISION_FIELD, *p as i32)?;
-            jgen.write_number_field_i32(SCALE_FIELD, *s as i32)
+        DataType::Decimal32(p, s)
+        | DataType::Decimal64(p, s)
+        | DataType::Decimal128(p, s)
+        | DataType::Decimal256(p, s) => {
+            jgen.write_number_field_i32(PRECISION_FIELD, i32::from(*p))?;
+            jgen.write_number_field_i32(SCALE_FIELD, i32::from(*s))
         }
         DataType::Date32 => jgen.write_string_field(UNIT_FIELD, Some("DAY")),
         DataType::Date64 => jgen.write_string_field(UNIT_FIELD, Some("MILLISECOND")),
@@ -133,7 +137,9 @@ pub fn do_serialize(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Result<
             jgen.write_string_field(UNIT_FIELD, Some(time_unit_name(unit)))?;
             jgen.write_string_field(TIMEZONE_FIELD, tz.as_deref())
         }
-        DataType::Interval(unit) => jgen.write_string_field(UNIT_FIELD, Some(interval_unit_name(unit))),
+        DataType::Interval(unit) => {
+            jgen.write_string_field(UNIT_FIELD, Some(interval_unit_name(unit)))
+        }
         _ => Ok(()),
     }
 }
@@ -144,7 +150,10 @@ fn write_int(jgen: &mut JsonGenerator, bit_width: i32, signed: bool) -> Result<(
 }
 
 pub fn union_to_string(mode: UnionMode, type_ids: &[i32]) -> String {
-    let ids: Vec<String> = type_ids.iter().map(|i| i.to_string()).collect();
+    let ids: Vec<String> = type_ids
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     format!("Union({}, [{}])", union_mode_name(mode), ids.join(", "))
 }
 
@@ -178,7 +187,10 @@ fn time_unit_value_of(name: Option<&str>) -> Result<TimeUnit> {
         Some("MILLISECOND") => Ok(TimeUnit::Millisecond),
         Some("MICROSECOND") => Ok(TimeUnit::Microsecond),
         Some("NANOSECOND") => Ok(TimeUnit::Nanosecond),
-        other => Err(no_enum_constant("org.apache.arrow.vector.types.TimeUnit", other)),
+        other => Err(no_enum_constant(
+            "org.apache.arrow.vector.types.TimeUnit",
+            other,
+        )),
     }
 }
 
@@ -199,6 +211,60 @@ pub fn placeholder_child() -> Arc<Field> {
     Arc::new(Field::new("$data$", DataType::Null, true))
 }
 
+fn deserialize_union(jparser: &mut JsonParser<'_>) -> Result<ArrowType> {
+    let mode_name = get_next_string_field(jparser, MODE_FIELD)?;
+    let mode = match mode_name.as_deref() {
+        Some("Sparse") => UnionMode::Sparse,
+        Some("Dense") => UnionMode::Dense,
+        other => {
+            return Err(no_enum_constant(
+                "org.apache.arrow.vector.types.UnionMode",
+                other,
+            ))
+        }
+    };
+    crate::serde::base::assert_field_name(jparser, Some(TYPE_IDS_FIELD))?;
+    let mut type_ids: Vec<i32> = Vec::new();
+    loop {
+        match jparser.next_token()? {
+            Some(JsonToken::EndArray) => break,
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                ))
+            }
+            Some(_) => type_ids.push(jparser.get_value_as_int()?),
+        }
+    }
+    let ids: Vec<i8> = type_ids
+        .iter()
+        .map(|i| {
+            i8::try_from(*i).map_err(|_| {
+                FederationError::IllegalArgument(format!("Union type id {i} out of range"))
+            })
+        })
+        .collect::<Result<Vec<i8>>>()?;
+    let fields: Vec<Field> = ids
+        .iter()
+        .map(|i| Field::new(format!("$data${i}"), DataType::Null, true))
+        .collect();
+    let union_fields = UnionFields::try_new(ids, fields)
+        .map_err(|e| FederationError::IllegalArgument(e.to_string()))?;
+    Ok(DataType::Union(union_fields, mode))
+}
+
+fn deserialize_decimal(jparser: &mut JsonParser<'_>) -> Result<ArrowType> {
+    let precision = get_next_int_field(jparser, PRECISION_FIELD)?;
+    let scale = get_next_int_field(jparser, SCALE_FIELD)?;
+    let precision = u8::try_from(precision).map_err(|_| {
+        FederationError::IllegalArgument(format!("Decimal precision {precision} out of range"))
+    })?;
+    let scale = i8::try_from(scale).map_err(|_| {
+        FederationError::IllegalArgument(format!("Decimal scale {scale} out of range"))
+    })?;
+    Ok(DataType::Decimal128(precision, scale))
+}
+
 fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result<ArrowType> {
     match type_name {
         "Null" => Ok(DataType::Null),
@@ -208,33 +274,7 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
             let list_size = get_next_int_field(jparser, LIST_SIZE_FIELD)?;
             Ok(DataType::FixedSizeList(placeholder_child(), list_size))
         }
-        "Union" => {
-            let mode_name = get_next_string_field(jparser, MODE_FIELD)?;
-            let mode = match mode_name.as_deref() {
-                Some("Sparse") => UnionMode::Sparse,
-                Some("Dense") => UnionMode::Dense,
-                other => return Err(no_enum_constant("org.apache.arrow.vector.types.UnionMode", other)),
-            };
-            crate::serde::base::assert_field_name(jparser, Some(TYPE_IDS_FIELD))?;
-            let mut type_ids: Vec<i32> = Vec::new();
-            loop {
-                match jparser.next_token()? {
-                    Some(JsonToken::EndArray) => break,
-                    None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
-                    Some(_) => type_ids.push(jparser.get_value_as_int()?),
-                }
-            }
-            let ids: Vec<i8> = type_ids
-                .iter()
-                .map(|i| i8::try_from(*i).map_err(|_| FederationError::IllegalArgument(format!("Union type id {} out of range", i))))
-                .collect::<Result<Vec<i8>>>()?;
-            let fields: Vec<Field> = ids
-                .iter()
-                .map(|i| Field::new(format!("$data${}", i), DataType::Null, true))
-                .collect();
-            let union_fields = UnionFields::try_new(ids, fields).map_err(|e| FederationError::IllegalArgument(e.to_string()))?;
-            Ok(DataType::Union(union_fields, mode))
-        }
+        "Union" => deserialize_union(jparser),
         "Int" => {
             let bit_width = get_next_int_field(jparser, BIT_WIDTH_FIELD)?;
             let is_signed = get_next_bool_field(jparser, IS_SIGNED_FIELD)?;
@@ -248,8 +288,7 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
                 (32, false) => Ok(DataType::UInt32),
                 (64, false) => Ok(DataType::UInt64),
                 _ => Err(FederationError::IllegalArgument(format!(
-                    "Unsupported Int bitWidth {} isSigned {}",
-                    bit_width, is_signed
+                    "Unsupported Int bitWidth {bit_width} isSigned {is_signed}"
                 ))),
             }
         }
@@ -259,7 +298,10 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
                 Some("HALF") => Ok(DataType::Float16),
                 Some("SINGLE") => Ok(DataType::Float32),
                 Some("DOUBLE") => Ok(DataType::Float64),
-                other => Err(no_enum_constant("org.apache.arrow.vector.types.FloatingPointPrecision", other)),
+                other => Err(no_enum_constant(
+                    "org.apache.arrow.vector.types.FloatingPointPrecision",
+                    other,
+                )),
             }
         }
         "Utf8" => Ok(DataType::Utf8),
@@ -269,28 +311,24 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
             Ok(DataType::FixedSizeBinary(byte_width))
         }
         "Bool" => Ok(DataType::Boolean),
-        "Decimal" => {
-            let precision = get_next_int_field(jparser, PRECISION_FIELD)?;
-            let scale = get_next_int_field(jparser, SCALE_FIELD)?;
-            let precision = u8::try_from(precision)
-                .map_err(|_| FederationError::IllegalArgument(format!("Decimal precision {} out of range", precision)))?;
-            let scale = i8::try_from(scale).map_err(|_| FederationError::IllegalArgument(format!("Decimal scale {} out of range", scale)))?;
-            Ok(DataType::Decimal128(precision, scale))
-        }
+        "Decimal" => deserialize_decimal(jparser),
         "Date" => {
             let unit = get_next_string_field(jparser, UNIT_FIELD)?;
             match unit.as_deref() {
                 Some("DAY") => Ok(DataType::Date32),
                 Some("MILLISECOND") => Ok(DataType::Date64),
-                other => Err(no_enum_constant("org.apache.arrow.vector.types.DateUnit", other)),
+                other => Err(no_enum_constant(
+                    "org.apache.arrow.vector.types.DateUnit",
+                    other,
+                )),
             }
         }
         "Time" => {
             let unit = time_unit_value_of(get_next_string_field(jparser, UNIT_FIELD)?.as_deref())?;
             let bit_width = get_next_int_field(jparser, BIT_WIDTH_FIELD)?;
             match (unit, bit_width) {
-                (TimeUnit::Second, 32) | (TimeUnit::Millisecond, 32) => Ok(DataType::Time32(unit)),
-                (TimeUnit::Microsecond, 64) | (TimeUnit::Nanosecond, 64) => Ok(DataType::Time64(unit)),
+                (TimeUnit::Second | TimeUnit::Millisecond, 32) => Ok(DataType::Time32(unit)),
+                (TimeUnit::Microsecond | TimeUnit::Nanosecond, 64) => Ok(DataType::Time64(unit)),
                 (unit, width) => Err(FederationError::IllegalArgument(format!(
                     "Unsupported Time unit {} with bitWidth {}",
                     time_unit_name(&unit),
@@ -301,7 +339,10 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
         "Timestamp" => {
             let unit = time_unit_value_of(get_next_string_field(jparser, UNIT_FIELD)?.as_deref())?;
             let timezone = get_next_string_field(jparser, TIMEZONE_FIELD)?;
-            Ok(DataType::Timestamp(unit, timezone.map(|t| t.into())))
+            Ok(DataType::Timestamp(
+                unit,
+                timezone.map(std::convert::Into::into),
+            ))
         }
         "Interval" => {
             let unit = get_next_string_field(jparser, UNIT_FIELD)?;
@@ -309,11 +350,18 @@ fn do_typed_deserialize(type_name: &str, jparser: &mut JsonParser<'_>) -> Result
                 Some("YEAR_MONTH") => Ok(DataType::Interval(IntervalUnit::YearMonth)),
                 Some("DAY_TIME") => Ok(DataType::Interval(IntervalUnit::DayTime)),
                 Some("MONTH_DAY_NANO") => Ok(DataType::Interval(IntervalUnit::MonthDayNano)),
-                other => Err(no_enum_constant("org.apache.arrow.vector.types.IntervalUnit", other)),
+                other => Err(no_enum_constant(
+                    "org.apache.arrow.vector.types.IntervalUnit",
+                    other,
+                )),
             }
         }
         "Map" => Ok(DataType::Map(
-            Arc::new(Field::new("entries", DataType::Struct(Fields::empty()), false)),
+            Arc::new(Field::new(
+                "entries",
+                DataType::Struct(Fields::empty()),
+                false,
+            )),
             false,
         )),
         other => Err(no_serde_configured(other)),

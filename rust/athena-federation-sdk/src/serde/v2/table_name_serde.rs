@@ -1,6 +1,8 @@
 use crate::domain::table_name::TableName;
 use crate::exceptions::Result;
-use crate::serde::base::{deserialize_nullable, get_next_string_field, require_non_null, serialize_object};
+use crate::serde::base::{
+    deserialize_nullable, get_next_string_field, require_non_null, serialize_object,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 const SCHEMA_NAME_FIELD: &str = "schemaName";

@@ -5,13 +5,13 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, GetObjectRequest, PutObjectRequest,
-    S3BlockSpiller, S3Client, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, GetObjectRequest,
+    PutObjectRequest, S3BlockSpiller, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::exceptions::FederationError;
 use athena_federation_sdk::security::{AwsServiceError, EncryptionKeyFactory, LocalKeyFactory};
+use athena_federation_sdk::FederationError;
 
 const BUCKET: &str = "MyBucket";
 const PREFIX: &str = "blocks/spill";
@@ -44,7 +44,11 @@ impl MockS3 {
 
 #[async_trait]
 impl S3Client for MockS3 {
-    async fn put_object(&self, request: PutObjectRequest, body: Vec<u8>) -> Result<(), AwsServiceError> {
+    async fn put_object(
+        &self,
+        request: PutObjectRequest,
+        body: Vec<u8>,
+    ) -> Result<(), AwsServiceError> {
         self.put_requests.lock().unwrap().push(request);
         if let Some(e) = self.put_error.lock().unwrap().clone() {
             return Err(e);
@@ -85,7 +89,10 @@ impl Setup {
         .unwrap()
     }
 
-    async fn execute_spill_with_config(&self, config_options: HashMap<String, String>) -> PutObjectRequest {
+    async fn execute_spill_with_config(
+        &self,
+        config_options: HashMap<String, String>,
+    ) -> PutObjectRequest {
         let block_writer = self.create_block_spiller(config_options);
         block_writer.write(&self.expected).await.unwrap();
         assert_eq!(1, self.mock_s3.put_count());
@@ -108,7 +115,12 @@ fn spill_location() -> SpillLocation {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(block.get_field_vector_mut(field).unwrap(), row, &value.into()).unwrap();
+    BlockUtils::set_value(
+        block.get_field_vector_mut(field).unwrap(),
+        row,
+        &value.into(),
+    )
+    .unwrap();
 }
 
 fn two_column_schema() -> Arc<Schema> {
@@ -121,7 +133,11 @@ fn two_column_schema() -> Arc<Schema> {
 }
 
 fn one_column_schema() -> Arc<Schema> {
-    Arc::new(SchemaBuilder::new_builder().add_field_with_type("col1", DataType::Int32).build())
+    Arc::new(
+        SchemaBuilder::new_builder()
+            .add_field_with_type("col1", DataType::Int32)
+            .build(),
+    )
 }
 
 async fn setup() -> Setup {
@@ -182,8 +198,8 @@ fn header(request: &PutObjectRequest, name: &str) -> Option<String> {
 #[tokio::test]
 async fn spill_test() {
     let s = setup().await;
-    let key0 = format!("{}/{}/{}.0", PREFIX, REQUEST_ID, SPLIT_ID);
-    let key1 = format!("{}/{}/{}.1", PREFIX, REQUEST_ID, SPLIT_ID);
+    let key0 = format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}.0");
+    let key1 = format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}.1");
 
     let block_location = s.block_writer.write(&s.expected).await.unwrap();
     let SpillLocation::S3(block_location) = block_location;
@@ -205,7 +221,11 @@ async fn spill_test() {
     s.mock_s3.reset();
     let block = s
         .block_writer
-        .read(&block_location2, s.spill_config.get_encryption_key(), s.expected.get_schema().clone())
+        .read(
+            &block_location2,
+            s.spill_config.get_encryption_key(),
+            s.expected.get_schema().clone(),
+        )
         .await
         .unwrap();
     assert_eq!(s.expected, block);
@@ -218,17 +238,32 @@ async fn spill_test() {
 async fn spill_test_with_request_headers_sets_headers_in_override_configuration() {
     let s = setup().await;
     let spill_headers = "{\"x-amz-server-side-encryption\":\"aws:kms\",\"x-amz-server-side-encryption-aws-kms-key-id\":\"arn:aws:kms:us-east-1:123456789012:key/test-key-id\"}";
-    let config_options = HashMap::from([("spill_put_request_headers".to_string(), spill_headers.to_string())]);
+    let config_options = HashMap::from([(
+        "spill_put_request_headers".to_string(),
+        spill_headers.to_string(),
+    )]);
 
     let captured_request = s.execute_spill_with_config(config_options).await;
 
-    assert!(captured_request.override_configuration().is_some(), "Request should have overrideConfiguration");
-    assert_eq!(Some("aws:kms".to_string()), header(&captured_request, "x-amz-server-side-encryption"));
+    assert!(
+        captured_request.override_configuration().is_some(),
+        "Request should have overrideConfiguration"
+    );
+    assert_eq!(
+        Some("aws:kms".to_string()),
+        header(&captured_request, "x-amz-server-side-encryption")
+    );
     assert_eq!(
         Some("arn:aws:kms:us-east-1:123456789012:key/test-key-id".to_string()),
-        header(&captured_request, "x-amz-server-side-encryption-aws-kms-key-id")
+        header(
+            &captured_request,
+            "x-amz-server-side-encryption-aws-kms-key-id"
+        )
     );
-    assert!(captured_request.metadata().is_empty(), "Metadata should be null or empty, not contain headers");
+    assert!(
+        captured_request.metadata().is_empty(),
+        "Metadata should be null or empty, not contain headers"
+    );
     s.tear_down().await;
 }
 
@@ -240,7 +275,10 @@ async fn spill_test_without_request_headers_does_not_set_override_configuration(
         captured_request.override_configuration().is_none(),
         "Request should not have overrideConfiguration when no headers configured"
     );
-    assert!(captured_request.metadata().is_empty(), "Metadata should be null when no headers configured");
+    assert!(
+        captured_request.metadata().is_empty(),
+        "Metadata should be null when no headers configured"
+    );
     s.tear_down().await;
 }
 
@@ -248,7 +286,10 @@ async fn spill_test_without_request_headers_does_not_set_override_configuration(
 async fn spill_test_with_invalid_json_headers_handles_gracefully() {
     let s = setup().await;
     let invalid_json = "{\"x-amz-server-side-encryption\":\"aws:kms\"invalid}";
-    let config_options = HashMap::from([("spill_put_request_headers".to_string(), invalid_json.to_string())]);
+    let config_options = HashMap::from([(
+        "spill_put_request_headers".to_string(),
+        invalid_json.to_string(),
+    )]);
     let captured_request = s.execute_spill_with_config(config_options).await;
     assert!(
         captured_request.override_configuration().is_none(),
@@ -261,21 +302,36 @@ async fn spill_test_with_invalid_json_headers_handles_gracefully() {
 async fn spill_test_with_multiple_headers_sets_all_headers_in_override_configuration() {
     let s = setup().await;
     let spill_headers = "{\"x-amz-server-side-encryption\":\"aws:kms\",\"x-amz-server-side-encryption-aws-kms-key-id\":\"arn:aws:kms:us-east-1:123456789012:key/test-key-id\",\"x-amz-storage-class\":\"STANDARD_IA\"}";
-    let config_options = HashMap::from([("spill_put_request_headers".to_string(), spill_headers.to_string())]);
+    let config_options = HashMap::from([(
+        "spill_put_request_headers".to_string(),
+        spill_headers.to_string(),
+    )]);
 
     let captured_request = s.execute_spill_with_config(config_options).await;
 
     let override_config = captured_request
         .override_configuration()
         .expect("Request should have overrideConfiguration");
-    assert_eq!(Some("aws:kms".to_string()), header(&captured_request, "x-amz-server-side-encryption"));
+    assert_eq!(
+        Some("aws:kms".to_string()),
+        header(&captured_request, "x-amz-server-side-encryption")
+    );
     assert_eq!(
         Some("arn:aws:kms:us-east-1:123456789012:key/test-key-id".to_string()),
-        header(&captured_request, "x-amz-server-side-encryption-aws-kms-key-id")
+        header(
+            &captured_request,
+            "x-amz-server-side-encryption-aws-kms-key-id"
+        )
     );
-    assert_eq!(Some("STANDARD_IA".to_string()), header(&captured_request, "x-amz-storage-class"));
+    assert_eq!(
+        Some("STANDARD_IA".to_string()),
+        header(&captured_request, "x-amz-storage-class")
+    );
     assert_eq!(3, override_config.headers().len(), "Should have 3 headers");
-    assert!(captured_request.metadata().is_empty(), "Metadata should be null, not contain headers");
+    assert!(
+        captured_request.metadata().is_empty(),
+        "Metadata should be null, not contain headers"
+    );
     s.tear_down().await;
 }
 
@@ -378,7 +434,10 @@ async fn spilled_throws_on_async_s3_error() {
     }
     async_spiller.close().await;
 
-    let ex = async_spiller.spilled().await.expect_err("spilled() should throw");
+    let ex = async_spiller
+        .spilled()
+        .await
+        .expect_err("spilled() should throw");
     assert!(ex.is_runtime_exception());
     assert!(s.mock_s3.put_count() > 0);
     s.tear_down().await;
@@ -418,14 +477,27 @@ struct KeyedS3 {
 
 #[async_trait]
 impl S3Client for KeyedS3 {
-    async fn put_object(&self, request: PutObjectRequest, body: Vec<u8>) -> Result<(), AwsServiceError> {
+    async fn put_object(
+        &self,
+        request: PutObjectRequest,
+        body: Vec<u8>,
+    ) -> Result<(), AwsServiceError> {
         tokio::task::yield_now().await;
-        self.objects.lock().unwrap().insert(request.key().to_string(), body);
+        self.objects
+            .lock()
+            .unwrap()
+            .insert(request.key().to_string(), body);
         Ok(())
     }
 
     async fn get_object(&self, request: GetObjectRequest) -> Result<Vec<u8>, AwsServiceError> {
-        Ok(self.objects.lock().unwrap().get(request.key()).cloned().unwrap_or_default())
+        Ok(self
+            .objects
+            .lock()
+            .unwrap()
+            .get(request.key())
+            .cloned()
+            .unwrap_or_default())
     }
 }
 
@@ -466,11 +538,16 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
         let SpillLocation::S3(location) = location;
         let number: i32 = location
             .get_key()
-            .strip_prefix(&format!("{}.", base_key))
+            .strip_prefix(&format!("{base_key}."))
             .and_then(|n| n.parse().ok())
             .unwrap_or_else(|| panic!("unexpected key {}", location.get_key()));
-        let block = spiller.read(location, encryption_key.as_ref(), one_column_schema()).await.unwrap();
-        let expected = BlockUtils::new_block(allocator.as_ref(), "col1", &DataType::Int32, vec![number]).unwrap();
+        let block = spiller
+            .read(location, encryption_key.as_ref(), one_column_schema())
+            .await
+            .unwrap();
+        let expected =
+            BlockUtils::new_block(allocator.as_ref(), "col1", &DataType::Int32, vec![number])
+                .unwrap();
         assert_eq!(
             BlockUtils::row_to_string(&expected, 0).unwrap(),
             BlockUtils::row_to_string(&block, 0).unwrap(),

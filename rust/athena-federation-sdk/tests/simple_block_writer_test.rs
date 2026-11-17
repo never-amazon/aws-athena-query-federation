@@ -15,10 +15,11 @@ fn test_write_rows() {
     let mut calls: Vec<usize> = Vec::new();
     {
         let mut writer = SimpleBlockWriter::new(&mut block);
-        let mut row_writer = |_: &mut Block, row_num: usize| -> athena_federation_sdk::Result<usize> {
-            calls.push(row_num);
-            Ok(5)
-        };
+        let mut row_writer =
+            |_: &mut Block, row_num: usize| -> athena_federation_sdk::Result<usize> {
+                calls.push(row_num);
+                Ok(5)
+            };
         writer.write_rows(&mut row_writer).unwrap();
     }
     assert_eq!(vec![0usize], calls);

@@ -22,7 +22,7 @@ pub struct ReadRecordsRequest {
 }
 
 impl ReadRecordsRequest {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "mirrors the Java constructor")]
     pub fn new(
         identity: Option<FederatedIdentity>,
         catalog_name: impl Into<String>,

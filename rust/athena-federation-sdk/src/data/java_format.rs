@@ -8,22 +8,26 @@ fn java_fp_to_string(digits: &str, exp: i32, negative: bool) -> String {
     }
     let point = exp + 1;
     if (-3..=6).contains(&exp) {
-        if point <= 0 {
-            out.push_str("0.");
-            for _ in 0..(-point) {
-                out.push('0');
+        match usize::try_from(point) {
+            Err(_) | Ok(0) => {
+                out.push_str("0.");
+                for _ in 0..(-point) {
+                    out.push('0');
+                }
+                out.push_str(digits);
             }
-            out.push_str(digits);
-        } else if (point as usize) >= digits.len() {
-            out.push_str(digits);
-            for _ in 0..(point as usize - digits.len()) {
-                out.push('0');
+            Ok(p) if p >= digits.len() => {
+                out.push_str(digits);
+                for _ in 0..(p - digits.len()) {
+                    out.push('0');
+                }
+                out.push_str(".0");
             }
-            out.push_str(".0");
-        } else {
-            out.push_str(&digits[..point as usize]);
-            out.push('.');
-            out.push_str(&digits[point as usize..]);
+            Ok(p) => {
+                out.push_str(&digits[..p]);
+                out.push('.');
+                out.push_str(&digits[p..]);
+            }
         }
     } else {
         out.push_str(&digits[..1]);
@@ -53,12 +57,20 @@ pub fn double_to_string(value: f64) -> String {
         return "NaN".to_string();
     }
     if value.is_infinite() {
-        return if value > 0.0 { "Infinity".into() } else { "-Infinity".into() };
+        return if value > 0.0 {
+            "Infinity".into()
+        } else {
+            "-Infinity".into()
+        };
     }
     if value == 0.0 {
-        return if value.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
+        return if value.is_sign_negative() {
+            "-0.0".into()
+        } else {
+            "0.0".into()
+        };
     }
-    let (digits, exp, negative) = split_sci(&format!("{:e}", value));
+    let (digits, exp, negative) = split_sci(&format!("{value:e}"));
     java_fp_to_string(&digits, exp, negative)
 }
 
@@ -67,12 +79,20 @@ pub fn float_to_string(value: f32) -> String {
         return "NaN".to_string();
     }
     if value.is_infinite() {
-        return if value > 0.0 { "Infinity".into() } else { "-Infinity".into() };
+        return if value > 0.0 {
+            "Infinity".into()
+        } else {
+            "-Infinity".into()
+        };
     }
     if value == 0.0 {
-        return if value.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
+        return if value.is_sign_negative() {
+            "-0.0".into()
+        } else {
+            "0.0".into()
+        };
     }
-    let (digits, exp, negative) = split_sci(&format!("{:e}", value));
+    let (digits, exp, negative) = split_sci(&format!("{value:e}"));
     java_fp_to_string(&digits, exp, negative)
 }
 
@@ -84,7 +104,7 @@ pub fn big_decimal_to_string(value: &BigDecimal) -> String {
 pub fn big_decimal_parts_to_string(unscaled: &BigInt, scale: i64) -> String {
     let negative = unscaled.sign() == num_bigint::Sign::Minus;
     let coeff = unscaled.magnitude().to_string();
-    let adjusted = -scale + (coeff.len() as i64 - 1);
+    let adjusted = -scale + (i64::try_from(coeff.len()).unwrap_or(i64::MAX) - 1);
     let mut out = String::new();
     if negative {
         out.push('-');
@@ -92,17 +112,8 @@ pub fn big_decimal_parts_to_string(unscaled: &BigInt, scale: i64) -> String {
     if scale >= 0 && adjusted >= -6 {
         if scale == 0 {
             out.push_str(&coeff);
-        } else if (coeff.len() as i64) > scale {
-            let int_len = coeff.len() - scale as usize;
-            out.push_str(&coeff[..int_len]);
-            out.push('.');
-            out.push_str(&coeff[int_len..]);
         } else {
-            out.push_str("0.");
-            for _ in 0..(scale as usize - coeff.len()) {
-                out.push('0');
-            }
-            out.push_str(&coeff);
+            push_positive_scale(&mut out, &coeff, scale);
         }
     } else {
         out.push_str(&coeff[..1]);
@@ -132,25 +143,32 @@ pub fn big_decimal_to_plain_string(value: &BigDecimal) -> String {
         for _ in 0..(-scale) {
             out.push('0');
         }
-    } else if (coeff.len() as i64) > scale {
-        let int_len = coeff.len() - scale as usize;
+    } else {
+        push_positive_scale(&mut out, &coeff, scale);
+    }
+    out
+}
+
+fn push_positive_scale(out: &mut String, coeff: &str, scale: i64) {
+    let scale = usize::try_from(scale).unwrap_or(usize::MAX);
+    if coeff.len() > scale {
+        let int_len = coeff.len() - scale;
         out.push_str(&coeff[..int_len]);
         out.push('.');
         out.push_str(&coeff[int_len..]);
     } else {
         out.push_str("0.");
-        for _ in 0..(scale as usize - coeff.len()) {
+        for _ in 0..(scale - coeff.len()) {
             out.push('0');
         }
-        out.push_str(&coeff);
+        out.push_str(coeff);
     }
-    out
 }
 
 pub fn java_string_hash(s: &str) -> i32 {
     let mut h: i32 = 0;
     for unit in s.encode_utf16() {
-        h = h.wrapping_mul(31).wrapping_add(unit as i32);
+        h = h.wrapping_mul(31).wrapping_add(i32::from(unit));
     }
     h
 }
@@ -176,7 +194,7 @@ mod tests {
         assert_eq!(double_to_string(1.1), "1.1");
         assert_eq!(double_to_string(100.0), "100.0");
         assert_eq!(double_to_string(1.0e7), "1.0E7");
-        assert_eq!(double_to_string(1234567.0), "1234567.0");
+        assert_eq!(double_to_string(1_234_567.0), "1234567.0");
         assert_eq!(double_to_string(0.001), "0.001");
         assert_eq!(double_to_string(0.0001), "1.0E-4");
         assert_eq!(double_to_string(-2.5), "-2.5");
@@ -185,10 +203,25 @@ mod tests {
 
     #[test]
     fn big_decimal_formatting_matches_java() {
-        assert_eq!(big_decimal_to_string(&BigDecimal::from_str("1.00").unwrap()), "1.00");
-        assert_eq!(big_decimal_to_string(&BigDecimal::from_str("-0.5").unwrap()), "-0.5");
-        assert_eq!(big_decimal_to_string(&BigDecimal::new(BigInt::from(123), -2)), "1.23E+4");
-        assert_eq!(big_decimal_to_string(&BigDecimal::new(BigInt::from(1), 8)), "1E-8");
-        assert_eq!(big_decimal_to_string(&BigDecimal::new(BigInt::from(0), 2)), "0.00");
+        assert_eq!(
+            big_decimal_to_string(&BigDecimal::from_str("1.00").unwrap()),
+            "1.00"
+        );
+        assert_eq!(
+            big_decimal_to_string(&BigDecimal::from_str("-0.5").unwrap()),
+            "-0.5"
+        );
+        assert_eq!(
+            big_decimal_to_string(&BigDecimal::new(BigInt::from(123), -2)),
+            "1.23E+4"
+        );
+        assert_eq!(
+            big_decimal_to_string(&BigDecimal::new(BigInt::from(1), 8)),
+            "1E-8"
+        );
+        assert_eq!(
+            big_decimal_to_string(&BigDecimal::new(BigInt::from(0), 2)),
+            "0.00"
+        );
     }
 }

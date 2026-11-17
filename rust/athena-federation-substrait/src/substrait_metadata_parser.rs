@@ -2,7 +2,7 @@ use crate::error::{Result, SubstraitError};
 use crate::model::substrait_field::SubstraitField;
 use crate::model::substrait_rel_model::SubstraitRelModel;
 use crate::proto::r#type::Kind;
-use crate::proto::Type;
+use crate::proto::{NamedStruct, Type};
 
 pub struct SubstraitMetadataParser;
 
@@ -11,13 +11,12 @@ impl SubstraitMetadataParser {
         let read_rel = substrait_rel_model
             .get_read_rel()
             .ok_or_else(|| SubstraitError::null_pointer("readRel is null"))?;
-        let default_schema = Default::default();
+        let default_schema = NamedStruct::default();
         let base_schema = read_rel.base_schema.as_ref().unwrap_or(&default_schema);
         let types = base_schema
             .r#struct
             .as_ref()
-            .map(|s| s.types.as_slice())
-            .unwrap_or(&[]);
+            .map_or(&[][..], |s| s.types.as_slice());
         let mut connector_schema = Vec::new();
         parse_schema_fields(&base_schema.names, types, &mut connector_schema, 0)?;
         Ok(connector_schema
@@ -58,7 +57,10 @@ fn parse_schema_fields(
 }
 
 pub fn type_kind_case_name(t: &Type) -> &'static str {
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     match &t.kind {
         None => "KIND_NOT_SET",
         Some(k) => match k {

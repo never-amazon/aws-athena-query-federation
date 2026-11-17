@@ -4,13 +4,19 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, AwsServiceError, EncryptionKeyFactory, KmsClient, KmsKeyFactory,
+    AwsRequestOverrideConfiguration, AwsServiceError, EncryptionKeyFactory, KmsClient,
+    KmsKeyFactory,
 };
 use aws_sdk_kms::types::DataKeySpec;
 
 const MASTER_KEY_ID: &str = "test-key-id";
 
-type SeenCall = (String, DataKeySpec, Option<AwsRequestOverrideConfiguration>, i32);
+type SeenCall = (
+    String,
+    DataKeySpec,
+    Option<AwsRequestOverrideConfiguration>,
+    i32,
+);
 
 #[derive(Default)]
 struct MockKmsClient {
@@ -30,10 +36,12 @@ impl KmsClient for MockKmsClient {
         override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Vec<u8>, AwsServiceError> {
         self.generate_data_key_calls.fetch_add(1, Ordering::SeqCst);
-        self.seen
-            .lock()
-            .unwrap()
-            .push((key_id.to_string(), key_spec, override_configuration.cloned(), 0));
+        self.seen.lock().unwrap().push((
+            key_id.to_string(),
+            key_spec,
+            override_configuration.cloned(),
+            0,
+        ));
         self.data_key.clone().unwrap_or_else(|| Ok(Vec::new()))
     }
 
@@ -65,22 +73,41 @@ async fn test_create() {
 
     assert_eq!(test_plaintext_key.as_slice(), result.get_key());
     assert_eq!(test_nonce.as_slice(), result.get_nonce());
-    assert_eq!(1, mock_kms_client.generate_data_key_calls.load(Ordering::SeqCst));
-    assert_eq!(1, mock_kms_client.generate_random_calls.load(Ordering::SeqCst));
+    assert_eq!(
+        1,
+        mock_kms_client
+            .generate_data_key_calls
+            .load(Ordering::SeqCst)
+    );
+    assert_eq!(
+        1,
+        mock_kms_client.generate_random_calls.load(Ordering::SeqCst)
+    );
     let seen = mock_kms_client.seen.lock().unwrap();
-    assert_eq!((MASTER_KEY_ID.to_string(), DataKeySpec::Aes128, None, 12), seen[0]);
+    assert_eq!(
+        (MASTER_KEY_ID.to_string(), DataKeySpec::Aes128, None, 12),
+        seen[0]
+    );
 }
 
 #[tokio::test]
 async fn test_not_found_exception() {
     let mock_kms_client = Arc::new(MockKmsClient {
-        data_key: Some(Err(AwsServiceError::with_code("NotFoundException", "Key not found"))),
+        data_key: Some(Err(AwsServiceError::with_code(
+            "NotFoundException",
+            "Key not found",
+        ))),
         ..MockKmsClient::default()
     });
     let kms_key_factory = KmsKeyFactory::new(mock_kms_client, MASTER_KEY_ID);
     let ex = kms_key_factory.create().await.unwrap_err();
-    let connector = ex.as_connector_exception().expect("AthenaConnectorException");
-    assert_eq!(Some(FederationSourceErrorCode::EntityNotFoundException), connector.error_code());
+    let connector = ex
+        .as_connector_exception()
+        .expect("AthenaConnectorException");
+    assert_eq!(
+        Some(FederationSourceErrorCode::EntityNotFoundException),
+        connector.error_code()
+    );
     assert_eq!("Key not found", connector.get_message());
 }
 
@@ -99,9 +126,20 @@ async fn test_create_with_override_configuration() {
 
     assert_eq!(test_plaintext_key.as_slice(), result.get_key());
     assert_eq!(test_nonce.as_slice(), result.get_nonce());
-    assert_eq!(1, mock_kms_client.generate_data_key_calls.load(Ordering::SeqCst));
-    assert_eq!(1, mock_kms_client.generate_random_calls.load(Ordering::SeqCst));
-    assert_eq!(Some(override_config), mock_kms_client.seen.lock().unwrap()[0].2);
+    assert_eq!(
+        1,
+        mock_kms_client
+            .generate_data_key_calls
+            .load(Ordering::SeqCst)
+    );
+    assert_eq!(
+        1,
+        mock_kms_client.generate_random_calls.load(Ordering::SeqCst)
+    );
+    assert_eq!(
+        Some(override_config),
+        mock_kms_client.seen.lock().unwrap()[0].2
+    );
 }
 
 #[tokio::test]
@@ -111,7 +149,10 @@ async fn test_create_with_null_override_configuration() {
     let mock_kms_client = mock(&test_plaintext_key, &test_nonce);
     let kms_key_factory = KmsKeyFactory::new(mock_kms_client, MASTER_KEY_ID);
 
-    let result = kms_key_factory.create_with_override_configuration(None).await.unwrap();
+    let result = kms_key_factory
+        .create_with_override_configuration(None)
+        .await
+        .unwrap();
 
     assert_eq!(test_plaintext_key.as_slice(), result.get_key());
     assert_eq!(test_nonce.as_slice(), result.get_nonce());

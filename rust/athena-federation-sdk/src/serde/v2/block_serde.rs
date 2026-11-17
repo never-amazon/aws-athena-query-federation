@@ -5,7 +5,10 @@ use arrow::datatypes::Schema;
 use crate::data::{Block, BlockAllocator};
 use crate::exceptions::Result;
 use crate::serde::arrow_ipc::{block_batch_bytes, record_batch_from_bytes, IpcFormat};
-use crate::serde::base::{assert_field_name, deserialize_nullable, get_next_binary_field, get_next_string_field, serialize_nullable};
+use crate::serde::base::{
+    assert_field_name, deserialize_nullable, get_next_binary_field, get_next_string_field,
+    serialize_nullable,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 use crate::serde::{AllocatorSource, SerDeContext};
 
@@ -34,7 +37,10 @@ pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Resu
     deserialize_nullable(jparser, |p| do_deserialize(p, ctx))
 }
 
-pub fn deserialize_schema_for_version(jparser: &mut JsonParser<'_>, version: i32) -> Result<Schema> {
+pub fn deserialize_schema_for_version(
+    jparser: &mut JsonParser<'_>,
+    version: i32,
+) -> Result<Schema> {
     if version <= 2 {
         super::schema_serde::deserialize(jparser)
     } else {

@@ -32,7 +32,10 @@ mod get_table_request_ser_de_v5_test {
     fn deserialize() {
         let t = TypedSerDe::before();
         let text = fixture("serde/v5", "GetTableRequest.json");
-        let actual: FederationRequest = t.mapper_v5.read_value(text.as_bytes()).expect("deserialize");
+        let actual: FederationRequest = t
+            .mapper_v5
+            .read_value(text.as_bytes())
+            .expect("deserialize");
         assert_eq!(FederationRequest::from(expected(&t)), actual);
     }
 }
@@ -43,17 +46,34 @@ mod read_records_request_ser_de_v5_test {
     #[test]
     fn serialize() {
         let t = TypedSerDe::before();
-        let expected = read_records_request(t.alloc(), t.federated_identity.clone(), query_passthrough_arguments(), None);
+        let expected = read_records_request(
+            t.alloc(),
+            t.federated_identity.clone(),
+            query_passthrough_arguments(),
+            None,
+        );
         let actual = write_request(&t.mapper_v5, expected);
-        assert_serialized_matches(&fixture("serde/v5", "ReadRecordsRequest.json"), &actual, &t.mapper_v5);
+        assert_serialized_matches(
+            &fixture("serde/v5", "ReadRecordsRequest.json"),
+            &actual,
+            &t.mapper_v5,
+        );
     }
 
     #[test]
     fn deserialize() {
         let t = TypedSerDe::before();
-        let expected = read_records_request(t.alloc(), t.federated_identity.clone(), query_passthrough_arguments(), None);
+        let expected = read_records_request(
+            t.alloc(),
+            t.federated_identity.clone(),
+            query_passthrough_arguments(),
+            None,
+        );
         let text = fixture("serde/v5", "ReadRecordsRequest.json");
-        let actual: FederationRequest = t.mapper_v5.read_value(text.as_bytes()).expect("deserialize");
+        let actual: FederationRequest = t
+            .mapper_v5
+            .read_value(text.as_bytes())
+            .expect("deserialize");
         assert_eq!(FederationRequest::from(expected), actual);
     }
 }
@@ -68,15 +88,31 @@ mod object_mapper_factory_v5_test {
 
     #[test]
     fn test_strict_serializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(Arc::new(BlockAllocatorImpl::new()), SERDE_VERSION_FIVE).unwrap();
+        let mapper = VersionedObjectMapperFactory::create_with_version(
+            Arc::new(BlockAllocatorImpl::new()),
+            SERDE_VERSION_FIVE,
+        )
+        .unwrap();
         let result = mapper.write_value_as_string(&DataType::Null);
-        assert!(matches!(result, Err(FederationError::AthenaConnector(_))), "{:?}", result);
+        assert!(
+            matches!(result, Err(FederationError::AthenaConnector(_))),
+            "{result:?}"
+        );
     }
 
     #[test]
     fn test_strict_deserializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(Arc::new(BlockAllocatorImpl::new()), SERDE_VERSION_FIVE).unwrap();
-        let result = mapper.read_value_from_str::<DataType>("{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}");
-        assert!(matches!(result, Err(FederationError::AthenaConnector(_))), "{:?}", result);
+        let mapper = VersionedObjectMapperFactory::create_with_version(
+            Arc::new(BlockAllocatorImpl::new()),
+            SERDE_VERSION_FIVE,
+        )
+        .unwrap();
+        let result = mapper.read_value_from_str::<DataType>(
+            "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
+        );
+        assert!(
+            matches!(result, Err(FederationError::AthenaConnector(_))),
+            "{result:?}"
+        );
     }
 }

@@ -3,7 +3,6 @@ use arrow::datatypes::Field;
 use super::types::{arrow_type_to_string, get_children, minor_type_of, ArrowType, MinorType};
 use crate::exceptions::{FederationError, Result};
 
-#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SupportedTypes {
     BIT,
@@ -27,10 +26,28 @@ pub enum SupportedTypes {
 
 impl SupportedTypes {
     pub fn values() -> &'static [SupportedTypes] {
-        use SupportedTypes::*;
+        use SupportedTypes::{
+            BIGINT, BIT, DATEDAY, DATEMILLI, DECIMAL, FLOAT4, FLOAT8, INT, LIST, MAP, SMALLINT,
+            STRUCT, TIMESTAMPMICROTZ, TIMESTAMPMILLITZ, TINYINT, VARBINARY, VARCHAR,
+        };
         &[
-            BIT, DATEMILLI, DATEDAY, TIMESTAMPMILLITZ, TIMESTAMPMICROTZ, FLOAT8, FLOAT4, INT, TINYINT, SMALLINT, BIGINT,
-            VARBINARY, DECIMAL, VARCHAR, STRUCT, LIST, MAP,
+            BIT,
+            DATEMILLI,
+            DATEDAY,
+            TIMESTAMPMILLITZ,
+            TIMESTAMPMICROTZ,
+            FLOAT8,
+            FLOAT4,
+            INT,
+            TINYINT,
+            SMALLINT,
+            BIGINT,
+            VARBINARY,
+            DECIMAL,
+            VARCHAR,
+            STRUCT,
+            LIST,
+            MAP,
         ]
     }
 
@@ -70,7 +87,9 @@ impl SupportedTypes {
         if !SupportedTypes::is_supported_minor_type(minor_type_of(field.data_type())) {
             return false;
         }
-        get_children(field).iter().all(|c| SupportedTypes::is_supported(c))
+        get_children(field)
+            .iter()
+            .all(|c| SupportedTypes::is_supported(c))
     }
 
     pub fn assert_supported(field: &Field) -> Result<()> {

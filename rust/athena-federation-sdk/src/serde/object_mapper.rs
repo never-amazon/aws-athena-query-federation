@@ -8,8 +8,9 @@ use crate::data::{Block, BlockAllocator};
 use crate::domain::predicate::Marker;
 use crate::exceptions::{FederationError, Result};
 use crate::metadata::{
-    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest,
-    GetTableLayoutResponse, GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
+    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
+    GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
+    GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
@@ -82,7 +83,7 @@ fn as_response(value: &dyn Any) -> Option<FederationResponse> {
 }
 
 fn simple_type(name: &str) -> String {
-    format!("[simple type, class {}]", name)
+    format!("[simple type, class {name}]")
 }
 
 fn wrap_as_io(e: FederationError) -> FederationError {
@@ -167,9 +168,15 @@ impl ObjectMapper {
     fn write_writable(&self, writable: &Writable, jgen: &mut JsonGenerator) -> Result<()> {
         if self.is_strict() {
             match writable {
-                Writable::Request(r) => v2::federation_request_serde::serialize(r, jgen, self.version),
-                Writable::Response(r) => v2::federation_response_serde::serialize(r, jgen, self.version),
-                _ => Err(FederationError::invalid_input("No explicitly configured serializer")),
+                Writable::Request(r) => {
+                    v2::federation_request_serde::serialize(r, jgen, self.version)
+                }
+                Writable::Response(r) => {
+                    v2::federation_response_serde::serialize(r, jgen, self.version)
+                }
+                _ => Err(FederationError::invalid_input(
+                    "No explicitly configured serializer",
+                )),
             }
         } else {
             match writable {
@@ -185,7 +192,8 @@ impl ObjectMapper {
     pub fn write_value_as_string<T: Any>(&self, value: &T) -> Result<String> {
         let writable = self.resolve_writable(value)?;
         let mut jgen = JsonGenerator::new(self.indent_output);
-        self.write_writable(&writable, &mut jgen).map_err(wrap_as_io)?;
+        self.write_writable(&writable, &mut jgen)
+            .map_err(wrap_as_io)?;
         Ok(jgen.into_string())
     }
 
@@ -207,23 +215,21 @@ impl ObjectMapper {
         self.write_value_as_string(response)
     }
 
-    fn init_for_reading<'a>(&self, input: &'a [u8], type_label: &str) -> Result<JsonParser<'a>> {
+    fn init_for_reading<'a>(input: &'a [u8], type_label: &str) -> Result<JsonParser<'a>> {
         let mut jparser = JsonParser::new(input);
         match jparser.next_token()? {
             None => Err(FederationError::Io(format!(
-                "No content to map due to end-of-input for {}",
-                type_label
+                "No content to map due to end-of-input for {type_label}"
             ))),
             Some(JsonToken::ValueNull) => Err(FederationError::NullPointer(format!(
-                "readValue returned null for {}",
-                type_label
+                "readValue returned null for {type_label}"
             ))),
             Some(_) => Ok(jparser),
         }
     }
 
     pub fn read_request(&self, input: &[u8]) -> Result<FederationRequest> {
-        let mut jparser = self.init_for_reading(input, "FederationRequest")?;
+        let mut jparser = Self::init_for_reading(input, "FederationRequest")?;
         let ctx = self.context();
         if self.is_strict() {
             v2::federation_request_serde::do_deserialize(&mut jparser, &ctx)
@@ -233,7 +239,7 @@ impl ObjectMapper {
     }
 
     pub fn read_response(&self, input: &[u8]) -> Result<FederationResponse> {
-        let mut jparser = self.init_for_reading(input, "FederationResponse")?;
+        let mut jparser = Self::init_for_reading(input, "FederationResponse")?;
         let ctx = self.context();
         if self.is_strict() {
             v2::federation_response_serde::do_deserialize(&mut jparser, &ctx)
@@ -249,7 +255,7 @@ impl ObjectMapper {
                 simple_type(type_name::<LambdaException>())
             )));
         }
-        let mut jparser = self.init_for_reading(input, "LambdaException")?;
+        let mut jparser = Self::init_for_reading(input, "LambdaException")?;
         lambda_function_exception_serde::deserialize(&mut jparser)
     }
 
@@ -260,7 +266,7 @@ impl ObjectMapper {
                 simple_type(type_name::<Block>())
             )));
         }
-        let mut jparser = self.init_for_reading(input, "Block")?;
+        let mut jparser = Self::init_for_reading(input, "Block")?;
         v1::bean_serde::deserialize_block_tree(&mut jparser, &self.context())
     }
 
@@ -271,7 +277,7 @@ impl ObjectMapper {
                 simple_type(type_name::<Schema>())
             )));
         }
-        let mut jparser = self.init_for_reading(input, "Schema")?;
+        let mut jparser = Self::init_for_reading(input, "Schema")?;
         v1::bean_serde::deserialize_schema_tree(&mut jparser)
     }
 
@@ -282,7 +288,7 @@ impl ObjectMapper {
                 simple_type(type_name::<Marker>())
             )));
         }
-        let mut jparser = self.init_for_reading(input, "Marker")?;
+        let mut jparser = Self::init_for_reading(input, "Marker")?;
         let tree = jparser.read_tree()?;
         v1::bean_serde::marker_from_tree(&tree, &self.context())
     }

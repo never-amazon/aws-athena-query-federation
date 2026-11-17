@@ -1,11 +1,11 @@
-pub mod arrow_ipc;
+pub(crate) mod arrow_ipc;
 pub mod base;
 pub mod block_deserializer;
 pub mod block_serializer;
 pub mod federated_identity_serde;
 pub mod java_hash;
-pub mod json;
-pub mod object_mapper;
+pub(crate) mod json;
+pub(crate) mod object_mapper;
 pub mod object_mapper_factory;
 pub mod ping_request_serde;
 pub mod ping_response_serde;
@@ -17,12 +17,18 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
-pub mod versioned_object_mapper_factory;
+pub(crate) mod versioned_object_mapper_factory;
 
 use crate::data::{BlockAllocator, BlockAllocatorRegistry};
 
-pub use arrow_ipc::IpcFormat;
-pub use json::{JsonGenerator, JsonParser, JsonToken};
+pub use arrow_ipc::{
+    block_batch_bytes, record_batch_from_bytes, record_batch_to_bytes, schema_from_bytes,
+    schema_to_bytes, IpcFormat,
+};
+pub use json::{
+    decode_base64, encode_base64, parse_as_int, parse_as_long, token_name, JsonGenerator,
+    JsonParser, JsonToken,
+};
 pub use object_mapper::ObjectMapper;
 pub use v2::lambda_function_exception_serde::LambdaException;
 pub use versioned_object_mapper_factory::VersionedObjectMapperFactory;
@@ -55,7 +61,10 @@ impl<'a> SerDeContext<'a> {
         }
     }
 
-    pub fn with_registry(version: i32, registry: &'a dyn BlockAllocatorRegistry) -> SerDeContext<'a> {
+    pub fn with_registry(
+        version: i32,
+        registry: &'a dyn BlockAllocatorRegistry,
+    ) -> SerDeContext<'a> {
         SerDeContext {
             version,
             allocators: AllocatorSource::Registry(registry),

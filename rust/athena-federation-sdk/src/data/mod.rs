@@ -1,43 +1,58 @@
-pub mod arrow_schema_utils;
-pub mod arrow_type_comparator;
-pub mod block;
-pub mod block_allocator;
-pub mod block_spiller;
-pub mod block_utils;
-pub mod block_writer;
-pub mod date_time_formatter_util;
-pub mod field_builder;
-pub mod field_resolver;
+pub(crate) mod arrow_schema_utils;
+pub(crate) mod arrow_type_comparator;
+pub(crate) mod block;
+pub(crate) mod block_allocator;
+pub(crate) mod block_spiller;
+pub(crate) mod block_utils;
+pub(crate) mod block_writer;
+pub(crate) mod date_time_formatter_util;
+pub(crate) mod field_builder;
+pub(crate) mod field_resolver;
 pub mod java_format;
-pub mod java_time;
+pub(crate) mod java_time;
 pub mod projectors;
-pub mod record_batch_serde;
+pub(crate) mod record_batch_serde;
 mod s3_block_spill_reader;
 mod s3_block_spiller;
 mod s3_client;
-pub mod schema_aware;
-pub mod schema_builder;
-pub mod simple_block_writer;
+pub(crate) mod schema_aware;
+pub(crate) mod schema_builder;
+pub(crate) mod simple_block_writer;
 pub mod spill_config;
-pub mod supported_types;
-pub mod time_zone_key;
-pub mod types;
-pub mod value;
-pub mod vector;
+pub(crate) mod supported_types;
+pub(crate) mod time_zone_key;
+pub(crate) mod types;
+pub(crate) mod value;
+pub(crate) mod vector;
 pub mod writers;
 
 pub use arrow_schema_utils::ArrowSchemaUtils;
-pub use arrow_type_comparator::ArrowTypeComparator;
+pub use arrow_type_comparator::{compare_unsigned_bytes, java_string_compare, ArrowTypeComparator};
 pub use block::Block;
-pub use block_allocator::{ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl, BlockAllocatorRegistry};
+pub use block_allocator::{
+    ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl, BlockAllocatorRegistry,
+};
 pub use block_spiller::BlockSpiller;
-pub use block_utils::BlockUtils;
+pub use block_utils::{
+    to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short, BlockUtils,
+    MAP_DATA_VECTOR_NAME, MAP_KEY_NAME, MAP_VALUE_NAME, UTC_ZONE_ID,
+};
 pub use block_writer::{BlockWriter, RowWriter};
-pub use date_time_formatter_util::{DateTimeFormatterUtil, TimeStampMicroTzHolder, TimeStampMilliTzHolder};
+pub use date_time_formatter_util::{
+    DateTimeFormatterUtil, TimeStampMicroTzHolder, TimeStampMilliTzHolder,
+};
 pub use field_builder::FieldBuilder;
 pub use field_resolver::{DefaultFieldResolver, FieldResolver};
-pub use java_time::{ZoneId, ZonedDateTime};
-pub use record_batch_serde::{ArrowRecordBatch, AthenaFederationIpcOption, RecordBatchSerDe, SchemaSerDe};
+pub use java_time::{
+    epoch, local_date_of_epoch_day, local_date_time_of_epoch_milli_utc,
+    local_date_time_to_epoch_milli_utc, local_date_time_to_string, local_date_to_epoch_day,
+    local_date_to_string, local_time_to_string, offset_id, parse_iso_local_date_time, ZoneId,
+    ZonedDateTime,
+};
+pub use record_batch_serde::{
+    deserialize_record_batch_message, deserialize_schema, schema_ref, serialize_record_batch,
+    serialize_schema, ArrowRecordBatch, AthenaFederationIpcOption, RecordBatchSerDe, SchemaSerDe,
+};
 pub use s3_block_spill_reader::S3BlockSpillReader;
 pub use s3_block_spiller::S3BlockSpiller;
 pub use s3_client::{GetObjectRequest, PutObjectRequest, PutObjectRequestBuilder, S3Client};
@@ -46,6 +61,10 @@ pub use schema_builder::SchemaBuilder;
 pub use simple_block_writer::SimpleBlockWriter;
 pub use supported_types::SupportedTypes;
 pub use time_zone_key::TimeZoneKey;
-pub use types::{ArrowType, MinorType};
-pub use value::Value;
-pub use vector::{FieldReader, FieldVector};
+pub use types::{
+    arrow_type_to_string, decimal, decimal_precision_scale, get_children, map_type, minor_type_of,
+    new_field, nullable_field, timestamp_timezone, timestamp_tz, with_children, ArrowType,
+    MinorType,
+};
+pub use value::{decimal_equals, java_double_compare, java_float_compare, OpaqueValue, Value};
+pub use vector::{big_decimal_to_unscaled, decimal_precision, FieldReader, FieldVector};

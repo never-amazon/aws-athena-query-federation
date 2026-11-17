@@ -1,35 +1,48 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, Fields, IntervalUnit, Schema, TimeUnit, UnionFields, UnionMode};
+use arrow::datatypes::{
+    DataType, Field, Fields, IntervalUnit, Schema, TimeUnit, UnionFields, UnionMode,
+};
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value as Json;
 
 use crate::data::{ArrowType, Block};
-use crate::domain::predicate::expression::{ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression};
+use crate::domain::predicate::expression::{
+    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
+};
 use crate::domain::predicate::functions::FunctionName;
 use crate::domain::predicate::{
-    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, Marker, OrderByField, QueryPlan, Range, SortedRangeSet, ValueSet,
+    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, Marker, OrderByField, QueryPlan,
+    Range, SortedRangeSet, ValueSet,
 };
 use crate::domain::spill::{S3SpillLocation, SpillLocation};
 use crate::domain::split::Split;
 use crate::domain::table_name::TableName;
 use crate::exceptions::{FederationError, Result};
+use crate::java_cast::double_to_long;
 use crate::metadata::optimizations::OptimizationSubType;
 use crate::metadata::{
-    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest,
-    GetTableLayoutResponse, GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
+    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
+    GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
+    GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse, MetadataRequest,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
-use crate::request::{FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse};
+use crate::request::{
+    FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
+};
 use crate::security::EncryptionKey;
 use crate::serde::base::{write_type, StringMapValue};
 use crate::serde::java_hash::java_hash_map_order;
 use crate::serde::json::{decode_base64, JsonGenerator, JsonParser};
 use crate::serde::v2::arrow_type_serde::{interval_unit_name, time_unit_name, union_mode_name};
-use crate::serde::{block_deserializer, block_serializer, schema_deserializer, schema_serializer, SerDeContext};
-use crate::udf::{UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType};
+use crate::serde::{
+    block_deserializer, block_serializer, schema_deserializer, schema_serializer, SerDeContext,
+};
+use crate::udf::{
+    UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType,
+};
 
 pub const REQUEST_SUB_TYPES: &[&str] = &[
     "ListSchemasRequest",
@@ -77,7 +90,11 @@ pub fn serialize_schema(schema: &Schema, jgen: &mut JsonGenerator) -> Result<()>
     schema_serializer::serialize(schema, jgen)
 }
 
-fn write_string_map_bean<V: StringMapValue>(jgen: &mut JsonGenerator, name: &str, values: &HashMap<String, V>) -> Result<()> {
+fn write_string_map_bean<V: StringMapValue>(
+    jgen: &mut JsonGenerator,
+    name: &str,
+    values: &HashMap<String, V>,
+) -> Result<()> {
     jgen.write_object_field_start(name)?;
     for key in java_hash_map_order(values.keys()) {
         jgen.write_string_field(key, values.get(key).and_then(|v| v.as_opt_str()))?;
@@ -85,7 +102,11 @@ fn write_string_map_bean<V: StringMapValue>(jgen: &mut JsonGenerator, name: &str
     jgen.write_end_object()
 }
 
-fn write_strings<'a, V: StringMapValue + 'a, I: IntoIterator<Item = &'a V>>(jgen: &mut JsonGenerator, name: &str, values: I) -> Result<()> {
+fn write_strings<'a, V: StringMapValue + 'a, I: IntoIterator<Item = &'a V>>(
+    jgen: &mut JsonGenerator,
+    name: &str,
+    values: I,
+) -> Result<()> {
     jgen.write_array_field_start(name)?;
     for v in values {
         jgen.write_string(v.as_opt_str())?;
@@ -93,10 +114,12 @@ fn write_strings<'a, V: StringMapValue + 'a, I: IntoIterator<Item = &'a V>>(jgen
     jgen.write_end_array()
 }
 
-fn serialize_identity(identity: Option<&FederatedIdentity>, jgen: &mut JsonGenerator) -> Result<()> {
-    let identity = match identity {
-        Some(i) => i,
-        None => return jgen.write_null(),
+fn serialize_identity(
+    identity: Option<&FederatedIdentity>,
+    jgen: &mut JsonGenerator,
+) -> Result<()> {
+    let Some(identity) = identity else {
+        return jgen.write_null();
     };
     jgen.write_start_object()?;
     jgen.write_string_field("arn", identity.get_arn())?;
@@ -111,7 +134,10 @@ fn serialize_table_name(table_name: &TableName, jgen: &mut JsonGenerator) -> Res
     jgen.write_start_object()?;
     jgen.write_string_field("schemaName", Some(table_name.get_schema_name()))?;
     jgen.write_string_field("tableName", Some(table_name.get_table_name()))?;
-    jgen.write_string_field("qualifiedTableName", Some(&table_name.get_qualified_table_name()))?;
+    jgen.write_string_field(
+        "qualifiedTableName",
+        Some(&table_name.get_qualified_table_name()),
+    )?;
     jgen.write_end_object()
 }
 
@@ -141,9 +167,10 @@ pub fn arrow_type_bean_name(arrow_type: &ArrowType) -> &'static str {
         DataType::LargeBinary => "largebinary",
         DataType::FixedSizeBinary(_) => "fixedsizebinary",
         DataType::Boolean => "bool",
-        DataType::Decimal32(_, _) | DataType::Decimal64(_, _) | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
-            "decimal"
-        }
+        DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => "decimal",
         DataType::Date32 | DataType::Date64 => "date",
         DataType::Time32(_) | DataType::Time64(_) => "time",
         DataType::Timestamp(_, _) => "timestamp",
@@ -165,7 +192,7 @@ fn serialize_arrow_type(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Res
             jgen.write_string_field("mode", Some(union_mode_name(*mode)))?;
             jgen.write_array_field_start("typeIds")?;
             for (id, _) in fields.iter() {
-                jgen.write_number_i32(id as i32)?;
+                jgen.write_number_i32(i32::from(id))?;
             }
             jgen.write_end_array()?;
         }
@@ -194,15 +221,18 @@ fn serialize_arrow_type(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Res
         DataType::Float32 => jgen.write_string_field("precision", Some("SINGLE"))?,
         DataType::Float64 => jgen.write_string_field("precision", Some("DOUBLE"))?,
         DataType::FixedSizeBinary(w) => jgen.write_number_field_i32("byteWidth", *w)?,
-        DataType::Decimal32(p, s) | DataType::Decimal64(p, s) | DataType::Decimal128(p, s) | DataType::Decimal256(p, s) => {
+        DataType::Decimal32(p, s)
+        | DataType::Decimal64(p, s)
+        | DataType::Decimal128(p, s)
+        | DataType::Decimal256(p, s) => {
             let width = match arrow_type {
                 DataType::Decimal32(_, _) => 32,
                 DataType::Decimal64(_, _) => 64,
                 DataType::Decimal128(_, _) => 128,
                 _ => 256,
             };
-            jgen.write_number_field_i32("precision", *p as i32)?;
-            jgen.write_number_field_i32("scale", *s as i32)?;
+            jgen.write_number_field_i32("precision", i32::from(*p))?;
+            jgen.write_number_field_i32("scale", i32::from(*s))?;
             jgen.write_number_field_i32("bitWidth", width)?;
         }
         DataType::Date32 => jgen.write_string_field("unit", Some("DAY"))?,
@@ -219,7 +249,9 @@ fn serialize_arrow_type(arrow_type: &ArrowType, jgen: &mut JsonGenerator) -> Res
             jgen.write_string_field("unit", Some(time_unit_name(unit)))?;
             jgen.write_string_field("timezone", tz.as_deref())?;
         }
-        DataType::Interval(unit) => jgen.write_string_field("unit", Some(interval_unit_name(unit)))?,
+        DataType::Interval(unit) => {
+            jgen.write_string_field("unit", Some(interval_unit_name(unit)))?;
+        }
         DataType::Duration(unit) => jgen.write_string_field("unit", Some(time_unit_name(unit)))?,
         _ => {}
     }
@@ -283,7 +315,10 @@ fn serialize_expression(expression: &FederationExpression, jgen: &mut JsonGenera
             jgen.write_field_name("type")?;
             serialize_arrow_type(f.get_type(), jgen)?;
             jgen.write_object_field_start("functionName")?;
-            jgen.write_string_field("functionName", Some(f.get_function_name().get_function_name()))?;
+            jgen.write_string_field(
+                "functionName",
+                Some(f.get_function_name().get_function_name()),
+            )?;
             jgen.write_end_object()?;
             jgen.write_array_field_start("arguments")?;
             for a in f.get_arguments() {
@@ -339,7 +374,11 @@ fn serialize_constraints(constraints: &Constraints, jgen: &mut JsonGenerator) ->
     }
     jgen.write_end_array()?;
     jgen.write_number_field_i64("limit", constraints.get_limit())?;
-    write_string_map_bean(jgen, "queryPassthroughArguments", constraints.get_query_passthrough_arguments())?;
+    write_string_map_bean(
+        jgen,
+        "queryPassthroughArguments",
+        constraints.get_query_passthrough_arguments(),
+    )?;
     jgen.write_field_name("queryPlan")?;
     match constraints.get_query_plan() {
         Some(plan) => {
@@ -429,7 +468,11 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             write_metadata_header(r, jgen)?;
             jgen.write_field_name("tableName")?;
             serialize_table_name(r.get_table_name(), jgen)?;
-            write_string_map_bean(jgen, "queryPassthroughArguments", r.get_query_passthrough_arguments())?;
+            write_string_map_bean(
+                jgen,
+                "queryPassthroughArguments",
+                r.get_query_passthrough_arguments(),
+            )?;
             write_metadata_trailer(r, jgen)?;
             jgen.write_boolean_field("queryPassthrough", r.is_query_passthrough())?;
         }
@@ -600,7 +643,11 @@ fn scalar_text(value: &Json, name: &str) -> Result<String> {
         Json::String(s) => Ok(s.clone()),
         Json::Number(n) => Ok(n.to_string()),
         Json::Bool(b) => Ok(b.to_string()),
-        _ => Err(io(format!("Cannot deserialize value of type `java.lang.String` from {} for property \"{}\"", kind(value), name))),
+        _ => Err(io(format!(
+            "Cannot deserialize value of type `java.lang.String` from {} for property \"{}\"",
+            kind(value),
+            name
+        ))),
     }
 }
 
@@ -620,7 +667,7 @@ fn opt_string(node: &Json, name: &str) -> Result<Option<String>> {
 }
 
 fn req_string(node: &Json, name: &str) -> Result<String> {
-    opt_string(node, name)?.ok_or_else(|| io(format!("{} is null", name)))
+    opt_string(node, name)?.ok_or_else(|| io(format!("{name} is null")))
 }
 
 fn long_value(node: &Json, name: &str) -> Result<i64> {
@@ -628,37 +675,57 @@ fn long_value(node: &Json, name: &str) -> Result<i64> {
         None => Ok(0),
         Some(Json::Number(n)) => n
             .as_i64()
-            .or_else(|| n.as_f64().map(|f| f as i64))
-            .ok_or_else(|| io(format!("Numeric value ({}) out of range of long", n))),
+            .or_else(|| n.as_f64().map(double_to_long))
+            .ok_or_else(|| io(format!("Numeric value ({n}) out of range of long"))),
         Some(Json::String(s)) => {
             let t = s.trim();
             if t.is_empty() {
                 return Ok(0);
             }
-            t.parse::<i64>()
-                .map_err(|_| io(format!("Cannot deserialize value of type `long` from String \"{}\"", s)))
+            t.parse::<i64>().map_err(|_| {
+                io(format!(
+                    "Cannot deserialize value of type `long` from String \"{s}\""
+                ))
+            })
         }
-        Some(Json::Bool(b)) => Err(io(format!("Cannot coerce Boolean value ({}) to `long` value", b))),
-        Some(other) => Err(io(format!("Cannot deserialize value of type `long` from {}", kind(other)))),
+        Some(Json::Bool(b)) => Err(io(format!(
+            "Cannot coerce Boolean value ({b}) to `long` value"
+        ))),
+        Some(other) => Err(io(format!(
+            "Cannot deserialize value of type `long` from {}",
+            kind(other)
+        ))),
     }
 }
 
 fn int_value(node: &Json, name: &str) -> Result<i32> {
     let v = long_value(node, name)?;
-    i32::try_from(v).map_err(|_| io(format!("Numeric value ({}) out of range of int", v)))
+    i32::try_from(v).map_err(|_| io(format!("Numeric value ({v}) out of range of int")))
 }
 
 fn bool_value(node: &Json, name: &str) -> Result<bool> {
     match prop(node, name) {
         None => Ok(false),
         Some(Json::Bool(b)) => Ok(*b),
-        Some(Json::Number(n)) => Ok(n.as_i64().map(|v| v != 0).unwrap_or(false)),
+        Some(Json::Number(n)) => Ok(n.as_i64().is_some_and(|v| v != 0)),
         Some(Json::String(s)) => match s.trim() {
             "true" | "True" | "TRUE" => Ok(true),
             "false" | "False" | "FALSE" | "" => Ok(false),
-            other => Err(io(format!("Cannot deserialize value of type `boolean` from String \"{}\"", other))),
+            other => Err(io(format!(
+                "Cannot deserialize value of type `boolean` from String \"{other}\""
+            ))),
         },
-        Some(other) => Err(io(format!("Cannot deserialize value of type `boolean` from {}", kind(other)))),
+        Some(other) => Err(io(format!(
+            "Cannot deserialize value of type `boolean` from {}",
+            kind(other)
+        ))),
+    }
+}
+
+fn required_list<T>(node: &Json, name: &str, item: impl Fn(&Json) -> Result<T>) -> Result<Vec<T>> {
+    match prop(node, name) {
+        None => Err(io(format!("{name} is null"))),
+        Some(v) => list_items(v).into_iter().map(item).collect(),
     }
 }
 
@@ -720,7 +787,10 @@ fn binary(node: &Json, name: &str) -> Result<Option<Vec<u8>>> {
     match prop(node, name) {
         None => Ok(None),
         Some(Json::String(s)) => decode_base64(s).map(Some),
-        Some(other) => Err(io(format!("Cannot deserialize value of type `byte[]` from {}", kind(other)))),
+        Some(other) => Err(io(format!(
+            "Cannot deserialize value of type `byte[]` from {}",
+            kind(other)
+        ))),
     }
 }
 
@@ -728,16 +798,14 @@ fn type_id<'a>(node: &'a Json, base: &str) -> Result<&'a str> {
     match node.get("@type") {
         Some(Json::String(s)) => Ok(s.as_str()),
         _ => Err(io(format!(
-            "Could not resolve subtype of {}: missing type id property '@type'",
-            base
+            "Could not resolve subtype of {base}: missing type id property '@type'"
         ))),
     }
 }
 
 fn identity_from(node: &Json) -> Result<Option<FederatedIdentity>> {
-    let value = match prop(node, "identity") {
-        None => return Ok(None),
-        Some(v) => v,
+    let Some(value) = prop(node, "identity") else {
+        return Ok(None);
     };
     Ok(Some(FederatedIdentity::new_nullable(
         opt_string(value, "arn")?,
@@ -751,7 +819,10 @@ fn identity_from(node: &Json) -> Result<Option<FederatedIdentity>> {
 fn table_name_from(value: Option<&Json>) -> Result<Option<TableName>> {
     match value {
         None => Ok(None),
-        Some(v) => Ok(Some(TableName::new(req_string(v, "schemaName")?, req_string(v, "tableName")?))),
+        Some(v) => Ok(Some(TableName::new(
+            req_string(v, "schemaName")?,
+            req_string(v, "tableName")?,
+        ))),
     }
 }
 
@@ -772,8 +843,60 @@ fn schema_from(value: Option<&Json>) -> Result<Option<Schema>> {
 fn enum_text<'a>(value: &'a Json, enum_name: &str) -> Result<&'a str> {
     match value {
         Json::String(s) => Ok(s.as_str()),
-        other => Err(io(format!("Cannot deserialize value of type `{}` from {}", enum_name, kind(other)))),
+        other => Err(io(format!(
+            "Cannot deserialize value of type `{}` from {}",
+            enum_name,
+            kind(other)
+        ))),
     }
+}
+
+fn union_type_from(value: &Json) -> Result<ArrowType> {
+    let mode = match req_string(value, "mode")?.as_str() {
+        "Sparse" => UnionMode::Sparse,
+        "Dense" => UnionMode::Dense,
+        other => {
+            return Err(io(format!(
+                "Cannot deserialize value of type `UnionMode` from String \"{other}\""
+            )))
+        }
+    };
+    let ids: Vec<i8> = match prop(value, "typeIds") {
+        None => Vec::new(),
+        Some(v) => list_items(v)
+            .into_iter()
+            .map(|i| {
+                i.as_i64()
+                    .and_then(|x| i8::try_from(x).ok())
+                    .ok_or_else(|| io("Union type id out of range"))
+            })
+            .collect::<Result<Vec<i8>>>()?,
+    };
+    let fields: Vec<Field> = ids
+        .iter()
+        .map(|i| Field::new(format!("$data${i}"), DataType::Null, true))
+        .collect();
+    Ok(DataType::Union(
+        UnionFields::try_new(ids, fields).map_err(|e| io(e.to_string()))?,
+        mode,
+    ))
+}
+
+fn decimal_type_from(value: &Json) -> Result<ArrowType> {
+    let precision = u8::try_from(int_value(value, "precision")?)
+        .map_err(|_| io("Decimal precision out of range"))?;
+    let scale =
+        i8::try_from(int_value(value, "scale")?).map_err(|_| io("Decimal scale out of range"))?;
+    let width = match prop(value, "bitWidth") {
+        None => 128,
+        Some(_) => int_value(value, "bitWidth")?,
+    };
+    Ok(match width {
+        32 => DataType::Decimal32(precision, scale),
+        64 => DataType::Decimal64(precision, scale),
+        256 => DataType::Decimal256(precision, scale),
+        _ => DataType::Decimal128(precision, scale),
+    })
 }
 
 pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
@@ -792,7 +915,9 @@ pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
             "MILLISECOND" => Ok(TimeUnit::Millisecond),
             "MICROSECOND" => Ok(TimeUnit::Microsecond),
             "NANOSECOND" => Ok(TimeUnit::Nanosecond),
-            other => Err(io(format!("Cannot deserialize value of type `TimeUnit` from String \"{}\"", other))),
+            other => Err(io(format!(
+                "Cannot deserialize value of type `TimeUnit` from String \"{other}\""
+            ))),
         }
     };
     Ok(match name {
@@ -801,26 +926,7 @@ pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
         "list" => DataType::List(crate::serde::v2::arrow_type_serde::placeholder_child()),
         "largelist" => DataType::LargeList(crate::serde::v2::arrow_type_serde::placeholder_child()),
         "fixedsizelist" => DataType::FixedSizeList(crate::serde::v2::arrow_type_serde::placeholder_child(), int_value(value, "listSize")?),
-        "union" => {
-            let mode = match req_string(value, "mode")?.as_str() {
-                "Sparse" => UnionMode::Sparse,
-                "Dense" => UnionMode::Dense,
-                other => return Err(io(format!("Cannot deserialize value of type `UnionMode` from String \"{}\"", other))),
-            };
-            let ids: Vec<i8> = match prop(value, "typeIds") {
-                None => Vec::new(),
-                Some(v) => list_items(v)
-                    .into_iter()
-                    .map(|i| {
-                        i.as_i64()
-                            .and_then(|x| i8::try_from(x).ok())
-                            .ok_or_else(|| io("Union type id out of range"))
-                    })
-                    .collect::<Result<Vec<i8>>>()?,
-            };
-            let fields: Vec<Field> = ids.iter().map(|i| Field::new(format!("$data${}", i), DataType::Null, true)).collect();
-            DataType::Union(UnionFields::try_new(ids, fields).map_err(|e| io(e.to_string()))?, mode)
-        }
+        "union" => union_type_from(value)?,
         "map" => DataType::Map(
             Arc::new(Field::new("entries", DataType::Struct(Fields::empty()), false)),
             bool_value(value, "keysSorted")?,
@@ -834,13 +940,13 @@ pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
             (16, false) => DataType::UInt16,
             (32, false) => DataType::UInt32,
             (64, false) => DataType::UInt64,
-            (w, s) => return Err(io(format!("Unsupported Int bitWidth {} isSigned {}", w, s))),
+            (w, s) => return Err(io(format!("Unsupported Int bitWidth {w} isSigned {s}"))),
         },
         "floatingpoint" => match req_string(value, "precision")?.as_str() {
             "HALF" => DataType::Float16,
             "SINGLE" => DataType::Float32,
             "DOUBLE" => DataType::Float64,
-            other => return Err(io(format!("Cannot deserialize value of type `FloatingPointPrecision` from String \"{}\"", other))),
+            other => return Err(io(format!("Cannot deserialize value of type `FloatingPointPrecision` from String \"{other}\""))),
         },
         "utf8" => DataType::Utf8,
         "utf8view" => DataType::Utf8View,
@@ -850,45 +956,31 @@ pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
         "largebinary" => DataType::LargeBinary,
         "fixedsizebinary" => DataType::FixedSizeBinary(int_value(value, "byteWidth")?),
         "bool" => DataType::Boolean,
-        "decimal" => {
-            let precision = u8::try_from(int_value(value, "precision")?).map_err(|_| io("Decimal precision out of range"))?;
-            let scale = i8::try_from(int_value(value, "scale")?).map_err(|_| io("Decimal scale out of range"))?;
-            let width = match prop(value, "bitWidth") {
-                None => 128,
-                Some(_) => int_value(value, "bitWidth")?,
-            };
-            match width {
-                32 => DataType::Decimal32(precision, scale),
-                64 => DataType::Decimal64(precision, scale),
-                256 => DataType::Decimal256(precision, scale),
-                _ => DataType::Decimal128(precision, scale),
-            }
-        }
+        "decimal" => decimal_type_from(value)?,
         "date" => match unit("unit")?.as_str() {
             "DAY" => DataType::Date32,
             "MILLISECOND" => DataType::Date64,
-            other => return Err(io(format!("Cannot deserialize value of type `DateUnit` from String \"{}\"", other))),
+            other => return Err(io(format!("Cannot deserialize value of type `DateUnit` from String \"{other}\""))),
         },
         "time" => {
             let u = time_unit("unit")?;
             match (u, int_value(value, "bitWidth")?) {
-                (TimeUnit::Second, 32) | (TimeUnit::Millisecond, 32) => DataType::Time32(u),
-                (TimeUnit::Microsecond, 64) | (TimeUnit::Nanosecond, 64) => DataType::Time64(u),
+                (TimeUnit::Second | TimeUnit::Millisecond, 32) => DataType::Time32(u),
+                (TimeUnit::Microsecond | TimeUnit::Nanosecond, 64) => DataType::Time64(u),
                 (u, w) => return Err(io(format!("Unsupported Time unit {} with bitWidth {}", time_unit_name(&u), w))),
             }
         }
-        "timestamp" => DataType::Timestamp(time_unit("unit")?, opt_string(value, "timezone")?.map(|s| s.into())),
+        "timestamp" => DataType::Timestamp(time_unit("unit")?, opt_string(value, "timezone")?.map(std::convert::Into::into)),
         "interval" => match unit("unit")?.as_str() {
             "YEAR_MONTH" => DataType::Interval(IntervalUnit::YearMonth),
             "DAY_TIME" => DataType::Interval(IntervalUnit::DayTime),
             "MONTH_DAY_NANO" => DataType::Interval(IntervalUnit::MonthDayNano),
-            other => return Err(io(format!("Cannot deserialize value of type `IntervalUnit` from String \"{}\"", other))),
+            other => return Err(io(format!("Cannot deserialize value of type `IntervalUnit` from String \"{other}\""))),
         },
         "duration" => DataType::Duration(time_unit("unit")?),
         other => {
             return Err(io(format!(
-                "Could not resolve type id '{}' as a subtype of `org.apache.arrow.vector.types.pojo.ArrowType`",
-                other
+                "Could not resolve type id '{other}' as a subtype of `org.apache.arrow.vector.types.pojo.ArrowType`"
             )))
         }
     })
@@ -896,23 +988,30 @@ pub fn arrow_type_from(value: &Json) -> Result<ArrowType> {
 
 fn arrow_type_prop(node: &Json, name: &str) -> Result<ArrowType> {
     match prop(node, name) {
-        None => Err(io(format!("{} is null", name))),
+        None => Err(io(format!("{name} is null"))),
         Some(v) => arrow_type_from(v),
     }
 }
 
 pub fn marker_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Marker> {
-    let block = block_from(prop(node, "valueBlock"), ctx)?.ok_or_else(|| io("valueBlock is null"))?;
+    let block =
+        block_from(prop(node, "valueBlock"), ctx)?.ok_or_else(|| io("valueBlock is null"))?;
     let bound = match prop(node, "bound") {
         None => return Err(io("bound is null")),
-        Some(v) => crate::serde::v2::marker_serde::bound_value_of(Some(enum_text(v, "Marker.Bound")?)).map_err(to_io)?,
+        Some(v) => {
+            crate::serde::v2::marker_serde::bound_value_of(Some(enum_text(v, "Marker.Bound")?))
+                .map_err(to_io)?
+        }
     };
     let null_value = bool_value(node, "nullValue")?;
     Marker::from_value_block(&block, bound, null_value).map_err(to_io)
 }
 
 fn value_set_from(node: &Json, ctx: &SerDeContext<'_>) -> Result<ValueSet> {
-    let id = type_id(node, "com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet")?;
+    let id = type_id(
+        node,
+        "com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet",
+    )?;
     Ok(match id {
         "equatable" => {
             let block = block_from(prop(node, "valueBlock"), ctx)?.ok_or_else(|| io("valueBlock is null"))?;
@@ -935,15 +1034,17 @@ fn value_set_from(node: &Json, ctx: &SerDeContext<'_>) -> Result<ValueSet> {
         "allOrNone" => AllOrNoneValueSet::new(arrow_type_prop(node, "type")?, bool_value(node, "all")?, bool_value(node, "nullAllowed")?).into(),
         other => {
             return Err(io(format!(
-                "Could not resolve type id '{}' as a subtype of `com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet`",
-                other
+                "Could not resolve type id '{other}' as a subtype of `com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet`"
             )))
         }
     })
 }
 
 fn expression_from(node: &Json, ctx: &SerDeContext<'_>) -> Result<FederationExpression> {
-    let id = type_id(node, "com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression")?;
+    let id = type_id(
+        node,
+        "com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression",
+    )?;
     let children: Vec<&Json> = prop(node, "children").map(list_items).unwrap_or_default();
     Ok(match id {
         "functionCall" => {
@@ -965,22 +1066,32 @@ fn expression_from(node: &Json, ctx: &SerDeContext<'_>) -> Result<FederationExpr
         }
         "variable" => {
             if !children.is_empty() {
-                return Err(io("java.lang.UnsupportedOperationException (through reference chain: children)"));
+                return Err(io(
+                    "java.lang.UnsupportedOperationException (through reference chain: children)",
+                ));
             }
-            VariableExpression::new(req_string(node, "columnName")?, arrow_type_prop(node, "type")?)
-                .map_err(to_io)?
-                .into()
+            VariableExpression::new(
+                req_string(node, "columnName")?,
+                arrow_type_prop(node, "type")?,
+            )
+            .map_err(to_io)?
+            .into()
         }
         "constant" => {
             if !children.is_empty() {
-                return Err(io("java.lang.UnsupportedOperationException (through reference chain: children)"));
+                return Err(io(
+                    "java.lang.UnsupportedOperationException (through reference chain: children)",
+                ));
             }
-            ConstantExpression::new(block_from(prop(node, "valueBlock"), ctx)?, arrow_type_prop(node, "type")?).into()
+            ConstantExpression::new(
+                block_from(prop(node, "valueBlock"), ctx)?,
+                arrow_type_prop(node, "type")?,
+            )
+            .into()
         }
         other => {
             return Err(io(format!(
-                "Could not resolve type id '{}' as a subtype of `FederationExpression`",
-                other
+                "Could not resolve type id '{other}' as a subtype of `FederationExpression`"
             )))
         }
     })
@@ -993,22 +1104,18 @@ fn direction_from(value: &Json) -> Result<Direction> {
         "DESC_NULLS_FIRST" => Ok(Direction::DESC_NULLS_FIRST),
         "DESC_NULLS_LAST" => Ok(Direction::DESC_NULLS_LAST),
         other => Err(io(format!(
-            "Cannot deserialize value of type `OrderByField$Direction` from String \"{}\": not one of the values accepted for Enum class",
-            other
+            "Cannot deserialize value of type `OrderByField$Direction` from String \"{other}\": not one of the values accepted for Enum class"
         ))),
     }
 }
 
 fn constraints_from(value: Option<&Json>, ctx: &SerDeContext<'_>) -> Result<Option<Constraints>> {
-    let node = match value {
-        None => return Ok(None),
-        Some(v) => v,
-    };
+    let Some(node) = value else { return Ok(None) };
     let mut summary: IndexMap<String, ValueSet> = IndexMap::new();
     if let Some(Json::Object(map)) = prop(node, "summary") {
         for (k, v) in map {
             if matches!(v, Json::Null) {
-                return Err(io(format!("null value in summary entry {}", k)));
+                return Err(io(format!("null value in summary entry {k}")));
             }
             summary.insert(k.clone(), value_set_from(v, ctx)?);
         }
@@ -1026,12 +1133,18 @@ fn constraints_from(value: Option<&Json>, ctx: &SerDeContext<'_>) -> Result<Opti
                 None => return Err(io("direction is null")),
                 Some(d) => direction_from(d)?,
             };
-            order_by.push(OrderByField::new(req_string(item, "columnName")?, direction));
+            order_by.push(OrderByField::new(
+                req_string(item, "columnName")?,
+                direction,
+            ));
         }
     }
     let query_plan = match prop(node, "queryPlan") {
         None => None,
-        Some(p) => Some(QueryPlan::new(opt_string(p, "substraitVersion")?, req_string(p, "substraitPlan")?)),
+        Some(p) => Some(QueryPlan::new(
+            opt_string(p, "substraitVersion")?,
+            req_string(p, "substraitPlan")?,
+        )),
     };
     Ok(Some(Constraints::new(
         summary,
@@ -1044,7 +1157,10 @@ fn constraints_from(value: Option<&Json>, ctx: &SerDeContext<'_>) -> Result<Opti
 }
 
 fn spill_location_from(value: &Json) -> Result<SpillLocation> {
-    let id = type_id(value, "com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation")?;
+    let id = type_id(
+        value,
+        "com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation",
+    )?;
     match id {
         "S3SpillLocation" => Ok(SpillLocation::S3(S3SpillLocation::new(
             req_string(value, "bucket")?,
@@ -1052,8 +1168,7 @@ fn spill_location_from(value: &Json) -> Result<SpillLocation> {
             bool_value(value, "directory")?,
         ))),
         other => Err(io(format!(
-            "Could not resolve type id '{}' as a subtype of `SpillLocation`",
-            other
+            "Could not resolve type id '{other}' as a subtype of `SpillLocation`"
         ))),
     }
 }
@@ -1069,35 +1184,76 @@ fn encryption_key_from(value: Option<&Json>) -> Result<Option<EncryptionKey>> {
 }
 
 fn split_from(value: &Json) -> Result<Split> {
-    let spill_location = prop(value, "spillLocation").map(spill_location_from).transpose()?;
+    let spill_location = prop(value, "spillLocation")
+        .map(spill_location_from)
+        .transpose()?;
     let encryption_key = encryption_key_from(prop(value, "encryptionKey"))?;
-    let properties = nullable_string_map(value, "properties")?.ok_or_else(|| io("properties is null"))?;
-    Ok(Split::new_nullable(spill_location, encryption_key, properties))
+    let properties =
+        nullable_string_map(value, "properties")?.ok_or_else(|| io("properties is null"))?;
+    Ok(Split::new_nullable(
+        spill_location,
+        encryption_key,
+        properties,
+    ))
 }
 
 fn required<T>(value: Option<T>, name: &str) -> Result<T> {
-    value.ok_or_else(|| io(format!("{} is null", name)))
+    value.ok_or_else(|| io(format!("{name} is null")))
 }
 
-pub fn deserialize_request(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<FederationRequest> {
+pub fn deserialize_request(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<FederationRequest> {
     let tree = jparser.read_tree()?;
     request_from_tree(&tree, ctx).map_err(to_io)
 }
 
+fn udf_request_from(
+    node: &Json,
+    identity: Option<FederatedIdentity>,
+    ctx: &SerDeContext<'_>,
+) -> Result<UserDefinedFunctionRequest> {
+    let function_type = function_type_from(node)?;
+    Ok(UserDefinedFunctionRequest::new(
+        identity,
+        required(block_from(prop(node, "inputRecords"), ctx)?, "inputRecords")?,
+        required(schema_from(prop(node, "outputSchema"))?, "outputSchema")?,
+        req_string(node, "methodName")?,
+        function_type,
+    ))
+}
+
+fn function_type_from(node: &Json) -> Result<UserDefinedFunctionType> {
+    let v = prop(node, "functionType").ok_or_else(|| io("functionType is null"))?;
+    UserDefinedFunctionType::value_of(enum_text(v, "UserDefinedFunctionType")?)
+        .ok_or_else(|| io("Cannot deserialize value of type `UserDefinedFunctionType`"))
+}
+
 pub fn request_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<FederationRequest> {
-    let id = type_id(node, "com.amazonaws.athena.connector.lambda.request.FederationRequest")?;
+    let id = type_id(
+        node,
+        "com.amazonaws.athena.connector.lambda.request.FederationRequest",
+    )?;
     if !REQUEST_SUB_TYPES.contains(&id) {
         return Err(io(format!(
-            "Could not resolve type id '{}' as a subtype of `com.amazonaws.athena.connector.lambda.request.FederationRequest`",
-            id
+            "Could not resolve type id '{id}' as a subtype of `com.amazonaws.athena.connector.lambda.request.FederationRequest`"
         )));
     }
     let identity = identity_from(node)?;
     let query_id = opt_string(node, "queryId")?;
     let catalog_name = opt_string(node, "catalogName")?;
     Ok(match id {
-        "PingRequest" => PingRequest::new(identity, required(catalog_name, "catalogName")?, required(query_id, "queryId")?).into(),
-        "ListSchemasRequest" => ListSchemasRequest::new(identity, query_id, required(catalog_name, "catalogName")?).into(),
+        "PingRequest" => PingRequest::new(
+            identity,
+            required(catalog_name, "catalogName")?,
+            required(query_id, "queryId")?,
+        )
+        .into(),
+        "ListSchemasRequest" => {
+            ListSchemasRequest::new(identity, query_id, required(catalog_name, "catalogName")?)
+                .into()
+        }
         "ListTablesRequest" => ListTablesRequest::new(
             identity,
             query_id,
@@ -1112,17 +1268,22 @@ pub fn request_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federati
             query_id,
             required(catalog_name, "catalogName")?,
             required(table_name_from(prop(node, "tableName"))?, "tableName")?,
-            nullable_string_map(node, "queryPassthroughArguments")?.ok_or_else(|| io("queryPassthroughArguments is null"))?,
+            nullable_string_map(node, "queryPassthroughArguments")?
+                .ok_or_else(|| io("queryPassthroughArguments is null"))?,
         )
         .into(),
         "GetTableLayoutRequest" => {
-            let partition_cols = string_list(node, "partitionCols")?.ok_or_else(|| io("partitionCols is null"))?;
+            let partition_cols =
+                string_list(node, "partitionCols")?.ok_or_else(|| io("partitionCols is null"))?;
             GetTableLayoutRequest::new(
                 identity,
                 query_id,
                 required(catalog_name, "catalogName")?,
                 required(table_name_from(prop(node, "tableName"))?, "tableName")?,
-                required(constraints_from(prop(node, "constraints"), ctx)?, "constraints")?,
+                required(
+                    constraints_from(prop(node, "constraints"), ctx)?,
+                    "constraints",
+                )?,
                 required(schema_from(prop(node, "schema"))?, "schema")?,
                 partition_cols,
             )
@@ -1135,7 +1296,10 @@ pub fn request_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federati
             required(table_name_from(prop(node, "tableName"))?, "tableName")?,
             required(block_from(prop(node, "partitions"), ctx)?, "partitions")?,
             string_list(node, "partitionCols")?.ok_or_else(|| io("partitionCols is null"))?,
-            required(constraints_from(prop(node, "constraints"), ctx)?, "constraints")?,
+            required(
+                constraints_from(prop(node, "constraints"), ctx)?,
+                "constraints",
+            )?,
             opt_string(node, "continuationToken")?,
         )
         .into(),
@@ -1146,44 +1310,41 @@ pub fn request_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federati
             required(table_name_from(prop(node, "tableName"))?, "tableName")?,
             required(schema_from(prop(node, "schema"))?, "schema")?,
             required(prop(node, "split").map(split_from).transpose()?, "split")?,
-            required(constraints_from(prop(node, "constraints"), ctx)?, "constraints")?,
+            required(
+                constraints_from(prop(node, "constraints"), ctx)?,
+                "constraints",
+            )?,
             long_value(node, "maxBlockSize")?,
             long_value(node, "maxInlineBlockSize")?,
         )
         .into(),
-        "UserDefinedFunctionRequest" => {
-            let function_type = match prop(node, "functionType") {
-                None => return Err(io("functionType is null")),
-                Some(v) => UserDefinedFunctionType::value_of(enum_text(v, "UserDefinedFunctionType")?)
-                    .ok_or_else(|| io("Cannot deserialize value of type `UserDefinedFunctionType`"))?,
-            };
-            UserDefinedFunctionRequest::new(
-                identity,
-                required(block_from(prop(node, "inputRecords"), ctx)?, "inputRecords")?,
-                required(schema_from(prop(node, "outputSchema"))?, "outputSchema")?,
-                req_string(node, "methodName")?,
-                function_type,
-            )
-            .into()
-        }
-        "GetDataSourceCapabilitiesRequest" => {
-            GetDataSourceCapabilitiesRequest::new(identity, query_id, required(catalog_name, "catalogName")?).into()
-        }
-        other => return Err(io(format!("Could not resolve type id '{}'", other))),
+        "UserDefinedFunctionRequest" => udf_request_from(node, identity, ctx)?.into(),
+        "GetDataSourceCapabilitiesRequest" => GetDataSourceCapabilitiesRequest::new(
+            identity,
+            query_id,
+            required(catalog_name, "catalogName")?,
+        )
+        .into(),
+        other => return Err(io(format!("Could not resolve type id '{other}'"))),
     })
 }
 
-pub fn deserialize_response(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<FederationResponse> {
+pub fn deserialize_response(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<FederationResponse> {
     let tree = jparser.read_tree()?;
     response_from_tree(&tree, ctx).map_err(to_io)
 }
 
 pub fn response_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<FederationResponse> {
-    let id = type_id(node, "com.amazonaws.athena.connector.lambda.request.FederationResponse")?;
+    let id = type_id(
+        node,
+        "com.amazonaws.athena.connector.lambda.request.FederationResponse",
+    )?;
     if !RESPONSE_SUB_TYPES.contains(&id) {
         return Err(io(format!(
-            "Could not resolve type id '{}' as a subtype of `com.amazonaws.athena.connector.lambda.request.FederationResponse`: known type ids = [GetSplitsResponse, GetTableLayoutResponse, GetTableResponse, ListSchemasResponse, ListTablesResponse, PingResponse, ReadRecordsResponse, RemoteReadRecordsResponse, UserDefinedFunctionResponse]",
-            id
+            "Could not resolve type id '{id}' as a subtype of `com.amazonaws.athena.connector.lambda.request.FederationResponse`: known type ids = [GetSplitsResponse, GetTableLayoutResponse, GetTableResponse, ListSchemasResponse, ListTablesResponse, PingResponse, ReadRecordsResponse, RemoteReadRecordsResponse, UserDefinedFunctionResponse]"
         )));
     }
     let catalog_name = opt_string(node, "catalogName")?;
@@ -1202,14 +1363,15 @@ pub fn response_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federat
         )
         .into(),
         "ListTablesResponse" => {
-            let tables = match prop(node, "tables") {
-                None => return Err(io("tables is null")),
-                Some(v) => list_items(v)
-                    .into_iter()
-                    .map(|t| table_name_from(Some(t)).and_then(|o| required(o, "table")))
-                    .collect::<Result<Vec<TableName>>>()?,
-            };
-            ListTablesResponse::new(required(catalog_name, "catalogName")?, tables, opt_string(node, "nextToken")?).into()
+            let tables = required_list(node, "tables", |t| {
+                table_name_from(Some(t)).and_then(|o| required(o, "table"))
+            })?;
+            ListTablesResponse::new(
+                required(catalog_name, "catalogName")?,
+                tables,
+                opt_string(node, "nextToken")?,
+            )
+            .into()
         }
         "GetTableResponse" => {
             let cols: IndexSet<String> = string_list(node, "partitionColumns")?
@@ -1231,11 +1393,13 @@ pub fn response_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federat
         )
         .into(),
         "GetSplitsResponse" => {
-            let splits = match prop(node, "splits") {
-                None => return Err(io("splits is null")),
-                Some(v) => list_items(v).into_iter().map(split_from).collect::<Result<Vec<Split>>>()?,
-            };
-            GetSplitsResponse::new(required(catalog_name, "catalogName")?, splits, opt_string(node, "continuationToken")?).into()
+            let splits = required_list(node, "splits", split_from)?;
+            GetSplitsResponse::new(
+                required(catalog_name, "catalogName")?,
+                splits,
+                opt_string(node, "continuationToken")?,
+            )
+            .into()
         }
         "ReadRecordsResponse" => ReadRecordsResponse::new(
             required(catalog_name, "catalogName")?,
@@ -1243,13 +1407,7 @@ pub fn response_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federat
         )
         .into(),
         "RemoteReadRecordsResponse" => {
-            let blocks = match prop(node, "remoteBlocks") {
-                None => return Err(io("remoteBlocks is null")),
-                Some(v) => list_items(v)
-                    .into_iter()
-                    .map(spill_location_from)
-                    .collect::<Result<Vec<SpillLocation>>>()?,
-            };
+            let blocks = required_list(node, "remoteBlocks", spill_location_from)?;
             RemoteReadRecordsResponse::new(
                 required(catalog_name, "catalogName")?,
                 required(schema_from(prop(node, "schema"))?, "schema")?,
@@ -1263,7 +1421,7 @@ pub fn response_from_tree(node: &Json, ctx: &SerDeContext<'_>) -> Result<Federat
             req_string(node, "methodName")?,
         )
         .into(),
-        other => return Err(io(format!("Could not resolve type id '{}'", other))),
+        other => return Err(io(format!("Could not resolve type id '{other}'"))),
     })
 }
 
@@ -1281,10 +1439,16 @@ pub fn capabilities_from_tree(node: &Json) -> Result<GetDataSourceCapabilitiesRe
             capabilities.insert(k.clone(), items);
         }
     }
-    Ok(GetDataSourceCapabilitiesResponse::new(req_string(node, "catalogName")?, capabilities))
+    Ok(GetDataSourceCapabilitiesResponse::new(
+        req_string(node, "catalogName")?,
+        capabilities,
+    ))
 }
 
-pub fn deserialize_block_tree(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Block> {
+pub fn deserialize_block_tree(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<Block> {
     let tree = jparser.read_tree()?;
     block_deserializer::deserialize_tree(&tree, ctx)
 }

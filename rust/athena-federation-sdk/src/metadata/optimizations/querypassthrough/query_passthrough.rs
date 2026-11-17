@@ -1,6 +1,5 @@
 use super::super::OptimizationSubType;
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QueryPassthrough {
     QueryPassthroughSchema,

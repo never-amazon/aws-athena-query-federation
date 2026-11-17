@@ -61,7 +61,16 @@ impl fmt::Display for GetTableRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let args: Vec<String> = java_hash_map_order(self.query_passthrough_arguments.keys())
             .into_iter()
-            .map(|k| format!("{}={}", k, self.query_passthrough_arguments.get(k).and_then(|v| v.as_deref()).unwrap_or("null")))
+            .map(|k| {
+                format!(
+                    "{}={}",
+                    k,
+                    self.query_passthrough_arguments
+                        .get(k)
+                        .and_then(|v| v.as_deref())
+                        .unwrap_or("null")
+                )
+            })
             .collect();
         write!(
             f,

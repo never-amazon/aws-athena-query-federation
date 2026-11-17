@@ -1,6 +1,8 @@
 use crate::exceptions::{FederationError, Result};
 use crate::request::PingResponse;
-use crate::serde::base::{get_next_int_field, get_next_string_field, require_non_null, validate_object_start_token};
+use crate::serde::base::{
+    get_next_int_field, get_next_string_field, require_non_null, validate_object_start_token,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 const CATALOG_NAME_FIELD: &str = "catalogName";

@@ -23,13 +23,19 @@ impl Range {
             )));
         }
         if low.get_bound() == Bound::Below {
-            return Err(FederationError::invalid_input("low bound must be EXACTLY or ABOVE"));
+            return Err(FederationError::invalid_input(
+                "low bound must be EXACTLY or ABOVE",
+            ));
         }
         if high.get_bound() == Bound::Above {
-            return Err(FederationError::invalid_input("high bound must be EXACTLY or BELOW"));
+            return Err(FederationError::invalid_input(
+                "high bound must be EXACTLY or BELOW",
+            ));
         }
         if low.compare_to(&high)? > 0 {
-            return Err(FederationError::invalid_input("low must be less than or equal to high"));
+            return Err(FederationError::invalid_input(
+                "low must be less than or equal to high",
+            ));
         }
         Ok(Range { low, high })
     }
@@ -41,23 +47,55 @@ impl Range {
         }
     }
 
-    pub fn greater_than(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, low: impl Into<Value>) -> Result<Range> {
-        Range::new(Marker::above(allocator, arrow_type, low)?, Marker::upper_unbounded(allocator, arrow_type))
+    pub fn greater_than(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        low: impl Into<Value>,
+    ) -> Result<Range> {
+        Range::new(
+            Marker::above(allocator, arrow_type, low)?,
+            Marker::upper_unbounded(allocator, arrow_type),
+        )
     }
 
-    pub fn greater_than_or_equal(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, low: impl Into<Value>) -> Result<Range> {
-        Range::new(Marker::exactly(allocator, arrow_type, low)?, Marker::upper_unbounded(allocator, arrow_type))
+    pub fn greater_than_or_equal(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        low: impl Into<Value>,
+    ) -> Result<Range> {
+        Range::new(
+            Marker::exactly(allocator, arrow_type, low)?,
+            Marker::upper_unbounded(allocator, arrow_type),
+        )
     }
 
-    pub fn less_than(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, high: impl Into<Value>) -> Result<Range> {
-        Range::new(Marker::lower_unbounded(allocator, arrow_type), Marker::below(allocator, arrow_type, high)?)
+    pub fn less_than(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        high: impl Into<Value>,
+    ) -> Result<Range> {
+        Range::new(
+            Marker::lower_unbounded(allocator, arrow_type),
+            Marker::below(allocator, arrow_type, high)?,
+        )
     }
 
-    pub fn less_than_or_equal(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, high: impl Into<Value>) -> Result<Range> {
-        Range::new(Marker::lower_unbounded(allocator, arrow_type), Marker::exactly(allocator, arrow_type, high)?)
+    pub fn less_than_or_equal(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        high: impl Into<Value>,
+    ) -> Result<Range> {
+        Range::new(
+            Marker::lower_unbounded(allocator, arrow_type),
+            Marker::exactly(allocator, arrow_type, high)?,
+        )
     }
 
-    pub fn equal(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Range> {
+    pub fn equal(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        value: impl Into<Value>,
+    ) -> Result<Range> {
         let value = value.into();
         Range::new(
             Marker::exactly(allocator, arrow_type, value.clone())?,
@@ -65,7 +103,10 @@ impl Range {
         )
     }
 
-    #[allow(clippy::self_named_constructors)]
+    #[allow(
+        clippy::self_named_constructors,
+        reason = "mirrors the Java static factory Range.range"
+    )]
     pub fn range(
         allocator: &dyn BlockAllocator,
         arrow_type: &ArrowType,
@@ -105,7 +146,9 @@ impl Range {
 
     pub fn get_single_value(&self) -> Result<Value> {
         if !self.is_single_value() {
-            return Err(FederationError::invalid_input("Range does not have just a single value"));
+            return Err(FederationError::invalid_input(
+                "Range does not have just a single value",
+            ));
         }
         self.low.get_value().cloned()
     }
@@ -119,7 +162,8 @@ impl Range {
     }
 
     pub fn contains(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.get_low())? <= 0 && self.high.compare_to(other.get_high())? >= 0)
+        Ok(self.low.compare_to(other.get_low())? <= 0
+            && self.high.compare_to(other.get_high())? >= 0)
     }
 
     pub fn span(&self, other: &Range) -> Result<Range> {
@@ -129,12 +173,15 @@ impl Range {
     }
 
     pub fn overlaps(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.get_high())? <= 0 && other.get_low().compare_to(&self.high)? <= 0)
+        Ok(self.low.compare_to(other.get_high())? <= 0
+            && other.get_low().compare_to(&self.high)? <= 0)
     }
 
     pub fn intersect(&self, other: &Range) -> Result<Range> {
         if !self.overlaps(other)? {
-            return Err(FederationError::invalid_input("Cannot intersect non-overlapping ranges"));
+            return Err(FederationError::invalid_input(
+                "Cannot intersect non-overlapping ranges",
+            ));
         }
         let low = Marker::max(&self.low, other.get_low())?;
         let high = Marker::min(&self.high, other.get_high())?;

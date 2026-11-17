@@ -1,6 +1,6 @@
 use super::{
-    ComplexExpressionPushdownSubType, ComplexExpressionSubTypeProperties, FilterPushdownSubType, HintsSubtype,
-    LimitPushdownSubType, SubTypeProperties, TopNPushdownSubType,
+    ComplexExpressionPushdownSubType, ComplexExpressionSubTypeProperties, FilterPushdownSubType,
+    HintsSubtype, LimitPushdownSubType, SubTypeProperties, TopNPushdownSubType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -50,6 +50,9 @@ from_sub_type!(Limit, LimitPushdownSubType);
 from_sub_type!(TopN, TopNPushdownSubType);
 from_sub_type!(Filter, FilterPushdownSubType);
 from_sub_type!(ComplexExpression, ComplexExpressionPushdownSubType);
-from_sub_type!(ComplexExpressionProperties, ComplexExpressionSubTypeProperties);
+from_sub_type!(
+    ComplexExpressionProperties,
+    ComplexExpressionSubTypeProperties
+);
 from_sub_type!(Hints, HintsSubtype);
 from_sub_type!(Properties, SubTypeProperties);

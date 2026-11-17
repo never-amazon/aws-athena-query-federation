@@ -18,7 +18,11 @@ pub struct ConstraintEvaluator {
 }
 
 impl ConstraintEvaluator {
-    pub fn new(_allocator: Option<&dyn BlockAllocator>, schema: &Schema, constraints: Constraints) -> ConstraintEvaluator {
+    pub fn new(
+        _allocator: Option<&dyn BlockAllocator>,
+        schema: &Schema,
+        constraints: Constraints,
+    ) -> ConstraintEvaluator {
         let type_map = schema
             .fields()
             .iter()
@@ -42,17 +46,24 @@ impl ConstraintEvaluator {
     pub fn apply(&self, field_name: &str, value: &Value) -> Result<bool> {
         let constraint = self.constraints.get_summary().get(field_name);
         if let (Some(constraint), Some(arrow_type)) = (constraint, self.type_map.get(field_name)) {
-            let marker = self.marker_factory.create_nullable(arrow_type, value, Bound::Exactly)?;
+            let marker = self
+                .marker_factory
+                .create_nullable(arrow_type, value, Bound::Exactly)?;
             return constraint.contains_marker(&marker);
         }
         Ok(true)
     }
 
-    pub fn make_constraint_projector(&self, field_name: &str) -> Option<Arc<dyn ConstraintProjector>> {
+    pub fn make_constraint_projector(
+        &self,
+        field_name: &str,
+    ) -> Option<Arc<dyn ConstraintProjector>> {
         let constraint = self.constraints.get_summary().get(field_name)?;
         self.type_map.get(field_name)?;
         let constraint = constraint.clone();
-        Some(Arc::new(move |value: &Value| constraint.contains_value(value)))
+        Some(Arc::new(move |value: &Value| {
+            constraint.contains_value(value)
+        }))
     }
 }
 
@@ -70,7 +81,10 @@ mod tests {
     #[test]
     fn evaluator_filters_block_values() {
         let allocator = BlockAllocatorImpl::new();
-        let schema = SchemaBuilder::new_builder().add_int_field("col1").add_int_field("col2").build();
+        let schema = SchemaBuilder::new_builder()
+            .add_int_field("col1")
+            .add_int_field("col2")
+            .build();
         let mut block = allocator.create_block_from_schema(&schema);
         let mut builder = EquatableValueSet::new_builder(&allocator, &DataType::Int32, true, false);
         builder.add(10);
@@ -78,7 +92,11 @@ mod tests {
         let mut summary = IndexMap::new();
         summary.insert("col1".to_string(), set);
         let constraints = Constraints::new(summary, vec![], vec![], -1, HashMap::new(), None);
-        let evaluator = Arc::new(ConstraintEvaluator::new(Some(&allocator), &schema, constraints));
+        let evaluator = Arc::new(ConstraintEvaluator::new(
+            Some(&allocator),
+            &schema,
+            constraints,
+        ));
         block.constrain(Some(evaluator.clone()));
         assert!(block.set_value("col1", 0, 10).unwrap());
         assert!(block.offer_value("col1", 0, 10).unwrap());

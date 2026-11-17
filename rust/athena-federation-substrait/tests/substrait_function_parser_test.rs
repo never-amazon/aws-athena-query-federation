@@ -23,7 +23,7 @@ use athena_federation_substrait::{ColumnPredicate, PredicateValue};
 fn column_names() -> Vec<String> {
     ["id", "name", "age", "active"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 
@@ -128,16 +128,12 @@ fn create_logical_expression(function_ref: u32, left: Expression, right: Express
     scalar(function_ref, vec![left, right])
 }
 
-fn int_value(v: i32) -> Option<PredicateValue> {
-    Some(PredicateValue::Literal(LiteralValue::Int(v)))
+fn int_value(v: i32) -> PredicateValue {
+    PredicateValue::Literal(LiteralValue::Int(v))
 }
 
-fn string_value(v: &str) -> Option<PredicateValue> {
-    Some(PredicateValue::Literal(LiteralValue::String(v.to_string())))
-}
-
-fn key(s: &str) -> Option<String> {
-    Some(s.to_string())
+fn string_value(v: &str) -> PredicateValue {
+    PredicateValue::Literal(LiteralValue::String(v.to_string()))
 }
 
 fn list_len(p: &ColumnPredicate) -> usize {
@@ -162,12 +158,12 @@ fn test_get_column_predicates_map_with_single_predicate() {
     )
     .unwrap();
     assert_eq!(1, result.len());
-    assert!(result.contains_key(&key("id")));
-    assert_eq!(1, result[&key("id")].len());
-    let predicate = &result[&key("id")][0];
+    assert!(result.contains_key(&Some("id".to_string())));
+    assert_eq!(1, result[&Some("id".to_string())].len());
+    let predicate = &result[&Some("id".to_string())][0];
     assert_eq!(Some("id"), predicate.get_column());
     assert_eq!(SubstraitOperator::Equal, predicate.get_operator());
-    assert_eq!(int_value(123).as_ref(), predicate.get_value());
+    assert_eq!(Some(&int_value(123)), predicate.get_value());
 }
 
 #[test]
@@ -189,14 +185,14 @@ fn test_get_column_predicates_map_with_multiple_predicates() {
     )
     .unwrap();
     assert_eq!(2, result.len());
-    assert!(result.contains_key(&key("id")));
-    assert!(result.contains_key(&key("age")));
-    let id_predicate = &result[&key("id")][0];
+    assert!(result.contains_key(&Some("id".to_string())));
+    assert!(result.contains_key(&Some("age".to_string())));
+    let id_predicate = &result[&Some("id".to_string())][0];
     assert_eq!(SubstraitOperator::Equal, id_predicate.get_operator());
-    assert_eq!(int_value(123).as_ref(), id_predicate.get_value());
-    let age_predicate = &result[&key("age")][0];
+    assert_eq!(Some(&int_value(123)), id_predicate.get_value());
+    let age_predicate = &result[&Some("age".to_string())][0];
     assert_eq!(SubstraitOperator::GreaterThan, age_predicate.get_operator());
-    assert_eq!(int_value(18).as_ref(), age_predicate.get_value());
+    assert_eq!(Some(&int_value(18)), age_predicate.get_value());
 }
 
 #[test]
@@ -222,7 +218,7 @@ fn test_parse_column_predicates_with_string_literal() {
     assert_eq!(1, result.len());
     assert_eq!(Some("name"), result[0].get_column());
     assert_eq!(SubstraitOperator::Equal, result[0].get_operator());
-    assert_eq!(string_value("John").as_ref(), result[0].get_value());
+    assert_eq!(Some(&string_value("John")), result[0].get_value());
     assert_eq!(Some(&DataType::Utf8), result[0].get_arrow_type());
 }
 
@@ -298,7 +294,7 @@ fn test_not_operator_handling() {
             result[0].get_operator(),
             "{inner_operator}"
         );
-        assert_eq!(int_value(expected_value).as_ref(), result[0].get_value());
+        assert_eq!(Some(&int_value(expected_value)), result[0].get_value());
     }
 }
 
@@ -424,7 +420,7 @@ fn test_parse_logical_expression_with_single_predicate() {
     assert_eq!(SubstraitOperator::Equal, result.get_operator());
     let leaf = result.get_leaf_predicate().unwrap();
     assert_eq!(Some("id"), leaf.get_column());
-    assert_eq!(int_value(123).as_ref(), leaf.get_value());
+    assert_eq!(Some(&int_value(123)), leaf.get_value());
 }
 
 #[test]
@@ -454,7 +450,7 @@ fn test_parse_logical_expression_with_and_operator() {
     assert_eq!(SubstraitOperator::Equal, left.get_operator());
     assert_eq!(Some("id"), left.get_leaf_predicate().unwrap().get_column());
     assert_eq!(
-        int_value(123).as_ref(),
+        Some(&int_value(123)),
         left.get_leaf_predicate().unwrap().get_value()
     );
     let right = &children[1];
@@ -465,7 +461,7 @@ fn test_parse_logical_expression_with_and_operator() {
         right.get_leaf_predicate().unwrap().get_column()
     );
     assert_eq!(
-        string_value("test").as_ref(),
+        Some(&string_value("test")),
         right.get_leaf_predicate().unwrap().get_value()
     );
 }
@@ -573,7 +569,7 @@ fn test_parse_logical_expression_with_not_operator() {
         result.get_leaf_predicate().unwrap().get_column()
     );
     assert_eq!(
-        int_value(123).as_ref(),
+        Some(&int_value(123)),
         result.get_leaf_predicate().unwrap().get_value()
     );
 }

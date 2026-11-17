@@ -18,6 +18,7 @@ use crate::calcite::sarg::{Range, RangeSet, RexUnknownAs, Sarg};
 use crate::calcite::sql_type_name::{SqlTypeFamily, SqlTypeName};
 use crate::calcite::values::{BitString, DateString, TimeString, TimestampString};
 use crate::error::{Result, SubstraitError};
+use crate::java_cast::{int_to_byte, int_to_short, long_to_int};
 use crate::proto::expression::field_reference::{ReferenceType, RootType};
 use crate::proto::expression::literal::LiteralType;
 use crate::proto::expression::reference_segment;
@@ -49,9 +50,7 @@ pub(crate) fn sort_direction(field: &SortField) -> Result<SortDirection> {
     match SortDirection::try_from(raw) {
         Ok(SortDirection::Unspecified) | Err(_) => Err(SubstraitError::illegal_argument(format!(
             "Unknown type: {}",
-            SortDirection::try_from(raw)
-                .map(|d| d.as_str_name())
-                .unwrap_or("UNRECOGNIZED")
+            SortDirection::try_from(raw).map_or("UNRECOGNIZED", |d| d.as_str_name())
         ))),
         Ok(d) => Ok(d),
     }
@@ -93,10 +92,95 @@ fn trim_flag(name: &str) -> Result<TrimFlag> {
     }
 }
 
+fn decimal_literal(
+    s: RelDataTypeSystem,
+    d: &crate::proto::expression::literal::Decimal,
+) -> Result<RexNode> {
+    if d.value.len() != 16 {
+        return Err(SubstraitError::illegal_argument(
+            "Decimal value must be 16 bytes",
+        ));
+    }
+    let value = big_decimal_from_bytes(&d.value, i64::from(d.scale));
+    let ty = RelDataType::create_sql_type_with_scale(s, SqlTypeName::Decimal, d.precision, d.scale);
+    Ok(ExpressionConverter::lit(LiteralValue::Exact(value), ty))
+}
+
+fn empty_list_literal(s: RelDataTypeSystem, l: &crate::proto::r#type::List) -> Result<RexNode> {
+    let element = l
+        .r#type
+        .as_deref()
+        .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+    let ty = RelDataType::array(
+        to_calcite(s, element)?,
+        super::type_converter::is_nullable(l.nullability),
+    );
+    Ok(RexBuilder::make_call_typed(
+        ty,
+        &operators::ARRAY_VALUE_CONSTRUCTOR,
+        Vec::new(),
+    ))
+}
+
+fn precision_timestamp_literal(
+    s: RelDataTypeSystem,
+    type_name: SqlTypeName,
+    label: &str,
+    value: i64,
+    precision: i32,
+) -> Result<RexNode> {
+    let max = s.max_precision(type_name);
+    if precision > max {
+        return Err(SubstraitError::unsupported(format!(
+            "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
+        )));
+    }
+    let value = timestamp_string(value, precision)?;
+    let ty = RelDataType::create_sql_type_with_precision(s, type_name, precision);
+    Ok(ExpressionConverter::lit(LiteralValue::Timestamp(value), ty))
+}
+
+fn time_literal(s: RelDataTypeSystem, micros: i64) -> RexNode {
+    let seconds = micros / 1_000_000;
+    let nanos = long_to_int((micros - seconds * 1_000_000) * 1_000).cast_unsigned();
+    let ts = TimeString::from_millis_of_day(long_to_int(seconds * 1000)).with_nanos(nanos);
+    let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Time, 6);
+    ExpressionConverter::lit(LiteralValue::Time(ts), ty)
+}
+
+#[allow(
+    deprecated,
+    reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+)]
+fn interval_day_to_second_literal(
+    id: &crate::proto::expression::literal::IntervalDayToSecond,
+) -> RexNode {
+    use crate::proto::expression::literal::interval_day_to_second::PrecisionMode;
+    let (precision, subseconds) = match id.precision_mode {
+        Some(PrecisionMode::Precision(p)) => (p, id.subseconds),
+        Some(PrecisionMode::Microseconds(m)) => (6, i64::from(m)),
+        None => (6, 0),
+    };
+    let millis = if precision > 3 {
+        subseconds / 10i64.pow((precision - 3).unsigned_abs())
+    } else {
+        subseconds * 10i64.pow((3 - precision).unsigned_abs())
+    };
+    let total = i64::from(id.days) * 86_400_000 + i64::from(id.seconds) * 1000 + millis;
+    ExpressionConverter::lit(
+        LiteralValue::Interval(BigDecimal::from(total)),
+        RelDataType::interval(SqlTypeName::IntervalDaySecond, 3),
+    )
+}
+
+fn char_length(value: &str) -> i32 {
+    i32::try_from(value.chars().count()).unwrap_or(i32::MAX)
+}
+
 fn millis_to_seconds_split(value: i64, unit_per_second: i64, nanos_per_unit: i64) -> (i64, u32) {
     let seconds = value / unit_per_second;
     let frac = (value - seconds * unit_per_second) * nanos_per_unit;
-    (seconds, frac as u32)
+    (seconds, long_to_int(frac).cast_unsigned())
 }
 
 fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
@@ -114,13 +198,13 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
     Ok(TimestampString::from_millis_since_epoch(seconds * 1000).with_nanos(nanos))
 }
 
-impl<'a> ExpressionConverter<'a> {
+impl ExpressionConverter<'_> {
     fn ty(&self, t: Option<&Type>) -> Result<RelDataType> {
         let t = t.ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
         to_calcite(self.system, t)
     }
 
-    fn lit(&self, value: LiteralValue, ty: RelDataType) -> RexNode {
+    fn lit(value: LiteralValue, ty: RelDataType) -> RexNode {
         RexNode::Literal(RexLiteral { value, ty })
     }
 
@@ -146,7 +230,7 @@ impl<'a> ExpressionConverter<'a> {
                 }
                 args.push(self.convert(required(it.r#else.as_deref(), "ELSE")?, input)?);
                 let ty = case_type(&args);
-                Ok(self.rex_builder.make_call_typed(ty, &operators::CASE, args))
+                Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SwitchExpression(sw) => {
                 let m = self.convert(required(sw.r#match.as_deref(), "MATCH")?, input)?;
@@ -158,7 +242,7 @@ impl<'a> ExpressionConverter<'a> {
                 }
                 args.push(self.convert(required(sw.r#else.as_deref(), "ELSE")?, input)?);
                 let ty = case_type(&args);
-                Ok(self.rex_builder.make_call_typed(ty, &operators::CASE, args))
+                Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SingularOrList(or) => {
                 let lhs = self.convert(required(or.value.as_deref(), "VALUE")?, input)?;
@@ -172,7 +256,7 @@ impl<'a> ExpressionConverter<'a> {
                 let ty = self.ty(c.r#type.as_ref())?;
                 let operand = self.convert(required(c.input.as_deref(), "INPUT")?, input)?;
                 let safe = c.failure_behavior == crate::proto::expression::cast::FailureBehavior::ReturnNull as i32;
-                Ok(self.rex_builder.make_cast(ty, operand, safe))
+                Ok(RexBuilder::make_cast(ty, operand, safe))
             }
             RexType::MultiOrList(_) => Err(SubstraitError::unsupported(
                 "Expression MultiOrList not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
@@ -180,7 +264,7 @@ impl<'a> ExpressionConverter<'a> {
             RexType::Subquery(q) => self.subquery(q, input),
             RexType::Nested(_) => Err(SubstraitError::illegal_argument("Unknown type: NESTED")),
             RexType::DynamicParameter(_) => Err(SubstraitError::illegal_argument("Unknown type: DYNAMIC_PARAMETER")),
-            #[allow(deprecated)]
+            #[allow(deprecated, reason = "reads deprecated Substrait proto fields that the Java converter still reads")]
             RexType::Enum(_) => Err(SubstraitError::unsupported("Unsupported type: ENUM")),
         }
     }
@@ -271,13 +355,14 @@ impl<'a> ExpressionConverter<'a> {
             let mut values = Vec::new();
             for o in &options {
                 match o {
-                    RexNode::Literal(l) if !l.is_null() => match l.value.to_sarg_value() {
-                        Some(v) => values.push(v),
-                        None => {
+                    RexNode::Literal(l) if !l.is_null() => {
+                        if let Some(v) = l.value.to_sarg_value() {
+                            values.push(v);
+                        } else {
                             values.clear();
                             break;
                         }
-                    },
+                    }
                     _ => {
                         values.clear();
                         break;
@@ -308,7 +393,7 @@ impl<'a> ExpressionConverter<'a> {
                     .make_call(&operators::EQUALS, vec![lhs.clone(), o])
             })
             .collect();
-        compose_disjunction(&self.rex_builder, calls)
+        compose_disjunction(self.rex_builder, calls)
     }
 
     fn field_reference(&self, f: &FieldReference, input: &RelDataType) -> Result<RexNode> {
@@ -326,8 +411,7 @@ impl<'a> ExpressionConverter<'a> {
             }
         };
         match &f.root_type {
-            Some(RootType::RootReference(_)) => {}
-            Some(RootType::OuterReference(_)) => {}
+            Some(RootType::RootReference(_) | RootType::OuterReference(_)) => {}
             Some(RootType::Expression(_)) | None => {
                 return Err(SubstraitError::unsupported(format!(
                     "Expression {f:?} of type io.substrait.expression.FieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
@@ -366,7 +450,7 @@ impl<'a> ExpressionConverter<'a> {
                 fields.len()
             ))
         })?;
-        Ok(self.rex_builder.make_input_ref(index, f.get_type().clone()))
+        Ok(RexBuilder::make_input_ref(index, f.get_type().clone()))
     }
 
     fn function_decl(&self, reference: u32) -> Result<&FunctionDecl> {
@@ -420,7 +504,7 @@ impl<'a> ExpressionConverter<'a> {
             "trim" | "ltrim" | "rtrim" => Symbol::Trim(trim_flag(value)?),
             _ => return Err(not_handled()),
         };
-        Ok(self.lit(
+        Ok(Self::lit(
             LiteralValue::Symbol(symbol),
             self.not_null(SqlTypeName::Symbol),
         ))
@@ -437,7 +521,7 @@ impl<'a> ExpressionConverter<'a> {
             SubstraitError::illegal_argument(format!(
                 "Unable to convert scalar function {}({}).",
                 decl.name,
-                self.describe_args(&f.arguments)
+                Self::describe_args(&f.arguments)
             ))
         })?;
         let extra = match decl.name.as_str() {
@@ -447,10 +531,10 @@ impl<'a> ExpressionConverter<'a> {
             _ => None,
         };
         let args = self.arguments(decl, &f.arguments, input, extra)?;
-        Ok(self.rex_builder.make_call_typed(return_type, op, args))
+        Ok(RexBuilder::make_call_typed(return_type, op, args))
     }
 
-    fn describe_args(&self, args: &[FunctionArgument]) -> String {
+    fn describe_args(args: &[FunctionArgument]) -> String {
         args.iter()
             .map(|a| match &a.arg_type {
                 Some(ArgType::Enum(v)) => v.clone(),
@@ -467,7 +551,7 @@ impl<'a> ExpressionConverter<'a> {
             SubstraitError::illegal_argument(format!(
                 "Unable to convert window function {}({}).",
                 decl.name,
-                self.describe_args(&w.arguments)
+                Self::describe_args(&w.arguments)
             ))
         })?;
         let output_type = self.ty(w.output_type.as_ref())?;
@@ -580,7 +664,10 @@ impl<'a> ExpressionConverter<'a> {
         self.arguments(decl, args, input, None)
     }
 
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     pub(crate) fn literal(&self, l: &Literal) -> Result<RexNode> {
         let nullable = l.nullable;
         let lt = l.literal_type.as_ref().ok_or_else(|| {
@@ -593,145 +680,79 @@ impl<'a> ExpressionConverter<'a> {
             _ => {}
         }
         let exact = |v: i64, name: SqlTypeName| -> RexNode {
-            self.lit(
+            Self::lit(
                 LiteralValue::Exact(BigDecimal::from(v)),
                 RelDataType::create_sql_type(s, name),
             )
         };
         let node = match lt {
-            LiteralType::Boolean(b) => self.lit(LiteralValue::Boolean(*b), self.not_null(SqlTypeName::Boolean)),
-            LiteralType::I8(v) => exact(i64::from(*v as i8), SqlTypeName::Tinyint),
-            LiteralType::I16(v) => exact(i64::from(*v as i16), SqlTypeName::Smallint),
+            LiteralType::Boolean(b) => Self::lit(LiteralValue::Boolean(*b), self.not_null(SqlTypeName::Boolean)),
+            LiteralType::I8(v) => exact(i64::from(int_to_byte(*v)), SqlTypeName::Tinyint),
+            LiteralType::I16(v) => exact(i64::from(int_to_short(*v)), SqlTypeName::Smallint),
             LiteralType::I32(v) => exact(i64::from(*v), SqlTypeName::Integer),
             LiteralType::I64(v) => exact(*v, SqlTypeName::Bigint),
-            LiteralType::Fp32(v) => self.lit(LiteralValue::Approx(f64::from(*v)), self.not_null(SqlTypeName::Real)),
-            LiteralType::Fp64(v) => self.lit(LiteralValue::Approx(*v), self.not_null(SqlTypeName::Double)),
+            LiteralType::Fp32(v) => Self::lit(LiteralValue::Approx(f64::from(*v)), self.not_null(SqlTypeName::Real)),
+            LiteralType::Fp64(v) => Self::lit(LiteralValue::Approx(*v), self.not_null(SqlTypeName::Double)),
             LiteralType::String(v) => self.string_literal(v, RelDataType::create_sql_type(s, SqlTypeName::Varchar), nullable),
             LiteralType::VarChar(v) => {
-                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Varchar, v.length as i32);
+                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Varchar, v.length.cast_signed());
                 self.string_literal(&v.value, ty, nullable)
             }
             LiteralType::FixedChar(v) => {
-                let len = v.chars().count() as i32;
+                let len = char_length(v);
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Char, len);
-                self.lit(LiteralValue::Char(v.clone()), ty)
+                Self::lit(LiteralValue::Char(v.clone()), ty)
             }
             LiteralType::Binary(v) => {
                 let ty = RelDataType::create_sql_type(s, SqlTypeName::Varbinary);
-                self.binary_literal(v, ty, nullable)
+                Self::binary_literal(v, ty, nullable)
             }
             LiteralType::FixedBinary(v) => {
-                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Binary, v.len() as i32);
-                self.lit(LiteralValue::Binary(BitString::create_from_bytes(v)), ty)
+                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Binary, i32::try_from(v.len()).unwrap_or(i32::MAX));
+                Self::lit(LiteralValue::Binary(BitString::create_from_bytes(v)), ty)
             }
-            LiteralType::Date(d) => self.lit(
+            LiteralType::Date(d) => Self::lit(
                 LiteralValue::Date(DateString::from_days_since_epoch(*d)),
                 self.not_null(SqlTypeName::Date),
             ),
-            LiteralType::Time(micros) => {
-                let seconds = micros / 1_000_000;
-                let nanos = ((micros - seconds * 1_000_000) * 1_000) as u32;
-                let ts = TimeString::from_millis_of_day((seconds * 1000) as i32).with_nanos(nanos);
-                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Time, 6);
-                self.lit(LiteralValue::Time(ts), ty)
-            }
+            LiteralType::Time(micros) => time_literal(s, *micros),
             LiteralType::Timestamp(micros) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Timestamp, 6);
-                self.lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
+                Self::lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
             }
             LiteralType::TimestampTz(micros) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::TimestampWithLocalTimeZone, 6);
-                self.lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
+                Self::lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
             }
-            LiteralType::PrecisionTimestamp(p) => {
-                let max = s.max_precision(SqlTypeName::Timestamp);
-                if p.precision > max {
-                    return Err(SubstraitError::unsupported(format!(
-                        "unsupported precision_timestamp precision {}, max precision in Calcite type system is set to {max}",
-                        p.precision
-                    )));
-                }
-                let value = timestamp_string(p.value, p.precision)?;
-                let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Timestamp, p.precision);
-                self.lit(LiteralValue::Timestamp(value), ty)
-            }
-            LiteralType::PrecisionTimestampTz(p) => {
-                let max = s.max_precision(SqlTypeName::TimestampWithLocalTimeZone);
-                if p.precision > max {
-                    return Err(SubstraitError::unsupported(format!(
-                        "unsupported precision_timestamp_tz precision {}, max precision in Calcite type system is set to {max}",
-                        p.precision
-                    )));
-                }
-                let value = timestamp_string(p.value, p.precision)?;
-                let ty = RelDataType::create_sql_type_with_precision(
-                    s,
-                    SqlTypeName::TimestampWithLocalTimeZone,
-                    p.precision,
-                );
-                self.lit(LiteralValue::Timestamp(value), ty)
-            }
-            LiteralType::Decimal(d) => {
-                if d.value.len() != 16 {
-                    return Err(SubstraitError::illegal_argument(
-                        "Decimal value must be 16 bytes",
-                    ));
-                }
-                let value = big_decimal_from_bytes(&d.value, i64::from(d.scale));
-                let ty = RelDataType::create_sql_type_with_scale(s, SqlTypeName::Decimal, d.precision, d.scale);
-                self.lit(LiteralValue::Exact(value), ty)
-            }
+            LiteralType::PrecisionTimestamp(p) => precision_timestamp_literal(
+                s,
+                SqlTypeName::Timestamp,
+                "precision_timestamp",
+                p.value,
+                p.precision,
+            )?,
+            LiteralType::PrecisionTimestampTz(p) => precision_timestamp_literal(
+                s,
+                SqlTypeName::TimestampWithLocalTimeZone,
+                "precision_timestamp_tz",
+                p.value,
+                p.precision,
+            )?,
+            LiteralType::Decimal(d) => decimal_literal(s, d)?,
             LiteralType::IntervalYearToMonth(iy) => {
                 let months = i64::from(iy.years) * 12 + i64::from(iy.months);
-                self.lit(
+                Self::lit(
                     LiteralValue::Interval(BigDecimal::from(months)),
                     RelDataType::interval(SqlTypeName::IntervalYearMonth, crate::calcite::rel_data_type::PRECISION_NOT_SPECIFIED),
                 )
             }
-            LiteralType::IntervalDayToSecond(id) => {
-                use crate::proto::expression::literal::interval_day_to_second::PrecisionMode;
-                let (precision, subseconds) = match id.precision_mode {
-                    Some(PrecisionMode::Precision(p)) => (p, id.subseconds),
-                    Some(PrecisionMode::Microseconds(m)) => (6, i64::from(m)),
-                    None => (6, 0),
-                };
-                let millis = if precision > 3 {
-                    subseconds / 10i64.pow((precision - 3) as u32)
-                } else {
-                    subseconds * 10i64.pow((3 - precision) as u32)
-                };
-                let total = i64::from(id.days) * 86_400_000 + i64::from(id.seconds) * 1000 + millis;
-                self.lit(
-                    LiteralValue::Interval(BigDecimal::from(total)),
-                    RelDataType::interval(SqlTypeName::IntervalDaySecond, 3),
-                )
-            }
+            LiteralType::IntervalDayToSecond(id) => interval_day_to_second_literal(id),
             LiteralType::Null(t) => {
                 let ty = to_calcite(s, t)?;
-                self.rex_builder.make_null_literal(ty)
+                RexBuilder::make_null_literal(&ty)
             }
-            LiteralType::List(list) => {
-                let mut args = Vec::with_capacity(list.values.len());
-                for v in &list.values {
-                    args.push(self.literal(v)?);
-                }
-                let component = args
-                    .first()
-                    .map(|a| a.get_type().clone())
-                    .unwrap_or_else(|| self.not_null(SqlTypeName::Null));
-                let ty = RelDataType::array(least_restrictive_or(&args, component), false);
-                self.rex_builder
-                    .make_call_typed(ty, &operators::ARRAY_VALUE_CONSTRUCTOR, args)
-            }
-            LiteralType::EmptyList(l) => {
-                let element = l
-                    .r#type
-                    .as_deref()
-                    .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
-                let ty = RelDataType::array(to_calcite(s, element)?, super::type_converter::is_nullable(l.nullability));
-                self.rex_builder
-                    .make_call_typed(ty, &operators::ARRAY_VALUE_CONSTRUCTOR, Vec::new())
-            }
+            LiteralType::List(list) => self.list_literal(list)?,
+            LiteralType::EmptyList(l) => empty_list_literal(s, l)?,
             other => {
                 return Err(SubstraitError::unsupported(format!(
                     "Expression {} of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
@@ -742,39 +763,54 @@ impl<'a> ExpressionConverter<'a> {
         Ok(node)
     }
 
+    fn list_literal(&self, list: &crate::proto::expression::literal::List) -> Result<RexNode> {
+        let mut args = Vec::with_capacity(list.values.len());
+        for v in &list.values {
+            args.push(self.literal(v)?);
+        }
+        let component = args.first().map_or_else(
+            || self.not_null(SqlTypeName::Null),
+            |a| a.get_type().clone(),
+        );
+        let ty = RelDataType::array(least_restrictive_or(&args, component), false);
+        Ok(RexBuilder::make_call_typed(
+            ty,
+            &operators::ARRAY_VALUE_CONSTRUCTOR,
+            args,
+        ))
+    }
+
     fn string_literal(&self, value: &str, ty: RelDataType, nullable: bool) -> RexNode {
-        let len = value.chars().count() as i32;
+        let len = char_length(value);
         let precision = ty.get_precision();
+        let nullable_ty = nullable.then(|| ty.with_nullability(true));
         let literal = if precision < 0 || precision >= len {
-            self.lit(LiteralValue::Char(value.to_string()), ty.clone())
+            Self::lit(LiteralValue::Char(value.to_string()), ty)
         } else {
             let char_ty = RelDataType::create_sql_type_with_precision(
                 self.system,
                 SqlTypeName::Char,
                 len.max(1),
             );
-            let inner = self.lit(LiteralValue::Char(value.to_string()), char_ty);
-            self.rex_builder.make_cast(ty.clone(), inner, false)
+            let inner = Self::lit(LiteralValue::Char(value.to_string()), char_ty);
+            RexBuilder::make_cast(ty, inner, false)
         };
-        if nullable {
-            return self
-                .rex_builder
-                .make_cast(ty.with_nullability(true), literal, false);
+        match nullable_ty {
+            Some(t) => RexBuilder::make_cast(t, literal, false),
+            None => literal,
         }
-        literal
     }
 
-    fn binary_literal(&self, value: &[u8], ty: RelDataType, nullable: bool) -> RexNode {
-        let literal = self.lit(
+    fn binary_literal(value: &[u8], ty: RelDataType, nullable: bool) -> RexNode {
+        let nullable_ty = nullable.then(|| ty.with_nullability(true));
+        let literal = Self::lit(
             LiteralValue::Binary(BitString::create_from_bytes(value)),
-            ty.clone(),
+            ty,
         );
-        if nullable {
-            return self
-                .rex_builder
-                .make_cast(ty.with_nullability(true), literal, false);
+        match nullable_ty {
+            Some(t) => RexBuilder::make_cast(t, literal, false),
+            None => literal,
         }
-        literal
     }
 }
 

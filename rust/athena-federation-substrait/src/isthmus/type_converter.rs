@@ -38,7 +38,10 @@ pub(crate) fn kind_of(ty: &Type) -> Result<&Kind> {
 }
 
 pub(crate) fn type_nullable(ty: &Type) -> bool {
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     let n = match &ty.kind {
         Some(Kind::Bool(x)) => x.nullability,
         Some(Kind::I8(x)) => x.nullability,
@@ -74,7 +77,10 @@ pub(crate) fn type_nullable(ty: &Type) -> bool {
 }
 
 pub(crate) fn type_string(ty: &Type) -> &'static str {
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     match &ty.kind {
         Some(Kind::Bool(_)) => "bool",
         Some(Kind::I8(_)) => "i8",
@@ -108,9 +114,23 @@ pub(crate) fn type_string(ty: &Type) -> &'static str {
     }
 }
 
+fn checked_tp(
+    system: RelDataTypeSystem,
+    nullable: bool,
+    type_name: SqlTypeName,
+    label: &str,
+    precision: i32,
+) -> Result<RelDataType> {
+    check_precision(system, type_name, label, precision)?;
+    Ok(tp(system, nullable, type_name, precision))
+}
+
 pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelDataType> {
     let n = type_nullable(ty);
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     let out = match kind_of(ty)? {
         Kind::Bool(_) => t(system, n, SqlTypeName::Boolean),
         Kind::I8(_) => t(system, n, SqlTypeName::Tinyint),
@@ -126,32 +146,22 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
         Kind::TimestampTz(_) => tp(system, n, SqlTypeName::TimestampWithLocalTimeZone, 6),
         Kind::Timestamp(_) => tp(system, n, SqlTypeName::Timestamp, 6),
         Kind::PrecisionTime(p) => {
-            check_precision(system, SqlTypeName::Time, "precision_time", p.precision)?;
-            tp(system, n, SqlTypeName::Time, p.precision)
+            checked_tp(system, n, SqlTypeName::Time, "precision_time", p.precision)?
         }
-        Kind::PrecisionTimestamp(p) => {
-            check_precision(
-                system,
-                SqlTypeName::Timestamp,
-                "precision_timestamp",
-                p.precision,
-            )?;
-            tp(system, n, SqlTypeName::Timestamp, p.precision)
-        }
-        Kind::PrecisionTimestampTz(p) => {
-            check_precision(
-                system,
-                SqlTypeName::TimestampWithLocalTimeZone,
-                "precision_timestamp_tz",
-                p.precision,
-            )?;
-            tp(
-                system,
-                n,
-                SqlTypeName::TimestampWithLocalTimeZone,
-                p.precision,
-            )
-        }
+        Kind::PrecisionTimestamp(p) => checked_tp(
+            system,
+            n,
+            SqlTypeName::Timestamp,
+            "precision_timestamp",
+            p.precision,
+        )?,
+        Kind::PrecisionTimestampTz(p) => checked_tp(
+            system,
+            n,
+            SqlTypeName::TimestampWithLocalTimeZone,
+            "precision_timestamp_tz",
+            p.precision,
+        )?,
         Kind::IntervalYear(_) => {
             RelDataType::interval(SqlTypeName::IntervalYearMonth, PRECISION_NOT_SPECIFIED)
                 .with_nullability(n)
@@ -209,7 +219,10 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
                 "Unsupported type: USER_DEFINED_TYPE_REFERENCE",
             ))
         }
-        #[allow(unreachable_patterns)]
+        #[allow(
+            unreachable_patterns,
+            reason = "keeps the Java default branch for proto kinds added later"
+        )]
         _ => return Err(SubstraitError::unsupported("Unsupported type")),
     };
     Ok(out)

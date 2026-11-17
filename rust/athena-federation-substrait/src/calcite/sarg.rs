@@ -365,11 +365,7 @@ impl Sarg {
             };
         }
         if self.is_none() {
-            return if self.null_as == RexUnknownAs::False {
-                0
-            } else {
-                1
-            };
+            return usize::from(self.null_as != RexUnknownAs::False);
         }
         let complement = self.range_set.complement();
         let mut complexity = if self.range_set.as_ranges().len() == 2

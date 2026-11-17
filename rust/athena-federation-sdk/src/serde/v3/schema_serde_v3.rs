@@ -8,7 +8,11 @@ pub fn serialize(schema: &Schema, jgen: &mut JsonGenerator) -> Result<()> {
     crate::serde::v2::schema_serde::serialize_with_format(schema, jgen, IpcFormat::ArrowDefault)
 }
 
-pub fn serialize_for_version(schema: &Schema, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn serialize_for_version(
+    schema: &Schema,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     if version <= 2 {
         crate::serde::v2::schema_serde::serialize(schema, jgen)
     } else {

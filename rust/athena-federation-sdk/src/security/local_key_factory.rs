@@ -17,7 +17,7 @@ impl LocalKeyFactory {
         let mut key = vec![0u8; KEY_BYTES];
         let mut nonce = vec![0u8; NONCE_BYTES];
         getrandom::fill(&mut key)
-            .and_then(|_| getrandom::fill(&mut nonce))
+            .and_then(|()| getrandom::fill(&mut nonce))
             .map_err(|e| FederationError::internal(e.to_string()))?;
         Ok(EncryptionKey::new(key, nonce))
     }

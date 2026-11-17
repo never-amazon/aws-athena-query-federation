@@ -1,11 +1,16 @@
 use std::fmt;
 use std::future::Future;
 
-use crate::exceptions::{AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result};
+use crate::exceptions::{
+    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+};
 use crate::security::{AwsService, AwsServiceError};
 
 pub trait HeadBucketClient: Send + Sync {
-    fn head_bucket(&self, bucket: &str) -> impl Future<Output = std::result::Result<(), AwsServiceError>> + Send;
+    fn head_bucket(
+        &self,
+        bucket: &str,
+    ) -> impl Future<Output = std::result::Result<(), AwsServiceError>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +51,11 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
             Some(b) => b,
         };
         if self.bucket.as_deref() != Some(spill_bucket) {
-            tracing::info!("Spill bucket has been changed from {:?} to {}", self.bucket, spill_bucket);
+            tracing::info!(
+                "Spill bucket has been changed from {:?} to {}",
+                self.bucket,
+                spill_bucket
+            );
             self.bucket = Some(spill_bucket.to_string());
             self.state = BucketState::Unchecked;
         }
@@ -63,16 +72,20 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
                 self.state = BucketState::Valid;
                 Ok(())
             }
-            Err(ex) if !ex.is_service_exception_of(AwsService::S3) => Err(FederationError::from(ex)),
-            Err(ex) if matches!(ex.status_code(), Some(404) | Some(403)) => {
+            Err(ex) if !ex.is_service_exception_of(AwsService::S3) => {
+                Err(FederationError::from(ex))
+            }
+            Err(ex) if matches!(ex.status_code(), Some(404 | 403)) => {
                 self.state = BucketState::Invalid;
                 Ok(())
             }
-            Err(ex) => Err(FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-                format!("Error while checking bucket ownership for {}", bucket),
-                std::sync::Arc::new(ex),
-                ErrorDetails::of(FederationSourceErrorCode::AccessDeniedException),
-            ))),
+            Err(ex) => Err(FederationError::AthenaConnector(
+                AthenaConnectorException::with_cause(
+                    format!("Error while checking bucket ownership for {bucket}"),
+                    std::sync::Arc::new(ex),
+                    ErrorDetails::of(FederationSourceErrorCode::AccessDeniedException),
+                ),
+            )),
         };
         tracing::info!(
             "The state of bucket {} has been updated to {} from {}",

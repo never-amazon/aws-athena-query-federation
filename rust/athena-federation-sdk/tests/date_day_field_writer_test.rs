@@ -4,11 +4,10 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::DateDayExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, DateDayFieldWriter};
+use athena_federation_sdk::data::writers::fieldwriters::{DateDayFieldWriter, FieldWriter};
 use athena_federation_sdk::data::writers::holders::NullableDateDayHolder;
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
@@ -46,8 +45,15 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: i32, is_set: i32, with_constraint: bool) -> DateDayFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    DateDayFieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    DateDayFieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {

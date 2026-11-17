@@ -4,15 +4,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
-    CredentialsConstants, CredentialsProvider, HttpClient, HttpClientError, HttpRequest, HttpResponse,
-    InitializableCredentialsProvider, OAuthCredentialsProvider, OAuthFlow,
+    CredentialsConstants, CredentialsProvider, HttpClient, HttpClientError, HttpRequest,
+    HttpResponse, InitializableCredentialsProvider, OAuthCredentialsProvider, OAuthFlow,
 };
-use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode};
 use athena_federation_sdk::security::{
-    AwsService,
-    AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, SecretsManagerClient,
+    AwsRequestOverrideConfiguration, AwsService, AwsServiceError, CachableSecretsManager,
+    SecretsManagerClient,
 };
 use athena_federation_sdk::Result;
+use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
 
 const TEST_SECRET_NAME: &str = "test-secret";
 const TEST_CLIENT_ID: &str = "test-client-id";
@@ -34,7 +34,11 @@ impl SecretsManagerClient for MockSecretsClient {
         Ok(None)
     }
 
-    async fn put_secret_value(&self, _secret_id: &str, _secret_string: &str) -> std::result::Result<(), AwsServiceError> {
+    async fn put_secret_value(
+        &self,
+        _secret_id: &str,
+        _secret_string: &str,
+    ) -> std::result::Result<(), AwsServiceError> {
         match self.put_error.lock().unwrap().clone() {
             Some(e) => Err(e),
             None => Ok(()),
@@ -49,7 +53,10 @@ struct MockHttpClient {
 
 #[async_trait]
 impl HttpClient for MockHttpClient {
-    async fn send(&self, _request: HttpRequest) -> std::result::Result<HttpResponse, HttpClientError> {
+    async fn send(
+        &self,
+        _request: HttpRequest,
+    ) -> std::result::Result<HttpResponse, HttpClientError> {
         self.response
             .lock()
             .unwrap()
@@ -84,7 +91,9 @@ struct Setup {
 
 impl Setup {
     fn mock_secret_response(&mut self, secret_json: &str) {
-        if secret_json.contains(CredentialsConstants::CLIENT_ID) || secret_json.contains(CredentialsConstants::ACCESS_TOKEN) {
+        if secret_json.contains(CredentialsConstants::CLIENT_ID)
+            || secret_json.contains(CredentialsConstants::ACCESS_TOKEN)
+        {
             let secret_map: HashMap<String, String> = serde_json::from_str(secret_json).unwrap();
             self.credentials_provider
                 .initialize(TEST_SECRET_NAME, secret_map, self.secrets_manager.clone())
@@ -97,7 +106,8 @@ impl Setup {
     }
 
     fn mock_http_response(&self, status_code: u16, response_body: &str) {
-        *self.mock_http_client.response.lock().unwrap() = Some(Ok(HttpResponse::new(status_code, response_body)));
+        *self.mock_http_client.response.lock().unwrap() =
+            Some(Ok(HttpResponse::new(status_code, response_body)));
     }
 
     fn mock_http_error(&self, error: HttpClientError) {
@@ -113,8 +123,10 @@ fn set_up() -> Setup {
     let mock_secrets_client = Arc::new(MockSecretsClient::default());
     let mock_http_client = Arc::new(MockHttpClient::default());
     let secrets_manager = Arc::new(CachableSecretsManager::new(mock_secrets_client.clone()));
-    let mut credentials_provider =
-        OAuthCredentialsProvider::with_http_client(Box::new(TestOAuthFlow), mock_http_client.clone());
+    let mut credentials_provider = OAuthCredentialsProvider::with_http_client(
+        Box::new(TestOAuthFlow),
+        mock_http_client.clone(),
+    );
     credentials_provider
         .initialize(TEST_SECRET_NAME, HashMap::new(), secrets_manager.clone())
         .unwrap();
@@ -127,7 +139,11 @@ fn set_up() -> Setup {
 }
 
 fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .cast_signed()
 }
 
 fn create_oauth_secret_json() -> String {
@@ -158,9 +174,18 @@ fn create_token_response() -> String {
     )
 }
 
-fn assert_connector_error(e: FederationError, code: FederationSourceErrorCode, message: Option<&str>) {
-    let connector = e.as_connector_exception().expect("Expected AthenaConnectorException");
-    assert_eq!(Some(code.as_str()), connector.get_error_details().error_code());
+fn assert_connector_error(
+    e: &FederationError,
+    code: FederationSourceErrorCode,
+    message: Option<&str>,
+) {
+    let connector = e
+        .as_connector_exception()
+        .expect("Expected AthenaConnectorException");
+    assert_eq!(
+        Some(code.as_str()),
+        connector.get_error_details().error_code()
+    );
     match message {
         Some(m) => assert_eq!(Some(m), connector.get_error_details().error_message()),
         None => assert!(connector.get_error_details().error_message().is_some()),
@@ -170,7 +195,10 @@ fn assert_connector_error(e: FederationError, code: FederationSourceErrorCode, m
 #[tokio::test]
 async fn test_get_credential_map_when_valid_unexpired_token() {
     let mut s = set_up();
-    s.mock_secret_response(&create_oauth_secret_json_with_token(TEST_ACCESS_TOKEN, now()));
+    s.mock_secret_response(&create_oauth_secret_json_with_token(
+        TEST_ACCESS_TOKEN,
+        now(),
+    ));
     let credential_map = s.credentials_provider.get_credential_map().await.unwrap();
     assert_eq!(
         Some(&TEST_ACCESS_TOKEN.to_string()),
@@ -181,7 +209,10 @@ async fn test_get_credential_map_when_valid_unexpired_token() {
 #[tokio::test]
 async fn test_get_credential_map_when_expired_token() {
     let mut s = set_up();
-    s.mock_secret_response(&create_oauth_secret_json_with_token("expired-token", now() - 4000));
+    s.mock_secret_response(&create_oauth_secret_json_with_token(
+        "expired-token",
+        now() - 4000,
+    ));
     s.mock_http_client_for_token_fetch(&create_token_response());
     let credential_map = s.credentials_provider.get_credential_map().await.unwrap();
     assert_eq!(
@@ -195,9 +226,13 @@ async fn test_get_credential_map_when_required_fields_missing_throws_exception()
     let mut s = set_up();
     s.mock_secret_response(&create_oauth_secret_json());
     s.mock_http_client_for_token_fetch("{\"some_field\":\"value\"}");
-    let e = s.credentials_provider.get_credential_map().await.unwrap_err();
+    let e = s
+        .credentials_provider
+        .get_credential_map()
+        .await
+        .unwrap_err();
     assert_connector_error(
-        e,
+        &e,
         FederationSourceErrorCode::InvalidResponseException,
         Some("Response missing access_token or expires_in fields"),
     );
@@ -209,8 +244,16 @@ async fn test_get_credential_map_when_io_exception_throws_exception() {
     s.mock_secret_response(&create_oauth_secret_json());
     let error_message = "Network error";
     s.mock_http_error(HttpClientError::Io(error_message.into()));
-    let e = s.credentials_provider.get_credential_map().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::OperationTimeoutException, Some(error_message));
+    let e = s
+        .credentials_provider
+        .get_credential_map()
+        .await
+        .unwrap_err();
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::OperationTimeoutException,
+        Some(error_message),
+    );
 }
 
 #[tokio::test]
@@ -219,17 +262,33 @@ async fn test_get_credential_map_when_interrupted_exception_throws_exception() {
     s.mock_secret_response(&create_oauth_secret_json());
     let error_message = "Operation interrupted";
     s.mock_http_error(HttpClientError::Interrupted(error_message.into()));
-    let e = s.credentials_provider.get_credential_map().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::OperationTimeoutException, Some(error_message));
+    let e = s
+        .credentials_provider
+        .get_credential_map()
+        .await
+        .unwrap_err();
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::OperationTimeoutException,
+        Some(error_message),
+    );
 }
 
 #[tokio::test]
 async fn test_get_credential_when_secret_not_found_throws_exception() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, Some("ResourceNotFoundException".into()), Some("secret missing".into())));
+    s.mock_put_error(AwsServiceError::service(
+        AwsService::SecretsManager,
+        Some("ResourceNotFoundException".into()),
+        Some("secret missing".into()),
+    ));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::EntityNotFoundException, Some("secret missing"));
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::EntityNotFoundException,
+        Some("secret missing"),
+    );
 }
 
 #[tokio::test]
@@ -237,7 +296,11 @@ async fn test_get_credential_when_json_processing_exception_throws_exception() {
     let s = set_up();
     s.mock_http_response(200, "not-json");
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::InvalidResponseException, None);
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::InvalidResponseException,
+        None,
+    );
 }
 
 #[tokio::test]
@@ -245,7 +308,11 @@ async fn test_get_credential_when_http_unauthorized_throws_invalid_credentials()
     let s = set_up();
     s.mock_http_response(401, "");
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::InvalidCredentialsException, Some("HTTP Status: 401"));
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::InvalidCredentialsException,
+        Some("HTTP Status: 401"),
+    );
 }
 
 #[tokio::test]
@@ -253,7 +320,11 @@ async fn test_get_credential_when_http_rate_limited_throws_throttling_exception(
     let s = set_up();
     s.mock_http_response(429, "");
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::ThrottlingException, Some("HTTP Status: 429"));
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::ThrottlingException,
+        Some("HTTP Status: 429"),
+    );
 }
 
 #[tokio::test]
@@ -262,7 +333,7 @@ async fn test_get_credential_when_http_unexpected_status_throws_invalid_response
     s.mock_http_response(500, "");
     let e = s.credentials_provider.get_credential().await.unwrap_err();
     assert_connector_error(
-        e,
+        &e,
         FederationSourceErrorCode::InvalidResponseException,
         Some("Unexpected HTTP status: 500"),
     );
@@ -272,18 +343,34 @@ async fn test_get_credential_when_http_unexpected_status_throws_invalid_response
 async fn test_get_credential_when_secret_update_fails_with_resource_not_found() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, Some("ResourceNotFoundException".into()), Some("secret not found".into())));
+    s.mock_put_error(AwsServiceError::service(
+        AwsService::SecretsManager,
+        Some("ResourceNotFoundException".into()),
+        Some("secret not found".into()),
+    ));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::EntityNotFoundException, Some("secret not found"));
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::EntityNotFoundException,
+        Some("secret not found"),
+    );
 }
 
 #[tokio::test]
 async fn test_get_credential_when_secret_update_fails_with_secrets_manager_exception() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, None, Some("SM failure".into())));
+    s.mock_put_error(AwsServiceError::service(
+        AwsService::SecretsManager,
+        None,
+        Some("SM failure".into()),
+    ));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert_connector_error(e, FederationSourceErrorCode::InternalServiceException, Some("SM failure"));
+    assert_connector_error(
+        &e,
+        FederationSourceErrorCode::InternalServiceException,
+        Some("SM failure"),
+    );
 }
 
 #[tokio::test]
@@ -291,14 +378,18 @@ async fn test_get_credential_when_secret_update_fails_puts_java_get_message_in_e
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
     s.mock_put_error(
-        AwsServiceError::service(AwsService::SecretsManager, Some("ThrottlingException".into()), Some("Rate exceeded".into()))
-            .with_error_details()
-            .with_status_code(400)
-            .with_request_id("req-1"),
+        AwsServiceError::service(
+            AwsService::SecretsManager,
+            Some("ThrottlingException".into()),
+            Some("Rate exceeded".into()),
+        )
+        .with_error_details()
+        .with_status_code(400)
+        .with_request_id("req-1"),
     );
     let e = s.credentials_provider.get_credential().await.unwrap_err();
     assert_connector_error(
-        e,
+        &e,
         FederationSourceErrorCode::InternalServiceException,
         Some("Rate exceeded (Service: SecretsManager, Status Code: 400, Request ID: req-1)"),
     );
@@ -311,5 +402,8 @@ async fn test_get_credential_when_secret_update_fails_with_client_error_passes_i
     let client_error = AwsServiceError::client("Unable to execute HTTP request: Connect timed out");
     s.mock_put_error(client_error.clone());
     let e = s.credentials_provider.get_credential().await.unwrap_err();
-    assert!(matches!(&e, FederationError::AwsService(inner) if inner == &client_error), "{:?}", e);
+    assert!(
+        matches!(&e, FederationError::AwsService(inner) if inner == &client_error),
+        "{e:?}"
+    );
 }

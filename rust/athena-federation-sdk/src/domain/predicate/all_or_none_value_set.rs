@@ -80,7 +80,11 @@ impl AllOrNoneValueSet {
         Ok(self.all)
     }
 
-    pub fn intersect(&self, _allocator: &dyn BlockAllocator, other: &AllOrNoneValueSet) -> Result<AllOrNoneValueSet> {
+    pub fn intersect(
+        &self,
+        _allocator: &dyn BlockAllocator,
+        other: &AllOrNoneValueSet,
+    ) -> Result<AllOrNoneValueSet> {
         self.check_compatibility(other)?;
         Ok(AllOrNoneValueSet::new(
             self.arrow_type.clone(),
@@ -89,7 +93,11 @@ impl AllOrNoneValueSet {
         ))
     }
 
-    pub fn union(&self, _allocator: &dyn BlockAllocator, other: &AllOrNoneValueSet) -> Result<AllOrNoneValueSet> {
+    pub fn union(
+        &self,
+        _allocator: &dyn BlockAllocator,
+        other: &AllOrNoneValueSet,
+    ) -> Result<AllOrNoneValueSet> {
         self.check_compatibility(other)?;
         Ok(AllOrNoneValueSet::new(
             self.arrow_type.clone(),
@@ -98,7 +106,11 @@ impl AllOrNoneValueSet {
         ))
     }
 
-    pub fn union_all(&self, allocator: &dyn BlockAllocator, value_sets: &[AllOrNoneValueSet]) -> Result<AllOrNoneValueSet> {
+    pub fn union_all(
+        &self,
+        allocator: &dyn BlockAllocator,
+        value_sets: &[AllOrNoneValueSet],
+    ) -> Result<AllOrNoneValueSet> {
         let mut current = self.clone();
         for v in value_sets {
             current = current.union(allocator, v)?;
@@ -107,18 +119,34 @@ impl AllOrNoneValueSet {
     }
 
     pub fn complement(&self, _allocator: &dyn BlockAllocator) -> Result<AllOrNoneValueSet> {
-        Ok(AllOrNoneValueSet::new(self.arrow_type.clone(), !self.all, !self.null_allowed))
+        Ok(AllOrNoneValueSet::new(
+            self.arrow_type.clone(),
+            !self.all,
+            !self.null_allowed,
+        ))
     }
 
-    pub fn overlaps(&self, allocator: &dyn BlockAllocator, other: &AllOrNoneValueSet) -> Result<bool> {
+    pub fn overlaps(
+        &self,
+        allocator: &dyn BlockAllocator,
+        other: &AllOrNoneValueSet,
+    ) -> Result<bool> {
         Ok(!self.intersect(allocator, other)?.is_none())
     }
 
-    pub fn subtract(&self, allocator: &dyn BlockAllocator, other: &AllOrNoneValueSet) -> Result<AllOrNoneValueSet> {
+    pub fn subtract(
+        &self,
+        allocator: &dyn BlockAllocator,
+        other: &AllOrNoneValueSet,
+    ) -> Result<AllOrNoneValueSet> {
         self.intersect(allocator, &other.complement(allocator)?)
     }
 
-    pub fn contains(&self, allocator: &dyn BlockAllocator, other: &AllOrNoneValueSet) -> Result<bool> {
+    pub fn contains(
+        &self,
+        allocator: &dyn BlockAllocator,
+        other: &AllOrNoneValueSet,
+    ) -> Result<bool> {
         Ok(self.union(allocator, other)? == *self)
     }
 
@@ -134,7 +162,10 @@ impl AllOrNoneValueSet {
     }
 
     pub fn hash_code(&self) -> i32 {
-        objects_hash(&[type_hash(&self.arrow_type), if self.all { 1231 } else { 1237 }])
+        objects_hash(&[
+            type_hash(&self.arrow_type),
+            if self.all { 1231 } else { 1237 },
+        ])
     }
 }
 
@@ -146,6 +177,11 @@ impl PartialEq for AllOrNoneValueSet {
 
 impl fmt::Display for AllOrNoneValueSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{} nullAllowed:{}]", if self.all { "ALL" } else { "NONE" }, self.null_allowed)
+        write!(
+            f,
+            "[{} nullAllowed:{}]",
+            if self.all { "ALL" } else { "NONE" },
+            self.null_allowed
+        )
     }
 }

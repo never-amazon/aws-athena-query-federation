@@ -22,10 +22,14 @@ impl KmsEncryptionProvider {
         KmsEncryptionProvider { aws_crypto }
     }
 
-    pub async fn get_fas_credentials(&self, kms_key_id: &str, fas_token: &str) -> Result<Credentials> {
+    pub async fn get_fas_credentials(
+        &self,
+        kms_key_id: &str,
+        fas_token: &str,
+    ) -> Result<Credentials> {
         let fas_string = self.decrypt_data(kms_key_id, fas_token).await?;
-        let credentials: FasToken =
-            serde_json::from_str(&fas_string).map_err(|e| FederationError::Runtime(e.to_string()))?;
+        let credentials: FasToken = serde_json::from_str(&fas_string)
+            .map_err(|e| FederationError::Runtime(e.to_string()))?;
         Ok(Credentials::new(
             credentials.get_access_token(),
             credentials.get_secret_token(),

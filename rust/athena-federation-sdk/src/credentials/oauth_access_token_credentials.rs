@@ -13,7 +13,9 @@ pub struct OAuthAccessTokenCredentials {
 impl OAuthAccessTokenCredentials {
     pub fn new(access_token: &str) -> Result<OAuthAccessTokenCredentials> {
         if access_token.trim().is_empty() {
-            return Err(FederationError::IllegalArgument("Access token must not be blank".into()));
+            return Err(FederationError::IllegalArgument(
+                "Access token must not be blank".into(),
+            ));
         }
         Ok(OAuthAccessTokenCredentials {
             access_token: access_token.to_string(),
@@ -27,7 +29,10 @@ impl OAuthAccessTokenCredentials {
 
 impl Credentials for OAuthAccessTokenCredentials {
     fn get_properties(&self) -> HashMap<String, String> {
-        HashMap::from([(CredentialsConstants::ACCESS_TOKEN_PROPERTY.to_string(), self.access_token.clone())])
+        HashMap::from([(
+            CredentialsConstants::ACCESS_TOKEN_PROPERTY.to_string(),
+            self.access_token.clone(),
+        )])
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -42,8 +42,8 @@ impl Block {
     }
 
     pub fn constrain(&mut self, constraint_evaluator: Option<Arc<ConstraintEvaluator>>) {
-        self.constraint_evaluator =
-            constraint_evaluator.unwrap_or_else(|| Arc::new(ConstraintEvaluator::empty_evaluator()));
+        self.constraint_evaluator = constraint_evaluator
+            .unwrap_or_else(|| Arc::new(ConstraintEvaluator::empty_evaluator()));
     }
 
     pub fn get_constraint_evaluator(&self) -> &Arc<ConstraintEvaluator> {
@@ -58,11 +58,16 @@ impl Block {
         &self.schema
     }
 
-    pub fn set_value(&mut self, field_name: &str, row: usize, value: impl Into<Value>) -> Result<bool> {
+    pub fn set_value(
+        &mut self,
+        field_name: &str,
+        row: usize,
+        value: impl Into<Value>,
+    ) -> Result<bool> {
         let value = value.into();
         if self.constraint_evaluator.apply(field_name, &value)? {
             let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
-                FederationError::NullPointer(format!("No vector found for field {}", field_name))
+                FederationError::NullPointer(format!("No vector found for field {field_name}"))
             })?;
             BlockUtils::set_value(vector, row, &value)?;
             return Ok(true);
@@ -70,7 +75,12 @@ impl Block {
         Ok(false)
     }
 
-    pub fn offer_value(&mut self, field_name: &str, row: usize, value: impl Into<Value>) -> Result<bool> {
+    pub fn offer_value(
+        &mut self,
+        field_name: &str,
+        row: usize,
+        value: impl Into<Value>,
+    ) -> Result<bool> {
         let value = value.into();
         if self.constraint_evaluator.apply(field_name, &value)? {
             if let Some(vector) = self.get_field_vector_mut(field_name) {
@@ -89,9 +99,9 @@ impl Block {
         value: impl Into<Value>,
     ) -> Result<bool> {
         let value = value.into();
-        let vector = self
-            .get_field_vector_mut(field_name)
-            .ok_or_else(|| FederationError::NullPointer(format!("No vector found for field {}", field_name)))?;
+        let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
+            FederationError::NullPointer(format!("No vector found for field {field_name}"))
+        })?;
         BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
         Ok(true)
     }
@@ -112,7 +122,7 @@ impl Block {
 
     pub fn set_row_count(&mut self, row_count: usize) {
         self.row_count = row_count;
-        for v in self.vectors.iter_mut() {
+        for v in &mut self.vectors {
             v.set_value_count(row_count);
         }
     }
@@ -138,7 +148,10 @@ impl Block {
     }
 
     pub fn get_size(&self) -> usize {
-        self.vectors.iter().map(|v| v.get_buffer_size()).sum()
+        self.vectors
+            .iter()
+            .map(super::vector::FieldVector::get_buffer_size)
+            .sum()
     }
 
     pub fn get_field_vectors(&self) -> &[FieldVector] {
@@ -156,7 +169,11 @@ impl Block {
             .map(|v| v.to_array_len(self.row_count))
             .collect::<Result<Vec<ArrayRef>>>()?;
         let options = RecordBatchOptions::new().with_row_count(Some(self.row_count));
-        Ok(RecordBatch::try_new_with_options(self.schema.clone(), arrays, &options)?)
+        Ok(RecordBatch::try_new_with_options(
+            self.schema.clone(),
+            arrays,
+            &options,
+        )?)
     }
 
     pub fn get_arrow_record_batch(&self) -> Result<ArrowRecordBatch> {
@@ -192,13 +209,11 @@ impl Block {
             return false;
         }
         for next in self.schema.fields() {
-            let this_reader = match self.get_field_reader(next.name()) {
-                Some(r) => r,
-                None => return false,
+            let Some(this_reader) = self.get_field_reader(next.name()) else {
+                return false;
             };
-            let that_reader = match that.get_field_reader(next.name()) {
-                Some(r) => r,
-                None => return false,
+            let Some(that_reader) = that.get_field_reader(next.name()) else {
+                return false;
             };
             for i in 0..self.row_count {
                 this_reader.set_position(i);
@@ -206,7 +221,11 @@ impl Block {
                 let mut matched = false;
                 for j in 0..that.row_count {
                     that_reader.set_position(j);
-                    match ArrowTypeComparator::compare_reader(&that_reader, &val, &that_reader.read_object()) {
+                    match ArrowTypeComparator::compare_reader(
+                        &that_reader,
+                        &val,
+                        &that_reader.read_object(),
+                    ) {
                         Ok(0) => matched = true,
                         Ok(_) => {}
                         Err(_) => return false,
@@ -228,18 +247,20 @@ impl Block {
             return Ok(false);
         }
         for next in self.schema.fields() {
-            let this_reader = match self.get_field_reader(next.name()) {
-                Some(r) => r,
-                None => return Ok(false),
+            let Some(this_reader) = self.get_field_reader(next.name()) else {
+                return Ok(false);
             };
-            let that_reader = match that.get_field_reader(next.name()) {
-                Some(r) => r,
-                None => return Ok(false),
+            let Some(that_reader) = that.get_field_reader(next.name()) else {
+                return Ok(false);
             };
             for i in 0..self.row_count {
                 this_reader.set_position(i);
                 that_reader.set_position(i);
-                match ArrowTypeComparator::compare_reader(&this_reader, &this_reader.read_object(), &that_reader.read_object()) {
+                match ArrowTypeComparator::compare_reader(
+                    &this_reader,
+                    &this_reader.read_object(),
+                    &that_reader.read_object(),
+                ) {
                     Ok(0) => {}
                     Ok(_) => return Ok(false),
                     Err(e @ FederationError::IllegalArgument(_)) => return Err(e),
@@ -256,14 +277,17 @@ impl Block {
     pub fn hash_code(&self) -> i32 {
         let mut hashcode: i32 = 0;
         for (k, v) in self.schema.metadata() {
-            let entry = super::java_format::java_string_hash(k) ^ super::java_format::java_string_hash(v);
+            let entry =
+                super::java_format::java_string_hash(k) ^ super::java_format::java_string_hash(v);
             hashcode = hashcode.wrapping_add(entry);
         }
         for next in self.schema.fields() {
             if let Some(reader) = self.get_field_reader(next.name()) {
                 for i in 0..self.row_count {
                     reader.set_position(i);
-                    hashcode = hashcode.wrapping_mul(31).wrapping_add(reader.read_object().java_hash_code());
+                    hashcode = hashcode
+                        .wrapping_mul(31)
+                        .wrapping_add(reader.read_object().java_hash_code());
                 }
             }
         }
@@ -298,7 +322,9 @@ impl fmt::Display for Block {
             if let Some(reader) = self.get_field_reader(next.name()) {
                 for i in 0..rows_to_print {
                     reader.set_position(i);
-                    values.push(BlockUtils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()));
+                    values.push(
+                        BlockUtils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
+                    );
                 }
             }
             write!(f, ", {}=[{}]", next.name(), values.join(", "))?;

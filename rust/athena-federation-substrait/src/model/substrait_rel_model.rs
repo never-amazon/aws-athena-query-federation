@@ -4,11 +4,11 @@ use crate::substrait_rel_utils::SubstraitRelUtils;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SubstraitRelModel {
-    read_rel: Option<ReadRel>,
-    filter_rel: Option<FilterRel>,
-    project_rel: Option<ProjectRel>,
-    sort_rel: Option<SortRel>,
-    fetch_rel: Option<FetchRel>,
+    read: Option<ReadRel>,
+    filter: Option<FilterRel>,
+    project: Option<ProjectRel>,
+    sort: Option<SortRel>,
+    fetch: Option<FetchRel>,
 }
 
 impl SubstraitRelModel {
@@ -20,32 +20,32 @@ impl SubstraitRelModel {
         fetch_rel: Option<FetchRel>,
     ) -> SubstraitRelModel {
         SubstraitRelModel {
-            read_rel,
-            filter_rel,
-            project_rel,
-            sort_rel,
-            fetch_rel,
+            read: read_rel,
+            filter: filter_rel,
+            project: project_rel,
+            sort: sort_rel,
+            fetch: fetch_rel,
         }
     }
 
     pub fn get_read_rel(&self) -> Option<&ReadRel> {
-        self.read_rel.as_ref()
+        self.read.as_ref()
     }
 
     pub fn get_filter_rel(&self) -> Option<&FilterRel> {
-        self.filter_rel.as_ref()
+        self.filter.as_ref()
     }
 
     pub fn get_project_rel(&self) -> Option<&ProjectRel> {
-        self.project_rel.as_ref()
+        self.project.as_ref()
     }
 
     pub fn get_sort_rel(&self) -> Option<&SortRel> {
-        self.sort_rel.as_ref()
+        self.sort.as_ref()
     }
 
     pub fn get_fetch_rel(&self) -> Option<&FetchRel> {
-        self.fetch_rel.as_ref()
+        self.fetch.as_ref()
     }
 
     pub fn build_substrait_rel_model(rel: Option<&Rel>) -> Result<SubstraitRelModel> {

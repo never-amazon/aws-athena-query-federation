@@ -30,12 +30,17 @@ impl EnvironmentProperties {
         EnvironmentProperties::default()
     }
 
+    #[must_use]
     pub fn with_env_map(mut self, env_map: HashMap<String, String>) -> EnvironmentProperties {
         self.env_map = Some(env_map);
         self
     }
 
-    pub fn with_glue_client(mut self, glue_client: Arc<dyn GlueConnectionClient>) -> EnvironmentProperties {
+    #[must_use]
+    pub fn with_glue_client(
+        mut self,
+        glue_client: Arc<dyn GlueConnectionClient>,
+    ) -> EnvironmentProperties {
         self.glue_client = Some(glue_client);
         self
     }
@@ -54,25 +59,36 @@ impl EnvironmentProperties {
             let connection = self.get_glue_connection(glue_connection_name).await?;
             let mut connection_properties_with_secret: HashMap<String, String> = connection
                 .connection_properties()
-                .map(|props| props.iter().map(|(k, v)| (k.as_str().to_string(), v.clone())).collect())
+                .map(|props| {
+                    props
+                        .iter()
+                        .map(|(k, v)| (k.as_str().to_string(), v.clone()))
+                        .collect()
+                })
                 .unwrap_or_default();
-            connection_properties_with_secret
-                .extend(Self::authentication_configuration_to_map(connection.authentication_configuration()));
-            connection_environment.extend(self.connection_properties_to_environment(connection_properties_with_secret));
+            connection_properties_with_secret.extend(Self::authentication_configuration_to_map(
+                connection.authentication_configuration(),
+            ));
+            connection_environment.extend(
+                self.connection_properties_to_environment(connection_properties_with_secret),
+            );
             let athena_properties = connection.athena_properties().cloned().unwrap_or_default();
-            connection_environment.extend(self.athena_properties_to_environment(&athena_properties));
+            connection_environment
+                .extend(self.athena_properties_to_environment(&athena_properties));
         }
         connection_environment.extend(lambda_environment);
         Ok(connection_environment)
     }
 
     pub async fn get_glue_connection(&self, glue_connection_name: &str) -> Result<Connection> {
-        let client: Arc<dyn GlueConnectionClient> = match &self.glue_client {
-            Some(client) => client.clone(),
-            None => {
-                let lambda_environment = self.get_env_map();
-                Arc::new(default_glue_client(lambda_environment.get(GLUE_ENDPOINT).map(String::as_str)).await)
-            }
+        let client: Arc<dyn GlueConnectionClient> = if let Some(client) = &self.glue_client {
+            client.clone()
+        } else {
+            let lambda_environment = self.get_env_map();
+            Arc::new(
+                default_glue_client(lambda_environment.get(GLUE_ENDPOINT).map(String::as_str))
+                    .await,
+            )
         };
         match client.get_connection(glue_connection_name).await {
             Ok(connection) => {
@@ -89,9 +105,14 @@ impl EnvironmentProperties {
         }
     }
 
-    fn authentication_configuration_to_map(auth: Option<&AuthenticationConfiguration>) -> HashMap<String, String> {
+    fn authentication_configuration_to_map(
+        auth: Option<&AuthenticationConfiguration>,
+    ) -> HashMap<String, String> {
         let mut auth_map = HashMap::new();
-        if let Some(secret_arn) = auth.and_then(|a| a.secret_arn()).filter(|s| !s.trim().is_empty()) {
+        if let Some(secret_arn) = auth
+            .and_then(|a| a.secret_arn())
+            .filter(|s| !s.trim().is_empty())
+        {
             let split_arn = java_split(secret_arn, ':');
             let last = split_arn.last().copied().unwrap_or_default();
             let parts = java_split(last, '-');
@@ -101,7 +122,10 @@ impl EnvironmentProperties {
         auth_map
     }
 
-    pub fn athena_properties_to_environment(&self, athena_properties: &HashMap<String, String>) -> HashMap<String, String> {
+    pub fn athena_properties_to_environment(
+        &self,
+        athena_properties: &HashMap<String, String>,
+    ) -> HashMap<String, String> {
         let mut modified = athena_properties.clone();
         if let Some(kms_key_id) = modified.remove(EnvironmentConstants::SPILL_KMS_KEY_ID) {
             modified.insert(EnvironmentConstants::KMS_KEY_ID.to_string(), kms_key_id);

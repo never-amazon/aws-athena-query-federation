@@ -8,7 +8,8 @@ use super::encryption_key::EncryptionKey;
 use crate::data::{Block, BlockAllocator};
 use crate::exceptions::Result;
 
-const REAL_KEY_MESSAGE: &str = "Real key provided to NoOpBlockCrypto, likely indicates you wanted real crypto.";
+const REAL_KEY_MESSAGE: &str =
+    "Real key provided to NoOpBlockCrypto, likely indicates you wanted real crypto.";
 
 pub struct NoOpBlockCrypto {
     allocator: Arc<dyn BlockAllocator>,
@@ -35,7 +36,12 @@ impl BlockCrypto for NoOpBlockCrypto {
         Ok(bytes.to_vec())
     }
 
-    fn decrypt_with_schema(&self, _key: Option<&EncryptionKey>, bytes: &[u8], schema: SchemaRef) -> Result<Block> {
+    fn decrypt_with_schema(
+        &self,
+        _key: Option<&EncryptionKey>,
+        bytes: &[u8],
+        schema: SchemaRef,
+    ) -> Result<Block> {
         deserialize_block(self.allocator.as_ref(), bytes, schema)
     }
 

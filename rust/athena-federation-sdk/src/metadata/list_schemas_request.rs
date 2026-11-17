@@ -12,7 +12,11 @@ pub struct ListSchemasRequest {
 }
 
 impl ListSchemasRequest {
-    pub fn new(identity: Option<FederatedIdentity>, query_id: Option<String>, catalog_name: impl Into<String>) -> ListSchemasRequest {
+    pub fn new(
+        identity: Option<FederatedIdentity>,
+        query_id: Option<String>,
+        catalog_name: impl Into<String>,
+    ) -> ListSchemasRequest {
         ListSchemasRequest {
             identity,
             query_id,
@@ -31,6 +35,10 @@ impl PartialEq for ListSchemasRequest {
 
 impl fmt::Display for ListSchemasRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ListSchemasRequest{{queryId={}}}", opt_str(self.query_id.as_deref()))
+        write!(
+            f,
+            "ListSchemasRequest{{queryId={}}}",
+            opt_str(self.query_id.as_deref())
+        )
     }
 }

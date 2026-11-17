@@ -1,6 +1,8 @@
 use crate::exceptions::Result;
 use crate::request::PingRequest;
-use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null, validate_object_start_token};
+use crate::serde::base::{
+    assert_field_name, get_next_string_field, require_non_null, validate_object_start_token,
+};
 use crate::serde::federated_identity_serde;
 use crate::serde::json::{JsonGenerator, JsonParser};
 

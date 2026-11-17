@@ -1,0 +1,11 @@
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>héllo wörld ✓ 日本
+std	SELECT * FROM test_table WHERE varchar_col = 'EMOJI'	EMOJI=>emoji 😀 and 'quote'
+std	SELECT * FROM test_table WHERE varchar_col LIKE 'PATX%'	PATX%=>a\_b%
+std	SELECT * FROM test_table WHERE decimal_col3 = 12345678.0123456789
+std	SELECT * FROM test_table WHERE decimal_col3 > 0.0000000001
+std	SELECT * FROM test_table WHERE decimal_col > 999999999999999.9999
+std	SELECT CASE WHEN int_col > 10 THEN CAST('big' AS VARCHAR) WHEN int_col > 5 THEN CAST('mid' AS VARCHAR) ELSE CAST('small' AS VARCHAR) END AS sz FROM test_table
+std	SELECT * FROM test_table WHERE bool_col IS NOT TRUE OR bool_col IS FALSE
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>héllo wö
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>ABCDEFGHIJ
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>It's 8!!

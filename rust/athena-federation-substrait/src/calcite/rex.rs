@@ -230,12 +230,11 @@ pub enum RexNode {
 impl RexNode {
     pub fn get_type(&self) -> &RelDataType {
         match self {
-            RexNode::InputRef { ty, .. } => ty,
+            RexNode::InputRef { ty, .. } | RexNode::CorrelField { ty, .. } => ty,
             RexNode::Literal(l) => &l.ty,
             RexNode::Call(c) => &c.ty,
             RexNode::Over(o) => &o.ty,
             RexNode::SubQuery(q) => &q.ty,
-            RexNode::CorrelField { ty, .. } => ty,
         }
     }
 
@@ -422,36 +421,36 @@ impl RexBuilder {
         RexBuilder { system }
     }
 
-    pub fn boolean_type(&self, nullable: bool) -> RelDataType {
+    pub fn boolean_type(self, nullable: bool) -> RelDataType {
         RelDataType::create_sql_type(self.system, SqlTypeName::Boolean).with_nullability(nullable)
     }
 
-    pub fn make_input_ref(&self, index: usize, ty: RelDataType) -> RexNode {
+    pub fn make_input_ref(index: usize, ty: RelDataType) -> RexNode {
         RexNode::InputRef { index, ty }
     }
 
-    pub fn make_bool_literal(&self, b: bool) -> RexNode {
+    pub fn make_bool_literal(self, b: bool) -> RexNode {
         RexNode::Literal(RexLiteral {
             value: LiteralValue::Boolean(b),
             ty: self.boolean_type(false),
         })
     }
 
-    pub fn make_null_literal(&self, ty: RelDataType) -> RexNode {
+    pub fn make_null_literal(ty: &RelDataType) -> RexNode {
         RexNode::Literal(RexLiteral {
             value: LiteralValue::Null,
             ty: ty.with_nullability(true),
         })
     }
 
-    pub fn make_literal(&self, value: LiteralValue, ty: RelDataType) -> RexNode {
+    pub fn make_literal(value: LiteralValue, ty: RelDataType) -> RexNode {
         if matches!(value, LiteralValue::Null) {
-            return self.make_null_literal(ty);
+            return RexBuilder::make_null_literal(&ty);
         }
         RexNode::Literal(RexLiteral { value, ty })
     }
 
-    pub fn make_exact_int(&self, v: i64) -> RexNode {
+    pub fn make_exact_int(self, v: i64) -> RexNode {
         let ty = if (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&v) {
             RelDataType::create_sql_type(self.system, SqlTypeName::Integer)
         } else {
@@ -463,14 +462,14 @@ impl RexBuilder {
         })
     }
 
-    pub fn make_bigint_literal(&self, v: i64) -> RexNode {
+    pub fn make_bigint_literal(self, v: i64) -> RexNode {
         RexNode::Literal(RexLiteral {
             value: LiteralValue::Exact(BigDecimal::from(v)),
             ty: RelDataType::create_sql_type(self.system, SqlTypeName::Bigint),
         })
     }
 
-    pub fn infer_type(&self, op: &'static SqlOperator, operands: &[RexNode]) -> RelDataType {
+    pub fn infer_type(self, op: &'static SqlOperator, operands: &[RexNode]) -> RelDataType {
         let any_nullable = operands.iter().any(|o| o.get_type().is_nullable());
         match op.kind {
             SqlKind::IsNull
@@ -482,10 +481,7 @@ impl RexBuilder {
             | SqlKind::IsDistinctFrom
             | SqlKind::IsNotDistinctFrom => self.boolean_type(false),
             SqlKind::Search => {
-                let nullable = operands
-                    .first()
-                    .map(|o| o.get_type().is_nullable())
-                    .unwrap_or(false)
+                let nullable = operands.first().is_some_and(|o| o.get_type().is_nullable())
                     && match operands.get(1) {
                         Some(RexNode::Literal(RexLiteral {
                             value: LiteralValue::Sarg(s),
@@ -508,20 +504,19 @@ impl RexBuilder {
             | SqlKind::In
             | SqlKind::NotIn
             | SqlKind::Between => self.boolean_type(any_nullable),
-            _ => operands
-                .first()
-                .map(|o| o.get_type().with_nullability(any_nullable))
-                .unwrap_or_else(|| self.boolean_type(any_nullable)),
+            _ => operands.first().map_or_else(
+                || self.boolean_type(any_nullable),
+                |o| o.get_type().with_nullability(any_nullable),
+            ),
         }
     }
 
-    pub fn make_call(&self, op: &'static SqlOperator, operands: Vec<RexNode>) -> RexNode {
+    pub fn make_call(self, op: &'static SqlOperator, operands: Vec<RexNode>) -> RexNode {
         let ty = self.infer_type(op, &operands);
         RexNode::Call(RexCall { op, operands, ty })
     }
 
     pub fn make_call_typed(
-        &self,
         ty: RelDataType,
         op: &'static SqlOperator,
         operands: Vec<RexNode>,
@@ -529,7 +524,7 @@ impl RexBuilder {
         RexNode::Call(RexCall { op, operands, ty })
     }
 
-    pub fn make_search(&self, ref_node: RexNode, sarg: Sarg, ty: RelDataType) -> RexNode {
+    pub fn make_search(self, ref_node: RexNode, sarg: Sarg, ty: RelDataType) -> RexNode {
         let literal = RexNode::Literal(RexLiteral {
             value: LiteralValue::Sarg(Box::new(sarg)),
             ty,
@@ -537,7 +532,7 @@ impl RexBuilder {
         self.make_call(&operators::SEARCH, vec![ref_node, literal])
     }
 
-    pub fn make_cast(&self, ty: RelDataType, operand: RexNode, safe: bool) -> RexNode {
+    pub fn make_cast(ty: RelDataType, operand: RexNode, safe: bool) -> RexNode {
         let op = if safe {
             &operators::SAFE_CAST
         } else {
@@ -550,7 +545,7 @@ impl RexBuilder {
         })
     }
 
-    pub fn make_not(&self, operand: RexNode) -> RexNode {
+    pub fn make_not(self, operand: RexNode) -> RexNode {
         self.make_call(&operators::NOT, vec![operand])
     }
 }
@@ -578,7 +573,7 @@ pub fn disjunctions(node: &RexNode) -> Vec<RexNode> {
     out
 }
 
-pub fn compose_conjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode {
+pub fn compose_conjunction(builder: RexBuilder, nodes: Vec<RexNode>) -> RexNode {
     let mut list: Vec<RexNode> = Vec::new();
     for n in nodes {
         let mut flat = Vec::new();
@@ -606,7 +601,7 @@ pub fn compose_conjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode
     }
 }
 
-pub fn compose_disjunction(builder: &RexBuilder, nodes: Vec<RexNode>) -> RexNode {
+pub fn compose_disjunction(builder: RexBuilder, nodes: Vec<RexNode>) -> RexNode {
     let mut list: Vec<RexNode> = Vec::new();
     for n in nodes {
         let mut flat = Vec::new();

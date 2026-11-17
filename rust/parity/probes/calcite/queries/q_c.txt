@@ -1,0 +1,1 @@
+std	SELECT * FROM test_table WHERE int_col = 5 AND int_col = 6

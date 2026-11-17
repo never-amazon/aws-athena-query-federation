@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use athena_federation_sdk::util::PaginatedRequestIterator;
 
 fn page(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 fn fake_page_request(page_token: Option<&str>) -> Option<HashMap<String, String>> {
@@ -15,13 +18,16 @@ fn fake_page_request(page_token: Option<&str>) -> Option<HashMap<String, String>
     }
 }
 
-fn get_page_token(input: &Option<HashMap<String, String>>) -> Option<String> {
-    input.as_ref().and_then(|m| m.get("nextPage").cloned())
+fn get_page_token(input: Option<&HashMap<String, String>>) -> Option<String> {
+    input.and_then(|m| m.get("nextPage").cloned())
 }
 
 #[test]
 fn test_iterates_over_all_pages() {
-    let result: Vec<String> = PaginatedRequestIterator::stream(fake_page_request, get_page_token)
+    let result: Vec<String> =
+        PaginatedRequestIterator::stream(fake_page_request, |p: &Option<_>| {
+            get_page_token(p.as_ref())
+        })
         .map(|r| r.and_then(|m| m.get("data").cloned()).unwrap_or_default())
         .collect();
     assert_eq!(vec!["aaa", "bbb", "ccc"], result);
@@ -29,22 +35,37 @@ fn test_iterates_over_all_pages() {
 
 #[test]
 fn test_behavior() {
-    let mut iterator = PaginatedRequestIterator::new(fake_page_request, get_page_token);
+    let mut iterator = PaginatedRequestIterator::new(fake_page_request, |p: &Option<_>| {
+        get_page_token(p.as_ref())
+    });
     assert!(iterator.has_next());
     for _ in 0..10 {
         assert!(iterator.has_next());
     }
-    assert_eq!(Some(page(&[("data", "aaa"), ("nextPage", "2")])), iterator.next_page().unwrap());
+    assert_eq!(
+        Some(page(&[("data", "aaa"), ("nextPage", "2")])),
+        iterator.next_page().unwrap()
+    );
     for _ in 0..10 {
         assert!(iterator.has_next());
     }
-    assert_eq!(Some(page(&[("data", "bbb"), ("nextPage", "3")])), iterator.next_page().unwrap());
+    assert_eq!(
+        Some(page(&[("data", "bbb"), ("nextPage", "3")])),
+        iterator.next_page().unwrap()
+    );
     assert!(iterator.has_next());
     for _ in 0..10 {
         assert!(iterator.has_next());
     }
-    assert_eq!(Some(page(&[("data", "ccc")])), iterator.next_page().unwrap());
+    assert_eq!(
+        Some(page(&[("data", "ccc")])),
+        iterator.next_page().unwrap()
+    );
     assert!(!iterator.has_next());
-    assert!(iterator.next_page().unwrap_err().as_connector_exception().is_some());
+    assert!(iterator
+        .next_page()
+        .unwrap_err()
+        .as_connector_exception()
+        .is_some());
     assert!(!iterator.has_next());
 }

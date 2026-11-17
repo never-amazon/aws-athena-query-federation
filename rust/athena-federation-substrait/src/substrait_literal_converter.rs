@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset};
 use num_bigint::{BigInt, Sign};
 
 use crate::error::{Result, SubstraitError};
+use crate::java_cast::{int_to_byte, int_to_short, long_to_int};
 use crate::proto::expression::literal::{Decimal, LiteralType};
 use crate::proto::expression::{Literal, RexType};
 use crate::proto::Expression;
@@ -61,23 +62,20 @@ const DECIMAL_BYTE_WIDTH: usize = 16;
 pub struct SubstraitLiteralConverter;
 
 impl SubstraitLiteralConverter {
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     pub fn extract_literal_value(expr: &Expression) -> Result<(LiteralValue, DataType)> {
-        let literal = match &expr.rex_type {
-            Some(RexType::Literal(l)) => l,
-            _ => {
-                return Err(SubstraitError::illegal_argument(
-                    "Expected literal value in expression",
-                ))
-            }
+        let Some(RexType::Literal(literal)) = &expr.rex_type else {
+            return Err(SubstraitError::illegal_argument(
+                "Expected literal value in expression",
+            ));
         };
-        let literal_type = match &literal.literal_type {
-            Some(t) => t,
-            None => {
-                return Err(SubstraitError::unsupported(
-                    "Unsupported literal type: LITERALTYPE_NOT_SET",
-                ))
-            }
+        let Some(literal_type) = &literal.literal_type else {
+            return Err(SubstraitError::unsupported(
+                "Unsupported literal type: LITERALTYPE_NOT_SET",
+            ));
         };
         match literal_type {
             LiteralType::I8(v) => Ok((LiteralValue::Int(*v), DataType::Int8)),
@@ -86,7 +84,6 @@ impl SubstraitLiteralConverter {
             LiteralType::I64(v) => Ok((LiteralValue::Long(*v), DataType::Int64)),
             LiteralType::Fp32(v) => Ok((LiteralValue::Float(*v), DataType::Float32)),
             LiteralType::Fp64(v) => Ok((LiteralValue::Double(*v), DataType::Float64)),
-            LiteralType::String(v) => Ok((LiteralValue::String(v.clone()), DataType::Utf8)),
             LiteralType::Boolean(v) => Ok((LiteralValue::Boolean(*v), DataType::Boolean)),
             LiteralType::Binary(v) => Ok((LiteralValue::Bytes(v.clone()), DataType::Binary)),
             LiteralType::Decimal(d) => {
@@ -111,7 +108,9 @@ impl SubstraitLiteralConverter {
                 DataType::Timestamp(TimeUnit::Microsecond, None),
             )),
             LiteralType::VarChar(v) => Ok((LiteralValue::String(v.value.clone()), DataType::Utf8)),
-            LiteralType::FixedChar(v) => Ok((LiteralValue::String(v.clone()), DataType::Utf8)),
+            LiteralType::String(v) | LiteralType::FixedChar(v) => {
+                Ok((LiteralValue::String(v.clone()), DataType::Utf8))
+            }
             other => Err(SubstraitError::unsupported(format!(
                 "Unsupported literal type: {}",
                 literal_type_case_name(other)
@@ -140,15 +139,15 @@ impl SubstraitLiteralConverter {
                 other => return Err(class_cast(other, "java.math.BigDecimal")),
             },
             DataType::Date32 | DataType::Date64 => match value {
-                LiteralValue::Long(v) => LiteralType::Date(*v as i32),
+                LiteralValue::Long(v) => LiteralType::Date(long_to_int(*v)),
                 other => return Err(class_cast(other, "java.lang.Long")),
             },
             DataType::Int8 | DataType::UInt8 => match value {
-                LiteralValue::Int(v) => LiteralType::I8(i32::from(*v as i8)),
+                LiteralValue::Int(v) => LiteralType::I8(i32::from(int_to_byte(*v))),
                 other => return Err(class_cast(other, "java.lang.Integer")),
             },
             DataType::Int16 | DataType::UInt16 => match value {
-                LiteralValue::Int(v) => LiteralType::I16(i32::from(*v as i16)),
+                LiteralValue::Int(v) => LiteralType::I16(i32::from(int_to_short(*v))),
                 other => return Err(class_cast(other, "java.lang.Integer")),
             },
             DataType::Int32 | DataType::UInt32 => match value {
@@ -171,14 +170,20 @@ impl SubstraitLiteralConverter {
                 LiteralValue::Float(v) => LiteralType::Fp32(*v),
                 other => return Err(class_cast(other, "java.lang.Float")),
             },
-            #[allow(deprecated)]
+            #[allow(
+                deprecated,
+                reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+            )]
             DataType::Timestamp(_, Some(_)) => match value {
                 LiteralValue::ZonedDateTime(v) => {
                     LiteralType::TimestampTz(i64::from(v.timestamp_subsec_micros()))
                 }
                 other => return Err(class_cast(other, "java.time.ZonedDateTime")),
             },
-            #[allow(deprecated)]
+            #[allow(
+                deprecated,
+                reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+            )]
             DataType::Timestamp(_, None) => match value {
                 LiteralValue::Long(v) => LiteralType::Timestamp(*v),
                 other => return Err(class_cast(other, "java.lang.Long")),
@@ -243,7 +248,10 @@ fn decimal_literal(value: &BigDecimal) -> Result<LiteralType> {
     }))
 }
 
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+)]
 pub fn literal_type_case_name(literal_type: &LiteralType) -> &'static str {
     match literal_type {
         LiteralType::Boolean(_) => "BOOLEAN",

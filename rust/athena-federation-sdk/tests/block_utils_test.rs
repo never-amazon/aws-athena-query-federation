@@ -6,9 +6,9 @@ use bigdecimal::BigDecimal;
 use chrono::{NaiveDate, NaiveDateTime};
 use num_bigint::BigInt;
 
-use athena_federation_sdk::data::types::{decimal, timestamp_tz};
 use athena_federation_sdk::data::*;
-use athena_federation_sdk::exceptions::FederationError;
+use athena_federation_sdk::data::{decimal, timestamp_tz};
+use athena_federation_sdk::FederationError;
 
 static PACKING_LOCK: Mutex<()> = Mutex::new(());
 
@@ -25,7 +25,9 @@ impl Drop for Setup {
 }
 
 fn setup() -> Setup {
-    let guard = PACKING_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = PACKING_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     DateTimeFormatterUtil::enable_timezone_packing();
     Setup {
         allocator: BlockAllocatorImpl::new(),
@@ -41,17 +43,22 @@ fn ldt_2020() -> NaiveDateTime {
 }
 
 fn set(block: &mut Block, name: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(block.get_field_vector_mut(name).unwrap(), row, &value.into()).unwrap();
+    BlockUtils::set_value(
+        block.get_field_vector_mut(name).unwrap(),
+        row,
+        &value.into(),
+    )
+    .unwrap();
 }
 
 fn zoned(ldt: NaiveDateTime, zone: &str) -> Value {
     Value::ZonedDateTime(ZonedDateTime::of_local(ldt, ZoneId::of(zone).unwrap()))
 }
 
-fn assert_connector_error(result: athena_federation_sdk::exceptions::Result<()>) {
+fn assert_connector_error(result: athena_federation_sdk::Result<()>) {
     match result {
         Err(FederationError::AthenaConnector(_)) => {}
-        other => panic!("expected AthenaConnectorException, got {:?}", other),
+        other => panic!("expected AthenaConnectorException, got {other:?}"),
     }
 }
 
@@ -133,11 +140,24 @@ fn field_to_string() {
         let mut block = s.allocator.create_block(Arc::new(schema));
         set(&mut block, "col1", 0, 10);
         set(&mut block, "col2", 0, ldt);
-        set(&mut block, "col3", 0, Value::Date(ldt.and_utc().timestamp_millis()));
+        set(
+            &mut block,
+            "col3",
+            0,
+            Value::Date(ldt.and_utc().timestamp_millis()),
+        );
         set(&mut block, "col1", 1, 11);
         set(&mut block, "col2", 1, zoned(ldt, "-05:00"));
-        let parsed = NaiveDate::from_ymd_opt(2019, 12, 29).unwrap().and_hms_opt(0, 0, 0).unwrap();
-        set(&mut block, "col3", 1, Value::Date(parsed.and_utc().timestamp_millis()));
+        let parsed = NaiveDate::from_ymd_opt(2019, 12, 29)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        set(
+            &mut block,
+            "col3",
+            1,
+            Value::Date(parsed.and_utc().timestamp_millis()),
+        );
         block.set_row_count(2);
 
         let actual = block.to_string();
@@ -169,17 +189,47 @@ fn set_value_converts_other_numbers_exactly() {
         .build();
     let mut block = s.allocator.create_block(Arc::new(schema));
     set(&mut block, "int", 0, BigDecimal::from_str("42").unwrap());
-    set(&mut block, "bigint", 0, BigDecimal::from_str("9223372036854775807").unwrap());
-    set(&mut block, "smallint", 0, BigDecimal::from_str("-300.00").unwrap());
+    set(
+        &mut block,
+        "bigint",
+        0,
+        BigDecimal::from_str("9223372036854775807").unwrap(),
+    );
+    set(
+        &mut block,
+        "smallint",
+        0,
+        BigDecimal::from_str("-300.00").unwrap(),
+    );
     set(&mut block, "tinyint", 0, BigInt::from(-128));
-    set(&mut block, "float8", 0, BigDecimal::from_str("1.25").unwrap());
+    set(
+        &mut block,
+        "float8",
+        0,
+        BigDecimal::from_str("1.25").unwrap(),
+    );
     set(&mut block, "decimal", 0, 7i64);
 
-    assert_eq!(Value::Int(42), block.get_field_vector("int").unwrap().get_object(0));
-    assert_eq!(Value::Long(i64::MAX), block.get_field_vector("bigint").unwrap().get_object(0));
-    assert_eq!(Value::Short(-300), block.get_field_vector("smallint").unwrap().get_object(0));
-    assert_eq!(Value::Byte(-128), block.get_field_vector("tinyint").unwrap().get_object(0));
-    assert_eq!(Value::Double(1.25), block.get_field_vector("float8").unwrap().get_object(0));
+    assert_eq!(
+        Value::Int(42),
+        block.get_field_vector("int").unwrap().get_object(0)
+    );
+    assert_eq!(
+        Value::Long(i64::MAX),
+        block.get_field_vector("bigint").unwrap().get_object(0)
+    );
+    assert_eq!(
+        Value::Short(-300),
+        block.get_field_vector("smallint").unwrap().get_object(0)
+    );
+    assert_eq!(
+        Value::Byte(-128),
+        block.get_field_vector("tinyint").unwrap().get_object(0)
+    );
+    assert_eq!(
+        Value::Double(1.25),
+        block.get_field_vector("float8").unwrap().get_object(0)
+    );
     assert_eq!(
         Value::Decimal(BigDecimal::from_str("7.00").unwrap()),
         block.get_field_vector("decimal").unwrap().get_object(0)
@@ -203,8 +253,16 @@ fn set_value_rejects_lossy_integer_conversions() {
     assert_connector_error(BlockUtils::set_value(int_vector, 0, &dec("3000000000")));
     let bigint_vector = block.get_field_vector_mut("bigint").unwrap();
     assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &dec("1.9")));
-    assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &dec("9223372036854775808")));
-    assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &Value::BigInteger(max_unsigned_long)));
+    assert_connector_error(BlockUtils::set_value(
+        bigint_vector,
+        0,
+        &dec("9223372036854775808"),
+    ));
+    assert_connector_error(BlockUtils::set_value(
+        bigint_vector,
+        0,
+        &Value::BigInteger(max_unsigned_long),
+    ));
     assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &Value::Double(1.9)));
     let tinyint_vector = block.get_field_vector_mut("tinyint").unwrap();
     assert_connector_error(BlockUtils::set_value(tinyint_vector, 0, &dec("300")));

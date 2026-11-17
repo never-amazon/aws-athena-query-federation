@@ -4,7 +4,6 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::SmallIntExtractor;
@@ -46,8 +45,15 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: i16, is_set: i32, with_constraint: bool) -> SmallIntFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    SmallIntFieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    SmallIntFieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
@@ -116,7 +122,10 @@ fn write_with_extreme_value_constraint_failure_should_return_false() {
     assert!(!result);
     assert!(!fx.vector.is_null(0));
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Short(extreme_value)), 1);
+    assert_eq!(
+        fx.projector.times_called_with(&Value::Short(extreme_value)),
+        1
+    );
 }
 
 #[test]

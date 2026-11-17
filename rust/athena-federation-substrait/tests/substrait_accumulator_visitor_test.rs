@@ -37,7 +37,7 @@ fn id(name: &str) -> SqlNode {
 
 fn compound(names: &[&str]) -> SqlNode {
     SqlNode::Identifier(SqlIdentifier::new(
-        names.iter().map(|s| s.to_string()).collect(),
+        names.iter().map(std::string::ToString::to_string).collect(),
     ))
 }
 

@@ -34,7 +34,11 @@ impl LambdaException {
 
 impl fmt::Display for LambdaException {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LambdaException: {}", self.message.as_deref().unwrap_or("null"))
+        write!(
+            f,
+            "LambdaException: {}",
+            self.message.as_deref().unwrap_or("null")
+        )
     }
 }
 
@@ -87,7 +91,10 @@ fn recursive_parse(root: &serde_json::Value) -> LambdaException {
 }
 
 fn append_stack_trace(error_message: Option<&str>, stack_traces: &[Vec<String>]) -> String {
-    let rendered: Vec<String> = stack_traces.iter().map(|inner| format!("[{}]", inner.join(", "))).collect();
+    let rendered: Vec<String> = stack_traces
+        .iter()
+        .map(|inner| format!("[{}]", inner.join(", ")))
+        .collect();
     format!(
         "{}. Stack trace: [{}]",
         error_message.unwrap_or("null"),

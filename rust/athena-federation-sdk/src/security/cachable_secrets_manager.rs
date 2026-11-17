@@ -13,15 +13,15 @@ const MAX_CACHE_AGE_MS: i64 = 60_000;
 const SECRET_PATTERN: &str = r"(\$\{[a-zA-Z0-9/_\-.+=@]+\})";
 const SECRET_NAME_PATTERN: &str = r"\$\{([a-zA-Z0-9/_\-.+=@]+)\}";
 
-static PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(SECRET_PATTERN).expect("valid secret pattern"));
+static PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(SECRET_PATTERN).expect("valid secret pattern"));
 static NAME_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(SECRET_NAME_PATTERN).expect("valid secret name pattern"));
 
 fn current_time_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +60,11 @@ impl CachableSecretsManager {
             .captures_iter(raw_string)
             .filter_map(|m| {
                 let next_secret = m.get(1)?.as_str().to_string();
-                let name = NAME_PATTERN.captures(&next_secret)?.get(1)?.as_str().to_string();
+                let name = NAME_PATTERN
+                    .captures(&next_secret)?
+                    .get(1)?
+                    .as_str()
+                    .to_string();
                 Some((next_secret, name))
             })
             .collect()
@@ -78,18 +82,22 @@ impl CachableSecretsManager {
         Ok(Some(result))
     }
 
-    pub async fn resolve_with_default_credentials(&self, raw_string: Option<&str>) -> Result<Option<String>> {
+    pub async fn resolve_with_default_credentials(
+        &self,
+        raw_string: Option<&str>,
+    ) -> Result<Option<String>> {
         let Some(raw_string) = raw_string else {
             return Ok(None);
         };
         let mut result = raw_string.to_string();
         for (next_secret, name) in Self::secret_names(raw_string) {
-            let replacement = match self.use_default_credentials(&name).await {
-                Ok(credentials) => credentials,
-                Err(_) => {
-                    tracing::info!("Credentials are not in json format. Falling back to <username>:<password>...");
-                    self.get_secret(&name).await?
-                }
+            let replacement = if let Ok(credentials) = self.use_default_credentials(&name).await {
+                credentials
+            } else {
+                tracing::info!(
+                    "Credentials are not in json format. Falling back to <username>:<password>..."
+                );
+                self.get_secret(&name).await?
             };
             result = result.replace(&next_secret, &replacement);
         }
@@ -100,11 +108,16 @@ impl CachableSecretsManager {
         let secret_string = self.get_secret(secret).await?;
         let provider = DefaultCredentialsProvider::new(&secret_string)?;
         let credentials = provider.get_credential();
-        Ok(format!("{}:{}", credentials.get_user(), credentials.get_password()))
+        Ok(format!(
+            "{}:{}",
+            credentials.get_user(),
+            credentials.get_password()
+        ))
     }
 
     pub async fn get_secret(&self, secret_name: &str) -> Result<String> {
-        self.get_secret_with_override_configuration(secret_name, None).await
+        self.get_secret_with_override_configuration(secret_name, None)
+            .await
     }
 
     pub async fn get_secret_with_override_configuration(
@@ -122,7 +135,9 @@ impl CachableSecretsManager {
             .secrets_manager
             .get_secret_value(secret_name, override_configuration)
             .await?
-            .ok_or_else(|| FederationError::NullPointer(format!("Secret {} has no SecretString", secret_name)))?;
+            .ok_or_else(|| {
+                FederationError::NullPointer(format!("Secret {secret_name} has no SecretString"))
+            })?;
         let entry = CacheEntry {
             value: secret_value.clone(),
             create_time: current_time_millis(),
@@ -143,7 +158,12 @@ impl CachableSecretsManager {
         }
     }
 
-    pub fn add_cache_entry(&self, name: impl Into<String>, value: impl Into<String>, create_time: i64) {
+    pub fn add_cache_entry(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+        create_time: i64,
+    ) {
         self.lock_cache().insert(
             name.into(),
             CacheEntry {
@@ -154,6 +174,8 @@ impl CachableSecretsManager {
     }
 
     fn lock_cache(&self) -> MutexGuard<'_, IndexMap<String, CacheEntry>> {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner())
+        self.cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }

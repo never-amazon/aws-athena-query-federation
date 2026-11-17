@@ -12,7 +12,11 @@ pub struct GetDataSourceCapabilitiesRequest {
 }
 
 impl GetDataSourceCapabilitiesRequest {
-    pub fn new(identity: Option<FederatedIdentity>, query_id: Option<String>, catalog_name: impl Into<String>) -> GetDataSourceCapabilitiesRequest {
+    pub fn new(
+        identity: Option<FederatedIdentity>,
+        query_id: Option<String>,
+        catalog_name: impl Into<String>,
+    ) -> GetDataSourceCapabilitiesRequest {
         GetDataSourceCapabilitiesRequest {
             identity,
             query_id,
@@ -21,11 +25,16 @@ impl GetDataSourceCapabilitiesRequest {
     }
 }
 
-impl_metadata_request!(GetDataSourceCapabilitiesRequest, MetadataRequestType::GetDatasourceCapabilities);
+impl_metadata_request!(
+    GetDataSourceCapabilitiesRequest,
+    MetadataRequestType::GetDatasourceCapabilities
+);
 
 impl PartialEq for GetDataSourceCapabilitiesRequest {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity && self.query_id == other.query_id && self.catalog_name == other.catalog_name
+        self.identity == other.identity
+            && self.query_id == other.query_id
+            && self.catalog_name == other.catalog_name
     }
 }
 
@@ -34,7 +43,9 @@ impl fmt::Display for GetDataSourceCapabilitiesRequest {
         write!(
             f,
             "GetDataSourceCapabilitiesRequest{{identity={}, queryId={}, catalogName={}}}",
-            self.identity.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "null".into()),
+            self.identity
+                .as_ref()
+                .map_or_else(|| "null".into(), std::string::ToString::to_string),
             opt_str(self.query_id.as_deref()),
             self.catalog_name
         )

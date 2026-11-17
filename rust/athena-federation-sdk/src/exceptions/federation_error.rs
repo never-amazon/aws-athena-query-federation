@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow::error::ArrowError;
 use thiserror::Error;
 
@@ -26,9 +28,11 @@ pub enum FederationError {
     #[error("{0}")]
     IndexOutOfBounds(String),
     #[error("{0}")]
-    Arrow(String),
+    Arrow(#[source] Arc<ArrowError>),
     #[error("{0}")]
     Io(String),
+    #[error("{0}")]
+    IoError(#[source] Arc<std::io::Error>),
     #[error("{0}")]
     Runtime(String),
     #[error("{}", .0.get_message().unwrap_or_default())]
@@ -38,8 +42,14 @@ pub enum FederationError {
 pub type Result<T> = std::result::Result<T, FederationError>;
 
 impl FederationError {
-    pub fn connector(code: FederationSourceErrorCode, message: impl Into<String>) -> FederationError {
-        FederationError::AthenaConnector(AthenaConnectorException::new(message, ErrorDetails::of(code)))
+    pub fn connector(
+        code: FederationSourceErrorCode,
+        message: impl Into<String>,
+    ) -> FederationError {
+        FederationError::AthenaConnector(AthenaConnectorException::new(
+            message,
+            ErrorDetails::of(code),
+        ))
     }
 
     pub fn connector_with_details(
@@ -58,7 +68,10 @@ impl FederationError {
     }
 
     pub fn not_supported(message: impl Into<String>) -> FederationError {
-        FederationError::connector(FederationSourceErrorCode::OperationNotSupportedException, message)
+        FederationError::connector(
+            FederationSourceErrorCode::OperationNotSupportedException,
+            message,
+        )
     }
 
     pub fn internal(message: impl Into<String>) -> FederationError {
@@ -81,22 +94,23 @@ impl FederationError {
     }
 
     pub fn error_code(&self) -> Option<FederationSourceErrorCode> {
-        self.as_connector_exception().and_then(|e| e.error_code())
+        self.as_connector_exception()
+            .and_then(super::athena_connector_exception::AthenaConnectorException::error_code)
     }
 
     pub fn is_runtime_exception(&self) -> bool {
-        !matches!(self, FederationError::Io(_))
+        !matches!(self, FederationError::Io(_) | FederationError::IoError(_))
     }
 }
 
 impl From<ArrowError> for FederationError {
     fn from(e: ArrowError) -> Self {
-        FederationError::Arrow(e.to_string())
+        FederationError::Arrow(Arc::new(e))
     }
 }
 
 impl From<std::io::Error> for FederationError {
     fn from(e: std::io::Error) -> Self {
-        FederationError::Io(e.to_string())
+        FederationError::IoError(Arc::new(e))
     }
 }

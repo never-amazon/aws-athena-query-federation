@@ -35,11 +35,15 @@ impl GetTableLayoutRequest {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        let given: Vec<String> = partition_cols.into_iter().map(|s| s.into()).collect();
-        let partition_cols: IndexSet<String> = java_hash_set_copy_order(given.iter().map(|s| s.as_str()))
+        let given: Vec<String> = partition_cols
             .into_iter()
-            .map(|s| s.to_string())
+            .map(std::convert::Into::into)
             .collect();
+        let partition_cols: IndexSet<String> =
+            java_hash_set_copy_order(given.iter().map(std::string::String::as_str))
+                .into_iter()
+                .map(std::string::ToString::to_string)
+                .collect();
         GetTableLayoutRequest {
             identity,
             query_id,
@@ -82,7 +86,11 @@ impl PartialEq for GetTableLayoutRequest {
 
 impl fmt::Display for GetTableLayoutRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cols: Vec<&str> = self.partition_cols.iter().map(|s| s.as_str()).collect();
+        let cols: Vec<&str> = self
+            .partition_cols
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         write!(
             f,
             "GetTableLayoutRequest{{queryId={}, tableName={}, constraints={}, schema={}, partitionCols=[{}]}}",

@@ -1,8 +1,7 @@
-use std::fmt::Write as _;
-
 use base64::Engine;
 
 use crate::exceptions::{FederationError, Result};
+use crate::java_cast::{double_to_int, double_to_long, long_to_double};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JsonToken {
@@ -80,7 +79,7 @@ impl std::fmt::Display for JsonToken {
 }
 
 pub fn token_name(token: Option<JsonToken>) -> &'static str {
-    token.map(|t| t.name()).unwrap_or("null")
+    token.map_or("null", |t| t.name())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,9 +91,16 @@ enum ObjectState {
 
 #[derive(Debug, Clone)]
 enum ParseContext {
-    Root { values: usize },
-    Array { values: usize },
-    Object { state: ObjectState, name: Option<String> },
+    Root {
+        values: usize,
+    },
+    Array {
+        values: usize,
+    },
+    Object {
+        state: ObjectState,
+        name: Option<String>,
+    },
 }
 
 pub struct JsonParser<'a> {
@@ -129,8 +135,10 @@ impl<'a> JsonParser<'a> {
     pub fn current_name(&self) -> Option<String> {
         match self.current {
             Some(JsonToken::FieldName) => Some(self.text.clone()),
-            Some(JsonToken::StartObject) | Some(JsonToken::StartArray) => self.parent_name(),
-            Some(JsonToken::EndObject) | Some(JsonToken::EndArray) => self.closed_name.clone().or_else(|| self.context_name()),
+            Some(JsonToken::StartObject | JsonToken::StartArray) => self.parent_name(),
+            Some(JsonToken::EndObject | JsonToken::EndArray) => {
+                self.closed_name.clone().or_else(|| self.context_name())
+            }
             _ => self.context_name(),
         }
     }
@@ -155,11 +163,13 @@ impl<'a> JsonParser<'a> {
     pub fn get_text(&self) -> Option<String> {
         match self.current {
             None => None,
-            Some(JsonToken::FieldName)
-            | Some(JsonToken::ValueString)
-            | Some(JsonToken::ValueNumberInt)
-            | Some(JsonToken::ValueNumberFloat) => Some(self.text.clone()),
-            Some(t) => t.as_string().map(|s| s.to_string()),
+            Some(
+                JsonToken::FieldName
+                | JsonToken::ValueString
+                | JsonToken::ValueNumberInt
+                | JsonToken::ValueNumberFloat,
+            ) => Some(self.text.clone()),
+            Some(t) => t.as_string().map(std::string::ToString::to_string),
         }
     }
 
@@ -180,23 +190,24 @@ impl<'a> JsonParser<'a> {
     pub fn get_value_as_int(&self) -> Result<i32> {
         match self.current {
             Some(JsonToken::ValueNumberInt) => {
-                let v: i128 = self
-                    .text
-                    .parse()
-                    .map_err(|_| parse_error(format!("Numeric value ({}) out of range of int", self.text)))?;
-                if v < i32::MIN as i128 || v > i32::MAX as i128 {
-                    return Err(parse_error(format!(
+                let v: i128 = self.text.parse().map_err(|_| {
+                    parse_error(format!("Numeric value ({}) out of range of int", self.text))
+                })?;
+                i32::try_from(v).map_err(|_| {
+                    parse_error(format!(
                         "Numeric value ({}) out of range of int ({} - {})",
                         self.text,
                         i32::MIN,
                         i32::MAX
-                    )));
-                }
-                Ok(v as i32)
+                    ))
+                })
             }
             Some(JsonToken::ValueNumberFloat) => {
-                let d: f64 = self.text.parse().map_err(|_| parse_error(format!("Malformed number {}", self.text)))?;
-                if d < i32::MIN as f64 || d > i32::MAX as f64 {
+                let d: f64 = self
+                    .text
+                    .parse()
+                    .map_err(|_| parse_error(format!("Malformed number {}", self.text)))?;
+                if d < f64::from(i32::MIN) || d > f64::from(i32::MAX) {
                     return Err(parse_error(format!(
                         "Numeric value ({}) out of range of int ({} - {})",
                         self.text,
@@ -204,35 +215,38 @@ impl<'a> JsonParser<'a> {
                         i32::MAX
                     )));
                 }
-                Ok(d as i32)
+                Ok(double_to_int(d))
             }
             Some(JsonToken::ValueTrue) => Ok(1),
-            Some(JsonToken::ValueFalse) | Some(JsonToken::ValueNull) | None => Ok(0),
             Some(JsonToken::ValueString) => Ok(parse_as_int(&self.text, 0)),
-            Some(_) => Ok(0),
+            _ => Ok(0),
         }
     }
 
     pub fn get_value_as_long(&self) -> Result<i64> {
         match self.current {
             Some(JsonToken::ValueNumberInt) => {
-                let v: i128 = self
-                    .text
-                    .parse()
-                    .map_err(|_| parse_error(format!("Numeric value ({}) out of range of long", self.text)))?;
-                if v < i64::MIN as i128 || v > i64::MAX as i128 {
-                    return Err(parse_error(format!(
+                let v: i128 = self.text.parse().map_err(|_| {
+                    parse_error(format!(
+                        "Numeric value ({}) out of range of long",
+                        self.text
+                    ))
+                })?;
+                i64::try_from(v).map_err(|_| {
+                    parse_error(format!(
                         "Numeric value ({}) out of range of long ({} - {})",
                         self.text,
                         i64::MIN,
                         i64::MAX
-                    )));
-                }
-                Ok(v as i64)
+                    ))
+                })
             }
             Some(JsonToken::ValueNumberFloat) => {
-                let d: f64 = self.text.parse().map_err(|_| parse_error(format!("Malformed number {}", self.text)))?;
-                if d < i64::MIN as f64 || d > i64::MAX as f64 {
+                let d: f64 = self
+                    .text
+                    .parse()
+                    .map_err(|_| parse_error(format!("Malformed number {}", self.text)))?;
+                if d < long_to_double(i64::MIN) || d > long_to_double(i64::MAX) {
                     return Err(parse_error(format!(
                         "Numeric value ({}) out of range of long ({} - {})",
                         self.text,
@@ -240,12 +254,11 @@ impl<'a> JsonParser<'a> {
                         i64::MAX
                     )));
                 }
-                Ok(d as i64)
+                Ok(double_to_long(d))
             }
             Some(JsonToken::ValueTrue) => Ok(1),
-            Some(JsonToken::ValueFalse) | Some(JsonToken::ValueNull) | None => Ok(0),
             Some(JsonToken::ValueString) => Ok(parse_as_long(&self.text, 0)),
-            Some(_) => Ok(0),
+            _ => Ok(0),
         }
     }
 
@@ -292,7 +305,7 @@ impl<'a> JsonParser<'a> {
             }
             ParseContext::Array { values } => {
                 self.skip_ws();
-                let c = self.peek().ok_or_else(|| self.eof_error("ARRAY"))?;
+                let c = self.peek().ok_or_else(|| Self::eof_error("ARRAY"))?;
                 if c == b']' {
                     self.pos += 1;
                     self.contexts.pop();
@@ -301,7 +314,10 @@ impl<'a> JsonParser<'a> {
                 }
                 if values > 0 {
                     if c != b',' {
-                        return Err(self.unexpected_char(c, "was expecting comma to separate Array entries"));
+                        return Err(Self::unexpected_char(
+                            c,
+                            "was expecting comma to separate Array entries",
+                        ));
                     }
                     self.pos += 1;
                     self.skip_ws();
@@ -312,9 +328,12 @@ impl<'a> JsonParser<'a> {
             ParseContext::Object { state, name } => match state {
                 ObjectState::Colon => {
                     self.skip_ws();
-                    let c = self.peek().ok_or_else(|| self.eof_error("OBJECT"))?;
+                    let c = self.peek().ok_or_else(|| Self::eof_error("OBJECT"))?;
                     if c != b':' {
-                        return Err(self.unexpected_char(c, "was expecting a colon to separate field name and value"));
+                        return Err(Self::unexpected_char(
+                            c,
+                            "was expecting a colon to separate field name and value",
+                        ));
                     }
                     self.pos += 1;
                     self.skip_ws();
@@ -326,7 +345,7 @@ impl<'a> JsonParser<'a> {
                 }
                 ObjectState::FirstName | ObjectState::CommaOrEnd => {
                     self.skip_ws();
-                    let c = self.peek().ok_or_else(|| self.eof_error("OBJECT"))?;
+                    let c = self.peek().ok_or_else(|| Self::eof_error("OBJECT"))?;
                     if c == b'}' {
                         self.pos += 1;
                         self.contexts.pop();
@@ -335,18 +354,24 @@ impl<'a> JsonParser<'a> {
                     }
                     if state == ObjectState::CommaOrEnd {
                         if c != b',' {
-                            return Err(self.unexpected_char(c, "was expecting comma to separate Object entries"));
+                            return Err(Self::unexpected_char(
+                                c,
+                                "was expecting comma to separate Object entries",
+                            ));
                         }
                         self.pos += 1;
                         self.skip_ws();
                     }
-                    let c = self.peek().ok_or_else(|| self.eof_error("OBJECT"))?;
+                    let c = self.peek().ok_or_else(|| Self::eof_error("OBJECT"))?;
                     if c != b'"' {
-                        return Err(self.unexpected_char(c, "was expecting double-quote to start field name"));
+                        return Err(Self::unexpected_char(
+                            c,
+                            "was expecting double-quote to start field name",
+                        ));
                     }
                     self.pos += 1;
                     let field = self.parse_string_body()?;
-                    self.text = field.clone();
+                    self.text.clone_from(&field);
                     self.contexts[ctx_index] = ParseContext::Object {
                         state: ObjectState::Colon,
                         name: Some(field),
@@ -358,7 +383,7 @@ impl<'a> JsonParser<'a> {
     }
 
     fn parse_value(&mut self, _name: Option<String>) -> Result<JsonToken> {
-        let c = self.peek().ok_or_else(|| self.eof_error("VALUE"))?;
+        let c = self.peek().ok_or_else(|| Self::eof_error("VALUE"))?;
         match c {
             b'{' => {
                 self.pos += 1;
@@ -384,7 +409,7 @@ impl<'a> JsonParser<'a> {
             b'f' => self.parse_literal("false", JsonToken::ValueFalse),
             b'n' => self.parse_literal("null", JsonToken::ValueNull),
             b'-' | b'0'..=b'9' => self.parse_number(),
-            other => Err(self.unexpected_char(
+            other => Err(Self::unexpected_char(
                 other,
                 "expected a valid value (JSON String, Number, Array, Object or token 'null', 'true' or 'false')",
             )),
@@ -394,13 +419,13 @@ impl<'a> JsonParser<'a> {
     fn parse_literal(&mut self, literal: &str, token: JsonToken) -> Result<JsonToken> {
         let end = self.pos + literal.len();
         if end > self.input.len() || &self.input[self.pos..end] != literal.as_bytes() {
-            let snippet: String = String::from_utf8_lossy(&self.input[self.pos..self.input.len().min(self.pos + 32)])
-                .chars()
-                .take_while(|c| c.is_alphanumeric())
-                .collect();
+            let snippet: String =
+                String::from_utf8_lossy(&self.input[self.pos..self.input.len().min(self.pos + 32)])
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric())
+                    .collect();
             return Err(parse_error(format!(
-                "Unrecognized token '{}': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')",
-                snippet
+                "Unrecognized token '{snippet}': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')"
             )));
         }
         if let Some(&next) = self.input.get(end) {
@@ -432,10 +457,14 @@ impl<'a> JsonParser<'a> {
         }
         let int_len = self.pos - int_start;
         if int_len == 0 {
-            return Err(parse_error("Unexpected character: expected digit after minus sign"));
+            return Err(parse_error(
+                "Unexpected character: expected digit after minus sign",
+            ));
         }
         if int_len > 1 && self.input[int_start] == b'0' {
-            return Err(parse_error("Invalid numeric value: Leading zeroes not allowed"));
+            return Err(parse_error(
+                "Invalid numeric value: Leading zeroes not allowed",
+            ));
         }
         if self.peek() == Some(b'.') {
             is_float = true;
@@ -449,13 +478,15 @@ impl<'a> JsonParser<'a> {
                 }
             }
             if self.pos == frac_start {
-                return Err(parse_error("Unexpected character: Decimal point not followed by a digit"));
+                return Err(parse_error(
+                    "Unexpected character: Decimal point not followed by a digit",
+                ));
             }
         }
-        if matches!(self.peek(), Some(b'e') | Some(b'E')) {
+        if matches!(self.peek(), Some(b'e' | b'E')) {
             is_float = true;
             self.pos += 1;
-            if matches!(self.peek(), Some(b'+') | Some(b'-')) {
+            if matches!(self.peek(), Some(b'+' | b'-')) {
                 self.pos += 1;
             }
             let exp_start = self.pos;
@@ -467,7 +498,9 @@ impl<'a> JsonParser<'a> {
                 }
             }
             if self.pos == exp_start {
-                return Err(parse_error("Unexpected character: Exponent indicator not followed by a digit"));
+                return Err(parse_error(
+                    "Unexpected character: Exponent indicator not followed by a digit",
+                ));
             }
         }
         self.text = String::from_utf8_lossy(&self.input[start..self.pos]).into_owned();
@@ -481,9 +514,10 @@ impl<'a> JsonParser<'a> {
     fn parse_string_body(&mut self) -> Result<String> {
         let mut out: Vec<u8> = Vec::new();
         loop {
-            let c = match self.peek() {
-                Some(c) => c,
-                None => return Err(parse_error("Unexpected end-of-input: was expecting closing quote for a string value")),
+            let Some(c) = self.peek() else {
+                return Err(parse_error(
+                    "Unexpected end-of-input: was expecting closing quote for a string value",
+                ));
             };
             self.pos += 1;
             match c {
@@ -533,24 +567,27 @@ impl<'a> JsonParser<'a> {
                 }
                 c if c < 0x20 => {
                     return Err(parse_error(format!(
-                        "Illegal unquoted character ((CTRL-CHAR, code {})): has to be escaped using backslash to be included in string value",
-                        c
+                        "Illegal unquoted character ((CTRL-CHAR, code {c})): has to be escaped using backslash to be included in string value"
                     )))
                 }
                 c => out.push(c),
             }
         }
-        String::from_utf8(out).map_err(|e| parse_error(format!("Invalid UTF-8 middle byte: {}", e)))
+        String::from_utf8(out).map_err(|e| parse_error(format!("Invalid UTF-8 middle byte: {e}")))
     }
 
     fn parse_hex4(&mut self) -> Result<u32> {
         let end = self.pos + 4;
         if end > self.input.len() {
-            return Err(parse_error("Unexpected end-of-input in character escape sequence"));
+            return Err(parse_error(
+                "Unexpected end-of-input in character escape sequence",
+            ));
         }
-        let s = std::str::from_utf8(&self.input[self.pos..end]).map_err(|_| parse_error("Unexpected character in hex escape"))?;
-        let v = u32::from_str_radix(s, 16)
-            .map_err(|_| parse_error("Unexpected character: expected a hex-digit for character escape sequence"))?;
+        let s = std::str::from_utf8(&self.input[self.pos..end])
+            .map_err(|_| parse_error("Unexpected character in hex escape"))?;
+        let v = u32::from_str_radix(s, 16).map_err(|_| {
+            parse_error("Unexpected character: expected a hex-digit for character escape sequence")
+        })?;
         self.pos = end;
         Ok(v)
     }
@@ -569,17 +606,21 @@ impl<'a> JsonParser<'a> {
         }
     }
 
-    fn eof_error(&self, what: &str) -> FederationError {
-        parse_error(format!("Unexpected end-of-input: expected close marker for {}", what))
+    fn eof_error(what: &str) -> FederationError {
+        parse_error(format!(
+            "Unexpected end-of-input: expected close marker for {what}"
+        ))
     }
 
-    fn unexpected_char(&self, c: u8, detail: &str) -> FederationError {
-        parse_error(format!("Unexpected character ('{}' (code {})): {}", c as char, c, detail))
+    fn unexpected_char(c: u8, detail: &str) -> FederationError {
+        parse_error(format!(
+            "Unexpected character ('{}' (code {})): {}",
+            c as char, c, detail
+        ))
     }
 
     pub fn read_tree(&mut self) -> Result<serde_json::Value> {
         match self.current {
-            None => Ok(serde_json::Value::Null),
             Some(JsonToken::StartObject) => {
                 let mut map = serde_json::Map::new();
                 loop {
@@ -591,7 +632,12 @@ impl<'a> JsonParser<'a> {
                             let value = self.read_tree()?;
                             map.insert(key, value);
                         }
-                        other => return Err(parse_error(format!("Unexpected token {} in object", token_name(other)))),
+                        other => {
+                            return Err(parse_error(format!(
+                                "Unexpected token {} in object",
+                                token_name(other)
+                            )))
+                        }
                     }
                 }
                 Ok(serde_json::Value::Object(map))
@@ -602,32 +648,32 @@ impl<'a> JsonParser<'a> {
                     match self.next_token()? {
                         Some(JsonToken::EndArray) => break,
                         Some(_) => items.push(self.read_tree()?),
-                        None => return Err(self.eof_error("ARRAY")),
+                        None => return Err(Self::eof_error("ARRAY")),
                     }
                 }
                 Ok(serde_json::Value::Array(items))
             }
             Some(JsonToken::ValueString) => Ok(serde_json::Value::String(self.text.clone())),
-            Some(JsonToken::ValueNumberInt) | Some(JsonToken::ValueNumberFloat) => {
+            Some(JsonToken::ValueNumberInt | JsonToken::ValueNumberFloat) => {
                 serde_json::from_str(&self.text).map_err(|e| parse_error(e.to_string()))
             }
             Some(JsonToken::ValueTrue) => Ok(serde_json::Value::Bool(true)),
             Some(JsonToken::ValueFalse) => Ok(serde_json::Value::Bool(false)),
-            Some(JsonToken::ValueNull) => Ok(serde_json::Value::Null),
-            Some(other) => Err(parse_error(format!("Unexpected token {}", other))),
+            Some(JsonToken::ValueNull) | None => Ok(serde_json::Value::Null),
+            Some(other) => Err(parse_error(format!("Unexpected token {other}"))),
         }
     }
 
     pub fn skip_children(&mut self) -> Result<()> {
         match self.current {
-            Some(JsonToken::StartObject) | Some(JsonToken::StartArray) => {
+            Some(JsonToken::StartObject | JsonToken::StartArray) => {
                 let mut open = 1;
                 while open > 0 {
                     match self.next_token()? {
                         Some(t) if t.is_struct_start() => open += 1,
                         Some(t) if t.is_struct_end() => open -= 1,
                         Some(_) => {}
-                        None => return Err(self.eof_error("OBJECT")),
+                        None => return Err(Self::eof_error("OBJECT")),
                     }
                 }
                 Ok(())
@@ -646,7 +692,7 @@ pub fn parse_as_int(s: &str, default: i32) -> i32 {
     let digits = body.strip_prefix('-').unwrap_or(body);
     if digits.chars().any(|c| !c.is_ascii_digit()) {
         return match body.parse::<f64>() {
-            Ok(d) if d.is_finite() => java_double_to_int(d),
+            Ok(d) if d.is_finite() => double_to_int(d),
             _ => default,
         };
     }
@@ -662,25 +708,22 @@ pub fn parse_as_long(s: &str, default: i64) -> i64 {
     let digits = body.strip_prefix('-').unwrap_or(body);
     if digits.chars().any(|c| !c.is_ascii_digit()) {
         return match body.parse::<f64>() {
-            Ok(d) if d.is_finite() => d as i64,
+            Ok(d) if d.is_finite() => double_to_long(d),
             _ => default,
         };
     }
     body.parse::<i64>().unwrap_or(default)
 }
 
-fn java_double_to_int(d: f64) -> i32 {
-    d as i32
-}
-
 pub fn decode_base64(text: &str) -> Result<Vec<u8>> {
     let cleaned: String = text.chars().filter(|c| *c as u32 > 0x20).collect();
-    base64::engine::general_purpose::STANDARD.decode(cleaned.as_bytes()).map_err(|e| {
-        parse_error(format!(
-            "Failed to decode VALUE_STRING as base64 (MIME-NO-LINEFEEDS): {}",
-            e
-        ))
-    })
+    base64::engine::general_purpose::STANDARD
+        .decode(cleaned.as_bytes())
+        .map_err(|e| {
+            parse_error(format!(
+                "Failed to decode VALUE_STRING as base64 (MIME-NO-LINEFEEDS): {e}"
+            ))
+        })
 }
 
 pub fn encode_base64(bytes: &[u8]) -> String {
@@ -763,7 +806,9 @@ impl JsonGenerator {
             }
             GenKind::Object => {
                 if !ctx.expect_value {
-                    return Err(FederationError::Io(format!("Can not write {}, expecting field name (context: Object)", what)));
+                    return Err(FederationError::Io(format!(
+                        "Can not write {what}, expecting field name (context: Object)"
+                    )));
                 }
                 ctx.expect_value = false;
             }
@@ -784,9 +829,14 @@ impl JsonGenerator {
     }
 
     pub fn write_end_object(&mut self) -> Result<()> {
-        let ctx = self.contexts.pop().ok_or_else(|| FederationError::Io("Current context not Object".into()))?;
+        let ctx = self
+            .contexts
+            .pop()
+            .ok_or_else(|| FederationError::Io("Current context not Object".into()))?;
         if ctx.kind != GenKind::Object {
-            return Err(FederationError::Io("Current context not Object but Array".into()));
+            return Err(FederationError::Io(
+                "Current context not Object but Array".into(),
+            ));
         }
         self.nesting -= 1;
         if self.pretty {
@@ -812,9 +862,14 @@ impl JsonGenerator {
     }
 
     pub fn write_end_array(&mut self) -> Result<()> {
-        let ctx = self.contexts.pop().ok_or_else(|| FederationError::Io("Current context not Array".into()))?;
+        let ctx = self
+            .contexts
+            .pop()
+            .ok_or_else(|| FederationError::Io("Current context not Array".into()))?;
         if ctx.kind != GenKind::Array {
-            return Err(FederationError::Io("Current context not Array but Object".into()));
+            return Err(FederationError::Io(
+                "Current context not Array but Object".into(),
+            ));
         }
         if self.pretty {
             self.out.push(' ');
@@ -830,7 +885,9 @@ impl JsonGenerator {
                 .last_mut()
                 .ok_or_else(|| FederationError::Io("Generator closed".into()))?;
             if ctx.kind != GenKind::Object || ctx.expect_value {
-                return Err(FederationError::Io("Can not write a field name, expecting a value".into()));
+                return Err(FederationError::Io(
+                    "Can not write a field name, expecting a value".into(),
+                ));
             }
             ctx.expect_value = true;
             ctx.count += 1;
@@ -874,12 +931,12 @@ impl JsonGenerator {
 
     pub fn write_number_i64(&mut self, value: i64) -> Result<()> {
         self.before_value("a number")?;
-        let _ = write!(self.out, "{}", value);
+        self.out.push_str(&value.to_string());
         Ok(())
     }
 
     pub fn write_number_i32(&mut self, value: i32) -> Result<()> {
-        self.write_number_i64(value as i64)
+        self.write_number_i64(i64::from(value))
     }
 
     pub fn write_raw_number(&mut self, text: &str) -> Result<()> {

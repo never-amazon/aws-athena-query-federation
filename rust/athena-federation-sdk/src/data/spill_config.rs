@@ -76,31 +76,37 @@ impl Default for SpillConfigBuilder {
 }
 
 impl SpillConfigBuilder {
+    #[must_use]
     pub fn with_encryption_key(mut self, val: Option<EncryptionKey>) -> Self {
         self.encryption_key = val;
         self
     }
 
+    #[must_use]
     pub fn with_request_id(mut self, val: impl Into<String>) -> Self {
         self.request_id = Some(val.into());
         self
     }
 
+    #[must_use]
     pub fn with_spill_location(mut self, val: SpillLocation) -> Self {
         self.spill_location = Some(val);
         self
     }
 
+    #[must_use]
     pub fn with_num_spill_threads(mut self, val: i32) -> Self {
         self.num_spill_threads = val;
         self
     }
 
+    #[must_use]
     pub fn with_max_block_bytes(mut self, val: i64) -> Self {
         self.max_block_bytes = val;
         self
     }
 
+    #[must_use]
     pub fn with_max_inline_block_bytes(mut self, val: i64) -> Self {
         self.max_inline_block_size = val;
         self

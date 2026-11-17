@@ -18,12 +18,11 @@ fn unescape(s: &str) -> String {
             match chars.next() {
                 Some('n') => out.push('\n'),
                 Some('t') => out.push('\t'),
-                Some('\\') => out.push('\\'),
+                Some('\\') | None => out.push('\\'),
                 Some(o) => {
                     out.push('\\');
                     out.push(o);
                 }
-                None => out.push('\\'),
             }
         } else {
             out.push(c);

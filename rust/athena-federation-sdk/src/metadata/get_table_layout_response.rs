@@ -13,7 +13,11 @@ pub struct GetTableLayoutResponse {
 }
 
 impl GetTableLayoutResponse {
-    pub fn new(catalog_name: impl Into<String>, table_name: TableName, partitions: Block) -> GetTableLayoutResponse {
+    pub fn new(
+        catalog_name: impl Into<String>,
+        table_name: TableName,
+        partitions: Block,
+    ) -> GetTableLayoutResponse {
         GetTableLayoutResponse {
             catalog_name: catalog_name.into(),
             table_name,
@@ -34,7 +38,9 @@ impl_metadata_response!(GetTableLayoutResponse, MetadataRequestType::GetTableLay
 
 impl PartialEq for GetTableLayoutResponse {
     fn eq(&self, other: &Self) -> bool {
-        self.table_name == other.table_name && self.partitions == other.partitions && self.catalog_name == other.catalog_name
+        self.table_name == other.table_name
+            && self.partitions == other.partitions
+            && self.catalog_name == other.catalog_name
     }
 }
 

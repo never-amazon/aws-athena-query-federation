@@ -18,7 +18,7 @@ pub enum FederationSdkCasingMode {
 
 impl FederationSdkCasingMode {
     pub fn values() -> &'static [FederationSdkCasingMode] {
-        use FederationSdkCasingMode::*;
+        use FederationSdkCasingMode::{Annotation, CaseInsensitiveSearch, Lower, None, Upper};
         &[None, Lower, Upper, CaseInsensitiveSearch, Annotation]
     }
 
@@ -39,8 +39,7 @@ impl FederationSdkCasingMode {
             .find(|m| m.name() == name)
             .ok_or_else(|| {
                 FederationError::IllegalArgument(format!(
-                    "No enum constant com.amazonaws.athena.connector.lambda.resolver.CaseResolver.FederationSDKCasingMode.{}",
-                    name
+                    "No enum constant com.amazonaws.athena.connector.lambda.resolver.CaseResolver.FederationSDKCasingMode.{name}"
                 ))
             })
     }
@@ -80,22 +79,25 @@ impl CaseResolver {
         }
     }
 
-    pub fn get_casing_mode(&self, config_options: &HashMap<String, String>) -> Result<FederationSdkCasingMode> {
+    pub fn get_casing_mode(
+        &self,
+        config_options: &HashMap<String, String>,
+    ) -> Result<FederationSdkCasingMode> {
         let is_glue_connection = config_options
             .get(DEFAULT_GLUE_CONNECTION)
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false);
-        let configured = match config_options.get(CASING_MODE_CONFIGURATION_KEY) {
-            Some(v) => v,
-            None => {
-                let mode = if is_glue_connection {
-                    self.glue_connection_based_default_casing_mode
-                } else {
-                    self.non_glue_based_default_casing_mode
-                };
-                tracing::debug!("CASING MODE disable default casing mode for :'{}' is :'{}'", self.source_type, mode);
-                return Ok(mode);
-            }
+            .is_some_and(|v| !v.trim().is_empty());
+        let Some(configured) = config_options.get(CASING_MODE_CONFIGURATION_KEY) else {
+            let mode = if is_glue_connection {
+                self.glue_connection_based_default_casing_mode
+            } else {
+                self.non_glue_based_default_casing_mode
+            };
+            tracing::debug!(
+                "CASING MODE disable default casing mode for :'{}' is :'{}'",
+                self.source_type,
+                mode
+            );
+            return Ok(mode);
         };
         match FederationSdkCasingMode::value_of(&configured.to_uppercase()) {
             Ok(mode) => {

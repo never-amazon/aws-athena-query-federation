@@ -2,8 +2,8 @@ use std::fmt;
 
 use super::PingResponse;
 use crate::metadata::{
-    GetDataSourceCapabilitiesResponse, GetSplitsResponse, GetTableLayoutResponse, GetTableResponse, ListSchemasResponse,
-    ListTablesResponse, MetadataResponse,
+    GetDataSourceCapabilitiesResponse, GetSplitsResponse, GetTableLayoutResponse, GetTableResponse,
+    ListSchemasResponse, ListTablesResponse, MetadataResponse,
 };
 use crate::records::{ReadRecordsResponse, RecordResponse, RemoteReadRecordsResponse};
 use crate::udf::UserDefinedFunctionResponse;

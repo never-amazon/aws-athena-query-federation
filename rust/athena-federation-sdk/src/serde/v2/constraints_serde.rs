@@ -6,8 +6,9 @@ use crate::domain::predicate::expression::FederationExpression;
 use crate::domain::predicate::{Constraints, OrderByField, QueryPlan, ValueSet};
 use crate::exceptions::{FederationError, Result};
 use crate::serde::base::{
-    assert_field_name, deserialize_nullable, get_next_long_field, nullable_map, read_string_map_entries, require_non_null, serialize_nullable,
-    validate_array_start, validate_object_end, validate_object_start, validate_object_start_token, write_string_map,
+    assert_field_name, deserialize_nullable, get_next_long_field, nullable_map,
+    read_string_map_entries, require_non_null, serialize_nullable, validate_array_start,
+    validate_object_end, validate_object_start, validate_object_start_token, write_string_map,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 use crate::serde::SerDeContext;
@@ -39,11 +40,19 @@ impl ConstraintsSerDeVersion {
     }
 }
 
-pub fn serialize(constraints: Option<&Constraints>, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn serialize(
+    constraints: Option<&Constraints>,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     serialize_nullable(jgen, constraints, |c, j| do_serialize(c, j, version))
 }
 
-pub fn do_serialize(constraints: &Constraints, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_serialize(
+    constraints: &Constraints,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     let flavor = ConstraintsSerDeVersion::for_ser_de_version(version);
     jgen.write_object_field_start(SUMMARY_FIELD)?;
     for (column, value_set) in constraints.get_summary() {
@@ -56,7 +65,11 @@ pub fn do_serialize(constraints: &Constraints, jgen: &mut JsonGenerator, version
     }
     jgen.write_array_field_start(EXPRESSION_FIELD)?;
     for expression in constraints.get_expression() {
-        crate::serde::v4::federation_expression_serde_v4::serialize(Some(expression), jgen, version)?;
+        crate::serde::v4::federation_expression_serde_v4::serialize(
+            Some(expression),
+            jgen,
+            version,
+        )?;
     }
     jgen.write_end_array()?;
     jgen.write_array_field_start(ORDER_BY_CLAUSE)?;
@@ -66,7 +79,11 @@ pub fn do_serialize(constraints: &Constraints, jgen: &mut JsonGenerator, version
     jgen.write_end_array()?;
     jgen.write_number_field_i64(LIMIT_FIELD, constraints.get_limit())?;
     if flavor >= ConstraintsSerDeVersion::V5 {
-        write_string_map(jgen, QUERY_PASSTHROUGH_ARGUMENTS, constraints.get_query_passthrough_arguments())?;
+        write_string_map(
+            jgen,
+            QUERY_PASSTHROUGH_ARGUMENTS,
+            constraints.get_query_passthrough_arguments(),
+        )?;
     }
     if flavor >= ConstraintsSerDeVersion::V6 {
         match constraints.get_query_plan() {
@@ -80,8 +97,34 @@ pub fn do_serialize(constraints: &Constraints, jgen: &mut JsonGenerator, version
     Ok(())
 }
 
-pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Option<Constraints>> {
+pub fn deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<Option<Constraints>> {
     deserialize_nullable(jparser, |p| do_deserialize(p, ctx))
+}
+
+fn read_object_array<T>(
+    jparser: &mut JsonParser<'_>,
+    mut read: impl FnMut(&mut JsonParser<'_>) -> Result<T>,
+) -> Result<Vec<T>> {
+    let mut items = Vec::new();
+    loop {
+        match jparser.next_token()? {
+            Some(JsonToken::EndArray) => break,
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                ))
+            }
+            token => {
+                validate_object_start_token(token)?;
+                items.push(read(jparser)?);
+                validate_object_end(jparser)?;
+            }
+        }
+    }
+    Ok(items)
 }
 
 pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Constraints> {
@@ -92,15 +135,18 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
     loop {
         match jparser.next_token()? {
             Some(JsonToken::EndObject) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for OBJECT".into())),
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for OBJECT".into(),
+                ))
+            }
             Some(_) => {
                 let column = jparser.current_name().unwrap_or_default();
                 let value_set = super::value_set_serde::deserialize(jparser, ctx)?;
                 let value_set = require_non_null(value_set, "null value in entry: summary")?;
                 if summary.contains_key(&column) {
                     return Err(FederationError::IllegalArgument(format!(
-                        "Multiple entries with same key: {}",
-                        column
+                        "Multiple entries with same key: {column}"
                     )));
                 }
                 summary.insert(column, value_set);
@@ -108,49 +154,53 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
         }
     }
     if flavor == ConstraintsSerDeVersion::V2 {
-        return Ok(Constraints::new(summary, Vec::new(), Vec::new(), NO_LIMIT_VALUE, HashMap::new(), None));
+        return Ok(Constraints::new(
+            summary,
+            Vec::new(),
+            Vec::new(),
+            NO_LIMIT_VALUE,
+            HashMap::new(),
+            None,
+        ));
     }
 
     assert_field_name(jparser, Some(EXPRESSION_FIELD))?;
     validate_array_start(jparser)?;
-    let mut expressions: Vec<FederationExpression> = Vec::new();
-    loop {
-        match jparser.next_token()? {
-            Some(JsonToken::EndArray) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
-            token => {
-                validate_object_start_token(token)?;
-                expressions.push(crate::serde::v4::federation_expression_serde_v4::do_deserialize(jparser, ctx)?);
-                validate_object_end(jparser)?;
-            }
-        }
-    }
+    let expressions: Vec<FederationExpression> = read_object_array(jparser, |p| {
+        crate::serde::v4::federation_expression_serde_v4::do_deserialize(p, ctx)
+    })?;
 
     assert_field_name(jparser, Some(ORDER_BY_CLAUSE))?;
     validate_array_start(jparser)?;
-    let mut order_by: Vec<OrderByField> = Vec::new();
-    loop {
-        match jparser.next_token()? {
-            Some(JsonToken::EndArray) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
-            token => {
-                validate_object_start_token(token)?;
-                order_by.push(crate::serde::v4::order_by_field_serde_v4::do_deserialize(jparser)?);
-                validate_object_end(jparser)?;
-            }
-        }
-    }
+    let order_by: Vec<OrderByField> = read_object_array(
+        jparser,
+        crate::serde::v4::order_by_field_serde_v4::do_deserialize,
+    )?;
 
     let limit = get_next_long_field(jparser, LIMIT_FIELD)?;
     if flavor == ConstraintsSerDeVersion::V4 {
-        return Ok(Constraints::new(summary, expressions, order_by, limit, HashMap::new(), None));
+        return Ok(Constraints::new(
+            summary,
+            expressions,
+            order_by,
+            limit,
+            HashMap::new(),
+            None,
+        ));
     }
 
     assert_field_name(jparser, Some(QUERY_PASSTHROUGH_ARGUMENTS))?;
     validate_object_start(jparser)?;
     let query_passthrough_arguments = nullable_map(read_string_map_entries(jparser)?);
     if flavor == ConstraintsSerDeVersion::V5 {
-        return Ok(Constraints::new(summary, expressions, order_by, limit, query_passthrough_arguments, None));
+        return Ok(Constraints::new(
+            summary,
+            expressions,
+            order_by,
+            limit,
+            query_passthrough_arguments,
+            None,
+        ));
     }
 
     let mut query_plan: Option<QueryPlan> = None;
@@ -160,5 +210,12 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
         query_plan = Some(crate::serde::v6::query_plan_serde::do_deserialize(jparser)?);
         validate_object_end(jparser)?;
     }
-    Ok(Constraints::new(summary, expressions, order_by, limit, query_passthrough_arguments, query_plan))
+    Ok(Constraints::new(
+        summary,
+        expressions,
+        order_by,
+        limit,
+        query_passthrough_arguments,
+        query_plan,
+    ))
 }

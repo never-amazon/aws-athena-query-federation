@@ -15,7 +15,10 @@ impl VersionedObjectMapperFactory {
         }
     }
 
-    pub fn create_with_version(allocator: Arc<dyn BlockAllocator>, version: i32) -> Result<ObjectMapper> {
+    pub fn create_with_version(
+        allocator: Arc<dyn BlockAllocator>,
+        version: i32,
+    ) -> Result<ObjectMapper> {
         tracing::debug!("Athena SDK SerDe Version: {}", version);
         match version {
             1 => Ok(object_mapper_factory::create(allocator)),
@@ -24,17 +27,22 @@ impl VersionedObjectMapperFactory {
             4 => Ok(v4::object_mapper_factory_v4::create(allocator)),
             5 => Ok(v5::object_mapper_factory_v5::create(allocator)),
             6 => Ok(v6::object_mapper_factory_v6::create(allocator)),
-            other => Err(FederationError::invalid_input(format!("No serde version {}", other))),
+            other => Err(FederationError::invalid_input(format!(
+                "No serde version {other}"
+            ))),
         }
     }
 
     pub fn read_request_with_version_fallback(
-        allocator: Arc<dyn BlockAllocator>,
+        allocator: &Arc<dyn BlockAllocator>,
         input: &[u8],
     ) -> Result<(ObjectMapper, FederationRequest)> {
         let mut resolved_ser_de_version = SERDE_VERSION;
         while resolved_ser_de_version >= 1 {
-            let mapper = VersionedObjectMapperFactory::create_with_version(allocator.clone(), resolved_ser_de_version)?;
+            let mapper = VersionedObjectMapperFactory::create_with_version(
+                allocator.clone(),
+                resolved_ser_de_version,
+            )?;
             match mapper.read_request(input) {
                 Ok(request) => {
                     tracing::info!(
@@ -55,8 +63,7 @@ impl VersionedObjectMapperFactory {
             }
         }
         Err(FederationError::invalid_input(format!(
-            "FederationRequest/ObjectMapper is null with SerDeVersion: '{}'",
-            resolved_ser_de_version
+            "FederationRequest/ObjectMapper is null with SerDeVersion: '{resolved_ser_de_version}'"
         )))
     }
 }

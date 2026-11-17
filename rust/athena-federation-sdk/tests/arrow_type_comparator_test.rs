@@ -27,11 +27,21 @@ fn binary2() -> Value {
 }
 
 fn date1() -> Value {
-    Value::LocalDateTime(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap().and_hms_opt(12, 0, 0).unwrap())
+    Value::LocalDateTime(
+        NaiveDate::from_ymd_opt(2023, 1, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+    )
 }
 
 fn date2() -> Value {
-    Value::LocalDateTime(NaiveDate::from_ymd_opt(2023, 1, 2).unwrap().and_hms_opt(12, 0, 0).unwrap())
+    Value::LocalDateTime(
+        NaiveDate::from_ymd_opt(2023, 1, 2)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+    )
 }
 
 fn struct1() -> Value {
@@ -51,19 +61,30 @@ fn date_milli_type() -> DataType {
 }
 
 fn struct_type() -> DataType {
-    DataType::Struct(Default::default())
+    DataType::Struct(arrow::datatypes::Fields::default())
 }
 
 fn unsupported_type() -> DataType {
     DataType::Interval(IntervalUnit::YearMonth)
 }
 
-fn assert_comparison(expected: i32, arrow_type: &DataType, lhs: impl Into<Value>, rhs: impl Into<Value>) {
-    assert_eq!(expected, ArrowTypeComparator::compare(arrow_type, &lhs.into(), &rhs.into()).unwrap());
+fn assert_comparison(
+    expected: i32,
+    arrow_type: &DataType,
+    lhs: impl Into<Value>,
+    rhs: impl Into<Value>,
+) {
+    assert_eq!(
+        expected,
+        ArrowTypeComparator::compare(arrow_type, &lhs.into(), &rhs.into()).unwrap()
+    );
 }
 
-fn assert_struct_comparison(expected: i32, lhs: Value, rhs: Value) {
-    assert_eq!(expected, ArrowTypeComparator::compare(&struct_type(), &lhs, &rhs).unwrap());
+fn assert_struct_comparison(expected: i32, lhs: &Value, rhs: &Value) {
+    assert_eq!(
+        expected,
+        ArrowTypeComparator::compare(&struct_type(), lhs, rhs).unwrap()
+    );
 }
 
 #[test]
@@ -163,42 +184,54 @@ fn test_compare_date_day() {
 #[test]
 fn test_compare_struct_equal() {
     let struct2 = Value::struct_of([("key1", Value::from("value1")), ("key2", Value::Int(42))]);
-    assert_struct_comparison(0, struct1(), struct2);
+    assert_struct_comparison(0, &struct1(), &struct2);
 }
 
 #[test]
 fn test_compare_struct_not_equal() {
-    assert_struct_comparison(1, struct1(), struct2());
+    assert_struct_comparison(1, &struct1(), &struct2());
 }
 
 #[test]
 fn test_compare_struct_with_null() {
-    assert_struct_comparison(-1, struct1(), Value::Null);
-    assert_struct_comparison(1, Value::Null, struct1());
+    assert_struct_comparison(-1, &struct1(), &Value::Null);
+    assert_struct_comparison(1, &Value::Null, &struct1());
 }
 
 #[test]
 fn test_compare_struct_both_null() {
-    assert_struct_comparison(0, Value::Null, Value::Null);
+    assert_struct_comparison(0, &Value::Null, &Value::Null);
 }
 
 fn connector_message(err: FederationError) -> String {
     match err {
         FederationError::AthenaConnector(e) => e.get_message().to_string(),
-        other => panic!("expected AthenaConnectorException but got {:?}", other),
+        other => panic!("expected AthenaConnectorException but got {other:?}"),
     }
 }
 
 #[test]
 fn test_compare_unsupported_struct_type() {
-    let err = ArrowTypeComparator::compare(&unsupported_type(), &struct1(), &struct2()).unwrap_err();
-    assert_eq!("Unknown type INTERVALYEAR object: class java.util.Map", connector_message(err));
+    let err =
+        ArrowTypeComparator::compare(&unsupported_type(), &struct1(), &struct2()).unwrap_err();
+    assert_eq!(
+        "Unknown type INTERVALYEAR object: class java.util.Map",
+        connector_message(err)
+    );
 }
 
 #[test]
 fn test_unsupported_type() {
-    let err = ArrowTypeComparator::compare(&unsupported_type(), &Value::from("lhs"), &Value::from("rhs")).unwrap_err();
-    assert_eq!("Unknown type INTERVALYEAR object: class java.lang.String", connector_message(err));
+    let err = ArrowTypeComparator::compare(
+        &unsupported_type(),
+        &Value::from("lhs"),
+        &Value::from("rhs"),
+    )
+    .unwrap_err();
+    assert_eq!(
+        "Unknown type INTERVALYEAR object: class java.lang.String",
+        connector_message(err)
+    );
 }
 
 #[test]

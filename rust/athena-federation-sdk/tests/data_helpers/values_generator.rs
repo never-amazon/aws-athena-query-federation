@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use athena_federation_sdk::data::types::{decimal_precision_scale, MinorType};
+use athena_federation_sdk::data::{decimal_precision_scale, MinorType};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::Result;
 use bigdecimal::BigDecimal;
@@ -20,17 +20,23 @@ pub struct ValuesGenerator {
 
 impl ValuesGenerator {
     pub fn new(seed: u64) -> ValuesGenerator {
-        ValuesGenerator { rng: Rng::new(seed) }
+        ValuesGenerator {
+            rng: Rng::new(seed),
+        }
     }
 
-    pub fn generate_values_root(&mut self, vector: &mut FieldVector, custom: &mut CustomFieldVector) -> Result<()> {
+    pub fn generate_values_root(
+        &mut self,
+        vector: &mut FieldVector,
+        custom: &mut CustomFieldVector,
+    ) -> Result<()> {
         self.generate_values(vector, custom, 0, false)?;
         Ok(())
     }
 
     fn get_length(&mut self, length: usize) -> usize {
         if length == 0 {
-            self.rng.between(1, 5) as usize
+            usize::try_from(self.rng.between(1, 5)).unwrap()
         } else {
             length
         }
@@ -55,9 +61,18 @@ impl ValuesGenerator {
         }
     }
 
-    fn set_struct(&mut self, vector: &mut FieldVector, custom: &mut CustomFieldVector, length: usize) -> Result<usize> {
+    fn set_struct(
+        &mut self,
+        vector: &mut FieldVector,
+        custom: &mut CustomFieldVector,
+        length: usize,
+    ) -> Result<usize> {
         let position = vector.get_value_count();
-        let names: Vec<String> = vector.get_children().iter().map(|c| c.get_name().to_string()).collect();
+        let names: Vec<String> = vector
+            .get_children()
+            .iter()
+            .map(|c| c.get_name().to_string())
+            .collect();
         let mut max_child_size = 0;
         for name in names {
             let child = vector.get_child_mut(&name).expect("struct child");
@@ -73,12 +88,19 @@ impl ValuesGenerator {
         Ok(vector.get_value_count())
     }
 
-    fn set_list(&mut self, vector: &mut FieldVector, custom: &mut CustomFieldVector, length: usize) -> Result<usize> {
+    fn set_list(
+        &mut self,
+        vector: &mut FieldVector,
+        custom: &mut CustomFieldVector,
+        length: usize,
+    ) -> Result<usize> {
         assert_eq!(vector.get_children().len(), 1);
         let position = vector.get_value_count();
         let nullable = vector.get_field().is_nullable();
         let length = self.get_length(length);
-        let mut prev_child_size = vector.get_data_vector().map(|c| c.get_value_count()).unwrap_or(0);
+        let mut prev_child_size = vector
+            .get_data_vector()
+            .map_or(0, athena_federation_sdk::data::FieldVector::get_value_count);
         for i in 0..length {
             let mut child_custom = None;
             if !self.is_null(nullable) {
@@ -96,7 +118,12 @@ impl ValuesGenerator {
         Ok(vector.get_value_count())
     }
 
-    fn set_map(&mut self, vector: &mut FieldVector, custom: &mut CustomFieldVector, length: usize) -> Result<usize> {
+    fn set_map(
+        &mut self,
+        vector: &mut FieldVector,
+        custom: &mut CustomFieldVector,
+        length: usize,
+    ) -> Result<usize> {
         assert_eq!(vector.get_children().len(), 1);
         let position = vector.get_value_count();
         let length = self.get_length(length);
@@ -128,38 +155,55 @@ impl ValuesGenerator {
         Ok(vector.get_value_count())
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "takes the low bits of a random word, as the Java generator does"
+    )]
     fn random_value(&mut self, vector: &FieldVector) -> Value {
         let field = vector.get_field().clone();
         match vector.get_minor_type() {
-            MinorType::BIGINT => Value::Long(self.rng.next_u64() as i64),
-            MinorType::BIT => Value::Int(self.rng.between(0, 1) as i32),
-            MinorType::DATEDAY => Value::Int(self.rng.between(MIN_DATE_DAY, MAX_DATE_DAY) as i32),
+            MinorType::BIGINT => Value::Long(self.rng.next_u64().cast_signed()),
+            MinorType::BIT => Value::Int(i32::try_from(self.rng.between(0, 1)).unwrap()),
+            MinorType::DATEDAY => {
+                Value::Int(i32::try_from(self.rng.between(MIN_DATE_DAY, MAX_DATE_DAY)).unwrap())
+            }
             MinorType::DATEMILLI
             | MinorType::TIMESTAMPMICROTZ
             | MinorType::TIMESTAMPMILLITZ
             | MinorType::TIMESTAMPNANOTZ
             | MinorType::TIMESTAMPSECTZ => Value::Long(self.rng.between(MIN_TIME, MAX_TIME)),
             MinorType::DECIMAL => {
-                let (precision, scale) = decimal_precision_scale(field.data_type()).unwrap_or((10, 0));
-                let bound = 10i128.pow(precision as u32) - 1;
+                let (precision, scale) =
+                    decimal_precision_scale(field.data_type()).unwrap_or((10, 0));
+                let bound = 10i128.pow(u32::from(precision)) - 1;
                 let unscaled = self.rng.between_i128(-bound, bound);
-                Value::Decimal(BigDecimal::new(BigInt::from(unscaled), scale as i64))
+                Value::Decimal(BigDecimal::new(BigInt::from(unscaled), i64::from(scale)))
             }
             MinorType::FLOAT4 => Value::Float(self.random_float()),
-            MinorType::FLOAT8 => Value::Double(self.random_float() as f64),
+            MinorType::FLOAT8 => Value::Double(f64::from(self.random_float())),
             MinorType::INT => Value::Int(self.rng.next_u64() as i32),
             MinorType::SMALLINT => Value::Short(self.rng.next_u64() as i16),
             MinorType::TINYINT => Value::Byte(self.rng.next_u64() as i8),
-            MinorType::UINT1 => Value::Byte(self.rng.between(0, i8::MAX as i64) as i8),
-            MinorType::UINT2 => Value::Short(self.rng.between(0, i16::MAX as i64) as i16),
-            MinorType::UINT4 => Value::Int(self.rng.between(0, i32::MAX as i64) as i32),
+            MinorType::UINT1 => {
+                Value::Byte(i8::try_from(self.rng.between(0, i64::from(i8::MAX))).unwrap())
+            }
+            MinorType::UINT2 => {
+                Value::Short(i16::try_from(self.rng.between(0, i64::from(i16::MAX))).unwrap())
+            }
+            MinorType::UINT4 => {
+                Value::Int(i32::try_from(self.rng.between(0, i64::from(i32::MAX))).unwrap())
+            }
             MinorType::UINT8 => Value::Long(self.rng.between(0, i64::MAX)),
             MinorType::VARBINARY => Value::Bytes(self.rng.string(0).into_bytes()),
             MinorType::VARCHAR => Value::String(self.rng.string(1)),
-            other => panic!("Not yet implemented for typeId {}", other),
+            other => panic!("Not yet implemented for typeId {other}"),
         }
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "takes the low bits of a random word, as the Java generator does"
+    )]
     fn random_float(&mut self) -> f32 {
         loop {
             let f = f32::from_bits(self.rng.next_u64() as u32);
@@ -183,7 +227,7 @@ impl ValuesGenerator {
         let mut seen = HashSet::new();
         while items.len() < length {
             let v = self.random_value(vector);
-            if unique && !seen.insert(format!("{:?}", v)) {
+            if unique && !seen.insert(format!("{v:?}")) {
                 continue;
             }
             items.push(v);

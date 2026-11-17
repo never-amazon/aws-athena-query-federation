@@ -19,5 +19,9 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<AllOrNoneVal
     let arrow_type = super::arrow_type_serde::deserialize(jparser)?;
     let all = get_next_bool_field(jparser, ALL_FIELD)?;
     let null_allowed = get_next_bool_field(jparser, NULL_ALLOWED_FIELD)?;
-    Ok(AllOrNoneValueSet::new(require_non_null(arrow_type, "type is null")?, all, null_allowed))
+    Ok(AllOrNoneValueSet::new(
+        require_non_null(arrow_type, "type is null")?,
+        all,
+        null_allowed,
+    ))
 }

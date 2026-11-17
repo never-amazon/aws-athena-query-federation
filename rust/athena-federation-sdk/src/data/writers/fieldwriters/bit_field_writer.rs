@@ -2,8 +2,8 @@ use std::any::Any;
 use std::sync::Arc;
 
 use super::FieldWriter;
-use crate::data::vector::FieldVector;
 use crate::data::value::Value;
+use crate::data::vector::FieldVector;
 use crate::data::writers::extractors::BitExtractor;
 use crate::data::writers::holders::NullableBitHolder;
 use crate::domain::predicate::ConstraintProjector;
@@ -16,7 +16,10 @@ pub struct BitFieldWriter {
 }
 
 impl BitFieldWriter {
-    pub fn new(extractor: Arc<dyn BitExtractor>, constraint: Option<Arc<dyn ConstraintProjector>>) -> BitFieldWriter {
+    pub fn new(
+        extractor: Arc<dyn BitExtractor>,
+        constraint: Option<Arc<dyn ConstraintProjector>>,
+    ) -> BitFieldWriter {
         BitFieldWriter {
             holder: NullableBitHolder::default(),
             extractor,
@@ -28,7 +31,11 @@ impl BitFieldWriter {
         let h = &self.holder;
         match &self.constraint {
             Some(c) => {
-                let value = if h.is_set == 0 { Value::Null } else { Value::Boolean(h.value > 0) };
+                let value = if h.is_set == 0 {
+                    Value::Null
+                } else {
+                    Value::Boolean(h.value > 0)
+                };
                 c.apply(&value)
             }
             None => Ok(true),
@@ -37,7 +44,12 @@ impl BitFieldWriter {
 }
 
 impl FieldWriter for BitFieldWriter {
-    fn write(&mut self, vector: &mut FieldVector, context: &dyn Any, row_num: usize) -> Result<bool> {
+    fn write(
+        &mut self,
+        vector: &mut FieldVector,
+        context: &dyn Any,
+        row_num: usize,
+    ) -> Result<bool> {
         self.extractor.extract(context, &mut self.holder)?;
         let h = &self.holder;
         if h.is_set > 0 {

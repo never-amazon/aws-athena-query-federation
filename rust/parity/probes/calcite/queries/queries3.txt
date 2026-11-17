@@ -1,0 +1,7 @@
+std	SELECT * FROM test_table LIMIT 10	FETCH:countexpr
+std	SELECT * FROM test_table LIMIT 10	FETCH:unset
+std	SELECT * FROM test_table LIMIT 10 OFFSET 3	FETCH:offsetexpr
+std	SELECT * FROM test_table OFFSET 3 ROWS	FETCH:countexpr
+std	SELECT * FROM test_table ORDER BY int_col LIMIT 10	FETCH:countexpr
+std	SELECT * FROM test_table LIMIT 10	FETCH:neg2
+std	SELECT * FROM test_table WHERE int_col > 3 LIMIT 10	FETCH:unset

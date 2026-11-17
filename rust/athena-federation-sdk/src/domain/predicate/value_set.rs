@@ -154,23 +154,39 @@ impl ValueSet {
 
     pub fn intersect(&self, allocator: &dyn BlockAllocator, other: &ValueSet) -> Result<ValueSet> {
         match (self, other) {
-            (ValueSet::SortedRangeSet(a), ValueSet::SortedRangeSet(b)) => Ok(a.intersect(allocator, b)?.into()),
-            (ValueSet::EquatableValueSet(a), ValueSet::EquatableValueSet(b)) => Ok(a.intersect(allocator, b)?.into()),
-            (ValueSet::AllOrNoneValueSet(a), ValueSet::AllOrNoneValueSet(b)) => Ok(a.intersect(allocator, b)?.into()),
+            (ValueSet::SortedRangeSet(a), ValueSet::SortedRangeSet(b)) => {
+                Ok(a.intersect(allocator, b)?.into())
+            }
+            (ValueSet::EquatableValueSet(a), ValueSet::EquatableValueSet(b)) => {
+                Ok(a.intersect(allocator, b)?.into())
+            }
+            (ValueSet::AllOrNoneValueSet(a), ValueSet::AllOrNoneValueSet(b)) => {
+                Ok(a.intersect(allocator, b)?.into())
+            }
             _ => Err(self.mismatch(other)),
         }
     }
 
     pub fn union(&self, allocator: &dyn BlockAllocator, other: &ValueSet) -> Result<ValueSet> {
         match (self, other) {
-            (ValueSet::SortedRangeSet(a), ValueSet::SortedRangeSet(b)) => Ok(a.union(allocator, b)?.into()),
-            (ValueSet::EquatableValueSet(a), ValueSet::EquatableValueSet(b)) => Ok(a.union(allocator, b)?.into()),
-            (ValueSet::AllOrNoneValueSet(a), ValueSet::AllOrNoneValueSet(b)) => Ok(a.union(allocator, b)?.into()),
+            (ValueSet::SortedRangeSet(a), ValueSet::SortedRangeSet(b)) => {
+                Ok(a.union(allocator, b)?.into())
+            }
+            (ValueSet::EquatableValueSet(a), ValueSet::EquatableValueSet(b)) => {
+                Ok(a.union(allocator, b)?.into())
+            }
+            (ValueSet::AllOrNoneValueSet(a), ValueSet::AllOrNoneValueSet(b)) => {
+                Ok(a.union(allocator, b)?.into())
+            }
             _ => Err(self.mismatch(other)),
         }
     }
 
-    pub fn union_all(&self, allocator: &dyn BlockAllocator, value_sets: &[ValueSet]) -> Result<ValueSet> {
+    pub fn union_all(
+        &self,
+        allocator: &dyn BlockAllocator,
+        value_sets: &[ValueSet],
+    ) -> Result<ValueSet> {
         if let ValueSet::SortedRangeSet(a) = self {
             let mut others = Vec::with_capacity(value_sets.len());
             for v in value_sets {
@@ -220,9 +236,9 @@ impl ValueSet {
 impl fmt::Display for ValueSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValueSet::SortedRangeSet(v) => write!(f, "{}", v),
-            ValueSet::EquatableValueSet(v) => write!(f, "{}", v),
-            ValueSet::AllOrNoneValueSet(v) => write!(f, "{}", v),
+            ValueSet::SortedRangeSet(v) => write!(f, "{v}"),
+            ValueSet::EquatableValueSet(v) => write!(f, "{v}"),
+            ValueSet::AllOrNoneValueSet(v) => write!(f, "{v}"),
         }
     }
 }

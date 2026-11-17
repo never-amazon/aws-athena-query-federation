@@ -1,6 +1,7 @@
 use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitSqlUtils;
+use std::fmt::Write;
 
 #[derive(Default)]
 struct Case {
@@ -20,12 +21,11 @@ fn unescape(s: &str) -> String {
         match chars.next() {
             Some('n') => out.push('\n'),
             Some('t') => out.push('\t'),
-            Some('\\') => out.push('\\'),
+            Some('\\') | None => out.push('\\'),
             Some(o) => {
                 out.push('\\');
                 out.push(o);
             }
-            None => out.push('\\'),
         }
     }
     out
@@ -83,13 +83,15 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
         for v in &accumulator {
             let class = v.get_value().java_class_name();
             let simple = class.rsplit('.').next().unwrap_or(class);
-            out.push_str(&format!(
+            write!(
+                out,
                 "\t{}|{}|{}|{}",
                 v.get_type(),
                 simple,
                 v.get_value(),
                 v.get_column_name()
-            ));
+            )
+            .unwrap();
         }
         Ok(out)
     };

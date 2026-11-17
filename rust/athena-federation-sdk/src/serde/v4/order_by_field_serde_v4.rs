@@ -1,6 +1,8 @@
 use crate::domain::predicate::{Direction, OrderByField};
 use crate::exceptions::{FederationError, Result};
-use crate::serde::base::{deserialize_nullable, get_next_string_field, require_non_null, serialize_nullable};
+use crate::serde::base::{
+    deserialize_nullable, get_next_string_field, require_non_null, serialize_nullable,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 const COLUMN_NAME_FIELD: &str = "columnName";
@@ -27,12 +29,19 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<OrderByField> {
         Some("ASC_NULLS_LAST") => Direction::ASC_NULLS_LAST,
         Some("DESC_NULLS_FIRST") => Direction::DESC_NULLS_FIRST,
         Some("DESC_NULLS_LAST") => Direction::DESC_NULLS_LAST,
-        Some(other) => return Err(FederationError::invalid_input(format!("Unexpected value: {}", other))),
+        Some(other) => {
+            return Err(FederationError::invalid_input(format!(
+                "Unexpected value: {other}"
+            )))
+        }
         None => {
             return Err(FederationError::NullPointer(
                 "Cannot invoke \"String.hashCode()\" because \"direction\" is null".into(),
             ))
         }
     };
-    Ok(OrderByField::new(require_non_null(column_name, "columnName is null")?, direction_enum))
+    Ok(OrderByField::new(
+        require_non_null(column_name, "columnName is null")?,
+        direction_enum,
+    ))
 }

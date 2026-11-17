@@ -16,8 +16,10 @@ impl RelDataTypeSystem {
         match type_name {
             SqlTypeName::Decimal => 19,
             SqlTypeName::Varchar if self == RelDataTypeSystem::Postgresql => 10 * 1024 * 1024,
-            SqlTypeName::Varchar | SqlTypeName::Char => 65536,
-            SqlTypeName::Varbinary | SqlTypeName::Binary => 65536,
+            SqlTypeName::Varchar
+            | SqlTypeName::Char
+            | SqlTypeName::Varbinary
+            | SqlTypeName::Binary => 65536,
             SqlTypeName::Time
             | SqlTypeName::TimeWithLocalTimeZone
             | SqlTypeName::Timestamp
@@ -37,15 +39,12 @@ impl RelDataTypeSystem {
 
     pub fn default_precision(self, type_name: SqlTypeName) -> i32 {
         match type_name {
-            SqlTypeName::Char | SqlTypeName::Binary => 1,
-            SqlTypeName::Varchar | SqlTypeName::Varbinary => PRECISION_NOT_SPECIFIED,
-            SqlTypeName::Decimal => 19,
+            SqlTypeName::Char | SqlTypeName::Binary | SqlTypeName::Boolean => 1,
             SqlTypeName::IntervalYearMonth | SqlTypeName::IntervalDaySecond => 2,
-            SqlTypeName::Boolean => 1,
             SqlTypeName::Tinyint => 3,
             SqlTypeName::Smallint => 5,
             SqlTypeName::Integer => 10,
-            SqlTypeName::Bigint => 19,
+            SqlTypeName::Decimal | SqlTypeName::Bigint => 19,
             SqlTypeName::Real => 7,
             SqlTypeName::Float | SqlTypeName::Double => 15,
             SqlTypeName::Time
@@ -236,6 +235,7 @@ impl RelDataType {
         }
     }
 
+    #[must_use]
     pub fn with_nullability(&self, nullable: bool) -> RelDataType {
         let mut t = self.clone();
         t.nullable = nullable;
@@ -365,17 +365,13 @@ impl RelDataType {
             SqlTypeName::IntervalYearMonth | SqlTypeName::IntervalDaySecond => {
                 format!("INTERVAL {}", self.interval_qualifier())
             }
-            t => {
-                let mut s = t.name().to_string();
-                if self.precision != PRECISION_NOT_SPECIFIED && t.allows_prec() {
-                    if self.scale != SCALE_NOT_SPECIFIED && t.allows_scale() {
-                        s.push_str(&format!("({}, {})", self.precision, self.scale));
-                    } else {
-                        s.push_str(&format!("({})", self.precision));
-                    }
-                }
-                s
+            t if self.precision == PRECISION_NOT_SPECIFIED || !t.allows_prec() => {
+                t.name().to_string()
             }
+            t if self.scale != SCALE_NOT_SPECIFIED && t.allows_scale() => {
+                format!("{}({}, {})", t.name(), self.precision, self.scale)
+            }
+            t => format!("{}({})", t.name(), self.precision),
         }
     }
 }

@@ -13,7 +13,10 @@ pub struct GetDataSourceCapabilitiesResponse {
 }
 
 impl GetDataSourceCapabilitiesResponse {
-    pub fn new(catalog_name: impl Into<String>, capabilities: IndexMap<String, Vec<OptimizationSubType>>) -> GetDataSourceCapabilitiesResponse {
+    pub fn new(
+        catalog_name: impl Into<String>,
+        capabilities: IndexMap<String, Vec<OptimizationSubType>>,
+    ) -> GetDataSourceCapabilitiesResponse {
         GetDataSourceCapabilitiesResponse {
             catalog_name: catalog_name.into(),
             capabilities,
@@ -25,7 +28,10 @@ impl GetDataSourceCapabilitiesResponse {
     }
 }
 
-impl_metadata_response!(GetDataSourceCapabilitiesResponse, MetadataRequestType::GetDatasourceCapabilities);
+impl_metadata_response!(
+    GetDataSourceCapabilitiesResponse,
+    MetadataRequestType::GetDatasourceCapabilities
+);
 
 impl PartialEq for GetDataSourceCapabilitiesResponse {
     fn eq(&self, other: &Self) -> bool {
@@ -39,7 +45,7 @@ impl fmt::Display for GetDataSourceCapabilitiesResponse {
             .capabilities
             .iter()
             .map(|(k, v)| {
-                let items: Vec<String> = v.iter().map(|o| o.to_string()).collect();
+                let items: Vec<String> = v.iter().map(std::string::ToString::to_string).collect();
                 format!("{}=[{}]", k, items.join(", "))
             })
             .collect();

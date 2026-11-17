@@ -13,6 +13,7 @@ use super::http_client::{HttpClient, HttpClientError, HttpRequest, ReqwestHttpCl
 use super::initializable_credentials_provider::InitializableCredentialsProvider;
 use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
+use crate::java_cast::double_to_long;
 use crate::security::{AwsService, AwsServiceError, CachableSecretsManager};
 
 const RESOURCE_NOT_FOUND_EXCEPTION: &str = "ResourceNotFoundException";
@@ -34,14 +35,13 @@ pub struct OAuthCredentialsProvider {
 fn now_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 fn parse_long(value: &str) -> Result<i64> {
     value
         .parse::<i64>()
-        .map_err(|_| FederationError::Runtime(format!("For input string: \"{}\"", value)))
+        .map_err(|_| FederationError::Runtime(format!("For input string: \"{value}\"")))
 }
 
 fn json_as_text(node: &JsonValue) -> String {
@@ -57,7 +57,7 @@ fn json_as_long(node: &JsonValue) -> i64 {
     match node {
         JsonValue::Number(n) => n
             .as_i64()
-            .or_else(|| n.as_f64().map(|f| f as i64))
+            .or_else(|| n.as_f64().map(double_to_long))
             .unwrap_or(0),
         JsonValue::String(s) => s.trim().parse::<i64>().unwrap_or(0),
         JsonValue::Bool(b) => i64::from(*b),
@@ -65,11 +65,19 @@ fn json_as_long(node: &JsonValue) -> i64 {
     }
 }
 
-fn connector_error(code: FederationSourceErrorCode, message: impl Into<String>, details: impl Into<String>) -> FederationError {
+fn connector_error(
+    code: FederationSourceErrorCode,
+    message: impl Into<String>,
+    details: impl Into<String>,
+) -> FederationError {
     FederationError::connector_with_details(code, message, details)
 }
 
-fn service_error(code: FederationSourceErrorCode, message: impl Into<String>, e: &AwsServiceError) -> FederationError {
+fn service_error(
+    code: FederationSourceErrorCode,
+    message: impl Into<String>,
+    e: &AwsServiceError,
+) -> FederationError {
     match e.get_message() {
         Some(details) => connector_error(code, message, details),
         None => FederationError::connector(code, message),
@@ -87,7 +95,10 @@ impl OAuthCredentialsProvider {
         }
     }
 
-    pub fn with_http_client(flow: Box<dyn OAuthFlow>, http_client: Arc<dyn HttpClient>) -> OAuthCredentialsProvider {
+    pub fn with_http_client(
+        flow: Box<dyn OAuthFlow>,
+        http_client: Arc<dyn HttpClient>,
+    ) -> OAuthCredentialsProvider {
         OAuthCredentialsProvider {
             http_client: Some(http_client),
             ..OAuthCredentialsProvider::new(flow)
@@ -103,26 +114,38 @@ impl OAuthCredentialsProvider {
     }
 
     fn lock_secret_map(&self) -> MutexGuard<'_, HashMap<String, String>> {
-        self.secret_map.lock().unwrap_or_else(|e| e.into_inner())
+        self.secret_map
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    async fn get_oauth_access_token(&self) -> Result<String> {
-        let snapshot = self.lock_secret_map().clone();
+    fn cached_access_token(snapshot: &HashMap<String, String>) -> Result<Option<String>> {
         if let Some(cached) = snapshot.get(CredentialsConstants::ACCESS_TOKEN) {
-            let expires_in = parse_long(snapshot.get(CredentialsConstants::EXPIRES_IN).map_or("0", String::as_str))?;
-            let fetched_at = parse_long(snapshot.get(CredentialsConstants::FETCHED_AT).map_or("0", String::as_str))?;
+            let expires_in = parse_long(
+                snapshot
+                    .get(CredentialsConstants::EXPIRES_IN)
+                    .map_or("0", String::as_str),
+            )?;
+            let fetched_at = parse_long(
+                snapshot
+                    .get(CredentialsConstants::FETCHED_AT)
+                    .map_or("0", String::as_str),
+            )?;
             if now_seconds() - fetched_at < expires_in - 60 {
                 tracing::debug!("Access token still valid");
-                return Ok(cached.clone());
+                return Ok(Some(cached.clone()));
             }
             tracing::debug!("Access token expired, fetching new token");
         }
+        Ok(None)
+    }
 
+    async fn fetch_token_response(&self, snapshot: &HashMap<String, String>) -> Result<JsonValue> {
         let http_client = self
             .http_client
             .as_ref()
             .ok_or_else(|| FederationError::NullPointer("httpClient was null".into()))?;
-        let request = self.flow.build_token_request(&snapshot)?;
+        let request = self.flow.build_token_request(snapshot)?;
         let response = http_client.send(request).await.map_err(|e| match e {
             HttpClientError::Io(m) => connector_error(
                 FederationSourceErrorCode::OperationTimeoutException,
@@ -141,21 +164,21 @@ impl OAuthCredentialsProvider {
             return Err(connector_error(
                 FederationSourceErrorCode::InvalidCredentialsException,
                 "Failed to fetch access token: Invalid credentials",
-                format!("HTTP Status: {}", sc),
+                format!("HTTP Status: {sc}"),
             ));
         }
         if sc == 429 {
             return Err(connector_error(
                 FederationSourceErrorCode::ThrottlingException,
                 "Failed to fetch access token: Rate limit exceeded",
-                format!("HTTP Status: {}", sc),
+                format!("HTTP Status: {sc}"),
             ));
         }
         if sc != 200 {
             return Err(connector_error(
                 FederationSourceErrorCode::InvalidResponseException,
-                format!("Failed to fetch access token: HTTP {}", sc),
-                format!("Unexpected HTTP status: {}", sc),
+                format!("Failed to fetch access token: HTTP {sc}"),
+                format!("Unexpected HTTP status: {sc}"),
             ));
         }
 
@@ -170,6 +193,73 @@ impl OAuthCredentialsProvider {
                 )
             })?
         };
+        Ok(token_response)
+    }
+
+    async fn store_access_token(
+        &self,
+        access_token: &str,
+        expires_in: i64,
+        fetched_at: i64,
+    ) -> Result<()> {
+        let secret_string = {
+            let mut secret_map = self.lock_secret_map();
+            secret_map.insert(
+                CredentialsConstants::ACCESS_TOKEN.to_string(),
+                access_token.to_string(),
+            );
+            secret_map.insert(
+                CredentialsConstants::EXPIRES_IN.to_string(),
+                expires_in.to_string(),
+            );
+            secret_map.insert(
+                CredentialsConstants::FETCHED_AT.to_string(),
+                fetched_at.to_string(),
+            );
+            serde_json::to_string(&*secret_map).map_err(|e| {
+                connector_error(
+                    FederationSourceErrorCode::InvalidResponseException,
+                    "Failed to serialize OAuth credentials",
+                    e.to_string(),
+                )
+            })?
+        };
+
+        let secret_name = self.secret_name.as_deref().unwrap_or("null");
+        let secrets_manager = self
+            .secrets_manager
+            .as_ref()
+            .ok_or_else(|| FederationError::NullPointer("secretsManager was null".into()))?;
+        secrets_manager
+            .get_secrets_manager()
+            .put_secret_value(secret_name, &secret_string)
+            .await
+            .map_err(|e| {
+                if !e.is_service_exception_of(AwsService::SecretsManager) {
+                    FederationError::from(e)
+                } else if e.is_error_code(RESOURCE_NOT_FOUND_EXCEPTION) {
+                    service_error(
+                        FederationSourceErrorCode::EntityNotFoundException,
+                        format!("Secret not found: {secret_name}"),
+                        &e,
+                    )
+                } else {
+                    service_error(
+                        FederationSourceErrorCode::InternalServiceException,
+                        "Failed to update OAuth credentials in Secrets Manager",
+                        &e,
+                    )
+                }
+            })?;
+        Ok(())
+    }
+
+    async fn get_oauth_access_token(&self) -> Result<String> {
+        let snapshot = self.lock_secret_map().clone();
+        if let Some(cached) = Self::cached_access_token(&snapshot)? {
+            return Ok(cached);
+        }
+        let token_response = self.fetch_token_response(&snapshot).await?;
         let (Some(access_token_node), Some(expires_in_node)) = (
             token_response.get(CredentialsConstants::ACCESS_TOKEN),
             token_response.get(CredentialsConstants::EXPIRES_IN),
@@ -184,46 +274,8 @@ impl OAuthCredentialsProvider {
         let expires_in = json_as_long(expires_in_node);
         let fetched_at = now_seconds();
 
-        let secret_string = {
-            let mut secret_map = self.lock_secret_map();
-            secret_map.insert(CredentialsConstants::ACCESS_TOKEN.to_string(), access_token.clone());
-            secret_map.insert(CredentialsConstants::EXPIRES_IN.to_string(), expires_in.to_string());
-            secret_map.insert(CredentialsConstants::FETCHED_AT.to_string(), fetched_at.to_string());
-            serde_json::to_string(&*secret_map).map_err(|e| {
-                connector_error(
-                    FederationSourceErrorCode::InvalidResponseException,
-                    "Failed to serialize OAuth credentials",
-                    e.to_string(),
-                )
-            })?
-        };
-
-        let secret_name = self.secret_name.clone().unwrap_or_else(|| "null".to_string());
-        let secrets_manager = self
-            .secrets_manager
-            .as_ref()
-            .ok_or_else(|| FederationError::NullPointer("secretsManager was null".into()))?;
-        secrets_manager
-            .get_secrets_manager()
-            .put_secret_value(&secret_name, &secret_string)
-            .await
-            .map_err(|e| {
-                if !e.is_service_exception_of(AwsService::SecretsManager) {
-                    FederationError::from(e)
-                } else if e.is_error_code(RESOURCE_NOT_FOUND_EXCEPTION) {
-                    service_error(
-                        FederationSourceErrorCode::EntityNotFoundException,
-                        format!("Secret not found: {}", secret_name),
-                        &e,
-                    )
-                } else {
-                    service_error(
-                        FederationSourceErrorCode::InternalServiceException,
-                        "Failed to update OAuth credentials in Secrets Manager",
-                        &e,
-                    )
-                }
-            })?;
+        self.store_access_token(&access_token, expires_in, fetched_at)
+            .await?;
         Ok(access_token)
     }
 }

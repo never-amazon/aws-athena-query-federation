@@ -3,6 +3,7 @@ pub mod credentials;
 pub mod data;
 pub mod domain;
 pub mod exceptions;
+mod java_cast;
 pub mod metadata;
 mod query_status_checker;
 pub mod records;
@@ -14,7 +15,7 @@ mod throttling_invoker;
 pub mod udf;
 pub mod util;
 
-pub use exceptions::{FederationError, Result};
+pub use exceptions::federation_error::{FederationError, Result};
 pub use query_status_checker::{AthenaClient, QueryStatusChecker};
 pub use throttling_invoker::{
     ExceptionFilter, State, ThrottlingInvoker, ThrottlingInvokerBuilder, THROTTLE_DECREASE_FACTOR,

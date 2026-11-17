@@ -1,8 +1,20 @@
 pub mod proto {
-    #![allow(clippy::all, clippy::pedantic, missing_docs, rustdoc::all)]
+    #![allow(
+        clippy::all,
+        clippy::pedantic,
+        missing_docs,
+        rustdoc::all,
+        reason = "generated prost code"
+    )]
     include!(concat!(env!("OUT_DIR"), "/substrait.rs"));
     pub mod extensions {
-        #![allow(clippy::all, clippy::pedantic, missing_docs, rustdoc::all)]
+        #![allow(
+            clippy::all,
+            clippy::pedantic,
+            missing_docs,
+            rustdoc::all,
+            reason = "generated prost code"
+        )]
         include!(concat!(env!("OUT_DIR"), "/substrait.extensions.rs"));
     }
 }
@@ -10,6 +22,7 @@ pub mod proto {
 mod calcite;
 mod error;
 mod isthmus;
+mod java_cast;
 mod model;
 mod substrait_accumulator_visitor;
 mod substrait_function_parser;

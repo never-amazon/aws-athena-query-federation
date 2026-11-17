@@ -7,7 +7,10 @@ pub fn serialize(constraints: Option<&Constraints>, jgen: &mut JsonGenerator) ->
     crate::serde::v2::constraints_serde::serialize(constraints, jgen, SERDE_VERSION_FOUR)
 }
 
-pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Option<Constraints>> {
+pub fn deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<Option<Constraints>> {
     let ctx = SerDeContext {
         version: SERDE_VERSION_FOUR,
         allocators: ctx.allocators,

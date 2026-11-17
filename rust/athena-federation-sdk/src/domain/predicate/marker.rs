@@ -57,11 +57,17 @@ pub(crate) fn type_hash(arrow_type: &ArrowType) -> i32 {
 }
 
 pub(crate) fn objects_hash(items: &[i32]) -> i32 {
-    items.iter().fold(1i32, |acc, h| acc.wrapping_mul(31).wrapping_add(*h))
+    items
+        .iter()
+        .fold(1i32, |acc, h| acc.wrapping_mul(31).wrapping_add(*h))
 }
 
 pub(crate) fn value_block_schema(arrow_type: &ArrowType) -> Arc<Schema> {
-    Arc::new(Schema::new(vec![Field::new(DEFAULT_COLUMN, arrow_type.clone(), true)]))
+    Arc::new(Schema::new(vec![Field::new(
+        DEFAULT_COLUMN,
+        arrow_type.clone(),
+        true,
+    )]))
 }
 
 pub(crate) fn coerce_value(arrow_type: &ArrowType, value: &Value) -> Result<Value> {
@@ -72,8 +78,7 @@ pub(crate) fn coerce_value(arrow_type: &ArrowType, value: &Value) -> Result<Valu
     block.set_row_count(1);
     Ok(block
         .get_field_vector(DEFAULT_COLUMN)
-        .map(|v| v.get_object(0))
-        .unwrap_or(Value::Null))
+        .map_or(Value::Null, |v| v.get_object(0)))
 }
 
 impl Marker {
@@ -81,10 +86,15 @@ impl Marker {
         Marker::from_block_position(value_block, 0, bound, null_value)
     }
 
-    pub fn from_block_position(block: &Block, value_position: usize, bound: Bound, null_value: bool) -> Result<Marker> {
-        let reader = block
-            .get_field_reader(DEFAULT_COLUMN)
-            .ok_or_else(|| FederationError::NullPointer(format!("block has no column {}", DEFAULT_COLUMN)))?;
+    pub fn from_block_position(
+        block: &Block,
+        value_position: usize,
+        bound: Bound,
+        null_value: bool,
+    ) -> Result<Marker> {
+        let reader = block.get_field_reader(DEFAULT_COLUMN).ok_or_else(|| {
+            FederationError::NullPointer(format!("block has no column {DEFAULT_COLUMN}"))
+        })?;
         let arrow_type = reader.get_field().data_type().clone();
         let value = if null_value {
             Value::Null
@@ -101,7 +111,12 @@ impl Marker {
         })
     }
 
-    pub(crate) fn from_parts(arrow_type: ArrowType, bound: Bound, null_value: bool, value: Value) -> Marker {
+    pub(crate) fn from_parts(
+        arrow_type: ArrowType,
+        bound: Bound,
+        null_value: bool,
+        value: Value,
+    ) -> Marker {
         Marker {
             arrow_type,
             bound,
@@ -139,7 +154,10 @@ impl Marker {
     }
 
     pub fn get_value_block(&self) -> Result<Block> {
-        let mut block = Block::new(self.allocator_id.as_deref().unwrap_or("marker"), value_block_schema(&self.arrow_type));
+        let mut block = Block::new(
+            self.allocator_id.as_deref().unwrap_or("marker"),
+            value_block_schema(&self.arrow_type),
+        );
         if !self.null_value {
             if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
                 vector.set(0, &self.value)?;
@@ -158,14 +176,25 @@ impl Marker {
     }
 
     pub fn is_adjacent(&self, other: &Marker) -> Result<bool> {
-        if self.is_upper_unbounded() || self.is_lower_unbounded() || other.is_upper_unbounded() || other.is_lower_unbounded() {
+        if self.is_upper_unbounded()
+            || self.is_lower_unbounded()
+            || other.is_upper_unbounded()
+            || other.is_lower_unbounded()
+        {
             return Ok(false);
         }
-        if crate::data::ArrowTypeComparator::compare(self.get_type(), self.get_value()?, other.get_value()?)? != 0 {
+        if crate::data::ArrowTypeComparator::compare(
+            self.get_type(),
+            self.get_value()?,
+            other.get_value()?,
+        )? != 0
+        {
             return Ok(false);
         }
-        Ok((self.bound == Bound::Exactly && other.bound != Bound::Exactly)
-            || (self.bound != Bound::Exactly && other.bound == Bound::Exactly))
+        Ok(
+            (self.bound == Bound::Exactly && other.bound != Bound::Exactly)
+                || (self.bound != Bound::Exactly && other.bound == Bound::Exactly),
+        )
     }
 
     fn with_bound(&self, bound: Bound) -> Marker {
@@ -180,21 +209,29 @@ impl Marker {
 
     pub fn greater_adjacent(&self) -> Result<Marker> {
         if self.null_value {
-            return Err(FederationError::invalid_input("No marker adjacent to unbounded"));
+            return Err(FederationError::invalid_input(
+                "No marker adjacent to unbounded",
+            ));
         }
         match self.bound {
             Bound::Below => Ok(self.with_bound(Bound::Exactly)),
             Bound::Exactly => Ok(self.with_bound(Bound::Above)),
-            Bound::Above => Err(FederationError::invalid_input("No greater marker adjacent to an ABOVE bound")),
+            Bound::Above => Err(FederationError::invalid_input(
+                "No greater marker adjacent to an ABOVE bound",
+            )),
         }
     }
 
     pub fn lesser_adjacent(&self) -> Result<Marker> {
         if self.null_value {
-            return Err(FederationError::invalid_input("No marker adjacent to unbounded"));
+            return Err(FederationError::invalid_input(
+                "No marker adjacent to unbounded",
+            ));
         }
         match self.bound {
-            Bound::Below => Err(FederationError::invalid_input("No lesser marker adjacent to a BELOW bound")),
+            Bound::Below => Err(FederationError::invalid_input(
+                "No lesser marker adjacent to a BELOW bound",
+            )),
             Bound::Exactly => Ok(self.with_bound(Bound::Below)),
             Bound::Above => Ok(self.with_bound(Bound::Exactly)),
         }
@@ -216,7 +253,12 @@ impl Marker {
         })
     }
 
-    fn create_with_value(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: Value, bound: Bound) -> Result<Marker> {
+    fn create_with_value(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        value: Value,
+        bound: Bound,
+    ) -> Result<Marker> {
         let block = BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, vec![value])?;
         Marker::from_block_position(&block, 0, bound, false)
     }
@@ -247,13 +289,21 @@ impl Marker {
         Marker::create_null(allocator, arrow_type, Bound::Above)
     }
 
-    pub fn above(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Marker> {
+    pub fn above(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        value: impl Into<Value>,
+    ) -> Result<Marker> {
         let value = value.into();
         Marker::require_value(&value)?;
         Marker::create_with_value(allocator, arrow_type, value, Bound::Above)
     }
 
-    pub fn exactly(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Marker> {
+    pub fn exactly(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        value: impl Into<Value>,
+    ) -> Result<Marker> {
         let value = value.into();
         Marker::require_value(&value)?;
         Marker::create_with_value(allocator, arrow_type, value, Bound::Exactly)
@@ -263,7 +313,11 @@ impl Marker {
         Marker::create_null(allocator, arrow_type, Bound::Exactly)
     }
 
-    pub fn below(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Marker> {
+    pub fn below(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        value: impl Into<Value>,
+    ) -> Result<Marker> {
         let value = value.into();
         Marker::require_value(&value)?;
         Marker::create_with_value(allocator, arrow_type, value, Bound::Below)
@@ -315,7 +369,9 @@ impl ValueMarker for Marker {
 
 impl PartialEq for Marker {
     fn eq(&self, other: &Self) -> bool {
-        let result = self.null_value == other.null_value && self.arrow_type == other.arrow_type && self.bound == other.bound;
+        let result = self.null_value == other.null_value
+            && self.arrow_type == other.arrow_type
+            && self.bound == other.bound;
         if result && !self.null_value {
             return self.value == other.value;
         }

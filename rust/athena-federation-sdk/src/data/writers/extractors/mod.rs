@@ -2,7 +2,11 @@ use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
-use super::holders::*;
+use super::holders::{
+    NullableBigIntHolder, NullableBitHolder, NullableDateDayHolder, NullableDateMilliHolder,
+    NullableDecimalHolder, NullableFloat4Holder, NullableFloat8Holder, NullableIntHolder,
+    NullableSmallIntHolder, NullableTinyIntHolder, NullableVarBinaryHolder, NullableVarCharHolder,
+};
 use crate::exceptions::Result;
 
 pub trait BigIntExtractor: Send + Sync {

@@ -30,12 +30,19 @@ impl SchemaBuilder {
     }
 
     pub fn add_field_with_type(&mut self, field_name: &str, arrow_type: ArrowType) -> &mut Self {
-        self.fields
-            .insert(field_name.to_string(), Arc::new(Field::new(field_name, arrow_type, true)));
+        self.fields.insert(
+            field_name.to_string(),
+            Arc::new(Field::new(field_name, arrow_type, true)),
+        );
         self
     }
 
-    pub fn add_field_with_children(&mut self, field_name: &str, arrow_type: ArrowType, children: Vec<FieldRef>) -> &mut Self {
+    pub fn add_field_with_children(
+        &mut self,
+        field_name: &str,
+        arrow_type: ArrowType,
+        children: Vec<FieldRef>,
+    ) -> &mut Self {
         self.fields.insert(
             field_name.to_string(),
             Arc::new(nullable_field(field_name, arrow_type, Some(children))),
@@ -46,7 +53,10 @@ impl SchemaBuilder {
     pub fn add_struct_field(&mut self, field_name: &str) -> &mut Self {
         self.nested_field_builder_map.insert(
             field_name.to_string(),
-            FieldBuilder::new_builder(field_name, DataType::Struct(Default::default())),
+            FieldBuilder::new_builder(
+                field_name,
+                DataType::Struct(arrow::datatypes::Fields::default()),
+            ),
         );
         self
     }
@@ -55,12 +65,21 @@ impl SchemaBuilder {
         let child = Field::new("", arrow_type, true);
         self.fields.insert(
             field_name.to_string(),
-            Arc::new(Field::new(field_name, DataType::List(Arc::new(child)), true)),
+            Arc::new(Field::new(
+                field_name,
+                DataType::List(Arc::new(child)),
+                true,
+            )),
         );
         self
     }
 
-    pub fn add_child_field(&mut self, parent: &str, child: &str, arrow_type: ArrowType) -> &mut Self {
+    pub fn add_child_field(
+        &mut self,
+        parent: &str,
+        child: &str,
+        arrow_type: ArrowType,
+    ) -> &mut Self {
         if let Some(b) = self.nested_field_builder_map.get_mut(parent) {
             b.add_field_with_type(child, arrow_type, None);
         }
@@ -76,8 +95,10 @@ impl SchemaBuilder {
     }
 
     fn put(&mut self, field_name: &str, arrow_type: ArrowType) -> &mut Self {
-        self.fields
-            .insert(field_name.to_string(), Arc::new(Field::new(field_name, arrow_type, true)));
+        self.fields.insert(
+            field_name.to_string(),
+            Arc::new(Field::new(field_name, arrow_type, true)),
+        );
         self
     }
 

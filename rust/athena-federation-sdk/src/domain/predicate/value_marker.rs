@@ -76,7 +76,7 @@ impl ValueMarkerComparator {
 
     pub fn compare(&self, o1: &dyn ValueMarker, o2: &dyn ValueMarker) -> Result<i32> {
         if o1.is_upper_unbounded() {
-            return Ok(if o2.is_upper_unbounded() { 0 } else { 1 });
+            return Ok(i32::from(!o2.is_upper_unbounded()));
         }
         if o1.is_lower_unbounded() {
             return Ok(if o2.is_lower_unbounded() { 0 } else { -1 });
@@ -91,7 +91,11 @@ impl ValueMarkerComparator {
             if o1.is_null_value() == o2.is_null_value() {
                 return Ok(0);
             }
-            return Ok(if o1.is_null_value() && !o2.is_null_value() { 1 } else { -1 });
+            return Ok(if o1.is_null_value() && !o2.is_null_value() {
+                1
+            } else {
+                -1
+            });
         }
         let compare = ArrowTypeComparator::compare(o1.get_type(), o1.value_ref(), o2.value_ref())?;
         if compare == 0 {
@@ -104,7 +108,11 @@ impl ValueMarkerComparator {
             if o1.get_bound() == Bound::Above {
                 return Ok(1);
             }
-            return Ok(if o2.get_bound() == Bound::Below { 1 } else { -1 });
+            return Ok(if o2.get_bound() == Bound::Below {
+                1
+            } else {
+                -1
+            });
         }
         Ok(compare)
     }

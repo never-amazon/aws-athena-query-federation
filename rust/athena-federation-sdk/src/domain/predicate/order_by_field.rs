@@ -1,6 +1,9 @@
 use std::fmt;
 
-#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[allow(
+    non_camel_case_types,
+    reason = "variant names mirror the Java enum constants"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
     ASC_NULLS_FIRST,
@@ -15,7 +18,10 @@ impl Direction {
     }
 
     pub fn is_nulls_first(&self) -> bool {
-        matches!(self, Direction::ASC_NULLS_FIRST | Direction::DESC_NULLS_FIRST)
+        matches!(
+            self,
+            Direction::ASC_NULLS_FIRST | Direction::DESC_NULLS_FIRST
+        )
     }
 
     pub fn name(&self) -> &'static str {
@@ -34,7 +40,11 @@ impl fmt::Display for Direction {
             f,
             "{} {}",
             if self.is_ascending() { "ASC" } else { "DESC" },
-            if self.is_nulls_first() { "NULLS FIRST" } else { "NULLS LAST" }
+            if self.is_nulls_first() {
+                "NULLS FIRST"
+            } else {
+                "NULLS LAST"
+            }
         )
     }
 }

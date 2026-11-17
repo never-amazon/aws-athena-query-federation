@@ -4,7 +4,7 @@ use base64::engine::DecodePaddingMode;
 use base64::Engine;
 use prost::Message;
 
-use crate::error::{Result, SubstraitError};
+use crate::error::{ErrorKind, Result, SubstraitError};
 use crate::proto::rel::RelType;
 use crate::proto::{FetchRel, FilterRel, Plan, ProjectRel, ReadRel, Rel, SortRel};
 
@@ -84,11 +84,12 @@ impl SubstraitRelUtils {
             |cause: SubstraitError| SubstraitError::wrap("Failed to parse Substrait plan", cause);
         let bytes = JAVA_BASE64
             .decode(plan_string)
-            .map_err(|e| wrap(SubstraitError::illegal_argument(e.to_string())))?;
+            .map_err(|e| wrap(SubstraitError::from_source(ErrorKind::IllegalArgument, e)))?;
         if let Err(DepthCheck::TooDeep) = check_message_depth(&bytes, 0) {
             return Err(wrap(SubstraitError::runtime(TOO_DEEP_MESSAGE)));
         }
-        Plan::decode(bytes.as_slice()).map_err(|e| wrap(SubstraitError::runtime(e.to_string())))
+        Plan::decode(bytes.as_slice())
+            .map_err(|e| wrap(SubstraitError::from_source(ErrorKind::Runtime, e)))
     }
 }
 

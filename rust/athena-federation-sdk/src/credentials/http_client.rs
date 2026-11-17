@@ -54,23 +54,27 @@ pub struct HttpRequestBuilder {
 }
 
 impl HttpRequestBuilder {
+    #[must_use]
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
         self
     }
 
+    #[must_use]
     pub fn get(mut self) -> Self {
         self.method = "GET".to_string();
         self.body = None;
         self
     }
 
+    #[must_use]
     pub fn post(mut self, body: impl Into<String>) -> Self {
         self.method = "POST".to_string();
         self.body = Some(body.into());
         self
     }
 
+    #[must_use]
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
@@ -157,9 +161,15 @@ impl HttpClient for ReqwestHttpClient {
         if let Some(timeout) = request.timeout {
             builder = builder.timeout(timeout);
         }
-        let response = builder.send().await.map_err(|e| HttpClientError::Io(e.to_string()))?;
+        let response = builder
+            .send()
+            .await
+            .map_err(|e| HttpClientError::Io(e.to_string()))?;
         let status_code = response.status().as_u16();
-        let body = response.text().await.map_err(|e| HttpClientError::Io(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| HttpClientError::Io(e.to_string()))?;
         Ok(HttpResponse::new(status_code, body))
     }
 }

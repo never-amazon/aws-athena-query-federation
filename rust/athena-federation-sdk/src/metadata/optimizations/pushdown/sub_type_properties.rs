@@ -5,7 +5,10 @@ pub struct SubTypeProperties {
 }
 
 impl SubTypeProperties {
-    pub fn new(property_name: impl Into<String>, property_values: Vec<String>) -> SubTypeProperties {
+    pub fn new(
+        property_name: impl Into<String>,
+        property_values: Vec<String>,
+    ) -> SubTypeProperties {
         SubTypeProperties {
             property_name: property_name.into(),
             property_values,

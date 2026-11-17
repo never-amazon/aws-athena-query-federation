@@ -14,7 +14,9 @@ pub struct DefaultCredentials {
 fn not_blank(value: Option<&str>, message: &str) -> Result<String> {
     match value {
         None => Err(FederationError::NullPointer(message.to_string())),
-        Some(v) if v.trim().is_empty() => Err(FederationError::IllegalArgument(message.to_string())),
+        Some(v) if v.trim().is_empty() => {
+            Err(FederationError::IllegalArgument(message.to_string()))
+        }
         Some(v) => Ok(v.to_string()),
     }
 }
@@ -44,7 +46,10 @@ impl Credentials for DefaultCredentials {
     fn get_properties(&self) -> HashMap<String, String> {
         HashMap::from([
             (CredentialsConstants::USER.to_string(), self.user.clone()),
-            (CredentialsConstants::PASSWORD.to_string(), self.password.clone()),
+            (
+                CredentialsConstants::PASSWORD.to_string(),
+                self.password.clone(),
+            ),
         ])
     }
 

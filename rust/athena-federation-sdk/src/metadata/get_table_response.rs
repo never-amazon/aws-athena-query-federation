@@ -16,7 +16,12 @@ pub struct GetTableResponse {
 }
 
 impl GetTableResponse {
-    pub fn new(catalog_name: impl Into<String>, table_name: TableName, schema: Schema, partition_columns: IndexSet<String>) -> GetTableResponse {
+    pub fn new(
+        catalog_name: impl Into<String>,
+        table_name: TableName,
+        schema: Schema,
+        partition_columns: IndexSet<String>,
+    ) -> GetTableResponse {
         GetTableResponse {
             catalog_name: catalog_name.into(),
             table_name,
@@ -25,7 +30,11 @@ impl GetTableResponse {
         }
     }
 
-    pub fn without_partitions(catalog_name: impl Into<String>, table_name: TableName, schema: Schema) -> GetTableResponse {
+    pub fn without_partitions(
+        catalog_name: impl Into<String>,
+        table_name: TableName,
+        schema: Schema,
+    ) -> GetTableResponse {
         GetTableResponse::new(catalog_name, table_name, schema, IndexSet::new())
     }
 
@@ -55,7 +64,11 @@ impl PartialEq for GetTableResponse {
 
 impl fmt::Display for GetTableResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cols: Vec<&str> = self.partition_columns.iter().map(|s| s.as_str()).collect();
+        let cols: Vec<&str> = self
+            .partition_columns
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         write!(
             f,
             "GetTableResponse{{tableName={}, schema={}, partitionColumns=[{}], requestType={}, catalogName={}}}",

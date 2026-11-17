@@ -12,7 +12,9 @@ fn test_all() {
     assert!(!value_set.is_none());
     assert!(value_set.is_all());
     assert!(!value_set.is_single_value());
-    assert!(value_set.contains_marker(&Marker::exactly(&a, &INT, 0).unwrap()).unwrap());
+    assert!(value_set
+        .contains_marker(&Marker::exactly(&a, &INT, 0).unwrap())
+        .unwrap());
     assert!(value_set.get_single_value().is_err());
 }
 
@@ -20,13 +22,25 @@ fn test_all() {
 fn test_nullability() {
     let a = BlockAllocatorImpl::new();
     let not_null: ValueSet = AllOrNoneValueSet::not_null(&INT).into();
-    assert!(not_null.contains_marker(&Marker::exactly(&a, &INT, 100).unwrap()).unwrap());
-    assert!(!not_null.contains_marker(&Marker::null_marker(&a, &INT)).unwrap());
-    assert!(not_null.contains_marker(&Marker::exactly(&a, &INT, 101).unwrap()).unwrap());
+    assert!(not_null
+        .contains_marker(&Marker::exactly(&a, &INT, 100).unwrap())
+        .unwrap());
+    assert!(!not_null
+        .contains_marker(&Marker::null_marker(&a, &INT))
+        .unwrap());
+    assert!(not_null
+        .contains_marker(&Marker::exactly(&a, &INT, 101).unwrap())
+        .unwrap());
     let only_null: ValueSet = AllOrNoneValueSet::only_null(&INT).into();
-    assert!(!only_null.contains_marker(&Marker::exactly(&a, &INT, 100).unwrap()).unwrap());
-    assert!(only_null.contains_marker(&Marker::null_marker(&a, &INT)).unwrap());
-    assert!(!only_null.contains_marker(&Marker::exactly(&a, &INT, 101).unwrap()).unwrap());
+    assert!(!only_null
+        .contains_marker(&Marker::exactly(&a, &INT, 100).unwrap())
+        .unwrap());
+    assert!(only_null
+        .contains_marker(&Marker::null_marker(&a, &INT))
+        .unwrap());
+    assert!(!only_null
+        .contains_marker(&Marker::exactly(&a, &INT, 101).unwrap())
+        .unwrap());
     assert!(only_null.contains_value(&Value::Null).unwrap());
 }
 
@@ -38,7 +52,9 @@ fn test_none() {
     assert!(value_set.is_none());
     assert!(!value_set.is_all());
     assert!(!value_set.is_single_value());
-    assert!(!value_set.contains_marker(&Marker::exactly(&a, &INT, 0).unwrap()).unwrap());
+    assert!(!value_set
+        .contains_marker(&Marker::exactly(&a, &INT, 0).unwrap())
+        .unwrap());
     assert!(value_set.get_single_value().is_err());
 }
 

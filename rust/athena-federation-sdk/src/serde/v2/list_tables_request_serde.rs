@@ -30,5 +30,12 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRe
         }
     }
     let catalog_name = header.catalog_name()?;
-    Ok(ListTablesRequest::new(header.identity, header.query_id, catalog_name, schema_name, next_token, page_size))
+    Ok(ListTablesRequest::new(
+        header.identity,
+        header.query_id,
+        catalog_name,
+        schema_name,
+        next_token,
+        page_size,
+    ))
 }

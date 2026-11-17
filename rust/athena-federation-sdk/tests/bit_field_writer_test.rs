@@ -4,11 +4,10 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::BitExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, BitFieldWriter};
+use athena_federation_sdk::data::writers::fieldwriters::{BitFieldWriter, FieldWriter};
 use athena_federation_sdk::data::writers::holders::NullableBitHolder;
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
@@ -46,8 +45,15 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: i32, is_set: i32, with_constraint: bool) -> BitFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    BitFieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    BitFieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
@@ -58,12 +64,17 @@ fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
 #[test]
 fn write_with_valid_true_bit_value_should_write_successfully() {
     let mut fx = set_up();
-    fx.projector.when_apply(Value::Boolean(expected() > 0), true);
+    fx.projector
+        .when_apply(Value::Boolean(expected() > 0), true);
     let mut w = writer(&fx, expected(), 1, true);
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, true, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Boolean(expected() > 0)), 1);
+    assert_eq!(
+        fx.projector
+            .times_called_with(&Value::Boolean(expected() > 0)),
+        1
+    );
 }
 
 #[test]
@@ -81,12 +92,17 @@ fn write_with_valid_false_bit_value_should_write_successfully() {
 #[test]
 fn write_with_constraint_failure_should_return_false() {
     let mut fx = set_up();
-    fx.projector.when_apply(Value::Boolean(expected() > 0), false);
+    fx.projector
+        .when_apply(Value::Boolean(expected() > 0), false);
     let mut w = writer(&fx, expected(), 1, true);
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, false, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Boolean(expected() > 0)), 1);
+    assert_eq!(
+        fx.projector
+            .times_called_with(&Value::Boolean(expected() > 0)),
+        1
+    );
 }
 
 #[test]

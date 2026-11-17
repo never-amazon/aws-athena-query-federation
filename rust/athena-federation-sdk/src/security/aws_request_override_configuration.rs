@@ -35,16 +35,19 @@ pub struct AwsRequestOverrideConfigurationBuilder {
 }
 
 impl AwsRequestOverrideConfigurationBuilder {
+    #[must_use]
     pub fn put_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(name.into(), vec![value.into()]);
         self
     }
 
+    #[must_use]
     pub fn put_header_with_values(mut self, name: impl Into<String>, values: Vec<String>) -> Self {
         self.headers.insert(name.into(), values);
         self
     }
 
+    #[must_use]
     pub fn credentials_provider(mut self, credentials: Credentials) -> Self {
         self.credentials = Some(credentials);
         self
@@ -67,7 +70,9 @@ macro_rules! send_with_override {
                 let headers = o.headers().clone();
                 let mut operation = builder.customize();
                 if let Some(credentials) = o.credentials() {
-                    operation = operation.config_override(<$config>::default().credentials_provider(credentials.clone()));
+                    operation = operation.config_override(
+                        <$config>::default().credentials_provider(credentials.clone()),
+                    );
                 }
                 operation
                     .mutate_request(move |request| {

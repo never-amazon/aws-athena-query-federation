@@ -1,6 +1,7 @@
 use athena_federation_sdk::domain::predicate::Constraints;
 
 use crate::error::{Result, SubstraitError};
+use crate::java_cast::long_to_int;
 use crate::model::substrait_rel_model::SubstraitRelModel;
 use crate::proto::expression::field_reference::ReferenceType;
 use crate::proto::expression::reference_segment;
@@ -62,7 +63,7 @@ impl LimitAndSortHelper {
             }
             None => {
                 if constraints.has_limit() {
-                    Ok(Some(constraints.get_limit() as i32))
+                    Ok(Some(long_to_int(constraints.get_limit())))
                 } else {
                     Ok(None)
                 }
@@ -77,9 +78,8 @@ impl LimitAndSortHelper {
         }
         let result = (|| -> Result<Option<Vec<GenericSortField>>> {
             let model = root_input_model(plan)?;
-            let sort_rel = match model.get_sort_rel() {
-                Some(s) => s,
-                None => return Ok(None),
+            let Some(sort_rel) = model.get_sort_rel() else {
+                return Ok(None);
             };
             let table_columns = SubstraitMetadataParser::get_table_columns(&model)?;
             Ok(Some(extract_generic_sort_fields(sort_rel, &table_columns)))
@@ -95,9 +95,12 @@ impl LimitAndSortHelper {
 }
 
 fn fetch_limit(model: &SubstraitRelModel) -> i32 {
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
+    )]
     match model.get_fetch_rel().and_then(|f| f.count_mode.as_ref()) {
-        Some(CountMode::Count(c)) => *c as i32,
+        Some(CountMode::Count(c)) => long_to_int(*c),
         _ => 0,
     }
 }
@@ -112,7 +115,10 @@ fn extract_generic_sort_fields(
         let expr = sort_field.expr.as_ref().unwrap_or(&default_expr);
         match extract_field_index_from_expression(expr) {
             Ok(field_index) => {
-                if field_index >= 0 && (field_index as usize) < table_columns.len() {
+                if let Some(column) = usize::try_from(field_index)
+                    .ok()
+                    .and_then(|i| table_columns.get(i))
+                {
                     let direction = match sort_field.sort_kind {
                         Some(SortKind::Direction(d)) => {
                             SortDirection::try_from(d).unwrap_or(SortDirection::Unspecified)
@@ -121,10 +127,7 @@ fn extract_generic_sort_fields(
                     };
                     let ascending = direction == SortDirection::AscNullsFirst
                         || direction == SortDirection::AscNullsLast;
-                    sort_fields.push(GenericSortField::new(
-                        table_columns[field_index as usize].clone(),
-                        ascending,
-                    ));
+                    sort_fields.push(GenericSortField::new(column.clone(), ascending));
                 }
             }
             Err(e) => {

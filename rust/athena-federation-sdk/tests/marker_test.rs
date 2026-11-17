@@ -5,7 +5,7 @@ use athena_federation_sdk::FederationError;
 
 const INT: DataType = DataType::Int32;
 
-fn is_connector_err<T>(r: Result<T, FederationError>) -> bool {
+fn is_connector_err<T>(r: &Result<T, FederationError>) -> bool {
     matches!(r, Err(FederationError::AthenaConnector(_)))
 }
 
@@ -55,7 +55,10 @@ fn test_comparisons() {
     }
     for i in 0..markers.len() {
         for j in 0..markers.len() {
-            assert_eq!(markers[i].compare_to(&markers[j]).unwrap(), (i as i32).cmp(&(j as i32)) as i32);
+            assert_eq!(
+                markers[i].compare_to(&markers[j]).unwrap(),
+                i.cmp(&j) as i32
+            );
         }
     }
 }
@@ -74,14 +77,50 @@ fn test_adjacency() {
             assert_eq!(adjacent, distance_is_one);
         }
     }
-    assert_eq!(Marker::below(&a, &INT, 1).unwrap().greater_adjacent().unwrap(), Marker::exactly(&a, &INT, 1).unwrap());
-    assert_eq!(Marker::exactly(&a, &INT, 1).unwrap().greater_adjacent().unwrap(), Marker::above(&a, &INT, 1).unwrap());
-    assert_eq!(Marker::above(&a, &INT, 1).unwrap().lesser_adjacent().unwrap(), Marker::exactly(&a, &INT, 1).unwrap());
-    assert_eq!(Marker::exactly(&a, &INT, 1).unwrap().lesser_adjacent().unwrap(), Marker::below(&a, &INT, 1).unwrap());
-    assert!(is_connector_err(Marker::below(&a, &INT, 1).unwrap().lesser_adjacent()));
-    assert!(is_connector_err(Marker::above(&a, &INT, 1).unwrap().greater_adjacent()));
-    assert!(is_connector_err(Marker::lower_unbounded(&a, &INT).lesser_adjacent()));
-    assert!(is_connector_err(Marker::lower_unbounded(&a, &INT).greater_adjacent()));
-    assert!(is_connector_err(Marker::upper_unbounded(&a, &INT).lesser_adjacent()));
-    assert!(is_connector_err(Marker::upper_unbounded(&a, &INT).greater_adjacent()));
+    assert_eq!(
+        Marker::below(&a, &INT, 1)
+            .unwrap()
+            .greater_adjacent()
+            .unwrap(),
+        Marker::exactly(&a, &INT, 1).unwrap()
+    );
+    assert_eq!(
+        Marker::exactly(&a, &INT, 1)
+            .unwrap()
+            .greater_adjacent()
+            .unwrap(),
+        Marker::above(&a, &INT, 1).unwrap()
+    );
+    assert_eq!(
+        Marker::above(&a, &INT, 1)
+            .unwrap()
+            .lesser_adjacent()
+            .unwrap(),
+        Marker::exactly(&a, &INT, 1).unwrap()
+    );
+    assert_eq!(
+        Marker::exactly(&a, &INT, 1)
+            .unwrap()
+            .lesser_adjacent()
+            .unwrap(),
+        Marker::below(&a, &INT, 1).unwrap()
+    );
+    assert!(is_connector_err(
+        &Marker::below(&a, &INT, 1).unwrap().lesser_adjacent()
+    ));
+    assert!(is_connector_err(
+        &Marker::above(&a, &INT, 1).unwrap().greater_adjacent()
+    ));
+    assert!(is_connector_err(
+        &Marker::lower_unbounded(&a, &INT).lesser_adjacent()
+    ));
+    assert!(is_connector_err(
+        &Marker::lower_unbounded(&a, &INT).greater_adjacent()
+    ));
+    assert!(is_connector_err(
+        &Marker::upper_unbounded(&a, &INT).lesser_adjacent()
+    ));
+    assert!(is_connector_err(
+        &Marker::upper_unbounded(&a, &INT).greater_adjacent()
+    ));
 }

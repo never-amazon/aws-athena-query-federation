@@ -7,7 +7,11 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use num_bigint::BigInt;
 
-use super::java_format::{big_decimal_to_string, double_to_string, float_to_string, java_string_hash};
+use crate::java_cast::{double_to_int, double_to_long, long_to_double, long_to_int};
+
+use super::java_format::{
+    big_decimal_to_string, double_to_string, float_to_string, java_string_hash,
+};
 use super::java_time::{local_date_time_to_string, local_date_to_string, ZonedDateTime};
 
 #[derive(Clone)]
@@ -107,6 +111,34 @@ impl Value {
         }
     }
 
+    pub fn as_i8(&self) -> Option<i8> {
+        match self {
+            Value::Byte(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn as_i16(&self) -> Option<i16> {
+        match self {
+            Value::Short(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn as_u16(&self) -> Option<u16> {
+        match self {
+            Value::Char(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Value::Float(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Value::Int(v) => Some(*v),
@@ -170,11 +202,11 @@ impl Value {
 
     pub fn as_f64(&self) -> Option<f64> {
         match self {
-            Value::Byte(v) => Some(*v as f64),
-            Value::Short(v) => Some(*v as f64),
-            Value::Int(v) => Some(*v as f64),
-            Value::Long(v) => Some(*v as f64),
-            Value::Float(v) => Some(*v as f64),
+            Value::Byte(v) => Some(f64::from(*v)),
+            Value::Short(v) => Some(f64::from(*v)),
+            Value::Int(v) => Some(f64::from(*v)),
+            Value::Long(v) => Some(long_to_double(*v)),
+            Value::Float(v) => Some(f64::from(*v)),
             Value::Double(v) => Some(*v),
             Value::BigInteger(v) => num_traits::ToPrimitive::to_f64(v),
             Value::Decimal(v) => num_traits::ToPrimitive::to_f64(v),
@@ -185,16 +217,20 @@ impl Value {
     pub fn number_long_value(&self) -> Option<i64> {
         use num_traits::ToPrimitive;
         match self {
-            Value::Byte(v) => Some(*v as i64),
-            Value::Short(v) => Some(*v as i64),
-            Value::Int(v) => Some(*v as i64),
+            Value::Byte(v) => Some(i64::from(*v)),
+            Value::Short(v) => Some(i64::from(*v)),
+            Value::Int(v) => Some(i64::from(*v)),
             Value::Long(v) => Some(*v),
-            Value::Float(v) => Some(java_f64_to_long(*v as f64)),
-            Value::Double(v) => Some(java_f64_to_long(*v)),
+            Value::Float(v) => Some(double_to_long(f64::from(*v))),
+            Value::Double(v) => Some(double_to_long(*v)),
             Value::BigInteger(v) => Some(low_i64_of_bigint(v)),
             Value::Decimal(v) => {
                 let (int_part, _) = v.with_scale(0).into_bigint_and_exponent();
-                Some(int_part.to_i64().unwrap_or_else(|| low_i64_of_bigint(&int_part)))
+                Some(
+                    int_part
+                        .to_i64()
+                        .unwrap_or_else(|| low_i64_of_bigint(&int_part)),
+                )
             }
             _ => None,
         }
@@ -202,9 +238,9 @@ impl Value {
 
     pub fn number_int_value(&self) -> Option<i32> {
         match self {
-            Value::Float(v) => Some(java_f64_to_int(*v as f64)),
-            Value::Double(v) => Some(java_f64_to_int(*v)),
-            other => other.number_long_value().map(|v| v as i32),
+            Value::Float(v) => Some(double_to_int(f64::from(*v))),
+            Value::Double(v) => Some(double_to_int(*v)),
+            other => other.number_long_value().map(long_to_int),
         }
     }
 
@@ -218,46 +254,44 @@ impl Value {
                     1237
                 }
             }
-            Value::Byte(v) => *v as i32,
-            Value::Short(v) => *v as i32,
-            Value::Char(v) => *v as i32,
+            Value::Byte(v) => i32::from(*v),
+            Value::Short(v) => i32::from(*v),
+            Value::Char(v) => i32::from(*v),
             Value::Int(v) => *v,
-            Value::Long(v) => (*v ^ ((*v as u64) >> 32) as i64) as i32,
-            Value::Float(v) => float_bits(*v) as i32,
-            Value::Double(v) => {
-                let bits = double_bits(*v);
-                (bits ^ (bits >> 32)) as i32
-            }
+            Value::Long(v) => long_hash(*v),
+            Value::Float(v) => float_bits(*v).cast_signed(),
+            Value::Double(v) => long_hash(double_bits(*v).cast_signed()),
             Value::BigInteger(v) => bigint_hash(v),
             Value::Decimal(v) => {
                 let (unscaled, scale) = v.as_bigint_and_exponent();
-                31i32.wrapping_mul(bigint_hash(&unscaled)).wrapping_add(scale as i32)
+                31i32
+                    .wrapping_mul(bigint_hash(&unscaled))
+                    .wrapping_add(long_to_int(scale))
             }
             Value::String(s) => java_string_hash(s),
             Value::Bytes(b) => {
                 let mut h: i32 = 1;
                 for x in b {
-                    h = h.wrapping_mul(31).wrapping_add(*x as i8 as i32);
+                    h = h.wrapping_mul(31).wrapping_add(i32::from(x.cast_signed()));
                 }
                 h
             }
-            Value::Date(ms) => (*ms ^ ((*ms as u64) >> 32) as i64) as i32,
-            Value::Instant(i) => {
-                let s = i.timestamp();
-                ((s ^ ((s as u64) >> 32) as i64) as i32).wrapping_add(51i32.wrapping_mul(i.timestamp_subsec_nanos() as i32))
-            }
+            Value::Date(ms) => long_hash(*ms),
+            Value::Instant(i) => long_hash(i.timestamp())
+                .wrapping_add(51i32.wrapping_mul(i.timestamp_subsec_nanos().cast_signed())),
             Value::LocalDate(d) => {
                 use chrono::Datelike;
                 let y = d.year();
-                let m = d.month() as i32;
-                let dd = d.day() as i32;
-                (y & 0xFFFFF800u32 as i32) ^ ((y << 11) + (m << 6) + dd)
+                let m = d.month().cast_signed();
+                let dd = d.day().cast_signed();
+                (y & 0xFFFF_F800_u32.cast_signed()) ^ ((y << 11) + (m << 6) + dd)
             }
             Value::LocalDateTime(dt) => {
                 use chrono::Timelike;
                 let date_hash = Value::LocalDate(dt.date()).java_hash_code();
-                let nod = dt.num_seconds_from_midnight() as i64 * 1_000_000_000 + (dt.nanosecond() % 1_000_000_000) as i64;
-                date_hash ^ ((nod ^ ((nod as u64) >> 32) as i64) as i32)
+                let nod = i64::from(dt.num_seconds_from_midnight()) * 1_000_000_000
+                    + i64::from(dt.nanosecond() % 1_000_000_000);
+                date_hash ^ long_hash(nod)
             }
             Value::ZonedDateTime(z) => {
                 Value::LocalDateTime(z.to_local_date_time()).java_hash_code()
@@ -271,10 +305,12 @@ impl Value {
                 }
                 h
             }
-            Value::Map(entries) => entries
-                .iter()
-                .fold(0i32, |acc, (k, v)| acc.wrapping_add(k.java_hash_code() ^ v.java_hash_code())),
-            Value::Opaque(o) => Arc::as_ptr(&o.0) as *const () as usize as i32,
+            Value::Map(entries) => entries.iter().fold(0i32, |acc, (k, v)| {
+                acc.wrapping_add(k.java_hash_code() ^ v.java_hash_code())
+            }),
+            Value::Opaque(o) => {
+                long_to_int((Arc::as_ptr(&o.0).cast::<()>().addr() as u64).cast_signed())
+            }
         }
     }
 
@@ -284,7 +320,9 @@ impl Value {
             Value::Boolean(b) => b.to_string(),
             Value::Byte(v) => v.to_string(),
             Value::Short(v) => v.to_string(),
-            Value::Char(v) => char::from_u32(*v as u32).map(|c| c.to_string()).unwrap_or_default(),
+            Value::Char(v) => char::from_u32(u32::from(*v))
+                .map(|c| c.to_string())
+                .unwrap_or_default(),
             Value::Int(v) => v.to_string(),
             Value::Long(v) => v.to_string(),
             Value::Float(v) => float_to_string(*v),
@@ -293,13 +331,13 @@ impl Value {
             Value::Decimal(v) => big_decimal_to_string(v),
             Value::String(s) => s.clone(),
             Value::Bytes(b) => format!("[B@{:x}", b.as_ptr() as usize),
-            Value::Date(ms) => format!("Date({})", ms),
+            Value::Date(ms) => format!("Date({ms})"),
             Value::Instant(i) => i.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
             Value::LocalDate(d) => local_date_to_string(d),
             Value::LocalDateTime(d) => local_date_time_to_string(d),
             Value::ZonedDateTime(z) => z.to_string(),
             Value::List(items) => {
-                let parts: Vec<String> = items.iter().map(|v| v.java_to_string()).collect();
+                let parts: Vec<String> = items.iter().map(Value::java_to_string).collect();
                 format!("[{}]", parts.join(", "))
             }
             Value::Map(entries) => {
@@ -314,29 +352,17 @@ impl Value {
     }
 }
 
-fn java_f64_to_long(v: f64) -> i64 {
-    if v.is_nan() {
-        0
-    } else {
-        v as i64
-    }
-}
-
-fn java_f64_to_int(v: f64) -> i32 {
-    if v.is_nan() {
-        0
-    } else {
-        v as i32
-    }
+fn long_hash(v: i64) -> i32 {
+    long_to_int(v ^ (v.cast_unsigned() >> 32).cast_signed())
 }
 
 fn low_i64_of_bigint(v: &BigInt) -> i64 {
     let (sign, digits) = v.to_u64_digits();
     let low = digits.first().copied().unwrap_or(0);
     if sign == num_bigint::Sign::Minus {
-        (low as i64).wrapping_neg()
+        low.cast_signed().wrapping_neg()
     } else {
-        low as i64
+        low.cast_signed()
     }
 }
 
@@ -344,7 +370,7 @@ fn bigint_hash(v: &BigInt) -> i32 {
     let (sign, digits) = v.to_u32_digits();
     let mut h: i32 = 0;
     for d in digits.iter().rev() {
-        h = h.wrapping_mul(31).wrapping_add(*d as i32);
+        h = h.wrapping_mul(31).wrapping_add(d.cast_signed());
     }
     match sign {
         num_bigint::Sign::Minus => h.wrapping_neg(),
@@ -376,8 +402,8 @@ pub fn java_float_compare(a: f32, b: f32) -> Ordering {
     if a > b {
         return Ordering::Greater;
     }
-    let ab = float_bits(a) as i32;
-    let bb = float_bits(b) as i32;
+    let ab = float_bits(a).cast_signed();
+    let bb = float_bits(b).cast_signed();
     ab.cmp(&bb)
 }
 
@@ -388,8 +414,8 @@ pub fn java_double_compare(a: f64, b: f64) -> Ordering {
     if a > b {
         return Ordering::Greater;
     }
-    let ab = double_bits(a) as i64;
-    let bb = double_bits(b) as i64;
+    let ab = double_bits(a).cast_signed();
+    let bb = double_bits(b).cast_signed();
     ab.cmp(&bb)
 }
 
@@ -416,14 +442,13 @@ impl PartialEq for Value {
             (Value::Short(a), Value::Short(b)) => a == b,
             (Value::Char(a), Value::Char(b)) => a == b,
             (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Long(a), Value::Long(b)) => a == b,
+            (Value::Long(a), Value::Long(b)) | (Value::Date(a), Value::Date(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => float_bits(*a) == float_bits(*b),
             (Value::Double(a), Value::Double(b)) => double_bits(*a) == double_bits(*b),
             (Value::BigInteger(a), Value::BigInteger(b)) => a == b,
             (Value::Decimal(a), Value::Decimal(b)) => decimal_equals(a, b),
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Bytes(a), Value::Bytes(b)) => a == b,
-            (Value::Date(a), Value::Date(b)) => a == b,
             (Value::Instant(a), Value::Instant(b)) => a == b,
             (Value::LocalDate(a), Value::LocalDate(b)) => a == b,
             (Value::LocalDateTime(a), Value::LocalDateTime(b)) => a == b,

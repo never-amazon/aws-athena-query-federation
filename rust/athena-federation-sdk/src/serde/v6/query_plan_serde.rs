@@ -1,6 +1,8 @@
 use crate::domain::predicate::QueryPlan;
 use crate::exceptions::Result;
-use crate::serde::base::{deserialize_nullable, get_next_string_field, require_non_null, serialize_nullable};
+use crate::serde::base::{
+    deserialize_nullable, get_next_string_field, require_non_null, serialize_nullable,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 const SUBSTRAIT_VERSION_FIELD: &str = "substraitVersion";
@@ -22,5 +24,8 @@ pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<QueryPlan>> {
 pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<QueryPlan> {
     let substrait_version = get_next_string_field(jparser, SUBSTRAIT_VERSION_FIELD)?;
     let substrait_plan = get_next_string_field(jparser, SUBSTRAIT_PLAN_FIELD)?;
-    Ok(QueryPlan::new(substrait_version, require_non_null(substrait_plan, "substraitPlan is null")?))
+    Ok(QueryPlan::new(
+        substrait_version,
+        require_non_null(substrait_plan, "substraitPlan is null")?,
+    ))
 }

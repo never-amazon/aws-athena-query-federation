@@ -22,15 +22,17 @@ impl GlueConnectionClient for aws_sdk_glue::Client {
             .send()
             .await
             .map_err(|e| AwsServiceError::from_sdk_error(AwsService::Glue, &e))?;
-        output
-            .connection
-            .ok_or_else(|| AwsServiceError::new(format!("Glue returned no connection named {}", name)))
+        output.connection.ok_or_else(|| {
+            AwsServiceError::new(format!("Glue returned no connection named {name}"))
+        })
     }
 }
 
 pub(crate) async fn default_glue_client(endpoint: Option<&str>) -> aws_sdk_glue::Client {
     let timeouts = TimeoutConfig::builder()
-        .connect_timeout(Duration::from_millis(EnvironmentConstants::CONNECT_TIMEOUT as u64))
+        .connect_timeout(Duration::from_millis(
+            EnvironmentConstants::CONNECT_TIMEOUT as u64,
+        ))
         .build();
     let sdk_config = aws_config::defaults(BehaviorVersion::latest())
         .timeout_config(timeouts)

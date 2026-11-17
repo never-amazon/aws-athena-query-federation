@@ -33,7 +33,7 @@ impl SqlIdentifier {
     }
 
     pub fn is_star(&self) -> bool {
-        self.names.last().map(String::is_empty).unwrap_or(false)
+        self.names.last().is_some_and(String::is_empty)
     }
 
     pub fn get_simple(&self) -> Option<&str> {
@@ -181,7 +181,7 @@ impl SqlLiteral {
             SqlLiteralValue::Exact(d) => super::values::java_big_decimal_to_plain_string(d),
             SqlLiteralValue::Approx(d) => super::values::java_big_decimal_to_scientific(d),
             SqlLiteralValue::Char(s) => s.clone(),
-            other => format!("{:?}", other),
+            other => format!("{other:?}"),
         }
     }
 }
@@ -192,12 +192,11 @@ impl LiteralObject {
             LiteralObject::Null => "null".to_string(),
             LiteralObject::Boolean(b) => b.to_string(),
             LiteralObject::Decimal(d) => java_big_decimal_to_string(d),
-            LiteralObject::String(s) => s.clone(),
             LiteralObject::Date(d) => d.to_string(),
             LiteralObject::Time(t) => t.to_string(),
             LiteralObject::Timestamp(t) => t.to_string(),
             LiteralObject::Bits(b) => b.to_string(),
-            LiteralObject::Symbol(s) => s.clone(),
+            LiteralObject::String(s) | LiteralObject::Symbol(s) => s.clone(),
         }
     }
 }
@@ -418,7 +417,7 @@ impl SqlNode {
         match self {
             SqlNode::Identifier(id) => id.to_dotted(),
             SqlNode::Literal(l) => l.to_value(),
-            other => format!("{:?}", other),
+            other => format!("{other:?}"),
         }
     }
 
@@ -426,13 +425,10 @@ impl SqlNode {
         match self {
             SqlNode::Call(c) => c.op.aggregate || c.operands.iter().any(SqlNode::contains_agg),
             SqlNode::Case(c) => {
-                c.value.as_ref().map(|v| v.contains_agg()).unwrap_or(false)
+                c.value.as_ref().is_some_and(|v| v.contains_agg())
                     || c.when_list.iter().any(SqlNode::contains_agg)
                     || c.then_list.iter().any(SqlNode::contains_agg)
-                    || c.else_expr
-                        .as_ref()
-                        .map(|v| v.contains_agg())
-                        .unwrap_or(false)
+                    || c.else_expr.as_ref().is_some_and(|v| v.contains_agg())
             }
             SqlNode::NodeList(l) => l.iter().any(SqlNode::contains_agg),
             SqlNode::Window(w) => {

@@ -5,7 +5,9 @@ use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 
-use crate::exceptions::{AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode};
+use crate::exceptions::{
+    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode,
+};
 
 const SDK_CLIENT_EXCEPTION: &str = "software.amazon.awssdk.core.exception.SdkClientException";
 const REQUEST_ID_HEADERS: [&str; 2] = ["x-amzn-requestid", "x-amz-request-id"];
@@ -33,7 +35,7 @@ impl AwsService {
         }
     }
 
-    fn java_package(&self) -> &'static str {
+    fn java_package(self) -> &'static str {
         match self {
             AwsService::S3 => "s3",
             AwsService::Kms => "kms",
@@ -44,7 +46,7 @@ impl AwsService {
         }
     }
 
-    fn modeled_error_codes(&self) -> &'static [&'static str] {
+    fn modeled_error_codes(self) -> &'static [&'static str] {
         match self {
             AwsService::S3 => S3_MODELED,
             AwsService::Kms => KMS_MODELED,
@@ -58,10 +60,14 @@ impl AwsService {
     pub fn java_exception_class(&self, error_code: Option<&str>) -> String {
         let simple_name = match error_code.filter(|c| self.modeled_error_codes().contains(c)) {
             Some(code) if code.ends_with("Exception") => code.to_string(),
-            Some(code) => format!("{}Exception", code),
+            Some(code) => format!("{code}Exception"),
             None => format!("{}Exception", self.service_name()),
         };
-        format!("software.amazon.awssdk.services.{}.model.{}", self.java_package(), simple_name)
+        format!(
+            "software.amazon.awssdk.services.{}.model.{}",
+            self.java_package(),
+            simple_name
+        )
     }
 }
 
@@ -96,7 +102,11 @@ impl AwsServiceError {
         }
     }
 
-    pub fn service(service: AwsService, error_code: Option<String>, message: Option<String>) -> AwsServiceError {
+    pub fn service(
+        service: AwsService,
+        error_code: Option<String>,
+        message: Option<String>,
+    ) -> AwsServiceError {
         AwsServiceError {
             error_code,
             message,
@@ -117,26 +127,34 @@ impl AwsServiceError {
         AwsServiceError::with_code(Self::IO_ERROR_CODE, message)
     }
 
+    #[must_use]
     pub fn with_status_code(mut self, status_code: u16) -> AwsServiceError {
         self.status_code = Some(status_code);
         self
     }
 
+    #[must_use]
     pub fn with_error_details(mut self) -> AwsServiceError {
         self.error_details = true;
         self
     }
 
+    #[must_use]
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> AwsServiceError {
         self.request_id = Some(request_id.into());
         self
     }
 
-    pub fn with_extended_request_id(mut self, extended_request_id: impl Into<String>) -> AwsServiceError {
+    #[must_use]
+    pub fn with_extended_request_id(
+        mut self,
+        extended_request_id: impl Into<String>,
+    ) -> AwsServiceError {
         self.extended_request_id = Some(extended_request_id.into());
         self
     }
 
+    #[must_use]
     pub fn with_num_attempts(mut self, num_attempts: u32) -> AwsServiceError {
         self.num_attempts = Some(num_attempts);
         self
@@ -186,7 +204,8 @@ impl AwsServiceError {
         if self.client_error {
             return Some(SDK_CLIENT_EXCEPTION.to_string());
         }
-        self.service.map(|s| s.java_exception_class(self.error_code.as_deref()))
+        self.service
+            .map(|s| s.java_exception_class(self.error_code.as_deref()))
     }
 
     pub fn get_message(&self) -> Option<String> {
@@ -198,15 +217,18 @@ impl AwsServiceError {
             let mut details = vec![
                 format!("Service: {}", service.service_name()),
                 format!("Status Code: {}", self.status_code.unwrap_or(0)),
-                format!("Request ID: {}", self.request_id.as_deref().unwrap_or("null")),
+                format!(
+                    "Request ID: {}",
+                    self.request_id.as_deref().unwrap_or("null")
+                ),
             ];
             if let Some(extended) = &self.extended_request_id {
-                details.push(format!("Extended Request ID: {}", extended));
+                details.push(format!("Extended Request ID: {extended}"));
             }
             parts.push(format!("({})", details.join(", ")));
         }
         if let Some(attempts) = self.num_attempts {
-            parts.push(format!("(SDK Attempt Count: {})", attempts));
+            parts.push(format!("(SDK Attempt Count: {attempts})"));
         }
         if parts.is_empty() {
             None
@@ -215,7 +237,10 @@ impl AwsServiceError {
         }
     }
 
-    pub fn from_sdk_error<E>(service: AwsService, err: &SdkError<E, HttpResponse>) -> AwsServiceError
+    pub fn from_sdk_error<E>(
+        service: AwsService,
+        err: &SdkError<E, HttpResponse>,
+    ) -> AwsServiceError
     where
         E: ProvideErrorMetadata + std::error::Error + 'static,
     {
@@ -241,7 +266,7 @@ impl fmt::Display for AwsServiceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = self.get_message();
         match (self.java_class_name(), message) {
-            (Some(class), Some(message)) => write!(f, "{}: {}", class, message),
+            (Some(class), Some(message)) => write!(f, "{class}: {message}"),
             (Some(class), None) => f.write_str(&class),
             (None, message) => f.write_str(message.as_deref().unwrap_or("")),
         }

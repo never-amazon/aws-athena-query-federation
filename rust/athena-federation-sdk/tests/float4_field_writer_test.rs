@@ -4,7 +4,6 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::Float4Extractor;
@@ -46,13 +45,23 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: f32, is_set: i32, with_constraint: bool) -> Float4FieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    Float4FieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    Float4FieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
     assert_eq!(expected_result, actual_result);
-    match fx.vector.get_raw(0) { Value::Float(v) => assert!((v - EXPECTED).abs() < 0.001f32), other => panic!("unexpected {:?}", other) }
+    match fx.vector.get_raw(0) {
+        Value::Float(v) => assert!((v - EXPECTED).abs() < 0.001f32),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 #[test]

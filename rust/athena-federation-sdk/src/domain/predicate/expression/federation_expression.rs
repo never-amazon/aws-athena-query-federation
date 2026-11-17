@@ -67,9 +67,9 @@ impl From<ConstantExpression> for FederationExpression {
 impl fmt::Display for FederationExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FederationExpression::FunctionCall(e) => write!(f, "{}", e),
-            FederationExpression::Variable(e) => write!(f, "{}", e),
-            FederationExpression::Constant(e) => write!(f, "{}", e),
+            FederationExpression::FunctionCall(e) => write!(f, "{e}"),
+            FederationExpression::Variable(e) => write!(f, "{e}"),
+            FederationExpression::Constant(e) => write!(f, "{e}"),
         }
     }
 }

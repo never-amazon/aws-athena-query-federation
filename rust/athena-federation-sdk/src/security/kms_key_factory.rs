@@ -41,7 +41,11 @@ impl EncryptionKeyFactory for KmsKeyFactory {
         }
         let key = self
             .kms_client
-            .generate_data_key(&self.master_key_id, DataKeySpec::Aes128, aws_request_override_configuration)
+            .generate_data_key(
+                &self.master_key_id,
+                DataKeySpec::Aes128,
+                aws_request_override_configuration,
+            )
             .await
             .map_err(|e| {
                 if e.is_error_code(NOT_FOUND_EXCEPTION) {
@@ -53,7 +57,9 @@ impl EncryptionKeyFactory for KmsKeyFactory {
                     FederationError::from(e)
                 }
             })?;
-        let nonce = self.kms_client.generate_random(NONCE_BYTES as i32).await?;
+        let nonce_bytes =
+            i32::try_from(NONCE_BYTES).map_err(|e| FederationError::internal(e.to_string()))?;
+        let nonce = self.kms_client.generate_random(nonce_bytes).await?;
         Ok(EncryptionKey::new(key, nonce))
     }
 }

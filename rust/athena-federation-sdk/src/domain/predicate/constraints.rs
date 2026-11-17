@@ -48,7 +48,14 @@ impl Constraints {
     }
 
     pub fn empty() -> Constraints {
-        Constraints::new(IndexMap::new(), Vec::new(), Vec::new(), DEFAULT_NO_LIMIT, HashMap::new(), None)
+        Constraints::new(
+            IndexMap::new(),
+            Vec::new(),
+            Vec::new(),
+            DEFAULT_NO_LIMIT,
+            HashMap::new(),
+            None,
+        )
     }
 
     pub fn get_summary(&self) -> &IndexMap<String, ValueSet> {
@@ -90,12 +97,33 @@ impl Constraints {
 
 impl fmt::Display for Constraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let summary: Vec<String> = self.summary.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
-        let expression: Vec<String> = self.expression.iter().map(|e| e.to_string()).collect();
-        let order_by: Vec<String> = self.order_by_clause.iter().map(|o| o.to_string()).collect();
+        let summary: Vec<String> = self
+            .summary
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let expression: Vec<String> = self
+            .expression
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        let order_by: Vec<String> = self
+            .order_by_clause
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         let qpt: Vec<String> = java_hash_map_order(self.query_passthrough_arguments.keys())
             .into_iter()
-            .map(|k| format!("{}={}", k, self.query_passthrough_arguments.get(k).and_then(|v| v.as_deref()).unwrap_or("null")))
+            .map(|k| {
+                format!(
+                    "{}={}",
+                    k,
+                    self.query_passthrough_arguments
+                        .get(k)
+                        .and_then(|v| v.as_deref())
+                        .unwrap_or("null")
+                )
+            })
             .collect();
         write!(
             f,
@@ -105,7 +133,7 @@ impl fmt::Display for Constraints {
             order_by.join(", "),
             self.limit,
             qpt.join(", "),
-            self.query_plan.as_ref().map(|q| q.to_string()).unwrap_or_else(|| "null".into())
+            self.query_plan.as_ref().map_or_else(|| "null".into(), std::string::ToString::to_string)
         )
     }
 }

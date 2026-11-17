@@ -4,7 +4,6 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::Float8Extractor;
@@ -46,13 +45,23 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: f64, is_set: i32, with_constraint: bool) -> Float8FieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    Float8FieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    Float8FieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {
     assert_eq!(expected_result, actual_result);
-    match fx.vector.get_raw(0) { Value::Double(v) => assert!((v - EXPECTED).abs() < 0.001f64), other => panic!("unexpected {:?}", other) }
+    match fx.vector.get_raw(0) {
+        Value::Double(v) => assert!((v - EXPECTED).abs() < 0.001f64),
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 #[test]
@@ -63,7 +72,10 @@ fn write_with_valid_float8_value_should_write_successfully() {
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, true, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Double(expected())), 1);
+    assert_eq!(
+        fx.projector.times_called_with(&Value::Double(expected())),
+        1
+    );
 }
 
 #[test]
@@ -74,7 +86,10 @@ fn write_with_constraint_failure_should_return_false() {
     let result = w.write(&mut fx.vector, &(), 0).unwrap();
     verify_assertions(&fx, false, result);
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Double(expected())), 1);
+    assert_eq!(
+        fx.projector.times_called_with(&Value::Double(expected())),
+        1
+    );
 }
 
 #[test]
@@ -115,5 +130,8 @@ fn write_with_constraint_failure_despite_is_set_should_return_false() {
     assert!(!result);
     assert!(!fx.vector.is_null(0));
     assert_eq!(fx.extractor_calls.count(), 1);
-    assert_eq!(fx.projector.times_called_with(&Value::Double(expected())), 1);
+    assert_eq!(
+        fx.projector.times_called_with(&Value::Double(expected())),
+        1
+    );
 }

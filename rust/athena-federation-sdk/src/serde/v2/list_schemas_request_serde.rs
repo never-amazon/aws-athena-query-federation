@@ -9,5 +9,9 @@ pub fn do_typed_serialize(request: &ListSchemasRequest, jgen: &mut JsonGenerator
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListSchemasRequest> {
     let header = super::metadata_request_serde::deserialize_header(jparser)?;
     let catalog_name = header.catalog_name()?;
-    Ok(ListSchemasRequest::new(header.identity, header.query_id, catalog_name))
+    Ok(ListSchemasRequest::new(
+        header.identity,
+        header.query_id,
+        catalog_name,
+    ))
 }

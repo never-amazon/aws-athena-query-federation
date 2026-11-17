@@ -6,25 +6,42 @@ fn tables(names: &[(&str, &str)]) -> Vec<TableName> {
 }
 
 fn is_connector_err<T: std::fmt::Debug>(r: athena_federation_sdk::Result<T>) -> bool {
-    r.map_err(|e| e.as_connector_exception().is_some()).err().unwrap_or(false)
+    r.map_err(|e| e.as_connector_exception().is_some())
+        .err()
+        .unwrap_or(false)
 }
 
 #[test]
 fn test_validate_and_parse_pagination_arguments_valid_input() {
-    assert_eq!(0, PaginationHelper::validate_and_parse_pagination_arguments(None, 10).unwrap());
-    assert_eq!(5, PaginationHelper::validate_and_parse_pagination_arguments(Some("5"), 10).unwrap());
-    assert_eq!(0, PaginationHelper::validate_and_parse_pagination_arguments(Some("0"), -1).unwrap());
+    assert_eq!(
+        0,
+        PaginationHelper::validate_and_parse_pagination_arguments(None, 10).unwrap()
+    );
+    assert_eq!(
+        5,
+        PaginationHelper::validate_and_parse_pagination_arguments(Some("5"), 10).unwrap()
+    );
+    assert_eq!(
+        0,
+        PaginationHelper::validate_and_parse_pagination_arguments(Some("0"), -1).unwrap()
+    );
 }
 
 #[test]
 fn test_validate_and_parse_pagination_arguments_invalid_next_token() {
-    assert!(is_connector_err(PaginationHelper::validate_and_parse_pagination_arguments(Some("invalid"), 10)));
-    assert!(is_connector_err(PaginationHelper::validate_and_parse_pagination_arguments(Some("-1"), 10)));
+    assert!(is_connector_err(
+        PaginationHelper::validate_and_parse_pagination_arguments(Some("invalid"), 10)
+    ));
+    assert!(is_connector_err(
+        PaginationHelper::validate_and_parse_pagination_arguments(Some("-1"), 10)
+    ));
 }
 
 #[test]
 fn test_validate_and_parse_pagination_arguments_invalid_page_size() {
-    assert!(is_connector_err(PaginationHelper::validate_and_parse_pagination_arguments(Some("0"), -2)));
+    assert!(is_connector_err(
+        PaginationHelper::validate_and_parse_pagination_arguments(Some("0"), -2)
+    ));
 }
 
 #[test]
@@ -47,7 +64,11 @@ fn test_manual_pagination_normal_case() {
 
 #[test]
 fn test_manual_pagination_unlimited_page_size() {
-    let all = tables(&[("schema1", "table1"), ("schema1", "table2"), ("schema2", "table3")]);
+    let all = tables(&[
+        ("schema1", "table1"),
+        ("schema1", "table2"),
+        ("schema2", "table3"),
+    ]);
     let response = PaginationHelper::manual_pagination(&all, Some("0"), -1, "testCatalog").unwrap();
     assert_eq!("testCatalog", response.get_catalog_name());
     assert_eq!(3, response.get_tables().len());
@@ -65,7 +86,11 @@ fn test_manual_pagination_start_token_past_end() {
 
 #[test]
 fn test_manual_pagination_last_page() {
-    let all = tables(&[("schema1", "table1"), ("schema1", "table2"), ("schema2", "table3")]);
+    let all = tables(&[
+        ("schema1", "table1"),
+        ("schema1", "table2"),
+        ("schema2", "table3"),
+    ]);
     let response = PaginationHelper::manual_pagination(&all, Some("2"), 2, "testCatalog").unwrap();
     assert_eq!("testCatalog", response.get_catalog_name());
     assert_eq!(1, response.get_tables().len());
@@ -117,21 +142,31 @@ fn test_calculate_next_token_partial_page() {
 
 #[test]
 fn test_calculate_next_token_full_page() {
-    let t = tables(&[("schema1", "table1"), ("schema1", "table2"), ("schema1", "table3")]);
-    assert_eq!(Some("3".to_string()), PaginationHelper::calculate_next_token(0, 3, &t));
+    let t = tables(&[
+        ("schema1", "table1"),
+        ("schema1", "table2"),
+        ("schema1", "table3"),
+    ]);
+    assert_eq!(
+        Some("3".to_string()),
+        PaginationHelper::calculate_next_token(0, 3, &t)
+    );
 }
 
 #[test]
 fn test_calculate_next_token_non_zero_start_token() {
     let t = tables(&[("schema1", "table4"), ("schema1", "table5")]);
-    assert_eq!(Some("7".to_string()), PaginationHelper::calculate_next_token(5, 2, &t));
+    assert_eq!(
+        Some("7".to_string()),
+        PaginationHelper::calculate_next_token(5, 2, &t)
+    );
 }
 
 #[test]
 fn test_calculate_next_token_large_values() {
     let t = tables(&[("schema1", "table1"), ("schema1", "table2")]);
     assert_eq!(
-        Some((i32::MAX as i64 - 3).to_string()),
+        Some((i64::from(i32::MAX) - 3).to_string()),
         PaginationHelper::calculate_next_token(i32::MAX - 5, 2, &t)
     );
 }

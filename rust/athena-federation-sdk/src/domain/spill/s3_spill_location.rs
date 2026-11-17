@@ -10,7 +10,11 @@ pub struct S3SpillLocation {
 }
 
 impl S3SpillLocation {
-    pub fn new(bucket: impl Into<String>, key: impl Into<String>, directory: bool) -> S3SpillLocation {
+    pub fn new(
+        bucket: impl Into<String>,
+        key: impl Into<String>,
+        directory: bool,
+    ) -> S3SpillLocation {
         S3SpillLocation {
             bucket: bucket.into(),
             key: key.into(),
@@ -66,31 +70,36 @@ impl Default for S3SpillLocationBuilder {
     }
 }
 
-fn or_null(v: &Option<String>) -> &str {
-    v.as_deref().unwrap_or("null")
+fn or_null(v: Option<&str>) -> &str {
+    v.unwrap_or("null")
 }
 
 impl S3SpillLocationBuilder {
+    #[must_use]
     pub fn with_bucket(mut self, bucket: impl Into<String>) -> Self {
         self.bucket = Some(bucket.into());
         self
     }
 
+    #[must_use]
     pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
+    #[must_use]
     pub fn with_is_directory(mut self, is_directory: bool) -> Self {
         self.is_directory = is_directory;
         self
     }
 
+    #[must_use]
     pub fn with_query_id(mut self, query_id: impl Into<String>) -> Self {
         self.query_id = Some(query_id.into());
         self
     }
 
+    #[must_use]
     pub fn with_split_id(mut self, split_id: impl Into<String>) -> Self {
         self.split_id = Some(split_id.into());
         self
@@ -101,13 +110,23 @@ impl S3SpillLocationBuilder {
     }
 
     pub fn build(&self) -> S3SpillLocation {
-        let query_blank = self.query_id.as_deref().map(|q| q.trim().is_empty()).unwrap_or(true);
+        let query_blank = self.query_id.as_deref().is_none_or(|q| q.trim().is_empty());
         let bucket_prefix = if query_blank {
-            or_null(&self.prefix).to_string()
+            or_null(self.prefix.as_deref()).to_string()
         } else {
-            format!("{}{}{}", or_null(&self.prefix), SEPARATOR, or_null(&self.query_id))
+            format!(
+                "{}{}{}",
+                or_null(self.prefix.as_deref()),
+                SEPARATOR,
+                or_null(self.query_id.as_deref())
+            )
         };
-        let key = format!("{}{}{}", bucket_prefix, SEPARATOR, or_null(&self.split_id));
-        S3SpillLocation::new(or_null(&self.bucket), key, true)
+        let key = format!(
+            "{}{}{}",
+            bucket_prefix,
+            SEPARATOR,
+            or_null(self.split_id.as_deref())
+        );
+        S3SpillLocation::new(or_null(self.bucket.as_deref()), key, true)
     }
 }

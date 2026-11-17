@@ -1,7 +1,7 @@
 mod data_helpers;
 
 use arrow::datatypes::{DataType, Field};
-use athena_federation_sdk::data::types::{minor_type_of, MinorType};
+use athena_federation_sdk::data::{minor_type_of, MinorType};
 use athena_federation_sdk::data::{BlockUtils, FieldResolver, FieldVector, Value};
 use athena_federation_sdk::Result;
 use proptest::prelude::*;
@@ -17,7 +17,10 @@ impl FieldResolver for ArrowToArrowResolver {
     fn get_field_value(&self, field: &Field, original_value: &Value) -> Result<Value> {
         if let DataType::Map(_, _) = field.data_type() {
             let input = match original_value {
-                Value::Map(_) => original_value.map_get(field.name()).cloned().unwrap_or(Value::Null),
+                Value::Map(_) => original_value
+                    .map_get(field.name())
+                    .cloned()
+                    .unwrap_or(Value::Null),
                 other => other.clone(),
             };
             let items = match input {
@@ -35,14 +38,20 @@ impl FieldResolver for ArrowToArrowResolver {
                 .map(|entry| {
                     (
                         entry.map_get(MAP_KEY_NAME).cloned().unwrap_or(Value::Null),
-                        entry.map_get(MAP_VALUE_NAME).cloned().unwrap_or(Value::Null),
+                        entry
+                            .map_get(MAP_VALUE_NAME)
+                            .cloned()
+                            .unwrap_or(Value::Null),
                     )
                 })
                 .collect();
             return Ok(Value::Map(output));
         }
         if let Value::Map(_) = original_value {
-            return Ok(original_value.map_get(field.name()).cloned().unwrap_or(Value::Null));
+            return Ok(original_value
+                .map_get(field.name())
+                .cloned()
+                .unwrap_or(Value::Null));
         }
         Ok(original_value.clone())
     }
@@ -62,7 +71,13 @@ enum Variant {
     DefaultResolver,
 }
 
-fn get_value(variant: Variant, vector: &FieldVector, custom: &CustomFieldVector, pos: usize, resolver: &dyn FieldResolver) -> Result<Value> {
+fn get_value(
+    variant: Variant,
+    vector: &FieldVector,
+    custom: &CustomFieldVector,
+    pos: usize,
+    resolver: &dyn FieldResolver,
+) -> Result<Value> {
     match variant {
         Variant::DefaultResolver => Ok(custom.obj_list.get(pos).cloned().unwrap_or(Value::Null)),
         Variant::ArrowToArrow => {
@@ -82,15 +97,24 @@ fn vectors_equal(a: &FieldVector, b: &FieldVector) -> bool {
 }
 
 fn is_complex(field: &Field) -> bool {
-    matches!(minor_type_of(field.data_type()), MinorType::LIST | MinorType::STRUCT | MinorType::MAP)
+    matches!(
+        minor_type_of(field.data_type()),
+        MinorType::LIST | MinorType::STRUCT | MinorType::MAP
+    )
 }
 
-fn set_complex_values_sets_all_fields_correctly_given_any_input(variant: Variant, field: Field, seed: u64) -> bool {
+fn set_complex_values_sets_all_fields_correctly_given_any_input(
+    variant: Variant,
+    field: Field,
+    seed: u64,
+) -> bool {
     let field = Arc::new(field);
     let mut generator = ValuesGenerator::new(seed);
     let mut vector = FieldVector::new(field.clone());
     let mut custom = CustomFieldVector::new(field.clone());
-    generator.generate_values_root(&mut vector, &mut custom).expect("generate values");
+    generator
+        .generate_values_root(&mut vector, &mut custom)
+        .expect("generate values");
     let value_count = vector.get_value_count();
     let mut output = FieldVector::new(field.clone());
     output.set_value_count(1);
@@ -102,7 +126,7 @@ fn set_complex_values_sets_all_fields_correctly_given_any_input(variant: Variant
         let value = match get_value(variant, &vector, &custom, i, resolver.as_ref()) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("getValue failed: {}", e);
+                eprintln!("getValue failed: {e}");
                 return false;
             }
         };
@@ -112,7 +136,7 @@ fn set_complex_values_sets_all_fields_correctly_given_any_input(variant: Variant
             BlockUtils::set_value(&mut output, i, &value)
         };
         if let Err(e) = result {
-            eprintln!("DID NOT MATCH, write failed for {:?}: {}", field, e);
+            eprintln!("DID NOT MATCH, write failed for {field:?}: {e}");
             return false;
         }
     }
@@ -120,7 +144,7 @@ fn set_complex_values_sets_all_fields_correctly_given_any_input(variant: Variant
     if vectors_equal(&vector, &output) {
         true
     } else {
-        eprintln!("DID NOT MATCH\nField: {:?}\nInput: {:?}\nOutput: {:?}", field, vector, output);
+        eprintln!("DID NOT MATCH\nField: {field:?}\nInput: {vector:?}\nOutput: {output:?}");
         false
     }
 }

@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 
 use crate::domain::spill::HeadBucketClient;
-use crate::security::{send_with_override, AwsRequestOverrideConfiguration, AwsService, AwsServiceError};
+use crate::security::{
+    send_with_override, AwsRequestOverrideConfiguration, AwsService, AwsServiceError,
+};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PutObjectRequest {
@@ -47,27 +49,35 @@ pub struct PutObjectRequestBuilder {
 }
 
 impl PutObjectRequestBuilder {
+    #[must_use]
     pub fn bucket(mut self, bucket: impl Into<String>) -> Self {
         self.inner.bucket = bucket.into();
         self
     }
 
+    #[must_use]
     pub fn key(mut self, key: impl Into<String>) -> Self {
         self.inner.key = key.into();
         self
     }
 
+    #[must_use]
     pub fn content_length(mut self, content_length: i64) -> Self {
         self.inner.content_length = content_length;
         self
     }
 
+    #[must_use]
     pub fn metadata(mut self, metadata: HashMap<String, String>) -> Self {
         self.inner.metadata = metadata;
         self
     }
 
-    pub fn override_configuration(mut self, override_configuration: AwsRequestOverrideConfiguration) -> Self {
+    #[must_use]
+    pub fn override_configuration(
+        mut self,
+        override_configuration: AwsRequestOverrideConfiguration,
+    ) -> Self {
         self.inner.override_configuration = Some(override_configuration);
         self
     }
@@ -102,14 +112,22 @@ impl GetObjectRequest {
 
 #[async_trait]
 pub trait S3Client: Send + Sync {
-    async fn put_object(&self, request: PutObjectRequest, body: Vec<u8>) -> Result<(), AwsServiceError>;
+    async fn put_object(
+        &self,
+        request: PutObjectRequest,
+        body: Vec<u8>,
+    ) -> Result<(), AwsServiceError>;
 
     async fn get_object(&self, request: GetObjectRequest) -> Result<Vec<u8>, AwsServiceError>;
 }
 
 #[async_trait]
 impl S3Client for aws_sdk_s3::Client {
-    async fn put_object(&self, request: PutObjectRequest, body: Vec<u8>) -> Result<(), AwsServiceError> {
+    async fn put_object(
+        &self,
+        request: PutObjectRequest,
+        body: Vec<u8>,
+    ) -> Result<(), AwsServiceError> {
         let mut builder = self
             .put_object()
             .bucket(&request.bucket)
@@ -119,8 +137,12 @@ impl S3Client for aws_sdk_s3::Client {
         if !request.metadata.is_empty() {
             builder = builder.set_metadata(Some(request.metadata.clone()));
         }
-        send_with_override!(builder, request.override_configuration.as_ref(), aws_sdk_s3::config::Builder)
-            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))?;
+        send_with_override!(
+            builder,
+            request.override_configuration.as_ref(),
+            aws_sdk_s3::config::Builder
+        )
+        .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))?;
         Ok(())
     }
 

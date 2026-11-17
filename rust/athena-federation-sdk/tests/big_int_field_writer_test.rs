@@ -4,11 +4,10 @@ use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-
 use arrow::datatypes::DataType;
 
 use athena_federation_sdk::data::writers::extractors::BigIntExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, BigIntFieldWriter};
+use athena_federation_sdk::data::writers::fieldwriters::{BigIntFieldWriter, FieldWriter};
 use athena_federation_sdk::data::writers::holders::NullableBigIntHolder;
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
@@ -46,8 +45,15 @@ fn set_up() -> Fixture {
 }
 
 fn writer(fx: &Fixture, value: i64, is_set: i32, with_constraint: bool) -> BigIntFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint { Some(fx.projector.clone()) } else { None };
-    BigIntFieldWriter::new(configure_extractor(value, is_set, &fx.extractor_calls), constraint)
+    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
+        Some(fx.projector.clone())
+    } else {
+        None
+    };
+    BigIntFieldWriter::new(
+        configure_extractor(value, is_set, &fx.extractor_calls),
+        constraint,
+    )
 }
 
 fn verify_assertions(fx: &Fixture, expected_result: bool, actual_result: bool) {

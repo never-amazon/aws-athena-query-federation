@@ -46,9 +46,9 @@ impl SubstraitFunctionParser {
         column_names: &[String],
     ) -> Result<Vec<ColumnPredicate>> {
         let mut column_predicates = Vec::new();
-        let info = match extract_scalar_function_info(expression, extension_declaration_list) {
-            Some(i) => i,
-            None => return Ok(column_predicates),
+        let Some(info) = extract_scalar_function_info(expression, extension_declaration_list)
+        else {
+            return Ok(column_predicates);
         };
         let name = info.function_name.as_deref();
         if name == Some(N::NOT_BOOL) {
@@ -81,13 +81,12 @@ impl SubstraitFunctionParser {
         expression: Option<&Expression>,
         column_names: &[String],
     ) -> Result<Option<LogicalExpression>> {
-        let expression = match expression {
-            Some(e) => e,
-            None => return Ok(None),
+        let Some(expression) = expression else {
+            return Ok(None);
         };
-        let info = match extract_scalar_function_info(expression, extension_declaration_list) {
-            Some(i) => i,
-            None => return Ok(None),
+        let Some(info) = extract_scalar_function_info(expression, extension_declaration_list)
+        else {
+            return Ok(None);
         };
         let name = info.function_name.as_deref();
         if name == Some(N::NOT_BOOL) {

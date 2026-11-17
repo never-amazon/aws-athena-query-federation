@@ -29,6 +29,10 @@ impl TableName {
 
 impl fmt::Display for TableName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TableName{{schemaName={}, tableName={}}}", self.schema_name, self.table_name)
+        write!(
+            f,
+            "TableName{{schemaName={}, tableName={}}}",
+            self.schema_name, self.table_name
+        )
     }
 }

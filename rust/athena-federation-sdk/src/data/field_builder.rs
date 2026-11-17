@@ -18,7 +18,11 @@ impl FieldBuilder {
         FieldBuilder::new_builder_nullable(name, arrow_type, true)
     }
 
-    pub fn new_builder_nullable(name: impl Into<String>, arrow_type: ArrowType, nullable: bool) -> FieldBuilder {
+    pub fn new_builder_nullable(
+        name: impl Into<String>,
+        arrow_type: ArrowType,
+        nullable: bool,
+    ) -> FieldBuilder {
         FieldBuilder {
             name: name.into(),
             arrow_type,
@@ -27,9 +31,16 @@ impl FieldBuilder {
         }
     }
 
-    pub fn add_field_with_type(&mut self, field_name: &str, arrow_type: ArrowType, children: Option<Vec<FieldRef>>) -> &mut Self {
-        self.children
-            .insert(field_name.to_string(), Arc::new(nullable_field(field_name, arrow_type, children)));
+    pub fn add_field_with_type(
+        &mut self,
+        field_name: &str,
+        arrow_type: ArrowType,
+        children: Option<Vec<FieldRef>>,
+    ) -> &mut Self {
+        self.children.insert(
+            field_name.to_string(),
+            Arc::new(nullable_field(field_name, arrow_type, children)),
+        );
         self
     }
 
@@ -40,8 +51,10 @@ impl FieldBuilder {
         nullable: bool,
         children: Option<Vec<FieldRef>>,
     ) -> &mut Self {
-        self.children
-            .insert(field_name.to_string(), Arc::new(new_field(field_name, nullable, arrow_type, children)));
+        self.children.insert(
+            field_name.to_string(),
+            Arc::new(new_field(field_name, nullable, arrow_type, children)),
+        );
         self
     }
 
@@ -52,8 +65,10 @@ impl FieldBuilder {
     }
 
     fn put(&mut self, field_name: &str, arrow_type: ArrowType) -> &mut Self {
-        self.children
-            .insert(field_name.to_string(), Arc::new(Field::new(field_name, arrow_type, true)));
+        self.children.insert(
+            field_name.to_string(),
+            Arc::new(Field::new(field_name, arrow_type, true)),
+        );
         self
     }
 
@@ -64,7 +79,8 @@ impl FieldBuilder {
     pub fn add_list_field(&mut self, field_name: &str, arrow_type: ArrowType) -> &mut Self {
         let base = Field::new("", arrow_type, true);
         let field = Field::new(field_name, DataType::List(Arc::new(base)), true);
-        self.children.insert(field_name.to_string(), Arc::new(field));
+        self.children
+            .insert(field_name.to_string(), Arc::new(field));
         self
     }
 

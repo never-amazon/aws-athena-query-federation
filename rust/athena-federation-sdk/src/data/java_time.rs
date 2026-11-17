@@ -3,7 +3,10 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-use chrono::{DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Timelike, Utc};
+use chrono::{
+    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, Offset,
+    TimeZone, Timelike, Utc,
+};
 use chrono_tz::Tz;
 
 use crate::exceptions::{FederationError, Result};
@@ -52,7 +55,11 @@ fn parse_offset_id(text: &str) -> Option<FixedOffset> {
     let colon_form = rest.contains(':');
     let (h, m, s) = match digits.len() {
         1 | 2 if !colon_form => (digits.parse::<i32>().ok()?, 0, 0),
-        4 => (digits[0..2].parse::<i32>().ok()?, digits[2..4].parse::<i32>().ok()?, 0),
+        4 => (
+            digits[0..2].parse::<i32>().ok()?,
+            digits[2..4].parse::<i32>().ok()?,
+            0,
+        ),
         6 => (
             digits[0..2].parse::<i32>().ok()?,
             digits[2..4].parse::<i32>().ok()?,
@@ -81,20 +88,25 @@ pub fn offset_id(offset: &FixedOffset) -> String {
     let m = (abs / 60) % 60;
     let s = abs % 60;
     if s != 0 {
-        format!("{}{:02}:{:02}:{:02}", sign, h, m, s)
+        format!("{sign}{h:02}:{m:02}:{s:02}")
     } else {
-        format!("{}{:02}:{:02}", sign, h, m)
+        format!("{sign}{h:02}:{m:02}")
     }
 }
 
 impl ZoneId {
     pub fn of(id: &str) -> Result<ZoneId> {
         if id.is_empty() {
-            return Err(FederationError::illegal_argument("Invalid ID for ZoneId, empty"));
+            return Err(FederationError::illegal_argument(
+                "Invalid ID for ZoneId, empty",
+            ));
         }
         if id.len() <= 1 || id.starts_with('+') || id.starts_with('-') {
-            let offset = parse_offset_id(id)
-                .ok_or_else(|| FederationError::illegal_argument(format!("Invalid ID for ZoneOffset, invalid format: {}", id)))?;
+            let offset = parse_offset_id(id).ok_or_else(|| {
+                FederationError::illegal_argument(format!(
+                    "Invalid ID for ZoneOffset, invalid format: {id}"
+                ))
+            })?;
             return Ok(ZoneId::of_offset(offset));
         }
         for prefix in ["UTC", "GMT", "UT"] {
@@ -108,7 +120,9 @@ impl ZoneId {
             if let Some(rest) = id.strip_prefix(prefix) {
                 if rest.starts_with('+') || rest.starts_with('-') {
                     let offset = parse_offset_id(rest).ok_or_else(|| {
-                        FederationError::illegal_argument(format!("Invalid ID for offset-based ZoneId: {}", id))
+                        FederationError::illegal_argument(format!(
+                            "Invalid ID for offset-based ZoneId: {id}"
+                        ))
                     })?;
                     let normalized = if offset.local_minus_utc() == 0 {
                         prefix.to_string()
@@ -124,7 +138,7 @@ impl ZoneId {
             }
         }
         let tz = Tz::from_str(id)
-            .map_err(|_| FederationError::Runtime(format!("Unknown time-zone ID: {}", id)))?;
+            .map_err(|_| FederationError::Runtime(format!("Unknown time-zone ID: {id}")))?;
         Ok(ZoneId {
             id: id.to_string(),
             is_offset: false,
@@ -165,7 +179,8 @@ impl ZoneId {
 
     pub fn instant_of_local(&self, local: &NaiveDateTime) -> DateTime<Utc> {
         match self.rules {
-            ZoneRules::Fixed(off) => Utc.from_utc_datetime(&(*local - Duration::seconds(off.local_minus_utc() as i64))),
+            ZoneRules::Fixed(off) => Utc
+                .from_utc_datetime(&(*local - Duration::seconds(i64::from(off.local_minus_utc())))),
             ZoneRules::Region(tz) => match tz.from_local_datetime(local) {
                 LocalResult::Single(dt) => dt.with_timezone(&Utc),
                 LocalResult::Ambiguous(early, _) => early.with_timezone(&Utc),
@@ -173,7 +188,9 @@ impl ZoneId {
                     let before = tz
                         .offset_from_utc_datetime(&(*local - Duration::days(1)))
                         .fix();
-                    Utc.from_utc_datetime(&(*local - Duration::seconds(before.local_minus_utc() as i64)))
+                    Utc.from_utc_datetime(
+                        &(*local - Duration::seconds(i64::from(before.local_minus_utc()))),
+                    )
                 }
             },
         }
@@ -203,13 +220,16 @@ impl ZonedDateTime {
     }
 
     pub fn of_epoch_milli(millis: i64, zone: ZoneId) -> Result<ZonedDateTime> {
-        let instant = DateTime::<Utc>::from_timestamp_millis(millis)
-            .ok_or_else(|| FederationError::Arithmetic(format!("Instant exceeds minimum or maximum instant: {}", millis)))?;
+        let instant = DateTime::<Utc>::from_timestamp_millis(millis).ok_or_else(|| {
+            FederationError::Arithmetic(format!(
+                "Instant exceeds minimum or maximum instant: {millis}"
+            ))
+        })?;
         Ok(ZonedDateTime { instant, zone })
     }
 
     pub fn parse(text: &str) -> Result<ZonedDateTime> {
-        let err = || FederationError::Runtime(format!("Text '{}' could not be parsed", text));
+        let err = || FederationError::Runtime(format!("Text '{text}' could not be parsed"));
         let (main, bracket) = match text.find('[') {
             Some(idx) => {
                 if !text.ends_with(']') {
@@ -221,14 +241,13 @@ impl ZonedDateTime {
         };
         let t_idx = main.find('T').ok_or_else(err)?;
         let after_t = &main[t_idx + 1..];
-        let off_idx = after_t
-            .find(['Z', '+', '-'])
-            .ok_or_else(err)?;
+        let off_idx = after_t.find(['Z', '+', '-']).ok_or_else(err)?;
         let local_text = &main[..t_idx + 1 + off_idx];
         let offset_text = &after_t[off_idx..];
         let local = parse_iso_local_date_time(local_text).ok_or_else(err)?;
         let offset = parse_offset_id(offset_text).ok_or_else(err)?;
-        let instant = Utc.from_utc_datetime(&(local - Duration::seconds(offset.local_minus_utc() as i64)));
+        let instant = Utc
+            .from_utc_datetime(&(local - Duration::seconds(i64::from(offset.local_minus_utc()))));
         let zone = match bracket {
             Some(id) => ZoneId::of(id).map_err(|_| err())?,
             None => ZoneId::of_offset(offset),
@@ -264,13 +283,14 @@ impl ZonedDateTime {
     }
 
     pub fn to_local_date_time(&self) -> NaiveDateTime {
-        self.instant.naive_utc() + Duration::seconds(self.get_offset().local_minus_utc() as i64)
+        self.instant.naive_utc() + Duration::seconds(i64::from(self.get_offset().local_minus_utc()))
     }
 
     pub fn to_local_date(&self) -> NaiveDate {
         self.to_local_date_time().date()
     }
 
+    #[must_use]
     pub fn with_zone_same_instant(&self, zone: ZoneId) -> ZonedDateTime {
         ZonedDateTime {
             instant: self.instant,
@@ -319,7 +339,12 @@ impl fmt::Display for ZonedDateTime {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let offset = self.get_offset();
         let off = offset_id(&offset);
-        write!(f, "{}{}", local_date_time_to_string(&self.to_local_date_time()), off)?;
+        write!(
+            f,
+            "{}{}",
+            local_date_time_to_string(&self.to_local_date_time()),
+            off
+        )?;
         if !(self.zone.is_offset && self.zone.id == off) {
             write!(f, "[{}]", self.zone.id)?;
         }
@@ -352,27 +377,30 @@ pub fn local_date_to_string(date: &NaiveDate) -> String {
 }
 
 pub fn local_time_to_string(hour: u32, minute: u32, second: u32, nano: u32) -> String {
-    let mut s = format!("{:02}:{:02}", hour, minute);
-    if second > 0 || nano > 0 {
-        s.push_str(&format!(":{:02}", second));
-        if nano > 0 {
-            if nano.is_multiple_of(1_000_000) {
-                s.push_str(&format!(".{:03}", nano / 1_000_000));
-            } else if nano.is_multiple_of(1000) {
-                s.push_str(&format!(".{:06}", nano / 1000));
-            } else {
-                s.push_str(&format!(".{:09}", nano));
-            }
-        }
+    if second == 0 && nano == 0 {
+        return format!("{hour:02}:{minute:02}");
     }
-    s
+    if nano == 0 {
+        format!("{hour:02}:{minute:02}:{second:02}")
+    } else if nano.is_multiple_of(1_000_000) {
+        format!("{hour:02}:{minute:02}:{second:02}.{:03}", nano / 1_000_000)
+    } else if nano.is_multiple_of(1000) {
+        format!("{hour:02}:{minute:02}:{second:02}.{:06}", nano / 1000)
+    } else {
+        format!("{hour:02}:{minute:02}:{second:02}.{nano:09}")
+    }
 }
 
 pub fn local_date_time_to_string(dt: &NaiveDateTime) -> String {
     format!(
         "{}T{}",
         local_date_to_string(&dt.date()),
-        local_time_to_string(dt.hour(), dt.minute(), dt.second(), dt.nanosecond() % 1_000_000_000)
+        local_time_to_string(
+            dt.hour(),
+            dt.minute(),
+            dt.second(),
+            dt.nanosecond() % 1_000_000_000
+        )
     )
 }
 

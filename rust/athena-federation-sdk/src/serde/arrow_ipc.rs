@@ -1,5 +1,7 @@
 use arrow::datatypes::Schema;
-use arrow::ipc::writer::{write_message, DictionaryTracker, IpcDataGenerator, IpcWriteContext, IpcWriteOptions};
+use arrow::ipc::writer::{
+    write_message, DictionaryTracker, IpcDataGenerator, IpcWriteContext, IpcWriteOptions,
+};
 use arrow::ipc::MetadataVersion;
 use arrow::record_batch::RecordBatch;
 
@@ -16,7 +18,9 @@ pub enum IpcFormat {
 impl IpcFormat {
     pub fn write_options(&self) -> Result<IpcWriteOptions> {
         Ok(match self {
-            IpcFormat::AthenaFederationLegacy => IpcWriteOptions::try_new(8, true, MetadataVersion::V4)?,
+            IpcFormat::AthenaFederationLegacy => {
+                IpcWriteOptions::try_new(8, true, MetadataVersion::V4)?
+            }
             IpcFormat::ArrowDefault => IpcWriteOptions::try_new(8, false, MetadataVersion::V5)?,
         })
     }
@@ -48,7 +52,10 @@ pub fn schema_from_bytes(bytes: &[u8]) -> Result<Schema> {
     deserialize_schema(&mut cursor)
 }
 
-pub fn record_batch_from_bytes(allocator: &dyn BlockAllocator, bytes: &[u8]) -> Result<ArrowRecordBatch> {
+pub fn record_batch_from_bytes(
+    allocator: &dyn BlockAllocator,
+    bytes: &[u8],
+) -> Result<ArrowRecordBatch> {
     RecordBatchSerDe::new(allocator).deserialize(bytes)
 }
 

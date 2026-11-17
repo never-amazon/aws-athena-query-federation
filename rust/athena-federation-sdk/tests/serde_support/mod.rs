@@ -1,15 +1,23 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared test helpers; each test binary uses a subset"
+)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
-use athena_federation_sdk::data::{Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value};
-use athena_federation_sdk::domain::predicate::expression::{ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression};
+use athena_federation_sdk::data::{
+    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+};
+use athena_federation_sdk::domain::predicate::expression::{
+    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
+};
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::predicate::{
-    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, OrderByField, QueryPlan, Range, SortedRangeSet, ValueSet, DEFAULT_NO_LIMIT,
+    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, OrderByField, QueryPlan, Range,
+    SortedRangeSet, ValueSet, DEFAULT_NO_LIMIT,
 };
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
@@ -18,7 +26,9 @@ use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederatedIdentity, FederationRequest, FederationResponse};
 use athena_federation_sdk::security::EncryptionKey;
 use athena_federation_sdk::serde::java_hash::java_hash_order_default;
-use athena_federation_sdk::serde::{arrow_ipc, block_deserializer, ObjectMapper, SerDeContext, VersionedObjectMapperFactory};
+use athena_federation_sdk::serde::{
+    block_deserializer, schema_from_bytes, ObjectMapper, SerDeContext, VersionedObjectMapperFactory,
+};
 use indexmap::IndexMap;
 use serde_json::Value as Json;
 
@@ -52,13 +62,20 @@ impl TypedSerDe {
 }
 
 pub fn indented(allocator: Arc<BlockAllocatorImpl>, version: i32) -> ObjectMapper {
-    let mut mapper = VersionedObjectMapperFactory::create_with_version(allocator, version).expect("mapper");
+    let mut mapper =
+        VersionedObjectMapperFactory::create_with_version(allocator, version).expect("mapper");
     mapper.enable_indent_output();
     mapper
 }
 
 pub fn federated_identity() -> FederatedIdentity {
-    FederatedIdentity::new("testArn", "0123456789", HashMap::new(), Vec::new(), HashMap::new())
+    FederatedIdentity::new(
+        "testArn",
+        "0123456789",
+        HashMap::new(),
+        Vec::new(),
+        HashMap::new(),
+    )
 }
 
 pub fn fixture(dir: &str, name: &str) -> String {
@@ -74,11 +91,14 @@ pub fn fixture(dir: &str, name: &str) -> String {
 
 pub fn java_hash_map<V>(entries: Vec<(&str, V)>) -> IndexMap<String, V> {
     let keys: Vec<String> = entries.iter().map(|(k, _)| k.to_string()).collect();
-    let order: Vec<String> = java_hash_order_default(keys.iter().map(|k| k.as_str()))
+    let order: Vec<String> = java_hash_order_default(keys.iter().map(std::string::String::as_str))
         .into_iter()
-        .map(|k| k.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
-    let mut by_key: HashMap<String, V> = entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    let mut by_key: HashMap<String, V> = entries
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
     let mut result = IndexMap::new();
     for key in order {
         if let Some(v) = by_key.remove(&key) {
@@ -89,7 +109,10 @@ pub fn java_hash_map<V>(entries: Vec<(&str, V)>) -> IndexMap<String, V> {
 }
 
 pub fn string_map(entries: &[(&str, &str)]) -> HashMap<String, Option<String>> {
-    entries.iter().map(|(k, v)| (k.to_string(), Some(v.to_string()))).collect()
+    entries
+        .iter()
+        .map(|(k, v)| (k.to_string(), Some(v.to_string())))
+        .collect()
 }
 
 pub fn set(block: &mut Block, column: &str, row: usize, value: impl Into<Value>) {
@@ -110,10 +133,10 @@ pub fn partitions_schema() -> Schema {
 }
 
 pub fn fill_partitions(block: &mut Block, rows: usize) {
-    for i in 0..rows {
-        set(block, "year", i, 2016 + i as i32);
-        set(block, "month", i, (i as i32 % 12) + 1);
-        set(block, "day", i, (i as i32 % 28) + 1);
+    for (i, n) in (0..rows).zip(0i32..) {
+        set(block, "year", i, 2016 + n);
+        set(block, "month", i, (n % 12) + 1);
+        set(block, "day", i, (n % 28) + 1);
     }
     block.set_row_count(rows);
 }
@@ -139,12 +162,22 @@ pub fn summary(allocator: &dyn BlockAllocator) -> IndexMap<String, ValueSet> {
                 .expect("equatable value set")
                 .into(),
         ),
-        ("col5", AllOrNoneValueSet::new(float8.clone(), false, true).into()),
+        (
+            "col5",
+            AllOrNoneValueSet::new(float8.clone(), false, true).into(),
+        ),
     ])
 }
 
 pub fn simple_constraints(allocator: &dyn BlockAllocator) -> Constraints {
-    Constraints::new(summary(allocator), Vec::new(), Vec::new(), DEFAULT_NO_LIMIT, HashMap::new(), None)
+    Constraints::new(
+        summary(allocator),
+        Vec::new(),
+        Vec::new(),
+        DEFAULT_NO_LIMIT,
+        HashMap::new(),
+        None,
+    )
 }
 
 pub fn spill_location(split_id: &str) -> SpillLocation {
@@ -164,15 +197,19 @@ pub fn encryption_key(key: &str, nonce: &str) -> EncryptionKey {
 }
 
 pub fn read_records_split() -> Split {
-    Split::new_builder(Some(spill_location("test-split-id")), Some(encryption_key("test-key", "test-nonce")))
-        .add("year", "2017")
-        .add("month", "11")
-        .add("day", "1")
-        .build()
+    Split::new_builder(
+        Some(spill_location("test-split-id")),
+        Some(encryption_key("test-key", "test-nonce")),
+    )
+    .add("year", "2017")
+    .add("month", "11")
+    .add("day", "1")
+    .build()
 }
 
 pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpression {
-    let constant_block = BlockUtils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
+    let constant_block =
+        BlockUtils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
     FunctionCallExpression::new(
         DataType::Boolean,
         StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME.get_function_name(),
@@ -181,12 +218,16 @@ pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpres
                 DataType::Float64,
                 StandardFunctions::ADD_FUNCTION_NAME.get_function_name(),
                 vec![
-                    VariableExpression::new("col3", DataType::Float64).expect("variable").into(),
+                    VariableExpression::new("col3", DataType::Float64)
+                        .expect("variable")
+                        .into(),
                     ConstantExpression::new(Some(constant_block), DataType::Int32).into(),
                 ],
             )
             .into(),
-            VariableExpression::new("col2", DataType::Float64).expect("variable").into(),
+            VariableExpression::new("col2", DataType::Float64)
+                .expect("variable")
+                .into(),
         ],
     )
     .into()
@@ -254,32 +295,49 @@ pub fn assert_serialized_matches(expected_text: &str, actual_text: &str, mapper:
     compare(&expected, &actual, "$", mapper, &mut replacements);
     let mut normalized = actual_text.to_string();
     for (from, to) in replacements {
-        normalized = normalized.replace(&format!("\"{}\"", from), &format!("\"{}\"", to));
+        normalized = normalized.replace(&format!("\"{from}\""), &format!("\"{to}\""));
     }
-    assert_eq!(expected_text, normalized, "serialized text differs from the fixture");
+    assert_eq!(
+        expected_text, normalized,
+        "serialized text differs from the fixture"
+    );
 }
 
 fn is_block(map: &serde_json::Map<String, Json>) -> bool {
     map.contains_key("aId") && map.contains_key("schema") && map.contains_key("records")
 }
 
-fn compare(expected: &Json, actual: &Json, path: &str, mapper: &ObjectMapper, replacements: &mut Vec<(String, String)>) {
+fn compare(
+    expected: &Json,
+    actual: &Json,
+    path: &str,
+    mapper: &ObjectMapper,
+    replacements: &mut Vec<(String, String)>,
+) {
     match (expected, actual) {
         (Json::Object(e), Json::Object(a)) => {
             let e_keys: Vec<&String> = e.keys().collect();
             let a_keys: Vec<&String> = a.keys().collect();
-            assert_eq!(e_keys, a_keys, "key order differs at {}", path);
+            assert_eq!(e_keys, a_keys, "key order differs at {path}");
             if is_block(e) && is_block(a) {
-                assert_eq!(e.get("aId"), a.get("aId"), "aId differs at {}", path);
+                assert_eq!(e.get("aId"), a.get("aId"), "aId differs at {path}");
                 if e != a {
                     let ctx_alloc = BlockAllocatorImpl::with_id(TEST_ALLOCATOR_ID);
                     let ctx = SerDeContext::new(mapper.get_ser_de_version(), &ctx_alloc);
-                    let e_block = block_deserializer::deserialize_tree(expected, &ctx).expect("decode fixture block");
-                    let a_block = block_deserializer::deserialize_tree(actual, &ctx).expect("decode output block");
-                    assert_eq!(e_block.get_schema(), a_block.get_schema(), "block schema differs at {}", path);
-                    assert_eq!(e_block, a_block, "block differs at {}", path);
+                    let e_block = block_deserializer::deserialize_tree(expected, &ctx)
+                        .expect("decode fixture block");
+                    let a_block = block_deserializer::deserialize_tree(actual, &ctx)
+                        .expect("decode output block");
+                    assert_eq!(
+                        e_block.get_schema(),
+                        a_block.get_schema(),
+                        "block schema differs at {path}"
+                    );
+                    assert_eq!(e_block, a_block, "block differs at {path}");
                     for key in ["schema", "records"] {
-                        if let (Some(Json::String(es)), Some(Json::String(as_))) = (e.get(key), a.get(key)) {
+                        if let (Some(Json::String(es)), Some(Json::String(as_))) =
+                            (e.get(key), a.get(key))
+                        {
                             if es != as_ {
                                 replacements.push((as_.clone(), es.clone()));
                             }
@@ -290,26 +348,28 @@ fn compare(expected: &Json, actual: &Json, path: &str, mapper: &ObjectMapper, re
             }
             for (k, ev) in e {
                 let av = a.get(k).expect("key present");
-                compare(ev, av, &format!("{}.{}", path, k), mapper, replacements);
+                compare(ev, av, &format!("{path}.{k}"), mapper, replacements);
             }
         }
         (Json::Array(e), Json::Array(a)) => {
-            assert_eq!(e.len(), a.len(), "array length differs at {}", path);
+            assert_eq!(e.len(), a.len(), "array length differs at {path}");
             for (i, (ev, av)) in e.iter().zip(a.iter()).enumerate() {
-                compare(ev, av, &format!("{}[{}]", path, i), mapper, replacements);
+                compare(ev, av, &format!("{path}[{i}]"), mapper, replacements);
             }
         }
-        (Json::String(e), Json::String(a)) if e != a && (path.ends_with(".schema") || path.ends_with(".outputSchema")) => {
+        (Json::String(e), Json::String(a))
+            if e != a && (path.ends_with(".schema") || path.ends_with(".outputSchema")) =>
+        {
             let e_schema = decode_schema(e);
             let a_schema = decode_schema(a);
-            assert_eq!(e_schema, a_schema, "schema differs at {}", path);
+            assert_eq!(e_schema, a_schema, "schema differs at {path}");
             replacements.push((a.clone(), e.clone()));
         }
-        _ => assert_eq!(expected, actual, "value differs at {}", path),
+        _ => assert_eq!(expected, actual, "value differs at {path}"),
     }
 }
 
 pub fn decode_schema(text: &str) -> Schema {
-    let bytes = athena_federation_sdk::serde::json::decode_base64(text).expect("base64");
-    arrow_ipc::schema_from_bytes(&bytes).expect("schema bytes")
+    let bytes = athena_federation_sdk::serde::decode_base64(text).expect("base64");
+    schema_from_bytes(&bytes).expect("schema bytes")
 }

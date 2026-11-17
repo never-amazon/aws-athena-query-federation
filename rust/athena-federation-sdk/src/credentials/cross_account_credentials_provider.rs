@@ -27,10 +27,12 @@ impl CrossAccountCredentialsProvider {
                 .role_session_name(role_session_name)
                 .send()
                 .await
-                .map_err(|e| FederationError::from(AwsServiceError::from_sdk_error(AwsService::Sts, &e)))?;
-            let credentials = response
-                .credentials()
-                .ok_or_else(|| FederationError::NullPointer("AssumeRole returned no credentials".into()))?;
+                .map_err(|e| {
+                    FederationError::from(AwsServiceError::from_sdk_error(AwsService::Sts, &e))
+                })?;
+            let credentials = response.credentials().ok_or_else(|| {
+                FederationError::NullPointer("AssumeRole returned no credentials".into())
+            })?;
             let session_credentials = Credentials::new(
                 credentials.access_key_id(),
                 credentials.secret_access_key(),
@@ -40,6 +42,8 @@ impl CrossAccountCredentialsProvider {
             );
             return Ok(SharedCredentialsProvider::new(session_credentials));
         }
-        Ok(SharedCredentialsProvider::new(DefaultCredentialsChain::builder().build().await))
+        Ok(SharedCredentialsProvider::new(
+            DefaultCredentialsChain::builder().build().await,
+        ))
     }
 }

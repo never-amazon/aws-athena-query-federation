@@ -2,8 +2,8 @@ use std::any::Any;
 use std::sync::Arc;
 
 use super::FieldWriter;
-use crate::data::vector::FieldVector;
 use crate::data::value::Value;
+use crate::data::vector::FieldVector;
 use crate::data::writers::extractors::VarCharExtractor;
 use crate::data::writers::holders::NullableVarCharHolder;
 use crate::domain::predicate::ConstraintProjector;
@@ -16,7 +16,10 @@ pub struct VarCharFieldWriter {
 }
 
 impl VarCharFieldWriter {
-    pub fn new(extractor: Arc<dyn VarCharExtractor>, constraint: Option<Arc<dyn ConstraintProjector>>) -> VarCharFieldWriter {
+    pub fn new(
+        extractor: Arc<dyn VarCharExtractor>,
+        constraint: Option<Arc<dyn ConstraintProjector>>,
+    ) -> VarCharFieldWriter {
         VarCharFieldWriter {
             holder: NullableVarCharHolder::default(),
             extractor,
@@ -28,7 +31,11 @@ impl VarCharFieldWriter {
         let h = &self.holder;
         match &self.constraint {
             Some(c) => {
-                let value = if h.is_set == 0 { Value::Null } else { Value::String(h.value.clone()) };
+                let value = if h.is_set == 0 {
+                    Value::Null
+                } else {
+                    Value::String(h.value.clone())
+                };
                 c.apply(&value)
             }
             None => Ok(true),
@@ -37,7 +44,12 @@ impl VarCharFieldWriter {
 }
 
 impl FieldWriter for VarCharFieldWriter {
-    fn write(&mut self, vector: &mut FieldVector, context: &dyn Any, row_num: usize) -> Result<bool> {
+    fn write(
+        &mut self,
+        vector: &mut FieldVector,
+        context: &dyn Any,
+        row_num: usize,
+    ) -> Result<bool> {
         self.extractor.extract(context, &mut self.holder)?;
         let h = &self.holder;
         if h.is_set > 0 {

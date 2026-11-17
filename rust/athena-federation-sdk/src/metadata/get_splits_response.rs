@@ -12,7 +12,11 @@ pub struct GetSplitsResponse {
 }
 
 impl GetSplitsResponse {
-    pub fn new<I>(catalog_name: impl Into<String>, splits: I, continuation_token: Option<String>) -> GetSplitsResponse
+    pub fn new<I>(
+        catalog_name: impl Into<String>,
+        splits: I,
+        continuation_token: Option<String>,
+    ) -> GetSplitsResponse
     where
         I: IntoIterator<Item = Split>,
     {

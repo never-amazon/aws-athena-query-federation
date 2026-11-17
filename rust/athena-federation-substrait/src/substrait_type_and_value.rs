@@ -8,6 +8,7 @@ use crate::calcite::values::{
     TimeString, TimestampString,
 };
 use crate::error::{Result, SubstraitError};
+use crate::java_cast::{double_to_long, long_to_double};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SubstraitValue {
@@ -40,8 +41,8 @@ impl SubstraitValue {
             SubstraitValue::Short(v) => Some(i64::from(*v)),
             SubstraitValue::Integer(v) => Some(i64::from(*v)),
             SubstraitValue::Long(v) => Some(*v),
-            SubstraitValue::Float(v) => Some(*v as i64),
-            SubstraitValue::Double(v) => Some(*v as i64),
+            SubstraitValue::Float(v) => Some(double_to_long(f64::from(*v))),
+            SubstraitValue::Double(v) => Some(double_to_long(*v)),
             SubstraitValue::Decimal(d) => {
                 let (unscaled, scale) = d.with_scale(0).as_bigint_and_exponent();
                 if scale != 0 {
@@ -67,7 +68,7 @@ impl SubstraitValue {
             SubstraitValue::Float(v) => Some(f64::from(*v)),
             SubstraitValue::Double(v) => Some(*v),
             SubstraitValue::Decimal(d) => java_big_decimal_to_string(d).parse().ok(),
-            other => other.as_i64().map(|v| v as f64),
+            other => other.as_i64().map(long_to_double),
         }
     }
 
@@ -144,16 +145,19 @@ pub struct SubstraitTypeAndValueBuilder {
 }
 
 impl SubstraitTypeAndValueBuilder {
+    #[must_use]
     pub fn type_name(mut self, type_name: SqlTypeName) -> Self {
         self.type_name = Some(type_name);
         self
     }
 
+    #[must_use]
     pub fn value(mut self, value: SubstraitValue) -> Self {
         self.value = Some(value);
         self
     }
 
+    #[must_use]
     pub fn column_name(mut self, column_name: impl Into<String>) -> Self {
         self.column_name = Some(column_name.into());
         self

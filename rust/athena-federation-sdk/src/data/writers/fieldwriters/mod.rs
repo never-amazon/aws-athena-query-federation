@@ -33,7 +33,12 @@ use crate::domain::predicate::ConstraintProjector;
 use crate::exceptions::Result;
 
 pub trait FieldWriter: Send {
-    fn write(&mut self, vector: &mut FieldVector, context: &dyn Any, row_num: usize) -> Result<bool>;
+    fn write(
+        &mut self,
+        vector: &mut FieldVector,
+        context: &dyn Any,
+        row_num: usize,
+    ) -> Result<bool>;
 }
 
 pub trait FieldWriterFactory: Send + Sync {
@@ -47,7 +52,13 @@ pub trait FieldWriterFactory: Send + Sync {
 
 impl<F> FieldWriterFactory for F
 where
-    F: Fn(&FieldVector, Option<&Extractor>, Option<Arc<dyn ConstraintProjector>>) -> Result<Box<dyn FieldWriter>> + Send + Sync,
+    F: Fn(
+            &FieldVector,
+            Option<&Extractor>,
+            Option<Arc<dyn ConstraintProjector>>,
+        ) -> Result<Box<dyn FieldWriter>>
+        + Send
+        + Sync,
 {
     fn create(
         &self,

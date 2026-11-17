@@ -119,6 +119,7 @@ impl SqlKind {
         )
     }
 
+    #[must_use]
     pub fn reverse(self) -> SqlKind {
         match self {
             SqlKind::GreaterThan => SqlKind::LessThan,
@@ -129,6 +130,7 @@ impl SqlKind {
         }
     }
 
+    #[must_use]
     pub fn negate_null_safe(self) -> SqlKind {
         match self {
             SqlKind::Equals => SqlKind::NotEquals,

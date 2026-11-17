@@ -16,13 +16,14 @@ pub struct DefaultCredentialsProvider {
 
 impl DefaultCredentialsProvider {
     pub fn new(secret_string: &str) -> Result<DefaultCredentialsProvider> {
-        let original_map: HashMap<String, serde_json::Value> = serde_json::from_str(secret_string).map_err(|e| {
-            FederationError::connector_with_details(
-                FederationSourceErrorCode::InternalServiceException,
-                "Could not deserialize RDS credentials into HashMap: ",
-                e.to_string(),
-            )
-        })?;
+        let original_map: HashMap<String, serde_json::Value> = serde_json::from_str(secret_string)
+            .map_err(|e| {
+                FederationError::connector_with_details(
+                    FederationSourceErrorCode::InternalServiceException,
+                    "Could not deserialize RDS credentials into HashMap: ",
+                    e.to_string(),
+                )
+            })?;
         let mut rds_secrets: HashMap<String, Option<String>> = HashMap::new();
         for (key, value) in original_map {
             if key.eq_ignore_ascii_case(CredentialsConstants::USERNAME)
@@ -41,10 +42,19 @@ impl DefaultCredentialsProvider {
                 rds_secrets.insert(key.to_lowercase(), value);
             }
         }
-        let user = rds_secrets.get(CredentialsConstants::USERNAME).cloned().flatten();
-        let password = rds_secrets.get(CredentialsConstants::PASSWORD).cloned().flatten();
+        let user = rds_secrets
+            .get(CredentialsConstants::USERNAME)
+            .cloned()
+            .flatten();
+        let password = rds_secrets
+            .get(CredentialsConstants::PASSWORD)
+            .cloned()
+            .flatten();
         Ok(DefaultCredentialsProvider {
-            default_credentials: DefaultCredentials::new_nullable(user.as_deref(), password.as_deref())?,
+            default_credentials: DefaultCredentials::new_nullable(
+                user.as_deref(),
+                password.as_deref(),
+            )?,
         })
     }
 

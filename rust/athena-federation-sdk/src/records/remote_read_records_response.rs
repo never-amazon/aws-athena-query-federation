@@ -75,7 +75,11 @@ impl PartialEq for RemoteReadRecordsResponse {
 
 impl fmt::Display for RemoteReadRecordsResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let blocks: Vec<String> = self.remote_blocks.iter().map(|b| b.to_string()).collect();
+        let blocks: Vec<String> = self
+            .remote_blocks
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(
             f,
             "RemoteReadRecordsResponse{{schema={}, remoteBlocks=[{}], encryptionKey=XXXXXX, requestType={}, catalogName={}}}",

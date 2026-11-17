@@ -6,11 +6,11 @@ use athena_federation_sdk::credentials::{
     CredentialsConstants, CredentialsProviderFactory, DefaultCredentialsProvider, HttpRequest,
     OAuthCredentialsProvider, OAuthFlow,
 };
-use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode};
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, SecretsManagerClient,
 };
 use athena_federation_sdk::Result;
+use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
 
 const SECRET_NAME: &str = "test-secret";
 const TEST_CLIENT_ID: &str = "test-client-id";
@@ -33,7 +33,11 @@ impl SecretsManagerClient for MockSecretsManager {
         Ok(self.secret_string.lock().unwrap().clone())
     }
 
-    async fn put_secret_value(&self, _secret_id: &str, _secret_string: &str) -> std::result::Result<(), AwsServiceError> {
+    async fn put_secret_value(
+        &self,
+        _secret_id: &str,
+        _secret_string: &str,
+    ) -> std::result::Result<(), AwsServiceError> {
         Ok(())
     }
 }
@@ -78,18 +82,22 @@ fn oauth_secret() -> String {
     .unwrap()
 }
 
-fn test_oauth_provider() -> Option<Box<dyn athena_federation_sdk::credentials::InitializableCredentialsProvider>> {
-    Some(Box::new(OAuthCredentialsProvider::new(Box::new(TestOAuthProvider))))
+fn test_oauth_provider(
+) -> Box<dyn athena_federation_sdk::credentials::InitializableCredentialsProvider> {
+    Box::new(OAuthCredentialsProvider::new(Box::new(TestOAuthProvider)))
 }
 
 #[tokio::test]
 async fn test_create_credential_provider_when_oauth_configured() {
     let cachable_secrets_manager = setup(Some(oauth_secret()));
-    let provider =
-        CredentialsProviderFactory::create_credential_provider(Some(SECRET_NAME), &cachable_secrets_manager, test_oauth_provider())
-            .await
-            .unwrap()
-            .unwrap();
+    let provider = CredentialsProviderFactory::create_credential_provider(
+        Some(SECRET_NAME),
+        &cachable_secrets_manager,
+        Some(test_oauth_provider()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(provider.as_any().is::<OAuthCredentialsProvider>());
 }
 
@@ -101,37 +109,51 @@ async fn test_create_credential_provider_when_username_password_configured() {
     ]))
     .unwrap();
     let cachable_secrets_manager = setup(Some(standard_secret));
-    let provider =
-        CredentialsProviderFactory::create_credential_provider(Some(SECRET_NAME), &cachable_secrets_manager, test_oauth_provider())
-            .await
-            .unwrap()
-            .unwrap();
+    let provider = CredentialsProviderFactory::create_credential_provider(
+        Some(SECRET_NAME),
+        &cachable_secrets_manager,
+        Some(test_oauth_provider()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert!(provider.as_any().is::<DefaultCredentialsProvider>());
 }
 
 #[tokio::test]
 async fn test_create_credential_provider_when_no_secret() {
     let cachable_secrets_manager = setup(None);
-    let provider =
-        CredentialsProviderFactory::create_credential_provider(Some(""), &cachable_secrets_manager, test_oauth_provider())
-            .await
-            .unwrap();
+    let provider = CredentialsProviderFactory::create_credential_provider(
+        Some(""),
+        &cachable_secrets_manager,
+        Some(test_oauth_provider()),
+    )
+    .await
+    .unwrap();
     assert!(provider.is_none());
 }
 
 #[tokio::test]
 async fn test_create_credential_provider_when_invalid_json_throws_exception() {
     let cachable_secrets_manager = setup(Some("invalid-json{".to_string()));
-    let e = CredentialsProviderFactory::create_credential_provider(Some(SECRET_NAME), &cachable_secrets_manager, test_oauth_provider())
-        .await
-        .err()
+    let e = CredentialsProviderFactory::create_credential_provider(
+        Some(SECRET_NAME),
+        &cachable_secrets_manager,
+        Some(test_oauth_provider()),
+    )
+    .await
+    .err()
+    .expect("Expected AthenaConnectorException");
+    let connector = e
+        .as_connector_exception()
         .expect("Expected AthenaConnectorException");
-    let connector = e.as_connector_exception().expect("Expected AthenaConnectorException");
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException.as_str()),
         connector.get_error_details().error_code()
     );
-    assert!(e.to_string().contains("Could not deserialize credentials into HashMap"));
+    assert!(e
+        .to_string()
+        .contains("Could not deserialize credentials into HashMap"));
 }
 
 #[tokio::test]
@@ -140,12 +162,16 @@ async fn test_create_credential_provider_when_invalid_oauth_class_throws_excepti
     let e = CredentialsProviderFactory::create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
-        Some(Box::new(OAuthCredentialsProvider::new(Box::new(InvalidOAuthProvider)))),
+        Some(Box::new(OAuthCredentialsProvider::new(Box::new(
+            InvalidOAuthProvider,
+        )))),
     )
     .await
     .err()
     .expect("Expected AthenaConnectorException");
-    let connector = e.as_connector_exception().expect("Expected AthenaConnectorException");
+    let connector = e
+        .as_connector_exception()
+        .expect("Expected AthenaConnectorException");
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException.as_str()),
         connector.get_error_details().error_code()

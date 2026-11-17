@@ -2,6 +2,7 @@ use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SqlNode;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitSqlUtils;
+use std::fmt::Write;
 
 const DIALECTS: [&str; 5] = [
     "ansi",
@@ -77,13 +78,15 @@ fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
         for v in &accumulator {
             let class = v.get_value().java_class_name();
             let simple = class.rsplit('.').next().unwrap_or(class);
-            out.push_str(&format!(
+            write!(
+                out,
                 "\t{}|{}|{}|{}",
                 v.get_type(),
                 simple,
                 esc(&v.get_value().to_string()),
                 v.get_column_name()
-            ));
+            )
+            .unwrap();
         }
         Ok(out)
     };
@@ -111,10 +114,10 @@ fn rust_rows(plan: &str) -> Vec<(String, String)> {
         };
     rows.push(("SCHEMA".to_string(), schema));
     let remap = match SubstraitSqlUtils::get_column_remapping(plan, &SqlDialect::ansi()) {
-        Ok(m) => m
-            .iter()
-            .map(|(k, v)| format!("\t{k}={}", v.as_deref().unwrap_or("null")))
-            .collect::<String>(),
+        Ok(m) => m.iter().fold(String::new(), |mut acc, (k, v)| {
+            write!(acc, "\t{k}={}", v.as_deref().unwrap_or("null")).unwrap();
+            acc
+        }),
         Err(e) => format!("\t{}", error_text(&e)),
     };
     rows.push((
@@ -138,8 +141,7 @@ fn diff(case: &Case, actual: &[(String, String)]) -> Vec<String> {
         let got = actual
             .iter()
             .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("<missing>");
+            .map_or("<missing>", |(_, v)| v.as_str());
         if got != expected {
             out.push(format!(
                 "{key} {}\n  expected: {expected}\n  actual:   {got}",

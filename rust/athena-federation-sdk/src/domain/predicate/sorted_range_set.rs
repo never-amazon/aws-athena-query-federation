@@ -52,7 +52,13 @@ impl SortedRangeSet {
         }
     }
 
-    pub fn of_values<I, V>(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, null_allowed: bool, first: impl Into<Value>, rest: I) -> Result<SortedRangeSet>
+    pub fn of_values<I, V>(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        null_allowed: bool,
+        first: impl Into<Value>,
+        rest: I,
+    ) -> Result<SortedRangeSet>
     where
         I: IntoIterator<Item = V>,
         V: Into<Value>,
@@ -64,22 +70,37 @@ impl SortedRangeSet {
         SortedRangeSet::copy_of(arrow_type, ranges, null_allowed)
     }
 
-    pub fn of(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, first: impl Into<Value>) -> Result<SortedRangeSet> {
+    pub fn of(
+        allocator: &dyn BlockAllocator,
+        arrow_type: &ArrowType,
+        first: impl Into<Value>,
+    ) -> Result<SortedRangeSet> {
         SortedRangeSet::of_values(allocator, arrow_type, false, first, Vec::<Value>::new())
     }
 
-    pub fn of_ranges(first: Range, rest: impl IntoIterator<Item = Range>) -> Result<SortedRangeSet> {
+    pub fn of_ranges(
+        first: Range,
+        rest: impl IntoIterator<Item = Range>,
+    ) -> Result<SortedRangeSet> {
         SortedRangeSet::of_ranges_nullable(false, first, rest)
     }
 
-    pub fn of_ranges_nullable(null_allowed: bool, first: Range, rest: impl IntoIterator<Item = Range>) -> Result<SortedRangeSet> {
+    pub fn of_ranges_nullable(
+        null_allowed: bool,
+        first: Range,
+        rest: impl IntoIterator<Item = Range>,
+    ) -> Result<SortedRangeSet> {
         let arrow_type = first.get_type().clone();
         let mut ranges = vec![first];
         ranges.extend(rest);
         SortedRangeSet::copy_of(&arrow_type, ranges, null_allowed)
     }
 
-    pub fn copy_of(arrow_type: &ArrowType, ranges: impl IntoIterator<Item = Range>, null_allowed: bool) -> Result<SortedRangeSet> {
+    pub fn copy_of(
+        arrow_type: &ArrowType,
+        ranges: impl IntoIterator<Item = Range>,
+        null_allowed: bool,
+    ) -> Result<SortedRangeSet> {
         let mut builder = SortedRangeSetBuilder::new(arrow_type, null_allowed);
         builder.add_all(ranges)?;
         builder.build()
@@ -118,13 +139,17 @@ impl SortedRangeSet {
     }
 
     pub fn is_single_value(&self) -> bool {
-        (self.low_indexed_ranges.len() == 1 && self.low_indexed_ranges[0].is_single_value() && !self.null_allowed)
+        (self.low_indexed_ranges.len() == 1
+            && self.low_indexed_ranges[0].is_single_value()
+            && !self.null_allowed)
             || (self.low_indexed_ranges.is_empty() && self.null_allowed)
     }
 
     pub fn get_single_value(&self) -> Result<Value> {
         if !self.is_single_value() {
-            return Err(FederationError::invalid_input("SortedRangeSet does not have just a single value"));
+            return Err(FederationError::invalid_input(
+                "SortedRangeSet does not have just a single value",
+            ));
         }
         if self.null_allowed && self.low_indexed_ranges.is_empty() {
             return Ok(Value::Null);
@@ -184,13 +209,22 @@ impl SortedRangeSet {
     }
 
     pub fn get_span(&self) -> Result<Range> {
-        match (self.low_indexed_ranges.first(), self.low_indexed_ranges.last()) {
+        match (
+            self.low_indexed_ranges.first(),
+            self.low_indexed_ranges.last(),
+        ) {
             (Some(first), Some(last)) => first.span(last),
-            _ => Err(FederationError::invalid_input("Can not get span if no ranges exist")),
+            _ => Err(FederationError::invalid_input(
+                "Can not get span if no ranges exist",
+            )),
         }
     }
 
-    pub fn intersect(&self, _allocator: &dyn BlockAllocator, other: &SortedRangeSet) -> Result<SortedRangeSet> {
+    pub fn intersect(
+        &self,
+        _allocator: &dyn BlockAllocator,
+        other: &SortedRangeSet,
+    ) -> Result<SortedRangeSet> {
         self.check_compatibility(other)?;
         let intersect_null_allowed = self.null_allowed && other.null_allowed;
         let mut builder = SortedRangeSetBuilder::new(&self.arrow_type, intersect_null_allowed);
@@ -217,7 +251,11 @@ impl SortedRangeSet {
         builder.build()
     }
 
-    pub fn union(&self, _allocator: &dyn BlockAllocator, other: &SortedRangeSet) -> Result<SortedRangeSet> {
+    pub fn union(
+        &self,
+        _allocator: &dyn BlockAllocator,
+        other: &SortedRangeSet,
+    ) -> Result<SortedRangeSet> {
         let union_null_allowed = self.null_allowed || other.null_allowed;
         self.check_compatibility(other)?;
         let mut builder = SortedRangeSetBuilder::new(&self.arrow_type, union_null_allowed);
@@ -226,7 +264,11 @@ impl SortedRangeSet {
         builder.build()
     }
 
-    pub fn union_all(&self, _allocator: &dyn BlockAllocator, value_sets: &[SortedRangeSet]) -> Result<SortedRangeSet> {
+    pub fn union_all(
+        &self,
+        _allocator: &dyn BlockAllocator,
+        value_sets: &[SortedRangeSet],
+    ) -> Result<SortedRangeSet> {
         let mut union_null_allowed = self.null_allowed;
         for v in value_sets {
             union_null_allowed |= v.null_allowed;
@@ -243,12 +285,9 @@ impl SortedRangeSet {
     pub fn complement(&self, allocator: &dyn BlockAllocator) -> Result<SortedRangeSet> {
         let mut builder = SortedRangeSetBuilder::new(&self.arrow_type, !self.null_allowed);
         let mut iter = self.low_indexed_ranges.iter();
-        let first = match iter.next() {
-            None => {
-                builder.add(Range::all(allocator, &self.arrow_type))?;
-                return builder.build();
-            }
-            Some(f) => f,
+        let Some(first) = iter.next() else {
+            builder.add(Range::all(allocator, &self.arrow_type))?;
+            return builder.build();
         };
         if !first.get_low().is_lower_unbounded() {
             builder.add(Range::new(
@@ -276,7 +315,11 @@ impl SortedRangeSet {
         Ok(!self.intersect(allocator, other)?.is_none())
     }
 
-    pub fn subtract(&self, allocator: &dyn BlockAllocator, other: &SortedRangeSet) -> Result<SortedRangeSet> {
+    pub fn subtract(
+        &self,
+        allocator: &dyn BlockAllocator,
+        other: &SortedRangeSet,
+    ) -> Result<SortedRangeSet> {
         self.intersect(allocator, &other.complement(allocator)?)
     }
 
@@ -311,10 +354,9 @@ impl SortedRangeSet {
     }
 
     pub fn hash_code(&self) -> i32 {
-        let map_hash = self
-            .low_indexed_ranges
-            .iter()
-            .fold(0i32, |acc, r| acc.wrapping_add(r.get_low().hash_code() ^ r.hash_code()));
+        let map_hash = self.low_indexed_ranges.iter().fold(0i32, |acc, r| {
+            acc.wrapping_add(r.get_low().hash_code() ^ r.hash_code())
+        });
         objects_hash(&[map_hash, if self.null_allowed { 1231 } else { 1237 }])
     }
 }
@@ -335,7 +377,8 @@ impl Ranges for SortedRangeSet {
 
 impl PartialEq for SortedRangeSet {
     fn eq(&self, other: &Self) -> bool {
-        self.null_allowed == other.null_allowed && self.low_indexed_ranges == other.low_indexed_ranges
+        self.null_allowed == other.null_allowed
+            && self.low_indexed_ranges == other.low_indexed_ranges
     }
 }
 

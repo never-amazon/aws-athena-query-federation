@@ -1,6 +1,9 @@
 use crate::exceptions::{FederationError, Result};
 use crate::metadata::ListTablesResponse;
-use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null, validate_array_start, validate_object_end, validate_object_start_token};
+use crate::serde::base::{
+    assert_field_name, get_next_string_field, require_non_null, validate_array_start,
+    validate_object_end, validate_object_start_token,
+};
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 
 const TABLES_FIELD: &str = "tables";
@@ -24,7 +27,11 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRe
     loop {
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
-            None => return Err(FederationError::Io("Unexpected end-of-input: expected close marker for ARRAY".into())),
+            None => {
+                return Err(FederationError::Io(
+                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                ))
+            }
             token => {
                 validate_object_start_token(token)?;
                 tables.push(super::table_name_serde::do_deserialize(jparser)?);
@@ -43,5 +50,9 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRe
             next_token = jparser.get_value_as_string();
         }
     }
-    Ok(ListTablesResponse::new(require_non_null(catalog_name, "catalogName is null")?, tables, next_token))
+    Ok(ListTablesResponse::new(
+        require_non_null(catalog_name, "catalogName is null")?,
+        tables,
+        next_token,
+    ))
 }

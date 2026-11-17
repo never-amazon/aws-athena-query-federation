@@ -330,7 +330,6 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "arrow",
- "arrow-schema",
  "async-trait",
  "aws-config",
  "aws-credential-types",

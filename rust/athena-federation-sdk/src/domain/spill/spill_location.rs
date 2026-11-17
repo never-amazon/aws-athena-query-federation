@@ -30,7 +30,7 @@ impl From<S3SpillLocation> for SpillLocation {
 impl fmt::Display for SpillLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SpillLocation::S3(s) => write!(f, "{}", s),
+            SpillLocation::S3(s) => write!(f, "{s}"),
         }
     }
 }

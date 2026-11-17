@@ -7,7 +7,10 @@ pub fn serialize(request: &FederationRequest, jgen: &mut JsonGenerator) -> Resul
     crate::serde::v2::federation_request_serde::serialize(request, jgen, SERDE_VERSION_SIX)
 }
 
-pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<FederationRequest> {
+pub fn do_deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<FederationRequest> {
     let ctx = SerDeContext {
         version: SERDE_VERSION_SIX,
         allocators: ctx.allocators,

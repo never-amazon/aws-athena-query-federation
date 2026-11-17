@@ -3,15 +3,15 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, GetObjectRequest, PutObjectRequest, S3BlockSpillReader,
-    S3Client, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, GetObjectRequest, PutObjectRequest,
+    S3BlockSpillReader, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::spill::S3SpillLocation;
-use athena_federation_sdk::exceptions::FederationError;
-use athena_federation_sdk::security::{AwsService, 
-    AesGcmBlockCrypto, AwsServiceError, BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
-    NoOpBlockCrypto,
+use athena_federation_sdk::security::{
+    AesGcmBlockCrypto, AwsService, AwsServiceError, BlockCrypto, EncryptionKey,
+    EncryptionKeyFactory, LocalKeyFactory, NoOpBlockCrypto,
 };
+use athena_federation_sdk::FederationError;
 
 const BUCKET: &str = "test-bucket";
 const PREFIX: &str = "test-prefix";
@@ -37,14 +37,22 @@ impl MockS3 {
 
 #[async_trait]
 impl S3Client for MockS3 {
-    async fn put_object(&self, _request: PutObjectRequest, _body: Vec<u8>) -> Result<(), AwsServiceError> {
+    async fn put_object(
+        &self,
+        _request: PutObjectRequest,
+        _body: Vec<u8>,
+    ) -> Result<(), AwsServiceError> {
         *self.put_requests.lock().unwrap() += 1;
         Ok(())
     }
 
     async fn get_object(&self, request: GetObjectRequest) -> Result<Vec<u8>, AwsServiceError> {
         self.get_requests.lock().unwrap().push(request);
-        self.response.lock().unwrap().clone().unwrap_or_else(|| Ok(Vec::new()))
+        self.response
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Ok(Vec::new()))
     }
 }
 
@@ -65,7 +73,12 @@ impl Drop for Setup {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(block.get_field_vector_mut(field).unwrap(), row, &value.into()).unwrap();
+    BlockUtils::set_value(
+        block.get_field_vector_mut(field).unwrap(),
+        row,
+        &value.into(),
+    )
+    .unwrap();
 }
 
 async fn setup() -> Setup {
@@ -104,14 +117,19 @@ async fn setup() -> Setup {
 }
 
 fn assert_connector_exception(e: &FederationError) {
-    assert!(e.as_connector_exception().is_some(), "expected AthenaConnectorException, got {:?}", e);
+    assert!(
+        e.as_connector_exception().is_some(),
+        "expected AthenaConnectorException, got {e:?}"
+    );
 }
 
 #[tokio::test]
 async fn read_encrypted_block_succeeds() {
     let s = setup().await;
     let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto.encrypt(Some(&s.encryption_key), &s.expected).unwrap();
+    let spilled_bytes = block_crypto
+        .encrypt(Some(&s.encryption_key), &s.expected)
+        .unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
     let actual = s
@@ -124,7 +142,7 @@ async fn read_encrypted_block_succeeds() {
     assert_eq!(1, s.mock_s3.get_count());
     assert_eq!(0, *s.mock_s3.put_requests.lock().unwrap());
     assert_eq!(
-        GetObjectRequest::new(BUCKET, format!("{}/{}/{}", PREFIX, REQUEST_ID, SPLIT_ID)),
+        GetObjectRequest::new(BUCKET, format!("{PREFIX}/{REQUEST_ID}/{SPLIT_ID}")),
         s.mock_s3.get_requests.lock().unwrap()[0]
     );
 }
@@ -133,10 +151,16 @@ async fn read_encrypted_block_succeeds() {
 async fn read_bytes_encrypted_bytes_succeeds() {
     let s = setup().await;
     let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let encrypted_bytes = block_crypto.encrypt(Some(&s.encryption_key), &s.expected).unwrap();
+    let encrypted_bytes = block_crypto
+        .encrypt(Some(&s.encryption_key), &s.expected)
+        .unwrap();
     s.mock_s3.when_get_object(Ok(encrypted_bytes));
 
-    let bytes = s.block_reader.read(&s.spill_location, Some(&s.encryption_key)).await.unwrap();
+    let bytes = s
+        .block_reader
+        .read(&s.spill_location, Some(&s.encryption_key))
+        .await
+        .unwrap();
 
     assert!(!bytes.is_empty());
     assert_eq!(1, s.mock_s3.get_count());
@@ -158,8 +182,11 @@ async fn read_null_spill_location_throws_null_pointer_exception() {
 #[tokio::test]
 async fn read_s3_failure_throws_s3_exception() {
     let s = setup().await;
-    s.mock_s3
-        .when_get_object(Err(AwsServiceError::service(AwsService::S3, None, Some("Failed to read from S3".into()))));
+    s.mock_s3.when_get_object(Err(AwsServiceError::service(
+        AwsService::S3,
+        None,
+        Some("Failed to read from S3".into()),
+    )));
 
     let exception = s
         .block_reader
@@ -169,8 +196,7 @@ async fn read_s3_failure_throws_s3_exception() {
 
     assert!(
         matches!(&exception, FederationError::AwsService(e) if e.is_service_exception_of(AwsService::S3)),
-        "{:?}",
-        exception
+        "{exception:?}"
     );
     assert_eq!("Failed to read from S3", exception.to_string());
     assert_eq!(1, s.mock_s3.get_count());
@@ -193,7 +219,9 @@ async fn read_corrupted_encrypted_data_throws_athena_connector_exception() {
 async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
     let s = setup().await;
     let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto.encrypt(Some(&s.encryption_key), &s.expected).unwrap();
+    let spilled_bytes = block_crypto
+        .encrypt(Some(&s.encryption_key), &s.expected)
+        .unwrap();
     let wrong_key = LocalKeyFactory::new().create().await.unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
@@ -211,7 +239,9 @@ async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
 async fn read_null_schema_throws_null_pointer_exception() {
     let s = setup().await;
     let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto.encrypt(Some(&s.encryption_key), &s.expected).unwrap();
+    let spilled_bytes = block_crypto
+        .encrypt(Some(&s.encryption_key), &s.expected)
+        .unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
     let ex = s

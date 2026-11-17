@@ -15,7 +15,10 @@ struct MockAwsCrypto {
 #[async_trait]
 impl AwsCrypto for MockAwsCrypto {
     async fn decrypt_data(&self, kms_key_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        self.calls.lock().unwrap().push((kms_key_id.to_string(), ciphertext.to_vec()));
+        self.calls
+            .lock()
+            .unwrap()
+            .push((kms_key_id.to_string(), ciphertext.to_vec()));
         if kms_key_id == self.expected_key_id && ciphertext == self.expected_ciphertext.as_slice() {
             Ok(self.result.clone())
         } else {
@@ -35,10 +38,16 @@ async fn test_decrypt() {
     let kms_encryption_provider = KmsEncryptionProvider::with_aws_crypto(aws_crypto.clone());
 
     let encode = base64::engine::general_purpose::STANDARD.encode(b"data");
-    let s = kms_encryption_provider.decrypt_data("test", &encode).await.unwrap();
+    let s = kms_encryption_provider
+        .decrypt_data("test", &encode)
+        .await
+        .unwrap();
 
     assert_eq!("test", s);
-    assert_eq!(vec![("test".to_string(), b"data".to_vec())], *aws_crypto.calls.lock().unwrap());
+    assert_eq!(
+        vec![("test".to_string(), b"data".to_vec())],
+        *aws_crypto.calls.lock().unwrap()
+    );
 }
 
 #[tokio::test]

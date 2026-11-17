@@ -49,7 +49,10 @@ fn test_get_filter_rel_with_nested_structure() {
 }
 
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "builds deprecated Substrait proto fields, as the Java test does"
+)]
 fn test_get_fetch_rel_found() {
     let expected = FetchRel {
         count_mode: Some(CountMode::Count(10)),

@@ -11,7 +11,9 @@ struct H {
 
 impl H {
     fn new() -> H {
-        H { a: BlockAllocatorImpl::new() }
+        H {
+            a: BlockAllocatorImpl::new(),
+        }
     }
     fn none(&self) -> EquatableValueSet {
         EquatableValueSet::none(&self.a, &INT)
@@ -82,7 +84,7 @@ fn test_single_value() {
     assert!(!complement.is_all());
     assert!(!complement.is_single_value());
     assert!(!complement.is_white_list());
-    assert_eq!(complement.get_value(0), Value::Int(10), "{}", complement);
+    assert_eq!(complement.get_value(0), Value::Int(10), "{complement}");
     assert_eq!(complement.complement(&h.a).unwrap(), equatables);
     assert!(contains(&complement, 0));
     assert!(contains(&complement, 1));
@@ -123,16 +125,27 @@ fn test_multiple_values() {
 fn test_get_single_value() {
     let h = H::new();
     assert_eq!(h.of(&[0]).get_single_value().unwrap(), Value::Int(0));
-    assert!(matches!(h.all().get_single_value(), Err(FederationError::AthenaConnector(_))));
+    assert!(matches!(
+        h.all().get_single_value(),
+        Err(FederationError::AthenaConnector(_))
+    ));
 }
 
 #[test]
 fn test_nullability() {
     let h = H::new();
-    let actual: ValueSet = EquatableValueSet::of_nullable(&h.a, &INT, true, vec![100]).unwrap().into();
-    assert!(actual.contains_marker(&Marker::exactly(&h.a, &INT, 100).unwrap()).unwrap());
-    assert!(actual.contains_marker(&Marker::null_marker(&h.a, &INT)).unwrap());
-    assert!(!actual.contains_marker(&Marker::exactly(&h.a, &INT, 101).unwrap()).unwrap());
+    let actual: ValueSet = EquatableValueSet::of_nullable(&h.a, &INT, true, vec![100])
+        .unwrap()
+        .into();
+    assert!(actual
+        .contains_marker(&Marker::exactly(&h.a, &INT, 100).unwrap())
+        .unwrap());
+    assert!(actual
+        .contains_marker(&Marker::null_marker(&h.a, &INT))
+        .unwrap());
+    assert!(!actual
+        .contains_marker(&Marker::exactly(&h.a, &INT, 101).unwrap())
+        .unwrap());
 }
 
 #[test]
@@ -230,9 +243,18 @@ fn test_intersect() {
     assert_eq!(h.not(&[0]).intersect(a, &h.of(&[0])).unwrap(), h.none());
     assert_eq!(h.not(&[0]).intersect(a, &h.of(&[1])).unwrap(), h.of(&[1]));
     assert_eq!(h.of(&[0]).intersect(a, &h.not(&[1])).unwrap(), h.of(&[0]));
-    assert_eq!(h.of(&[0, 1]).intersect(a, &h.of(&[0, 2])).unwrap(), h.of(&[0]));
-    assert_eq!(h.not(&[0, 1]).intersect(a, &h.of(&[0, 2])).unwrap(), h.of(&[2]));
-    assert_eq!(h.not(&[0, 1]).intersect(a, &h.not(&[0, 2])).unwrap(), h.not(&[0, 1, 2]));
+    assert_eq!(
+        h.of(&[0, 1]).intersect(a, &h.of(&[0, 2])).unwrap(),
+        h.of(&[0])
+    );
+    assert_eq!(
+        h.not(&[0, 1]).intersect(a, &h.of(&[0, 2])).unwrap(),
+        h.of(&[2])
+    );
+    assert_eq!(
+        h.not(&[0, 1]).intersect(a, &h.not(&[0, 2])).unwrap(),
+        h.not(&[0, 1, 2])
+    );
 }
 
 #[test]
@@ -249,9 +271,18 @@ fn test_union() {
     assert_eq!(h.not(&[0]).union(a, &h.of(&[0])).unwrap(), h.all());
     assert_eq!(h.not(&[0]).union(a, &h.of(&[1])).unwrap(), h.not(&[0]));
     assert_eq!(h.of(&[0]).union(a, &h.not(&[1])).unwrap(), h.not(&[1]));
-    assert_eq!(h.of(&[0, 1]).union(a, &h.of(&[0, 2])).unwrap(), h.of(&[0, 1, 2]));
-    assert_eq!(h.not(&[0, 1]).union(a, &h.of(&[0, 2])).unwrap(), h.not(&[1]));
-    assert_eq!(h.not(&[0, 1]).union(a, &h.not(&[0, 2])).unwrap(), h.not(&[0]));
+    assert_eq!(
+        h.of(&[0, 1]).union(a, &h.of(&[0, 2])).unwrap(),
+        h.of(&[0, 1, 2])
+    );
+    assert_eq!(
+        h.not(&[0, 1]).union(a, &h.of(&[0, 2])).unwrap(),
+        h.not(&[1])
+    );
+    assert_eq!(
+        h.not(&[0, 1]).union(a, &h.not(&[0, 2])).unwrap(),
+        h.not(&[0])
+    );
 }
 
 #[test]
@@ -283,8 +314,17 @@ fn test_subtract() {
     assert_eq!(h.not(&[0]).subtract(a, &h.none()).unwrap(), h.not(&[0]));
     assert_eq!(h.not(&[0]).subtract(a, &h.of(&[0])).unwrap(), h.not(&[0]));
     assert_eq!(h.not(&[0]).subtract(a, &h.not(&[0])).unwrap(), h.none());
-    assert_eq!(h.not(&[0]).subtract(a, &h.of(&[1])).unwrap(), h.not(&[0, 1]));
+    assert_eq!(
+        h.not(&[0]).subtract(a, &h.of(&[1])).unwrap(),
+        h.not(&[0, 1])
+    );
     assert_eq!(h.not(&[0]).subtract(a, &h.not(&[1])).unwrap(), h.of(&[1]));
-    assert_eq!(h.not(&[0]).subtract(a, &h.of(&[0, 1])).unwrap(), h.not(&[0, 1]));
-    assert_eq!(h.not(&[0]).subtract(a, &h.not(&[0, 1])).unwrap(), h.of(&[1]));
+    assert_eq!(
+        h.not(&[0]).subtract(a, &h.of(&[0, 1])).unwrap(),
+        h.not(&[0, 1])
+    );
+    assert_eq!(
+        h.not(&[0]).subtract(a, &h.not(&[0, 1])).unwrap(),
+        h.of(&[1])
+    );
 }

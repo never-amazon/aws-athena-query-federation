@@ -12,7 +12,11 @@ pub struct ListTablesResponse {
 }
 
 impl ListTablesResponse {
-    pub fn new(catalog_name: impl Into<String>, tables: Vec<TableName>, next_token: Option<String>) -> ListTablesResponse {
+    pub fn new(
+        catalog_name: impl Into<String>,
+        tables: Vec<TableName>,
+        next_token: Option<String>,
+    ) -> ListTablesResponse {
         ListTablesResponse {
             catalog_name: catalog_name.into(),
             tables,
@@ -41,7 +45,11 @@ impl PartialEq for ListTablesResponse {
 
 impl fmt::Display for ListTablesResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let tables: Vec<String> = self.tables.iter().map(|t| t.to_string()).collect();
+        let tables: Vec<String> = self
+            .tables
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         write!(
             f,
             "ListTablesResponse{{tables=[{}], nextToken='{}'}}",

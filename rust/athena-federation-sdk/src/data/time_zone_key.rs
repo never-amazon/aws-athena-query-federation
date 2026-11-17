@@ -31,8 +31,7 @@ fn parse_properties(text: &str) -> Vec<(String, String)> {
         let sep = line
             .char_indices()
             .find(|(_, c)| c.is_whitespace() || *c == '=' || *c == ':')
-            .map(|(i, _)| i)
-            .unwrap_or(line.len());
+            .map_or(line.len(), |(i, _)| i);
         let key = &line[..sep];
         let mut rest = line[sep..].trim_start();
         if rest.starts_with('=') || rest.starts_with(':') {
@@ -67,17 +66,24 @@ fn index() -> &'static ZoneIndex {
             max_key = max_key.max(key);
             zone_id_to_key.insert(id.to_lowercase(), TimeZoneKey { id, key });
         }
-        let mut time_zone_keys = vec![None; max_key as usize + 1];
+        let mut time_zone_keys = vec![None; usize::from(max_key.unsigned_abs()) + 1];
         for tzk in zone_id_to_key.values() {
-            time_zone_keys[tzk.key as usize] = Some(tzk.clone());
+            if let Ok(slot) = usize::try_from(tzk.key) {
+                time_zone_keys[slot] = Some(tzk.clone());
+            }
         }
-        let mut offset_time_zone_keys = vec![None; (OFFSET_TIME_ZONE_MAX - OFFSET_TIME_ZONE_MIN + 1) as usize];
+        let mut offset_time_zone_keys =
+            vec![
+                None;
+                usize::from((OFFSET_TIME_ZONE_MAX - OFFSET_TIME_ZONE_MIN).unsigned_abs()) + 1
+            ];
         for offset in OFFSET_TIME_ZONE_MIN..=OFFSET_TIME_ZONE_MAX {
             if offset == 0 {
                 continue;
             }
-            let zone_id = zone_id_for_offset(offset as i64);
-            offset_time_zone_keys[(offset - OFFSET_TIME_ZONE_MIN) as usize] = zone_id_to_key.get(&zone_id).cloned();
+            let zone_id = zone_id_for_offset(i64::from(offset));
+            offset_time_zone_keys[usize::from((offset - OFFSET_TIME_ZONE_MIN).unsigned_abs())] =
+                zone_id_to_key.get(&zone_id).cloned();
         }
         ZoneIndex {
             zone_id_to_key,
@@ -131,14 +137,18 @@ fn normalize_zone_id(original: &str) -> String {
     if starts_with_etc_gmt {
         sign = if sign == '-' { '+' } else { '-' };
     }
-    let (tens, ones) = if length == 2 { ('0', chars[1]) } else { (chars[1], chars[2]) };
+    let (tens, ones) = if length == 2 {
+        ('0', chars[1])
+    } else {
+        (chars[1], chars[2])
+    };
     if !tens.is_ascii_digit() || !ones.is_ascii_digit() {
         return original.to_string();
     }
     if tens == '0' && ones == '0' {
         return "utc".to_string();
     }
-    format!("{}{}{}:00", sign, tens, ones)
+    format!("{sign}{tens}{ones}:00")
 }
 
 impl TimeZoneKey {
@@ -166,12 +176,15 @@ impl TimeZoneKey {
 
     pub fn get_time_zone_key(key: i16) -> Result<TimeZoneKey> {
         let idx = index();
-        if key >= 0 {
-            if let Some(Some(k)) = idx.time_zone_keys.get(key as usize) {
-                return Ok(k.clone());
-            }
+        if let Some(Some(k)) = usize::try_from(key)
+            .ok()
+            .and_then(|slot| idx.time_zone_keys.get(slot))
+        {
+            return Ok(k.clone());
         }
-        Err(FederationError::invalid_input(format!("Invalid time zone key {}", key)))
+        Err(FederationError::invalid_input(format!(
+            "Invalid time zone key {key}"
+        )))
     }
 
     pub fn get_time_zone_key_for_id(zone_id: &str) -> Result<TimeZoneKey> {
@@ -185,19 +198,26 @@ impl TimeZoneKey {
         if let Some(k) = idx.zone_id_to_key.get(&normalize_zone_id(zone_id)) {
             return Ok(k.clone());
         }
-        Err(FederationError::invalid_input(format!("Time zone not supported: {}", zone_id)))
+        Err(FederationError::invalid_input(format!(
+            "Time zone not supported: {zone_id}"
+        )))
     }
 
     pub fn get_time_zone_key_for_offset(offset_minutes: i64) -> Result<TimeZoneKey> {
         if offset_minutes == 0 {
             return Ok(TimeZoneKey::utc_key());
         }
-        if !(OFFSET_TIME_ZONE_MIN as i64..=OFFSET_TIME_ZONE_MAX as i64).contains(&offset_minutes) {
-            return Err(FederationError::invalid_input(format!("Invalid offset minutes {}", offset_minutes)));
+        if !(i64::from(OFFSET_TIME_ZONE_MIN)..=i64::from(OFFSET_TIME_ZONE_MAX))
+            .contains(&offset_minutes)
+        {
+            return Err(FederationError::invalid_input(format!(
+                "Invalid offset minutes {offset_minutes}"
+            )));
         }
-        match &index().offset_time_zone_keys[(offset_minutes - OFFSET_TIME_ZONE_MIN as i64) as usize] {
-            Some(k) => Ok(k.clone()),
-            None => Err(FederationError::invalid_input(format!(
+        let slot = usize::try_from(offset_minutes - i64::from(OFFSET_TIME_ZONE_MIN)).ok();
+        match slot.and_then(|i| index().offset_time_zone_keys.get(i)) {
+            Some(Some(k)) => Ok(k.clone()),
+            Some(None) | None => Err(FederationError::invalid_input(format!(
                 "Time zone not supported: {}",
                 zone_id_for_offset(offset_minutes)
             ))),

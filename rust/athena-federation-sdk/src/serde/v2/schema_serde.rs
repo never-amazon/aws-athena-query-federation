@@ -8,13 +8,19 @@ pub fn serialize(schema: &Schema, jgen: &mut JsonGenerator) -> Result<()> {
     serialize_with_format(schema, jgen, IpcFormat::AthenaFederationLegacy)
 }
 
-pub fn serialize_with_format(schema: &Schema, jgen: &mut JsonGenerator, format: IpcFormat) -> Result<()> {
+pub fn serialize_with_format(
+    schema: &Schema,
+    jgen: &mut JsonGenerator,
+    format: IpcFormat,
+) -> Result<()> {
     let bytes = schema_to_bytes(schema, format)?;
     jgen.write_binary(&bytes)
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Schema> {
-    if jparser.current_token() == Some(JsonToken::ValueString) || jparser.next_token()? == Some(JsonToken::ValueString) {
+    if jparser.current_token() == Some(JsonToken::ValueString)
+        || jparser.next_token()? == Some(JsonToken::ValueString)
+    {
         let schema_bytes = jparser.get_binary_value()?;
         schema_from_bytes(&schema_bytes)
     } else {

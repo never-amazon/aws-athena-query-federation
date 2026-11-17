@@ -18,7 +18,12 @@ pub enum FederationSourceErrorCode {
 
 impl FederationSourceErrorCode {
     pub fn values() -> &'static [FederationSourceErrorCode] {
-        use FederationSourceErrorCode::*;
+        use FederationSourceErrorCode::{
+            AccessDeniedException, EntityNotFoundException, InternalServiceException,
+            InvalidCredentialsException, InvalidInputException, InvalidResponseException,
+            OperationNotSupportedException, OperationTimeoutException, PartialFailureException,
+            ThrottlingException,
+        };
         &[
             AccessDeniedException,
             EntityNotFoundException,
@@ -34,7 +39,12 @@ impl FederationSourceErrorCode {
     }
 
     pub fn as_str(&self) -> &'static str {
-        use FederationSourceErrorCode::*;
+        use FederationSourceErrorCode::{
+            AccessDeniedException, EntityNotFoundException, InternalServiceException,
+            InvalidCredentialsException, InvalidInputException, InvalidResponseException,
+            OperationNotSupportedException, OperationTimeoutException, PartialFailureException,
+            ThrottlingException, UnknownToSdkVersion,
+        };
         match self {
             AccessDeniedException => "AccessDeniedException",
             EntityNotFoundException => "EntityNotFoundException",
@@ -88,7 +98,10 @@ impl ErrorDetails {
         ErrorDetails::builder().error_code(code.as_str()).build()
     }
 
-    pub fn of_with_message(code: FederationSourceErrorCode, message: impl Into<String>) -> ErrorDetails {
+    pub fn of_with_message(
+        code: FederationSourceErrorCode,
+        message: impl Into<String>,
+    ) -> ErrorDetails {
         ErrorDetails::builder()
             .error_code(code.as_str())
             .error_message(message)
@@ -118,11 +131,13 @@ pub struct ErrorDetailsBuilder {
 }
 
 impl ErrorDetailsBuilder {
+    #[must_use]
     pub fn error_code(mut self, code: impl Into<String>) -> Self {
         self.error_code = Some(code.into());
         self
     }
 
+    #[must_use]
     pub fn error_message(mut self, message: impl Into<String>) -> Self {
         self.error_message = Some(message.into());
         self

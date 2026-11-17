@@ -19,8 +19,6 @@ pub trait FieldResolver {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultFieldResolver;
 
-pub const DEFAULT: DefaultFieldResolver = DefaultFieldResolver;
-
 impl FieldResolver for DefaultFieldResolver {
     fn get_field_value(&self, field: &Field, value: &Value) -> Result<Value> {
         let minor_type = minor_type_of(field.data_type());
@@ -36,8 +34,7 @@ impl FieldResolver for DefaultFieldResolver {
             )));
         }
         Err(FederationError::invalid_input(format!(
-            "Expected LIST type but found {}",
-            minor_type
+            "Expected LIST type but found {minor_type}"
         )))
     }
 }

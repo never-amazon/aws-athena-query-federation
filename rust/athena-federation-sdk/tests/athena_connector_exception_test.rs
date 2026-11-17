@@ -27,46 +27,90 @@ fn set_up() -> ErrorDetails {
 #[test]
 fn constructor_with_response_message_and_error_details_should_set_fields_correctly() {
     let error_details = set_up();
-    let exception = AthenaConnectorException::with_response(Arc::new(TEST_RESPONSE), ERROR_MESSAGE, error_details.clone());
-    assert_eq!(ERROR_MESSAGE, exception.get_message(), "Error message should match");
+    let exception = AthenaConnectorException::with_response(
+        Arc::new(TEST_RESPONSE),
+        ERROR_MESSAGE,
+        error_details.clone(),
+    );
+    assert_eq!(
+        ERROR_MESSAGE,
+        exception.get_message(),
+        "Error message should match"
+    );
     assert_eq!(
         Some(&TEST_RESPONSE),
-        exception.get_response().and_then(|r| r.downcast_ref::<&str>()),
+        exception
+            .get_response()
+            .and_then(|r| r.downcast_ref::<&str>()),
         "Response should match"
     );
-    assert_eq!(&error_details, exception.get_error_details(), "Error details should match");
-    assert!(exception.get_cause().is_none(), "Expected no cause for (message, details) constructor");
+    assert_eq!(
+        &error_details,
+        exception.get_error_details(),
+        "Error details should match"
+    );
+    assert!(
+        exception.get_cause().is_none(),
+        "Expected no cause for (message, details) constructor"
+    );
 }
 
 #[test]
 fn constructor_with_message_and_error_details_should_set_fields_correctly() {
     let error_details = set_up();
     let exception = AthenaConnectorException::new(ERROR_MESSAGE, error_details.clone());
-    assert_eq!(ERROR_MESSAGE, exception.get_message(), "Error message should match");
-    assert!(exception.get_response().is_none(), "Response should be null when not provided");
-    assert_eq!(&error_details, exception.get_error_details(), "Error details should match");
-    assert!(exception.get_cause().is_none(), "Expected no cause for (message, details) constructor");
+    assert_eq!(
+        ERROR_MESSAGE,
+        exception.get_message(),
+        "Error message should match"
+    );
+    assert!(
+        exception.get_response().is_none(),
+        "Response should be null when not provided"
+    );
+    assert_eq!(
+        &error_details,
+        exception.get_error_details(),
+        "Error details should match"
+    );
+    assert!(
+        exception.get_cause().is_none(),
+        "Expected no cause for (message, details) constructor"
+    );
 }
 
 #[test]
 fn constructor_with_response_message_cause_and_error_details_should_set_fields_correctly() {
     let error_details = set_up();
-    let test_cause: Arc<dyn std::error::Error + Send + Sync> = Arc::new(TestCause("Test Cause".to_string()));
+    let test_cause: Arc<dyn std::error::Error + Send + Sync> =
+        Arc::new(TestCause("Test Cause".to_string()));
     let exception = AthenaConnectorException::with_response_and_cause(
         Arc::new(TEST_RESPONSE),
         ERROR_MESSAGE,
         test_cause.clone(),
         error_details.clone(),
     );
-    assert_eq!(ERROR_MESSAGE, exception.get_message(), "Error message should match");
+    assert_eq!(
+        ERROR_MESSAGE,
+        exception.get_message(),
+        "Error message should match"
+    );
     assert!(
-        exception.get_cause().map(|c| Arc::ptr_eq(c, &test_cause)).unwrap_or(false),
+        exception
+            .get_cause()
+            .is_some_and(|c| Arc::ptr_eq(c, &test_cause)),
         "Cause should match"
     );
     assert_eq!(
         Some(&TEST_RESPONSE),
-        exception.get_response().and_then(|r| r.downcast_ref::<&str>()),
+        exception
+            .get_response()
+            .and_then(|r| r.downcast_ref::<&str>()),
         "Response should match"
     );
-    assert_eq!(&error_details, exception.get_error_details(), "Error details should match");
+    assert_eq!(
+        &error_details,
+        exception.get_error_details(),
+        "Error details should match"
+    );
 }

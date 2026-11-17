@@ -5,7 +5,12 @@ use arrow::datatypes::SchemaRef;
 use indexmap::IndexMap;
 
 use super::extractors::Extractor;
-use super::fieldwriters::*;
+use super::fieldwriters::{
+    BigIntFieldWriter, BitFieldWriter, DateDayFieldWriter, DateMilliFieldWriter,
+    DecimalFieldWriter, FieldWriter, FieldWriterFactory, Float4FieldWriter, Float8FieldWriter,
+    IntFieldWriter, SmallIntFieldWriter, TinyIntFieldWriter, VarBinaryFieldWriter,
+    VarCharFieldWriter,
+};
 use crate::data::block::Block;
 use crate::data::types::MinorType;
 use crate::data::vector::FieldVector;
@@ -29,17 +34,29 @@ pub struct RowWriterBuilder {
 }
 
 impl RowWriterBuilder {
+    #[must_use]
     pub fn with_extractor(mut self, field_name: &str, extractor: Extractor) -> Self {
         self.extractors.insert(field_name.to_string(), extractor);
         self
     }
 
-    pub fn with_field_writer_factory(mut self, field_name: &str, factory: Arc<dyn FieldWriterFactory>) -> Self {
-        self.field_writer_factories.insert(field_name.to_string(), factory);
+    #[must_use]
+    pub fn with_field_writer_factory(
+        mut self,
+        field_name: &str,
+        factory: Arc<dyn FieldWriterFactory>,
+    ) -> Self {
+        self.field_writer_factories
+            .insert(field_name.to_string(), factory);
         self
     }
 
-    pub fn with_constraint(mut self, field_name: &str, constraint: Arc<dyn ConstraintProjector>) -> Self {
+    #[must_use]
+    pub fn with_constraint(
+        mut self,
+        field_name: &str,
+        constraint: Arc<dyn ConstraintProjector>,
+    ) -> Self {
         self.constraints.insert(field_name.to_string(), constraint);
         self
     }
@@ -70,22 +87,34 @@ impl GeneratedRowWriter {
         let mut builder = GeneratedRowWriter::new_builder();
         for (name, value_set) in constraints.get_summary() {
             let value_set = value_set.clone();
-            let projector: Arc<dyn ConstraintProjector> = Arc::new(move |value: &crate::data::Value| value_set.contains_value(value));
+            let projector: Arc<dyn ConstraintProjector> =
+                Arc::new(move |value: &crate::data::Value| value_set.contains_value(value));
             builder.constraints.insert(name.clone(), projector);
         }
         builder
     }
 
-    pub fn new_builder_with_evaluator(constraint_evaluator: Arc<ConstraintEvaluator>) -> RowWriterBuilder {
+    pub fn new_builder_with_evaluator(
+        constraint_evaluator: Arc<ConstraintEvaluator>,
+    ) -> RowWriterBuilder {
         let mut builder = GeneratedRowWriter::new_builder();
         builder.constraint_evaluator = Some(constraint_evaluator);
         builder
     }
 
-    pub fn write_row(&mut self, block: &mut Block, row_num: usize, context: &dyn Any) -> Result<bool> {
+    pub fn write_row(
+        &mut self,
+        block: &mut Block,
+        row_num: usize,
+        context: &dyn Any,
+    ) -> Result<bool> {
         self.check_and_recompile(block)?;
         let mut matched = true;
-        for (writer, vector) in self.field_writers.iter_mut().zip(block.get_field_vectors_mut().iter_mut()) {
+        for (writer, vector) in self
+            .field_writers
+            .iter_mut()
+            .zip(block.get_field_vectors_mut().iter_mut())
+        {
             matched &= writer.write(vector, context, row_num)?;
         }
         Ok(matched)
@@ -93,7 +122,10 @@ impl GeneratedRowWriter {
 
     fn check_and_recompile(&mut self, block: &Block) -> Result<()> {
         let same = match &self.schema {
-            Some(s) => Arc::ptr_eq(s, block.get_schema()) && self.field_writers.len() == block.get_field_vectors().len(),
+            Some(s) => {
+                Arc::ptr_eq(s, block.get_schema())
+                    && self.field_writers.len() == block.get_field_vectors().len()
+            }
             None => false,
         };
         if !same {
@@ -127,7 +159,7 @@ impl GeneratedRowWriter {
             return factory.create(vector, extractor, constraint);
         }
         let extractor = extractor.ok_or_else(|| {
-            FederationError::invalid_input(format!("Missing extractor for field[{}]", field_name))
+            FederationError::invalid_input(format!("Missing extractor for field[{field_name}]"))
         })?;
         let mismatch = || {
             FederationError::ClassCast(format!(
@@ -138,18 +170,42 @@ impl GeneratedRowWriter {
             ))
         };
         Ok(match (field_type, extractor) {
-            (MinorType::INT, Extractor::Int(e)) => Box::new(IntFieldWriter::new(e.clone(), constraint)),
-            (MinorType::BIGINT, Extractor::BigInt(e)) => Box::new(BigIntFieldWriter::new(e.clone(), constraint)),
-            (MinorType::DATEMILLI, Extractor::DateMilli(e)) => Box::new(DateMilliFieldWriter::new(e.clone(), constraint)),
-            (MinorType::DATEDAY, Extractor::DateDay(e)) => Box::new(DateDayFieldWriter::new(e.clone(), constraint)),
-            (MinorType::TINYINT, Extractor::TinyInt(e)) => Box::new(TinyIntFieldWriter::new(e.clone(), constraint)),
-            (MinorType::SMALLINT, Extractor::SmallInt(e)) => Box::new(SmallIntFieldWriter::new(e.clone(), constraint)),
-            (MinorType::FLOAT4, Extractor::Float4(e)) => Box::new(Float4FieldWriter::new(e.clone(), constraint)),
-            (MinorType::FLOAT8, Extractor::Float8(e)) => Box::new(Float8FieldWriter::new(e.clone(), constraint)),
-            (MinorType::DECIMAL, Extractor::Decimal(e)) => Box::new(DecimalFieldWriter::new(e.clone(), constraint)),
-            (MinorType::BIT, Extractor::Bit(e)) => Box::new(BitFieldWriter::new(e.clone(), constraint)),
-            (MinorType::VARCHAR, Extractor::VarChar(e)) => Box::new(VarCharFieldWriter::new(e.clone(), constraint)),
-            (MinorType::VARBINARY, Extractor::VarBinary(e)) => Box::new(VarBinaryFieldWriter::new(e.clone(), constraint)),
+            (MinorType::INT, Extractor::Int(e)) => {
+                Box::new(IntFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::BIGINT, Extractor::BigInt(e)) => {
+                Box::new(BigIntFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::DATEMILLI, Extractor::DateMilli(e)) => {
+                Box::new(DateMilliFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::DATEDAY, Extractor::DateDay(e)) => {
+                Box::new(DateDayFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::TINYINT, Extractor::TinyInt(e)) => {
+                Box::new(TinyIntFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::SMALLINT, Extractor::SmallInt(e)) => {
+                Box::new(SmallIntFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::FLOAT4, Extractor::Float4(e)) => {
+                Box::new(Float4FieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::FLOAT8, Extractor::Float8(e)) => {
+                Box::new(Float8FieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::DECIMAL, Extractor::Decimal(e)) => {
+                Box::new(DecimalFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::BIT, Extractor::Bit(e)) => {
+                Box::new(BitFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::VARCHAR, Extractor::VarChar(e)) => {
+                Box::new(VarCharFieldWriter::new(e.clone(), constraint))
+            }
+            (MinorType::VARBINARY, Extractor::VarBinary(e)) => {
+                Box::new(VarBinaryFieldWriter::new(e.clone(), constraint))
+            }
             (
                 MinorType::INT
                 | MinorType::BIGINT
@@ -165,7 +221,11 @@ impl GeneratedRowWriter {
                 | MinorType::VARBINARY,
                 _,
             ) => return Err(mismatch()),
-            (other, _) => return Err(FederationError::invalid_input(format!("{} is not supported", other))),
+            (other, _) => {
+                return Err(FederationError::invalid_input(format!(
+                    "{other} is not supported"
+                )))
+            }
         })
     }
 }
@@ -188,7 +248,10 @@ mod tests {
 
     #[test]
     fn write_row_uses_extractors_and_constraints() {
-        let schema = SchemaBuilder::new().add_int_field("id").add_string_field("name").build();
+        let schema = SchemaBuilder::new()
+            .add_int_field("id")
+            .add_string_field("name")
+            .build();
         let allocator = BlockAllocatorImpl::new();
         let mut block = allocator.create_block(Arc::new(schema));
         let calls = Arc::new(AtomicUsize::new(0));
@@ -225,7 +288,13 @@ mod tests {
                 }),
             )
             .build();
-        let rows = [Row { id: 1, name: Some("a".into()) }, Row { id: 2, name: None }];
+        let rows = [
+            Row {
+                id: 1,
+                name: Some("a".into()),
+            },
+            Row { id: 2, name: None },
+        ];
         let r0 = writer.write_row(&mut block, 0, &rows[0]).unwrap();
         let r1 = writer.write_row(&mut block, 1, &rows[1]).unwrap();
         block.set_row_count(2);
@@ -244,7 +313,9 @@ mod tests {
 
     #[test]
     fn missing_extractor_is_an_error() {
-        let schema = SchemaBuilder::new().add_field_with_type("x", DataType::Int32).build();
+        let schema = SchemaBuilder::new()
+            .add_field_with_type("x", DataType::Int32)
+            .build();
         let allocator = BlockAllocatorImpl::new();
         let mut block = allocator.create_block(Arc::new(schema));
         let mut writer = GeneratedRowWriter::new_builder().build();

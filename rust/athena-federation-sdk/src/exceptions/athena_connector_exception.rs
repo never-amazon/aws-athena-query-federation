@@ -26,7 +26,11 @@ impl AthenaConnectorException {
         }
     }
 
-    pub fn with_response(response: Response, message: impl Into<String>, error_details: ErrorDetails) -> Self {
+    pub fn with_response(
+        response: Response,
+        message: impl Into<String>,
+        error_details: ErrorDetails,
+    ) -> Self {
         AthenaConnectorException {
             message: message.into(),
             response: Some(response),
@@ -35,7 +39,11 @@ impl AthenaConnectorException {
         }
     }
 
-    pub fn with_cause(message: impl Into<String>, cause: Cause, error_details: ErrorDetails) -> Self {
+    pub fn with_cause(
+        message: impl Into<String>,
+        cause: Cause,
+        error_details: ErrorDetails,
+    ) -> Self {
         AthenaConnectorException {
             message: message.into(),
             response: None,
@@ -90,7 +98,10 @@ impl fmt::Debug for AthenaConnectorException {
         f.debug_struct("AthenaConnectorException")
             .field("message", &self.message)
             .field("has_response", &self.response.is_some())
-            .field("cause", &self.cause.as_ref().map(|c| c.to_string()))
+            .field(
+                "cause",
+                &self.cause.as_ref().map(std::string::ToString::to_string),
+            )
             .field("error_details", &self.error_details)
             .finish()
     }
@@ -104,6 +115,8 @@ impl fmt::Display for AthenaConnectorException {
 
 impl StdError for AthenaConnectorException {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.cause.as_ref().map(|c| c.as_ref() as &(dyn StdError + 'static))
+        self.cause
+            .as_ref()
+            .map(|c| c.as_ref() as &(dyn StdError + 'static))
     }
 }

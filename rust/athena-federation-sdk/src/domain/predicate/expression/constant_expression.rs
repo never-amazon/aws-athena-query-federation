@@ -14,7 +14,10 @@ pub struct ConstantExpression {
 
 impl ConstantExpression {
     pub fn new(value_block: Option<Block>, arrow_type: ArrowType) -> ConstantExpression {
-        ConstantExpression { value_block, arrow_type }
+        ConstantExpression {
+            value_block,
+            arrow_type,
+        }
     }
 
     pub fn get_values(&self) -> Option<&Block> {
@@ -31,7 +34,9 @@ impl ConstantExpression {
 
     pub fn hash_code(&self) -> i32 {
         objects_hash(&[
-            self.value_block.as_ref().map(|b| b.hash_code()).unwrap_or(0),
+            self.value_block
+                .as_ref()
+                .map_or(0, crate::data::block::Block::hash_code),
             type_hash(&self.arrow_type),
         ])
     }

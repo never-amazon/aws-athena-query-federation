@@ -5,9 +5,7 @@ pub enum LimitPushdownSubType {
 
 impl LimitPushdownSubType {
     pub fn values() -> &'static [LimitPushdownSubType] {
-        &[
-            LimitPushdownSubType::IntegerConstant,
-        ]
+        &[LimitPushdownSubType::IntegerConstant]
     }
 
     pub fn name(&self) -> &'static str {

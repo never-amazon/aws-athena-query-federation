@@ -22,7 +22,11 @@ impl PingResponse {
             query_id: query_id.into(),
             source_type,
             capabilities,
-            ser_de_version: if ser_de_version != 0 { ser_de_version } else { 1 },
+            ser_de_version: if ser_de_version != 0 {
+                ser_de_version
+            } else {
+                1
+            },
         }
     }
 

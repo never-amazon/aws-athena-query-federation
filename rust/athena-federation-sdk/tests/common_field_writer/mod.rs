@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared test helpers; each test binary uses a subset"
+)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,7 +29,12 @@ impl MockConstraintProjector {
     }
 
     pub fn times_called_with(&self, value: &Value) -> usize {
-        self.calls.lock().unwrap().iter().filter(|v| *v == value).count()
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| *v == value)
+            .count()
     }
 }
 
@@ -38,8 +46,7 @@ impl ConstraintProjector for MockConstraintProjector {
             .iter()
             .rev()
             .find(|(v, _)| v == value)
-            .map(|(_, r)| *r)
-            .unwrap_or(false))
+            .is_some_and(|(_, r)| *r))
     }
 }
 

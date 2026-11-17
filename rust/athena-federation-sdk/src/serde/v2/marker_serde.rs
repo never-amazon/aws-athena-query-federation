@@ -1,6 +1,9 @@
 use crate::domain::predicate::{Bound, Marker};
 use crate::exceptions::Result;
-use crate::serde::base::{assert_field_name, deserialize_nullable, get_next_bool_field, get_next_string_field, no_enum_constant, require_non_null, serialize_object};
+use crate::serde::base::{
+    assert_field_name, deserialize_nullable, get_next_bool_field, get_next_string_field,
+    no_enum_constant, require_non_null, serialize_object,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 use crate::serde::SerDeContext;
 
@@ -13,7 +16,10 @@ pub fn bound_value_of(name: Option<&str>) -> Result<Bound> {
         Some("BELOW") => Ok(Bound::Below),
         Some("EXACTLY") => Ok(Bound::Exactly),
         Some("ABOVE") => Ok(Bound::Above),
-        other => Err(no_enum_constant("com.amazonaws.athena.connector.lambda.domain.predicate.Marker.Bound", other)),
+        other => Err(no_enum_constant(
+            "com.amazonaws.athena.connector.lambda.domain.predicate.Marker.Bound",
+            other,
+        )),
     }
 }
 

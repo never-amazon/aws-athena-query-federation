@@ -8,7 +8,11 @@ const CATALOG_NAME_FIELD: &str = "catalogName";
 const TABLE_NAME_FIELD: &str = "tableName";
 const PARTITIONS_FIELD: &str = "partitions";
 
-pub fn do_typed_serialize(response: &GetTableLayoutResponse, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_typed_serialize(
+    response: &GetTableLayoutResponse,
+    jgen: &mut JsonGenerator,
+    version: i32,
+) -> Result<()> {
     jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.get_catalog_name()))?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
     super::table_name_serde::serialize(response.get_table_name(), jgen)?;
@@ -16,7 +20,10 @@ pub fn do_typed_serialize(response: &GetTableLayoutResponse, jgen: &mut JsonGene
     super::block_serde::serialize(Some(response.get_partitions()), jgen, version)
 }
 
-pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<GetTableLayoutResponse> {
+pub fn do_typed_deserialize(
+    jparser: &mut JsonParser<'_>,
+    ctx: &SerDeContext<'_>,
+) -> Result<GetTableLayoutResponse> {
     let catalog_name = get_next_string_field(jparser, CATALOG_NAME_FIELD)?;
     assert_field_name(jparser, Some(TABLE_NAME_FIELD))?;
     let table_name = super::table_name_serde::deserialize(jparser)?;

@@ -18,7 +18,13 @@ impl FederatedIdentity {
         iam_groups: Vec<Option<String>>,
         config_options: HashMap<String, Option<String>>,
     ) -> FederatedIdentity {
-        FederatedIdentity::new_nullable(Some(arn.into()), Some(account.into()), principal_tags, iam_groups, config_options)
+        FederatedIdentity::new_nullable(
+            Some(arn.into()),
+            Some(account.into()),
+            principal_tags,
+            iam_groups,
+            config_options,
+        )
     }
 
     pub fn new_nullable(

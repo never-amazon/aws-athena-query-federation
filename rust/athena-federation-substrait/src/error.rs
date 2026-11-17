@@ -1,4 +1,6 @@
+use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -10,11 +12,12 @@ pub enum ErrorKind {
     NullPointer,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct SubstraitError {
     kind: ErrorKind,
     message: String,
     cause: Option<Box<SubstraitError>>,
+    source: Option<Arc<dyn Error + Send + Sync>>,
 }
 
 pub type Result<T> = std::result::Result<T, SubstraitError>;
@@ -25,6 +28,19 @@ impl SubstraitError {
             kind,
             message: message.into(),
             cause: None,
+            source: None,
+        }
+    }
+
+    pub fn from_source(
+        kind: ErrorKind,
+        source: impl Error + Send + Sync + 'static,
+    ) -> SubstraitError {
+        SubstraitError {
+            kind,
+            message: source.to_string(),
+            cause: None,
+            source: Some(Arc::new(source)),
         }
     }
 
@@ -52,6 +68,7 @@ impl SubstraitError {
         SubstraitError::new(ErrorKind::NullPointer, message)
     }
 
+    #[must_use]
     pub fn with_cause(mut self, cause: SubstraitError) -> SubstraitError {
         self.cause = Some(Box::new(cause));
         self
@@ -88,11 +105,19 @@ impl fmt::Display for SubstraitError {
     }
 }
 
-impl std::error::Error for SubstraitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.cause
-            .as_deref()
-            .map(|c| c as &(dyn std::error::Error + 'static))
+impl PartialEq for SubstraitError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.message == other.message && self.cause == other.cause
+    }
+}
+
+impl Error for SubstraitError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match (&self.cause, &self.source) {
+            (Some(c), _) => Some(c.as_ref()),
+            (None, Some(s)) => Some(s.as_ref()),
+            (None, None) => None,
+        }
     }
 }
 

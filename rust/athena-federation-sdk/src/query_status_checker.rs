@@ -14,12 +14,18 @@ const INVALID_REQUEST_EXCEPTION: &str = "InvalidRequestException";
 
 #[async_trait]
 pub trait AthenaClient: Send + Sync {
-    async fn get_query_execution_state(&self, query_execution_id: &str) -> Result<Option<String>, AwsServiceError>;
+    async fn get_query_execution_state(
+        &self,
+        query_execution_id: &str,
+    ) -> Result<Option<String>, AwsServiceError>;
 }
 
 #[async_trait]
 impl AthenaClient for aws_sdk_athena::Client {
-    async fn get_query_execution_state(&self, query_execution_id: &str) -> Result<Option<String>, AwsServiceError> {
+    async fn get_query_execution_state(
+        &self,
+        query_execution_id: &str,
+    ) -> Result<Option<String>, AwsServiceError> {
         let output = self
             .get_query_execution()
             .query_execution_id(query_execution_id)
@@ -63,17 +69,16 @@ impl QueryStatusChecker {
         if !self.was_started.load(Ordering::SeqCst) {
             let mut checker = self.lock_checker();
             if !self.was_started.load(Ordering::SeqCst) {
-                match tokio::runtime::Handle::try_current() {
-                    Ok(handle) => {
-                        let task = StatusTask {
-                            is_running: self.is_running.clone(),
-                            athena: self.athena.clone(),
-                            athena_invoker: self.athena_invoker.clone(),
-                            query_id: self.query_id.clone(),
-                        };
-                        *checker = Some(handle.spawn(task.run()));
-                    }
-                    Err(_) => tracing::warn!("No async runtime available. Query status polling is disabled"),
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    let task = StatusTask {
+                        is_running: self.is_running.clone(),
+                        athena: self.athena.clone(),
+                        athena_invoker: self.athena_invoker.clone(),
+                        query_id: self.query_id.clone(),
+                    };
+                    *checker = Some(handle.spawn(task.run()));
+                } else {
+                    tracing::warn!("No async runtime available. Query status polling is disabled");
                 }
                 self.was_started.store(true, Ordering::SeqCst);
             }
@@ -89,7 +94,9 @@ impl QueryStatusChecker {
     }
 
     fn lock_checker(&self) -> MutexGuard<'_, Option<JoinHandle<()>>> {
-        self.checker.lock().unwrap_or_else(|e| e.into_inner())
+        self.checker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -141,7 +148,11 @@ impl StatusTask {
             Ok(state) => {
                 let state = state.unwrap_or_else(|| "null".to_string());
                 if TERMINAL_STATES.contains(&state.as_str()) {
-                    tracing::debug!("Query {} has terminated with state {}", self.query_id, state);
+                    tracing::debug!(
+                        "Query {} has terminated with state {}",
+                        self.query_id,
+                        state
+                    );
                     self.is_running.store(false, Ordering::SeqCst);
                 }
                 true

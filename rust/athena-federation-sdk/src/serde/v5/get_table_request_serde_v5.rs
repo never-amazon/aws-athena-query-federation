@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::exceptions::Result;
 use crate::metadata::GetTableRequest;
-use crate::serde::base::{assert_field_name, read_string_map_entries, require_non_null, validate_object_start_token, write_string_map};
+use crate::serde::base::{
+    assert_field_name, read_string_map_entries, require_non_null, validate_object_start_token,
+    write_string_map,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 const TABLE_NAME_FIELD: &str = "tableName";
@@ -12,7 +15,11 @@ pub fn do_typed_serialize(request: &GetTableRequest, jgen: &mut JsonGenerator) -
     crate::serde::v2::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
     crate::serde::v2::table_name_serde::serialize(request.get_table_name(), jgen)?;
-    write_string_map(jgen, QUERY_PASSTHROUGH_ARGUMENTS, request.get_query_passthrough_arguments())
+    write_string_map(
+        jgen,
+        QUERY_PASSTHROUGH_ARGUMENTS,
+        request.get_query_passthrough_arguments(),
+    )
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<GetTableRequest> {

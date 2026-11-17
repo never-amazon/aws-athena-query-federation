@@ -54,16 +54,16 @@ fn athena_invoker() -> Arc<ThrottlingInvoker<AwsServiceError>> {
     )
 }
 
-fn state(s: &str) -> Response {
-    Ok(Some(s.to_string()))
+fn state(s: &str) -> String {
+    s.to_string()
 }
 
 #[tokio::test(start_paused = true)]
 async fn test_fast_termination() {
-    let athena = MockAthena::new("query0", vec![state("FAILED")]);
+    let athena = MockAthena::new("query0", vec![Ok(Some(state("FAILED")))]);
     let query_status_checker = QueryStatusChecker::new(athena.clone(), athena_invoker(), "query0");
     assert!(query_status_checker.is_query_running());
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
     query_status_checker.close();
@@ -71,12 +71,19 @@ async fn test_fast_termination() {
 
 #[tokio::test(start_paused = true)]
 async fn test_slow_termination() {
-    let athena = MockAthena::new("query1", vec![state("RUNNING"), state("RUNNING"), state("SUCCEEDED")]);
+    let athena = MockAthena::new(
+        "query1",
+        vec![
+            Ok(Some(state("RUNNING"))),
+            Ok(Some(state("RUNNING"))),
+            Ok(Some(state("SUCCEEDED"))),
+        ],
+    );
     let query_status_checker = QueryStatusChecker::new(athena.clone(), athena_invoker(), "query1");
     assert!(query_status_checker.is_query_running());
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(query_status_checker.is_query_running());
-    tokio::time::sleep(Duration::from_millis(3000)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(3, athena.calls());
     query_status_checker.close();
@@ -86,11 +93,14 @@ async fn test_slow_termination() {
 async fn test_not_found() {
     let athena = MockAthena::new(
         "query2",
-        vec![Err(AwsServiceError::with_code("InvalidRequestException", ""))],
+        vec![Err(AwsServiceError::with_code(
+            "InvalidRequestException",
+            "",
+        ))],
     );
     let query_status_checker = QueryStatusChecker::new(athena.clone(), athena_invoker(), "query2");
     assert!(query_status_checker.is_query_running());
-    tokio::time::sleep(Duration::from_millis(2000)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
     query_status_checker.close();
@@ -101,7 +111,7 @@ async fn test_other_error() {
     let athena = MockAthena::new("query3", vec![Err(AwsServiceError::new(""))]);
     let query_status_checker = QueryStatusChecker::new(athena.clone(), athena_invoker(), "query3");
     assert!(query_status_checker.is_query_running());
-    tokio::time::sleep(Duration::from_millis(3000)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(2, athena.calls());
     query_status_checker.close();

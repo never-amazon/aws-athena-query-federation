@@ -196,10 +196,10 @@ pub fn bit_set_compare(a: &[usize], b: &[usize]) -> std::cmp::Ordering {
     }
     let mut i = 0;
     loop {
-        let n0 = a.get(i).map_or(-1, |&v| v as i64);
-        let n1 = b.get(i).map_or(-1, |&v| v as i64);
+        let n0 = a.get(i);
+        let n1 = b.get(i);
         let c = n0.cmp(&n1);
-        if c != Ordering::Equal || n0 < 0 {
+        if c != Ordering::Equal || n0.is_none() {
             return c;
         }
         i += 1;

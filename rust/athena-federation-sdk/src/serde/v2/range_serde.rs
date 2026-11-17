@@ -1,6 +1,8 @@
 use crate::domain::predicate::Range;
 use crate::exceptions::Result;
-use crate::serde::base::{assert_field_name, deserialize_nullable, require_non_null, serialize_object};
+use crate::serde::base::{
+    assert_field_name, deserialize_nullable, require_non_null, serialize_object,
+};
 use crate::serde::json::{JsonGenerator, JsonParser};
 use crate::serde::SerDeContext;
 
@@ -27,5 +29,8 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
     let low = super::marker_serde::deserialize(jparser, ctx)?;
     assert_field_name(jparser, Some(HIGH_FIELD))?;
     let high = super::marker_serde::deserialize(jparser, ctx)?;
-    Range::new(require_non_null(low, "low value is null")?, require_non_null(high, "high value is null")?)
+    Range::new(
+        require_non_null(low, "low value is null")?,
+        require_non_null(high, "high value is null")?,
+    )
 }

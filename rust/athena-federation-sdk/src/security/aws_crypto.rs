@@ -10,7 +10,7 @@ use aws_esdk::types::aws_encryption_sdk_config::AwsEncryptionSdkConfig;
 
 use crate::exceptions::{FederationError, Result};
 
-const CACHE_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
+const CACHE_DURATION: Duration = Duration::from_hours(24);
 const MAX_CACHE_SIZE: usize = 100;
 
 #[async_trait]
@@ -26,14 +26,18 @@ pub struct EsdkAwsCrypto {
 }
 
 fn esdk_error(e: impl std::fmt::Debug) -> FederationError {
-    FederationError::Runtime(format!("{:?}", e))
+    FederationError::Runtime(format!("{e:?}"))
 }
 
 impl EsdkAwsCrypto {
     pub fn new(kms_client: aws_sdk_kms::Client) -> Result<EsdkAwsCrypto> {
-        let esdk_config = AwsEncryptionSdkConfig::builder().build().map_err(esdk_error)?;
+        let esdk_config = AwsEncryptionSdkConfig::builder()
+            .build()
+            .map_err(esdk_error)?;
         let esdk_client = aws_esdk::Client::from_conf(esdk_config).map_err(esdk_error)?;
-        let mpl_config = MaterialProvidersConfig::builder().build().map_err(esdk_error)?;
+        let mpl_config = MaterialProvidersConfig::builder()
+            .build()
+            .map_err(esdk_error)?;
         let mpl = mpl_client::Client::from_conf(mpl_config).map_err(esdk_error)?;
         Ok(EsdkAwsCrypto {
             kms_client,
@@ -44,7 +48,10 @@ impl EsdkAwsCrypto {
     }
 
     fn cached_keyring(&self, kms_key_id: &str) -> Option<KeyringRef> {
-        let mut keyrings = self.keyrings.lock().unwrap_or_else(|e| e.into_inner());
+        let mut keyrings = self
+            .keyrings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         keyrings.retain(|_, (created, _)| created.elapsed() < CACHE_DURATION);
         keyrings.get(kms_key_id).map(|(_, k)| k.clone())
     }
@@ -61,9 +68,16 @@ impl EsdkAwsCrypto {
             .send()
             .await
             .map_err(esdk_error)?;
-        let mut keyrings = self.keyrings.lock().unwrap_or_else(|e| e.into_inner());
+        let mut keyrings = self
+            .keyrings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if keyrings.len() >= MAX_CACHE_SIZE {
-            if let Some(oldest) = keyrings.iter().min_by_key(|(_, (t, _))| *t).map(|(k, _)| k.clone()) {
+            if let Some(oldest) = keyrings
+                .iter()
+                .min_by_key(|(_, (t, _))| *t)
+                .map(|(k, _)| k.clone())
+            {
                 keyrings.remove(&oldest);
             }
         }
@@ -84,6 +98,9 @@ impl AwsCrypto for EsdkAwsCrypto {
             .send()
             .await
             .map_err(esdk_error)?;
-        Ok(output.plaintext.map(|b| b.into_inner()).unwrap_or_default())
+        Ok(output
+            .plaintext
+            .map(aws_smithy_types::Blob::into_inner)
+            .unwrap_or_default())
     }
 }

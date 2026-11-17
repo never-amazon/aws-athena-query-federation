@@ -1,0 +1,41 @@
+std	VALUES (1, 'a'), (2, 'b')
+std	SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y) WHERE x > 1
+std	SELECT INTERVAL '-3' DAY AS i FROM test_table
+std	SELECT INTERVAL '1 02:03:04.5' DAY TO SECOND AS i FROM test_table
+std	SELECT INTERVAL '5' MONTH AS i FROM test_table
+std	SELECT INTERVAL '2' YEAR AS i FROM test_table
+std	SELECT INTERVAL '-1-6' YEAR TO MONTH AS i FROM test_table
+std	SELECT INTERVAL '3' HOUR AS i FROM test_table
+std	SELECT INTERVAL '90' MINUTE AS i FROM test_table
+std	SELECT INTERVAL '1.25' SECOND AS i FROM test_table
+std	SELECT INTERVAL '10 10' DAY TO HOUR AS i FROM test_table
+std	SELECT INTERVAL '10:20' HOUR TO MINUTE AS i FROM test_table
+std	SELECT INTERVAL '10:20:30.123' HOUR TO SECOND AS i FROM test_table
+std	SELECT INTERVAL '20:30.5' MINUTE TO SECOND AS i FROM test_table
+std	SELECT INTERVAL '400 00:00:00.001' DAY(3) TO SECOND AS i FROM test_table
+std	SELECT * FROM test_table WHERE date_col - INTERVAL '1' DAY > DATE '2024-01-01'
+std	SELECT * FROM test_table WHERE date_col + INTERVAL '1' MONTH > DATE '2024-01-01'
+std	SELECT * FROM test_table WHERE date_col - INTERVAL '2' YEAR < DATE '2024-01-01'
+std	SELECT a.int_col, b.varchar_col FROM test_table a LEFT JOIN test_table b ON a.int_col = b.int_col
+std	SELECT a.int_col FROM test_table a FULL JOIN test_table b ON a.int_col = b.int_col AND a.bigint_col > 5
+std	SELECT a.int_col FROM test_table a, test_table b
+std	SELECT a.int_col FROM test_table a JOIN test_table b ON a.int_col = b.int_col WHERE a.varchar_col = 'x'
+std	SELECT int_col FROM test_table UNION SELECT int_col FROM test_table
+std	SELECT int_col FROM test_table EXCEPT SELECT int_col FROM test_table
+std	SELECT int_col FROM test_table INTERSECT ALL SELECT int_col FROM test_table
+std	SELECT int_col FROM test_table UNION ALL SELECT int_col FROM test_table UNION ALL SELECT bigint_col FROM test_table
+std	SELECT * FROM test_table t WHERE NOT EXISTS (SELECT 1 FROM test_table u WHERE u.int_col = t.int_col)
+std	SELECT * FROM test_table WHERE int_col NOT IN (SELECT int_col FROM test_table)
+std	SELECT * FROM test_table WHERE (int_col, bigint_col) IN (SELECT int_col, bigint_col FROM test_table)
+std	SELECT * FROM test_table WHERE varchar_col = 'x' AND int_col IN (SELECT int_col FROM test_table WHERE varchar_col = 'y')
+std	SELECT int_col, varchar_col, COUNT(*) FROM test_table GROUP BY CUBE(int_col, varchar_col)
+std	SELECT int_col, varchar_col, COUNT(*) FROM test_table GROUP BY GROUPING SETS ((int_col), (varchar_col))
+std	SELECT int_col, varchar_col, COUNT(*) FROM test_table GROUP BY GROUPING SETS ((int_col, varchar_col), (int_col), ())
+std	SELECT int_col, varchar_col, bigint_col, COUNT(*) FROM test_table GROUP BY GROUPING SETS ((int_col, varchar_col), (bigint_col))
+std	SELECT int_col, SUM(bigint_col) FROM test_table GROUP BY ROLLUP(int_col) HAVING SUM(bigint_col) > 10
+std	SELECT * FROM test_table WHERE char_col = 'x'
+std	SELECT * FROM test_table WHERE char_col IN ('a', 'b', '')
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>ÿ edge
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>Ā edge
+std	SELECT * FROM test_table WHERE varchar_col LIKE 'UNICODE1'	UNICODE1=>日%
+std	SELECT * FROM test_table WHERE decimal_col3 < 0.0000001 AND decimal_col3 > -0.0000000012

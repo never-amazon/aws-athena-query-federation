@@ -240,16 +240,10 @@ fn visit_calls(node: &SqlNode, pred: &dyn Fn(&SqlCall) -> bool) -> bool {
     match node {
         SqlNode::Call(c) => pred(c) || c.operands.iter().any(|o| visit_calls(o, pred)),
         SqlNode::Case(c) => {
-            c.value
-                .as_ref()
-                .map(|v| visit_calls(v, pred))
-                .unwrap_or(false)
+            c.value.as_ref().is_some_and(|v| visit_calls(v, pred))
                 || c.when_list.iter().any(|o| visit_calls(o, pred))
                 || c.then_list.iter().any(|o| visit_calls(o, pred))
-                || c.else_expr
-                    .as_ref()
-                    .map(|v| visit_calls(v, pred))
-                    .unwrap_or(false)
+                || c.else_expr.as_ref().is_some_and(|v| visit_calls(v, pred))
         }
         SqlNode::NodeList(l) => l.iter().any(|o| visit_calls(o, pred)),
         SqlNode::Window(w) => w
@@ -311,10 +305,10 @@ impl SqlResult {
         match &self.node {
             SqlNode::Select(s) => (**s).clone(),
             other => {
-                if !dialect.has_implicit_table_alias() {
-                    wrap_select(dialect, self.as_from())
-                } else {
+                if dialect.has_implicit_table_alias() {
                     wrap_select(dialect, other.clone())
+                } else {
+                    wrap_select(dialect, self.as_from())
                 }
             }
         }
@@ -423,7 +417,7 @@ impl SqlResult {
 fn strip_trivial_aliases(node: SqlNode) -> SqlNode {
     match node {
         SqlNode::Select(mut s) => {
-            for item in s.select_list.iter_mut() {
+            for item in &mut s.select_list {
                 if let SqlNode::Call(c) = item {
                     if c.op.kind == SqlKind::As {
                         let generated = c
@@ -431,8 +425,7 @@ fn strip_trivial_aliases(node: SqlNode) -> SqlNode {
                             .get(1)
                             .and_then(SqlNode::as_identifier)
                             .and_then(SqlIdentifier::get_simple)
-                            .map(|n| n.starts_with("EXPR$"))
-                            .unwrap_or(false);
+                            .is_some_and(|n| n.starts_with("EXPR$"));
                         if generated {
                             *item = c.operands[0].clone();
                         }
@@ -810,7 +803,7 @@ impl Context {
             ));
         }
         if sarg.is_points() {
-            or_list.push(self.to_in(
+            or_list.push(Self::to_in(
                 &operand_sql,
                 &operators::EQUALS,
                 &operators::IN,
@@ -819,7 +812,7 @@ impl Context {
             )?);
         } else if sarg.is_complemented_points() {
             let complement = sarg.range_set.complement();
-            or_list.push(self.to_in(
+            or_list.push(Self::to_in(
                 &operand_sql,
                 &operators::NOT_EQUALS,
                 &operators::NOT_IN,
@@ -828,19 +821,19 @@ impl Context {
             )?);
         } else {
             for r in sarg.range_set.as_ranges() {
-                or_list.push(self.range_to_sql(&operand_sql, ty, r)?);
+                or_list.push(Self::range_to_sql(&operand_sql, ty, r)?);
             }
         }
         Ok(create_call(&operators::OR, or_list))
     }
 
-    fn value_sql(&self, v: &SargValue, ty: &RelDataType) -> Result<SqlNode> {
+    fn value_sql(v: &SargValue, ty: &RelDataType) -> Result<SqlNode> {
         literal_to_sql(&literal_from_sarg_value(v, ty))
     }
 
-    fn range_to_sql(&self, arg: &SqlNode, ty: &RelDataType, r: &Range) -> Result<SqlNode> {
+    fn range_to_sql(arg: &SqlNode, ty: &RelDataType, r: &Range) -> Result<SqlNode> {
         let op = |o: &'static SqlOperator, v: &SargValue| -> Result<SqlNode> {
-            Ok(SqlNode::call(o, vec![arg.clone(), self.value_sql(v, ty)?]))
+            Ok(SqlNode::call(o, vec![arg.clone(), Self::value_sql(v, ty)?]))
         };
         let and = |a: SqlNode, b: SqlNode| create_call(&operators::AND, vec![a, b]);
         match (&r.lower, &r.upper) {
@@ -876,7 +869,6 @@ impl Context {
     }
 
     fn to_in(
-        &self,
         operand_sql: &SqlNode,
         eq_op: &'static SqlOperator,
         in_op: &'static SqlOperator,
@@ -1150,7 +1142,7 @@ fn interval_string(value: &BigDecimal, type_name: SqlTypeName) -> String {
         }
         let digits = java_big_decimal_to_plain_string(&quotient);
         if !first {
-            for _ in digits.chars().count()..(*width).max(0) as usize {
+            for _ in digits.chars().count()..usize::try_from(*width).unwrap_or(0) {
                 b.push('0');
             }
         }
@@ -1190,7 +1182,7 @@ impl RelToSqlConverter {
     }
 
     fn is_anon(&self) -> bool {
-        self.stack.last().map(|f| f.anon).unwrap_or(true)
+        self.stack.last().is_none_or(|f| f.anon)
     }
 
     pub fn visit_root(&mut self, rel: &RelNode) -> Result<SqlResult> {
@@ -1291,7 +1283,21 @@ impl RelToSqlConverter {
         };
         clause_list.extend(expected.iter().copied());
         let mut new_aliases: Option<Aliases> = None;
-        let context = if !is_singleton_star(&select.select_list) {
+        let context = if is_singleton_star(&select.select_list) {
+            let qualified = !self.dialect.has_implicit_table_alias() || x.aliases.len() > 1;
+            let contains_needed = |a: &str| x.aliases.iter().any(|(k, _)| k == a);
+            match &x.needed_alias {
+                Some(na) if need_new && (x.aliases.len() != 1 || !contains_needed(na)) => {
+                    let input_type = rel
+                        .input()
+                        .map_or_else(|| rel.row_type().clone(), |i| i.row_type().clone());
+                    let na_aliases = vec![(na.clone(), input_type)];
+                    new_aliases = Some(na_aliases.clone());
+                    Context::alias_context(&self.dialect, na_aliases, qualified)
+                }
+                _ => Context::alias_context(&self.dialect, x.aliases.clone(), qualified),
+            }
+        } else {
             let alias_ref = expected.contains(&Clause::Having)
                 && self.dialect.get_conformance().is_having_alias();
             Context {
@@ -1302,21 +1308,6 @@ impl RelToSqlConverter {
                 dialect: self.dialect.clone(),
                 correl: Vec::new(),
                 subqueries: Vec::new(),
-            }
-        } else {
-            let qualified = !self.dialect.has_implicit_table_alias() || x.aliases.len() > 1;
-            let contains_needed = |a: &str| x.aliases.iter().any(|(k, _)| k == a);
-            match &x.needed_alias {
-                Some(na) if need_new && (x.aliases.len() != 1 || !contains_needed(na)) => {
-                    let input_type = rel
-                        .input()
-                        .map(|i| i.row_type().clone())
-                        .unwrap_or_else(|| rel.row_type().clone());
-                    let na_aliases = vec![(na.clone(), input_type)];
-                    new_aliases = Some(na_aliases.clone());
-                    Context::alias_context(&self.dialect, na_aliases, qualified)
-                }
-                _ => Context::alias_context(&self.dialect, x.aliases.clone(), qualified),
             }
         };
         let contains_needed = match &x.needed_alias {
@@ -1329,7 +1320,7 @@ impl RelToSqlConverter {
             Some(x.aliases.clone())
         };
         let mut context = context;
-        context.correl = self.correl_table.clone();
+        context.correl.clone_from(&self.correl_table);
         Builder {
             clauses: clause_list,
             select,
@@ -1514,7 +1505,7 @@ impl RelToSqlConverter {
                 }
             };
             let mut context = Context::alias_context(&self.dialect, aliases.clone(), true);
-            context.correl = self.correl_table.clone();
+            context.correl.clone_from(&self.correl_table);
             self.prepare_sub_queries(&mut context, condition)?;
             let sql = if condition.is_always_true() {
                 SqlNode::Literal(SqlLiteral::boolean(true))

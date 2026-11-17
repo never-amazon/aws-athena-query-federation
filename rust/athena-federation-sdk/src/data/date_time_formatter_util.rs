@@ -54,7 +54,7 @@ impl DateTimeFormatterUtil {
 
     pub fn is_pack_timezone() -> bool {
         PACK_TIMEZONE_OVERRIDE
-            .with(|c| c.get())
+            .with(std::cell::Cell::get)
             .unwrap_or_else(|| PACK_TIMEZONE.load(Ordering::SeqCst))
     }
 
@@ -68,11 +68,18 @@ impl DateTimeFormatterUtil {
         PACK_TIMEZONE.store(true, Ordering::SeqCst);
     }
 
-    pub fn string_to_local_date(value: &str, date_format: Option<&str>, default_time_zone: &ZoneId) -> Option<NaiveDate> {
+    pub fn string_to_local_date(
+        value: &str,
+        date_format: Option<&str>,
+        default_time_zone: &ZoneId,
+    ) -> Option<NaiveDate> {
         let fmt = match date_format {
             Some(f) if !f.is_empty() => f,
             _ => {
-                tracing::info!("Unable to parse {} as Date type due to invalid dateformat", value);
+                tracing::info!(
+                    "Unable to parse {} as Date type due to invalid dateformat",
+                    value
+                );
                 return None;
             }
         };
@@ -80,7 +87,11 @@ impl DateTimeFormatterUtil {
         Some(ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date())
     }
 
-    pub fn string_to_zoned_date_time(value: &str, date_format: Option<&str>, default_time_zone: Option<&ZoneId>) -> Value {
+    pub fn string_to_zoned_date_time(
+        value: &str,
+        date_format: Option<&str>,
+        default_time_zone: Option<&ZoneId>,
+    ) -> Value {
         match ZonedDateTime::parse(value) {
             Ok(zdt) => {
                 tracing::info!("Parsed {} to ZonedDateTime {}", value, zdt);
@@ -100,26 +111,41 @@ impl DateTimeFormatterUtil {
         }
     }
 
-    pub fn string_to_date_time(value: &str, date_format: Option<&str>, default_time_zone: &ZoneId) -> Value {
+    pub fn string_to_date_time(
+        value: &str,
+        date_format: Option<&str>,
+        default_time_zone: &ZoneId,
+    ) -> Value {
         let fmt = match date_format {
             Some(f) if !f.is_empty() => f,
             _ => {
-                tracing::warn!("Unable to parse {} as DateTime type due to invalid date format", value);
+                tracing::warn!(
+                    "Unable to parse {} as DateTime type due to invalid date format",
+                    value
+                );
                 return Value::Null;
             }
         };
         match string_to_date(value, fmt) {
-            Some(instant) => Value::LocalDateTime(ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date_time()),
+            Some(instant) => Value::LocalDateTime(
+                ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date_time(),
+            ),
             None => Value::Null,
         }
     }
 
-    pub fn big_decimal_to_local_date(value: Option<&BigDecimal>, default_time_zone: Option<&ZoneId>) -> Option<NaiveDate> {
+    pub fn big_decimal_to_local_date(
+        value: Option<&BigDecimal>,
+        default_time_zone: Option<&ZoneId>,
+    ) -> Option<NaiveDate> {
         let instant = big_decimal_to_date(value?)?;
         Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date())
     }
 
-    pub fn big_decimal_to_local_date_time(value: Option<&BigDecimal>, default_time_zone: Option<&ZoneId>) -> Option<NaiveDateTime> {
+    pub fn big_decimal_to_local_date_time(
+        value: Option<&BigDecimal>,
+        default_time_zone: Option<&ZoneId>,
+    ) -> Option<NaiveDateTime> {
         let instant = big_decimal_to_date(value?)?;
         Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date_time())
     }
@@ -145,7 +171,7 @@ impl DateTimeFormatterUtil {
     }
 
     pub fn pack(millis_utc: i64, time_zone_key: i16) -> i64 {
-        (millis_utc << MILLIS_SHIFT) | ((time_zone_key as i64) & TIME_ZONE_MASK)
+        (millis_utc << MILLIS_SHIFT) | (i64::from(time_zone_key) & TIME_ZONE_MASK)
     }
 
     pub fn unpack_millis_utc(date_time_with_time_zone: i64) -> i64 {
@@ -156,13 +182,15 @@ impl DateTimeFormatterUtil {
         TimeZoneKey::get_time_zone_key((date_time_with_time_zone & TIME_ZONE_MASK) as i16)
     }
 
-    pub fn construct_zoned_date_time(epoch_timestamp: i64, arrow_type: &ArrowType) -> Result<ZonedDateTime> {
+    pub fn construct_zoned_date_time(
+        epoch_timestamp: i64,
+        arrow_type: &ArrowType,
+    ) -> Result<ZonedDateTime> {
         let (unit, tz) = match arrow_type {
             DataType::Timestamp(unit, tz) => (*unit, tz.clone()),
             other => {
                 return Err(FederationError::ClassCast(format!(
-                    "{:?} cannot be cast to ArrowType.Timestamp",
-                    other
+                    "{other:?} cannot be cast to ArrowType.Timestamp"
                 )))
             }
         };
@@ -171,7 +199,9 @@ impl DateTimeFormatterUtil {
         let mut epoch = epoch_timestamp;
         if DateTimeFormatterUtil::is_pack_timezone() {
             if unit != TimeUnit::Millisecond {
-                return Err(FederationError::not_supported("Unpacking is only supported for milliseconds"));
+                return Err(FederationError::not_supported(
+                    "Unpacking is only supported for milliseconds",
+                ));
             }
             let key = DateTimeFormatterUtil::unpack_zone_key(epoch)?;
             epoch = DateTimeFormatterUtil::unpack_millis_utc(epoch);
@@ -212,7 +242,8 @@ impl DateTimeFormatterUtil {
             value: zdt.to_epoch_milli(),
         };
         if DateTimeFormatterUtil::is_pack_timezone() {
-            holder.value = DateTimeFormatterUtil::pack_millis_with_zone(holder.value, &holder.timezone)?;
+            holder.value =
+                DateTimeFormatterUtil::pack_millis_with_zone(holder.value, &holder.timezone)?;
         }
         if let Some(tz) = target_time_zone_id {
             holder.timezone = tz.to_string();
@@ -230,10 +261,11 @@ impl DateTimeFormatterUtil {
             ));
         }
         let zdt = DateTimeFormatterUtil::zoned_date_time_from_object(value)?;
-        let zone = target_time_zone_id
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| zdt.get_zone().get_id().to_string());
-        let micros = zdt.get_epoch_second() * 1_000_000 + (zdt.get_nano() / 1000) as i64;
+        let zone = target_time_zone_id.map_or_else(
+            || zdt.get_zone().get_id().to_string(),
+            std::string::ToString::to_string,
+        );
+        let micros = zdt.get_epoch_second() * 1_000_000 + i64::from(zdt.get_nano() / 1000);
         Ok(TimeStampMicroTzHolder {
             timezone: zone,
             value: micros,
@@ -242,7 +274,8 @@ impl DateTimeFormatterUtil {
 }
 
 fn instant_plus(amount: i64, unit: TimeUnit) -> Result<DateTime<Utc>> {
-    let overflow = || FederationError::Arithmetic(format!("long overflow adding {} {:?}", amount, unit));
+    let overflow =
+        || FederationError::Arithmetic(format!("long overflow adding {amount} {unit:?}"));
     let epoch = DateTime::<Utc>::UNIX_EPOCH;
     let delta = match unit {
         TimeUnit::Second => Duration::try_seconds(amount).ok_or_else(overflow)?,
@@ -327,20 +360,38 @@ fn tokenize_pattern(pattern: &str) -> Option<Vec<PatternToken>> {
 
 fn is_numeric_field(token: &PatternToken) -> bool {
     match token {
-        PatternToken::Field(c, n) => match c {
-            'M' | 'L' => *n < 3,
-            'y' | 'Y' | 'u' | 'd' | 'D' | 'H' | 'k' | 'K' | 'h' | 'm' | 's' | 'S' | 'w' | 'W' | 'F' => true,
-            _ => false,
-        },
-        _ => false,
+        PatternToken::Field('M' | 'L', n) => *n < 3,
+        PatternToken::Field(c, _) => matches!(
+            c,
+            'y' | 'Y' | 'u' | 'd' | 'D' | 'H' | 'k' | 'K' | 'h' | 'm' | 's' | 'S' | 'w' | 'W' | 'F'
+        ),
+        PatternToken::Literal(_) => false,
     }
 }
 
 const MONTHS: [&str; 12] = [
-    "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
     "december",
 ];
-const DAYS: [&str; 7] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const DAYS: [&str; 7] = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+];
 
 fn parse_offset(chars: &[char], pos: &mut usize) -> Option<i64> {
     if *pos >= chars.len() {
@@ -358,7 +409,8 @@ fn parse_offset(chars: &[char], pos: &mut usize) -> Option<i64> {
     let mut p = *pos + 1;
     let two = |p: usize| -> Option<i64> {
         if p + 2 <= chars.len() && chars[p].is_ascii_digit() && chars[p + 1].is_ascii_digit() {
-            Some((chars[p] as i64 - '0' as i64) * 10 + (chars[p + 1] as i64 - '0' as i64))
+            let digit = |c: char| i64::from(c.to_digit(10).unwrap_or(0));
+            Some(digit(chars[p]) * 10 + digit(chars[p + 1]))
         } else {
             None
         }
@@ -379,20 +431,189 @@ fn parse_offset(chars: &[char], pos: &mut usize) -> Option<i64> {
     Some(sign * (hours * 60 + minutes) * 60)
 }
 
+struct DateFields {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    millis: i64,
+    pm: Option<bool>,
+    hour12: bool,
+    offset_seconds: Option<i64>,
+}
+
+impl Default for DateFields {
+    fn default() -> Self {
+        DateFields {
+            year: 1970,
+            month: 1,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            millis: 0,
+            pm: None,
+            hour12: false,
+            offset_seconds: None,
+        }
+    }
+}
+
+impl DateFields {
+    fn set_numeric(&mut self, c: char, width: usize, text: &str, n: i64) {
+        match c {
+            'y' | 'Y' | 'u' => {
+                self.year = if width == 2 && text.len() == 2 {
+                    let now_year = i64::from(chrono::Datelike::year(&Utc::now()));
+                    let century = (now_year - 80) / 100 * 100;
+                    let mut y = century + n;
+                    if y < now_year - 80 {
+                        y += 100;
+                    }
+                    y
+                } else {
+                    n
+                }
+            }
+            'M' | 'L' => self.month = n,
+            'd' => self.day = n,
+            'D' => {
+                self.month = 1;
+                self.day = n;
+            }
+            'H' => self.hour = n,
+            'k' => self.hour = if n == 24 { 0 } else { n },
+            'K' => {
+                self.hour = n;
+                self.hour12 = true;
+            }
+            'h' => {
+                self.hour = if n == 12 { 0 } else { n };
+                self.hour12 = true;
+            }
+            'm' => self.minute = n,
+            's' => self.second = n,
+            'S' => self.millis = n,
+            _ => {}
+        }
+    }
+
+    fn set_text(&mut self, c: char, width: usize, chars: &[char], pos: &mut usize) -> Option<()> {
+        let rest_lower = || chars[*pos..].iter().collect::<String>().to_lowercase();
+        match c {
+            'M' | 'L' => {
+                let (i, len) = match_name(&rest_lower(), &MONTHS)?;
+                self.month = i64::try_from(i).ok()? + 1;
+                *pos += len;
+            }
+            'E' => {
+                let (_, len) = match_name(&rest_lower(), &DAYS)?;
+                *pos += len;
+            }
+            'a' => {
+                let rest = rest_lower();
+                if rest.starts_with("am") {
+                    self.pm = Some(false);
+                } else if rest.starts_with("pm") {
+                    self.pm = Some(true);
+                } else {
+                    return None;
+                }
+                *pos += 2;
+            }
+            'Z' | 'X' | 'x' | 'z' => {
+                if c == 'z' || (c == 'Z' && width != 2) {
+                    let rest: String = chars[*pos..].iter().collect();
+                    if rest.starts_with("GMT") || rest.starts_with("UTC") {
+                        *pos += 3;
+                        if *pos >= chars.len() || (chars[*pos] != '+' && chars[*pos] != '-') {
+                            self.offset_seconds = Some(0);
+                        }
+                    }
+                    if self.offset_seconds.is_some() {
+                        return Some(());
+                    }
+                }
+                self.offset_seconds = Some(parse_offset(chars, pos)?);
+            }
+            'G' => {
+                let rest = chars[*pos..].iter().collect::<String>().to_uppercase();
+                if rest.starts_with("AD") || rest.starts_with("BC") {
+                    *pos += 2;
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        Some(())
+    }
+
+    fn to_utc(&self) -> Option<DateTime<Utc>> {
+        let hour = if self.hour12 && self.pm == Some(true) {
+            self.hour + 12
+        } else {
+            self.hour
+        };
+        let base = NaiveDate::from_ymd_opt(i32::try_from(self.year).ok()?, 1, 1)?;
+        let date = if self.month >= 1 {
+            base.checked_add_months(Months::new(u32::try_from(self.month - 1).ok()?))?
+        } else {
+            base.checked_sub_months(Months::new(u32::try_from(1 - self.month).ok()?))?
+        };
+        let dt = date.and_hms_opt(0, 0, 0)?
+            + Duration::try_days(self.day - 1)?
+            + Duration::try_hours(hour)?
+            + Duration::try_minutes(self.minute)?
+            + Duration::try_seconds(self.second)?
+            + Duration::try_milliseconds(self.millis)?;
+        let utc = dt - Duration::try_seconds(self.offset_seconds.unwrap_or(0))?;
+        Some(utc.and_utc())
+    }
+}
+
+fn match_name(rest: &str, names: &[&str]) -> Option<(usize, usize)> {
+    names.iter().enumerate().find_map(|(i, name)| {
+        if rest.starts_with(name) {
+            Some((i, name.len()))
+        } else if rest.starts_with(&name[..3]) {
+            Some((i, 3))
+        } else {
+            None
+        }
+    })
+}
+
+fn read_number(chars: &[char], pos: &mut usize, width: usize, fixed: bool) -> Option<String> {
+    let start = *pos;
+    if *pos < chars.len() && (chars[*pos] == '-' || chars[*pos] == '+') && !fixed {
+        *pos += 1;
+    }
+    if fixed {
+        let end = *pos + width;
+        if end > chars.len() || !chars[*pos..end].iter().all(char::is_ascii_digit) {
+            return None;
+        }
+        *pos = end;
+    } else {
+        let digits_start = *pos;
+        while *pos < chars.len() && chars[*pos].is_ascii_digit() {
+            *pos += 1;
+        }
+        if *pos == digits_start {
+            return None;
+        }
+    }
+    Some(chars[start..*pos].iter().collect())
+}
+
 fn parse_date_with_pattern(value: &str, pattern: &str) -> Option<DateTime<Utc>> {
     let tokens = tokenize_pattern(pattern)?;
     let chars: Vec<char> = value.chars().collect();
     let mut pos = 0usize;
-    let mut year: i64 = 1970;
-    let mut month: i64 = 1;
-    let mut day: i64 = 1;
-    let mut hour: i64 = 0;
-    let mut minute: i64 = 0;
-    let mut second: i64 = 0;
-    let mut millis: i64 = 0;
-    let mut pm: Option<bool> = None;
-    let mut hour12 = false;
-    let mut offset_seconds: Option<i64> = None;
+    let mut fields = DateFields::default();
     for (idx, token) in tokens.iter().enumerate() {
         match token {
             PatternToken::Literal(lit) => {
@@ -403,160 +624,17 @@ fn parse_date_with_pattern(value: &str, pattern: &str) -> Option<DateTime<Utc>> 
                     pos += 1;
                 }
             }
-            PatternToken::Field(c, width) => {
-                if is_numeric_field(token) {
-                    let fixed = tokens.get(idx + 1).map(is_numeric_field).unwrap_or(false);
-                    let start = pos;
-                    if pos < chars.len() && (chars[pos] == '-' || chars[pos] == '+') && !fixed {
-                        pos += 1;
-                    }
-                    if fixed {
-                        let end = pos + width;
-                        if end > chars.len() || !chars[pos..end].iter().all(|ch| ch.is_ascii_digit()) {
-                            return None;
-                        }
-                        pos = end;
-                    } else {
-                        let digits_start = pos;
-                        while pos < chars.len() && chars[pos].is_ascii_digit() {
-                            pos += 1;
-                        }
-                        if pos == digits_start {
-                            return None;
-                        }
-                    }
-                    let text: String = chars[start..pos].iter().collect();
-                    let n: i64 = text.parse().ok()?;
-                    match c {
-                        'y' | 'Y' | 'u' => {
-                            year = if *width == 2 && text.len() == 2 {
-                                let now_year = Utc::now().format("%Y").to_string().parse::<i64>().unwrap_or(2000);
-                                let century = (now_year - 80) / 100 * 100;
-                                let mut y = century + n;
-                                if y < now_year - 80 {
-                                    y += 100;
-                                }
-                                y
-                            } else {
-                                n
-                            }
-                        }
-                        'M' | 'L' => month = n,
-                        'd' => day = n,
-                        'D' => {
-                            month = 1;
-                            day = n;
-                        }
-                        'H' => hour = n,
-                        'k' => hour = if n == 24 { 0 } else { n },
-                        'K' => {
-                            hour = n;
-                            hour12 = true;
-                        }
-                        'h' => {
-                            hour = if n == 12 { 0 } else { n };
-                            hour12 = true;
-                        }
-                        'm' => minute = n,
-                        's' => second = n,
-                        'S' => millis = n,
-                        _ => {}
-                    }
-                } else {
-                    match c {
-                        'M' | 'L' => {
-                            let rest: String = chars[pos..].iter().collect::<String>().to_lowercase();
-                            let mut found = None;
-                            for (i, name) in MONTHS.iter().enumerate() {
-                                if rest.starts_with(name) {
-                                    found = Some((i, name.len()));
-                                    break;
-                                }
-                                if rest.starts_with(&name[..3]) {
-                                    found = Some((i, 3));
-                                    break;
-                                }
-                            }
-                            let (i, len) = found?;
-                            month = i as i64 + 1;
-                            pos += len;
-                        }
-                        'E' => {
-                            let rest: String = chars[pos..].iter().collect::<String>().to_lowercase();
-                            let mut len = None;
-                            for name in DAYS {
-                                if rest.starts_with(name) {
-                                    len = Some(name.len());
-                                    break;
-                                }
-                                if rest.starts_with(&name[..3]) {
-                                    len = Some(3);
-                                    break;
-                                }
-                            }
-                            pos += len?;
-                        }
-                        'a' => {
-                            let rest: String = chars[pos..].iter().collect::<String>().to_lowercase();
-                            if rest.starts_with("am") {
-                                pm = Some(false);
-                            } else if rest.starts_with("pm") {
-                                pm = Some(true);
-                            } else {
-                                return None;
-                            }
-                            pos += 2;
-                        }
-                        'Z' | 'X' | 'x' | 'z' => {
-                            if *c == 'z' || (*c == 'Z' && *width != 2) {
-                                let rest: String = chars[pos..].iter().collect();
-                                for prefix in ["GMT", "UTC"] {
-                                    if rest.starts_with(prefix) {
-                                        pos += 3;
-                                        if pos >= chars.len() || (chars[pos] != '+' && chars[pos] != '-') {
-                                            offset_seconds = Some(0);
-                                        }
-                                        break;
-                                    }
-                                }
-                                if offset_seconds.is_some() {
-                                    continue;
-                                }
-                            }
-                            offset_seconds = Some(parse_offset(&chars, &mut pos)?);
-                        }
-                        'G' => {
-                            let rest: String = chars[pos..].iter().collect::<String>().to_uppercase();
-                            if rest.starts_with("AD") || rest.starts_with("BC") {
-                                pos += 2;
-                            } else {
-                                return None;
-                            }
-                        }
-                        _ => return None,
-                    }
-                }
+            PatternToken::Field(c, width) if is_numeric_field(token) => {
+                let fixed = tokens.get(idx + 1).is_some_and(is_numeric_field);
+                let text = read_number(&chars, &mut pos, *width, fixed)?;
+                let n: i64 = text.parse().ok()?;
+                fields.set_numeric(*c, *width, &text, n);
             }
+            PatternToken::Field(c, width) => fields.set_text(*c, *width, &chars, &mut pos)?,
         }
     }
     if pos != chars.len() {
         return None;
     }
-    if hour12 && pm == Some(true) {
-        hour += 12;
-    }
-    let base = NaiveDate::from_ymd_opt(year as i32, 1, 1)?;
-    let date = if month >= 1 {
-        base.checked_add_months(Months::new((month - 1) as u32))?
-    } else {
-        base.checked_sub_months(Months::new((1 - month) as u32))?
-    };
-    let dt = date.and_hms_opt(0, 0, 0)?
-        + Duration::try_days(day - 1)?
-        + Duration::try_hours(hour)?
-        + Duration::try_minutes(minute)?
-        + Duration::try_seconds(second)?
-        + Duration::try_milliseconds(millis)?;
-    let utc = dt - Duration::try_seconds(offset_seconds.unwrap_or(0))?;
-    Some(utc.and_utc())
+    fields.to_utc()
 }
