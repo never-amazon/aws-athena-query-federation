@@ -13,7 +13,7 @@ use pkcs8::{EncryptedPrivateKeyInfo, ObjectIdentifier, PrivateKeyInfo};
 use regex::Regex;
 use rsa::pkcs8::DecodePrivateKey;
 
-use super::pbe::PbeScheme;
+use super::pbe::{PbeScheme, PrivateKeyError};
 use crate::snowflake_constants::{is_blank, java_trim, SnowflakeConstants};
 use crate::utils::SnowflakeAuthType;
 
@@ -81,8 +81,8 @@ impl SnowflakeAuthUtils {
         let pem = normalize_to_pem(private_key_string, passphrase);
         parse_pem_object(&pem, passphrase)
             .map(|der| SnowflakePrivateKey { der })
-            .map_err(|message| {
-                tracing::error!("Private key parsing failed: {message}");
+            .map_err(|error| {
+                tracing::error!("Private key parsing failed: {error}");
                 FederationError::connector(
                     FederationSourceErrorCode::InvalidInputException,
                     "Invalid private key format",
@@ -187,20 +187,21 @@ fn normalize_to_pem(private_key_string: &str, passphrase: Option<&str>) -> Strin
     pem
 }
 
-fn parse_pem_object(pem: &str, passphrase: Option<&str>) -> std::result::Result<Vec<u8>, String> {
+fn parse_pem_object(
+    pem: &str,
+    passphrase: Option<&str>,
+) -> std::result::Result<Vec<u8>, PrivateKeyError> {
     let (label, der) = read_pem(pem)?;
     match label.as_str() {
         "ENCRYPTED PRIVATE KEY" => {
             let (algorithm, ciphertext) = read_encrypted_private_key_info(&der)?;
             let Some(passphrase) = passphrase.filter(|p| !java_trim(p).is_empty()) else {
-                return Err("Passphrase is required for encrypted private key".to_string());
+                return Err(PrivateKeyError::PassphraseRequired);
             };
             let plaintext = match PbeScheme::from_oid(algorithm.oid) {
                 Some(scheme) => scheme.decrypt(algorithm.parameters, passphrase, ciphertext)?,
-                None => EncryptedPrivateKeyInfo::try_from(der.as_slice())
-                    .map_err(|e| e.to_string())?
-                    .decrypt(passphrase.as_bytes())
-                    .map_err(|e| e.to_string())?
+                None => EncryptedPrivateKeyInfo::try_from(der.as_slice())?
+                    .decrypt(passphrase.as_bytes())?
                     .as_bytes()
                     .to_vec(),
             };
@@ -211,47 +212,42 @@ fn parse_pem_object(pem: &str, passphrase: Option<&str>) -> std::result::Result<
             check_private_key_info(&der)?;
             Ok(der)
         }
-        other => Err(format!(
-            "Unsupported private key format. Expected PKCS8EncryptedPrivateKeyInfo or PrivateKeyInfo, got: {other}"
-        )),
+        other => Err(PrivateKeyError::UnsupportedFormat(other.to_string())),
     }
 }
 
 fn read_encrypted_private_key_info(
     der: &[u8],
-) -> std::result::Result<(AlgorithmIdentifierRef<'_>, &[u8]), String> {
-    AnyRef::from_der(der)
-        .and_then(|any| {
-            any.sequence(|reader| {
-                let algorithm = AlgorithmIdentifierRef::decode(reader)?;
-                let ciphertext = OctetStringRef::decode(reader)?;
-                Ok((algorithm, ciphertext.as_bytes()))
-            })
+) -> std::result::Result<(AlgorithmIdentifierRef<'_>, &[u8]), PrivateKeyError> {
+    let parsed = AnyRef::from_der(der).and_then(|any| {
+        any.sequence(|reader| {
+            let algorithm = AlgorithmIdentifierRef::decode(reader)?;
+            let ciphertext = OctetStringRef::decode(reader)?;
+            Ok((algorithm, ciphertext.as_bytes()))
         })
-        .map_err(|e| e.to_string())
+    })?;
+    Ok(parsed)
 }
 
-fn read_pem(pem: &str) -> std::result::Result<(String, Vec<u8>), String> {
+fn read_pem(pem: &str) -> std::result::Result<(String, Vec<u8>), PrivateKeyError> {
     let mut lines = pem.lines();
     let label = lines
         .next()
         .and_then(|line| line.strip_prefix("-----BEGIN "))
         .and_then(|line| line.strip_suffix("-----"))
-        .ok_or_else(|| "missing PEM header".to_string())?
+        .ok_or(PrivateKeyError::MissingPemHeader)?
         .to_string();
     let body: String = lines
         .take_while(|line| !line.starts_with("-----END "))
         .collect();
-    let der = base64::engine::general_purpose::STANDARD
-        .decode(body)
-        .map_err(|e| e.to_string())?;
+    let der = base64::engine::general_purpose::STANDARD.decode(body)?;
     Ok((label, der))
 }
 
-fn check_private_key_info(der: &[u8]) -> std::result::Result<(), String> {
-    let info = PrivateKeyInfo::try_from(der).map_err(|e| e.to_string())?;
+fn check_private_key_info(der: &[u8]) -> std::result::Result<(), PrivateKeyError> {
+    let info = PrivateKeyInfo::try_from(der)?;
     if info.algorithm.oid == RSA_ENCRYPTION_OID {
-        rsa::RsaPrivateKey::from_pkcs8_der(der).map_err(|e| e.to_string())?;
+        rsa::RsaPrivateKey::from_pkcs8_der(der)?;
     }
     Ok(())
 }

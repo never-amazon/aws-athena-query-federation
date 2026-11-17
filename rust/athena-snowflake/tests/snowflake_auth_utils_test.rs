@@ -587,3 +587,36 @@ fn test_create_private_key_with_pbe_md2_and_rc2_is_rejected() {
         SnowflakeAuthUtils::create_private_key(PBE_MD2_RC2_KEY, Some(PBE_PASSPHRASE)).unwrap_err();
     assert_invalid_private_key(&error);
 }
+
+const PBE_KEYS_OVER_THE_BOUNCY_CASTLE_ITERATION_LIMIT: [(&str, &str); 4] = [
+    (
+        "pbeWithMD5AndDES-CBC 10000001",
+        include_str!("fixtures/pbe/pbe_md5_des_iter_10000001.p8"),
+    ),
+    (
+        "pbeWithMD5AndDES-CBC 2147483647",
+        include_str!("fixtures/pbe/pbe_md5_des_iter_2147483647.p8"),
+    ),
+    (
+        "pbeWithMD5AndDES-CBC 4294967295",
+        include_str!("fixtures/pbe/pbe_md5_des_iter_4294967295.p8"),
+    ),
+    (
+        "pbeWithSHAAnd3-KeyTripleDES-CBC 2147483647",
+        include_str!("fixtures/pbe/pbe_sha1_3des_iter_2147483647.p8"),
+    ),
+];
+
+#[test]
+fn test_create_private_key_rejects_pbe_iteration_count_over_bouncy_castle_limit() {
+    let started = std::time::Instant::now();
+    for (scheme, pem) in PBE_KEYS_OVER_THE_BOUNCY_CASTLE_ITERATION_LIMIT {
+        let error = SnowflakeAuthUtils::create_private_key(pem, Some(PBE_PASSPHRASE)).unwrap_err();
+        assert_invalid_private_key(&error);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{scheme} took {:?}",
+            started.elapsed()
+        );
+    }
+}
