@@ -294,3 +294,21 @@ com.amazonaws.athena.connectors.jdbc.splits.SplitInfo	athena-jdbc/src/splits/spl
 com.amazonaws.athena.connectors.jdbc.splits.SplitRange	athena-jdbc/src/splits/split_range.rs::SplitRange	ported	
 com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/splitter.rs::Splitter	ported	
 com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::SplitterFactory	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::SnowflakeCompositeHandler	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/src/snowflake_constants.rs::SnowflakeConstants	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::SnowflakeEnvironmentProperties	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeMetadataHandler	athena-snowflake/src/snowflake_metadata_handler.rs::SnowflakeMetadataHandler	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::SnowflakeMuxCompositeHandler	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-snowflake/src/snowflake_mux_metadata_handler.rs::SnowflakeMuxMetadataHandler	ported	SnowflakeMetadataHandlerFactory lives in the same file
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxRecordHandler	athena-snowflake/src/snowflake_mux_record_handler.rs::SnowflakeMuxRecordHandler	ported	SnowflakeMuxRecordHandlerFactory lives in the same file
+com.amazonaws.athena.connectors.snowflake.SnowflakeQueryStringBuilder	athena-snowflake/src/snowflake_query_string_builder.rs::SnowflakeQueryStringBuilder	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeRecordHandler	athena-snowflake/src/snowflake_record_handler.rs::SnowflakeRecordHandler	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeUtils	-	not_ported	installCaCertificate and setupNativeEnvironmentVariables write the JDK cacerts store and env vars for the Arrow JDBC native path; the Rust client uses rustls with bundled roots
+com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory	athena-snowflake/src/connection/snowflake_connection_factory.rs::SnowflakeConnectionFactory	ported	
+com.amazonaws.athena.connectors.snowflake.resolver.SnowflakeJDBCCaseResolver	athena-snowflake/src/resolver/snowflake_jdbc_case_resolver.rs::SnowflakeJdbcCaseResolver	ported	
+com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter	athena-snowflake/src/utils/snowflake_arrow_type_converter.rs::SnowflakeArrowTypeConverter	ported	
+com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthType	athena-snowflake/src/utils/snowflake_auth_type.rs::SnowflakeAuthType	ported	
+com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils	athena-snowflake/src/utils/snowflake_auth_utils.rs::SnowflakeAuthUtils	ported	
