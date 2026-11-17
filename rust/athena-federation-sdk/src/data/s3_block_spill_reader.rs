@@ -12,7 +12,7 @@ use crate::security::{
 };
 
 pub(crate) fn require_present<T>(value: Option<T>, name: &str) -> Result<T> {
-    value.ok_or_else(|| FederationError::NullPointer(format!("{name} was null")))
+    value.ok_or_else(|| FederationError::null_pointer(format!("{name} was null")))
 }
 
 pub struct S3BlockSpillReader {

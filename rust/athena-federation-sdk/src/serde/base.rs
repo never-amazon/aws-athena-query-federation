@@ -188,9 +188,7 @@ pub fn validate_object_start_token(token: Option<JsonToken>) -> Result<()> {
             JsonToken::StartObject,
             t.as_string().unwrap_or("null")
         ))),
-        None => Err(FederationError::NullPointer(
-            "Cannot invoke \"com.fasterxml.jackson.core.JsonToken.asString()\" because \"token\" is null".into(),
-        )),
+        None => Err(FederationError::null_pointer("Cannot invoke \"com.fasterxml.jackson.core.JsonToken.asString()\" because \"token\" is null")),
     }
 }
 
@@ -306,13 +304,13 @@ where
 }
 
 pub fn require_non_null<T>(value: Option<T>, message: &str) -> Result<T> {
-    value.ok_or_else(|| FederationError::NullPointer(message.to_string()))
+    value.ok_or_else(|| FederationError::null_pointer(message.to_string()))
 }
 
 pub fn no_enum_constant(enum_class: &str, name: Option<&str>) -> FederationError {
     match name {
         Some(n) => FederationError::IllegalArgument(format!("No enum constant {enum_class}.{n}")),
-        None => FederationError::NullPointer("Name is null".into()),
+        None => FederationError::null_pointer("Name is null"),
     }
 }
 
@@ -347,7 +345,7 @@ pub fn no_serde_configured(type_name: &str) -> FederationError {
 pub fn non_null_strings(values: Vec<Option<String>>, message: &str) -> Result<Vec<String>> {
     values
         .into_iter()
-        .map(|v| v.ok_or_else(|| FederationError::NullPointer(message.to_string())))
+        .map(|v| v.ok_or_else(|| FederationError::null_pointer(message.to_string())))
         .collect()
 }
 

@@ -6,6 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use athena_federation_sdk::security::AwsServiceError;
 use athena_federation_sdk::{AthenaClient, ExceptionFilter, QueryStatusChecker, ThrottlingInvoker};
+use aws_credential_types::Credentials;
 
 type Response = Result<Option<String>, AwsServiceError>;
 
@@ -40,6 +41,10 @@ impl AthenaClient for MockAthena {
         } else {
             responses[0].clone()
         }
+    }
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn AthenaClient> {
+        unreachable!("this test does not pass FAS credentials")
     }
 }
 

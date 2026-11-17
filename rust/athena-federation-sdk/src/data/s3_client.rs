@@ -124,9 +124,7 @@ pub trait S3Client: Send + Sync {
 
     async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError>;
 
-    fn with_credentials(&self, _credentials: &Credentials) -> Option<Arc<dyn S3Client>> {
-        None
-    }
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn S3Client>;
 }
 
 #[async_trait]
@@ -179,13 +177,13 @@ impl S3Client for aws_sdk_s3::Client {
             .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))
     }
 
-    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn S3Client>> {
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn S3Client> {
         let config = self
             .config()
             .to_builder()
             .credentials_provider(credentials.clone())
             .build();
-        Some(Arc::new(aws_sdk_s3::Client::from_conf(config)))
+        Arc::new(aws_sdk_s3::Client::from_conf(config))
     }
 }
 

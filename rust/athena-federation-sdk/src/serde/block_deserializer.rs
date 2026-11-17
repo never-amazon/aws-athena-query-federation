@@ -10,7 +10,7 @@ use crate::serde::schema_deserializer::binary_value;
 use crate::serde::SerDeContext;
 
 fn missing(field: &str) -> FederationError {
-    FederationError::NullPointer(format!(
+    FederationError::null_pointer(format!(
         "Cannot invoke \"com.fasterxml.jackson.databind.JsonNode\" method because field \"{field}\" is null"
     ))
 }

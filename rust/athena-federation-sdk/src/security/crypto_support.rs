@@ -21,22 +21,21 @@ pub(crate) fn invalid_input(message: impl Into<String>) -> FederationError {
     ))
 }
 
-fn connector_with_cause(message: String, cause: crate::exceptions::Cause) -> FederationError {
-    FederationError::AthenaConnector(AthenaConnectorException::with_cause(
+fn connector_with_response(response: FederationError) -> FederationError {
+    let message = response.to_string();
+    FederationError::AthenaConnector(AthenaConnectorException::with_response(
+        Arc::new(response),
         message,
-        cause,
         ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
     ))
 }
 
 fn wrap_io(err: FederationError) -> FederationError {
     match err {
-        FederationError::Io(message) => {
-            let cause = Arc::new(std::io::Error::other(message.clone()));
-            connector_with_cause(message, cause)
+        FederationError::Io(_) | FederationError::IoError(_) => connector_with_response(err),
+        FederationError::Arrow(e) => {
+            connector_with_response(FederationError::from(std::io::Error::other(e)))
         }
-        FederationError::IoError(e) => connector_with_cause(e.to_string(), e),
-        FederationError::Arrow(e) => connector_with_cause(e.to_string(), e),
         other => other,
     }
 }
@@ -61,4 +60,30 @@ pub(crate) fn deserialize_block(
         .load_arrow_record_batch(&batch)
         .map_err(wrap_io)?;
     Ok(result_block)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
+
+    use super::*;
+
+    #[test]
+    fn arrow_error_becomes_connector_exception_with_io_exception_response() {
+        let err = wrap_io(FederationError::from(arrow::error::ArrowError::IpcError(
+            "bad ipc".into(),
+        )));
+        let exception = err.as_connector_exception().unwrap();
+        assert_eq!(
+            Some(FederationSourceErrorCode::InternalServiceException),
+            exception.error_code()
+        );
+        assert_eq!("Ipc error: bad ipc", exception.get_message());
+        assert!(exception.source().is_none());
+        let response = exception
+            .response()
+            .and_then(|r| r.downcast_ref::<FederationError>())
+            .unwrap();
+        assert_eq!("java.io.IOException", response.java_class_name());
+    }
 }

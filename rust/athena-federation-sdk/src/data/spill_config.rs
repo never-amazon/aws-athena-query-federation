@@ -117,10 +117,10 @@ impl SpillConfigBuilder {
             encryption_key: self.encryption_key,
             spill_location: self
                 .spill_location
-                .ok_or_else(|| FederationError::NullPointer("spillLocation was null".into()))?,
+                .ok_or_else(|| FederationError::null_pointer("spillLocation was null"))?,
             request_id: self
                 .request_id
-                .ok_or_else(|| FederationError::NullPointer("requestId was null".into()))?,
+                .ok_or_else(|| FederationError::null_pointer("requestId was null"))?,
             max_block_bytes: self.max_block_bytes,
             max_inline_block_size: self.max_inline_block_size,
             num_spill_threads: self.num_spill_threads,

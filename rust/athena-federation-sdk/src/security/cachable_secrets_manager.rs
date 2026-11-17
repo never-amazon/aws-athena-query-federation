@@ -132,7 +132,7 @@ impl CachableSecretsManager {
             .get_secret_value(secret_name, override_configuration)
             .await?
             .ok_or_else(|| {
-                FederationError::NullPointer(format!("Secret {secret_name} has no SecretString"))
+                FederationError::null_pointer(format!("Secret {secret_name} has no SecretString"))
             })?;
         let entry = CacheEntry {
             value: secret_value.clone(),

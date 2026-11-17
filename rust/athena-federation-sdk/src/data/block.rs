@@ -67,7 +67,7 @@ impl Block {
         let value = value.into();
         if self.constraint_evaluator.apply(field_name, &value)? {
             let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
-                FederationError::NullPointer(format!("No vector found for field {field_name}"))
+                FederationError::null_pointer(format!("No vector found for field {field_name}"))
             })?;
             BlockUtils::set_value(vector, row, &value)?;
             return Ok(true);
@@ -100,7 +100,7 @@ impl Block {
     ) -> Result<bool> {
         let value = value.into();
         let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
-            FederationError::NullPointer(format!("No vector found for field {field_name}"))
+            FederationError::null_pointer(format!("No vector found for field {field_name}"))
         })?;
         BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
         Ok(true)

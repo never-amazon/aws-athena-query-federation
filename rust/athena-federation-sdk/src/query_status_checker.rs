@@ -20,9 +20,7 @@ pub trait AthenaClient: Send + Sync {
         query_execution_id: &str,
     ) -> Result<Option<String>, AwsServiceError>;
 
-    fn with_credentials(&self, _credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
-        None
-    }
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn AthenaClient>;
 }
 
 #[async_trait]
@@ -44,13 +42,13 @@ impl AthenaClient for aws_sdk_athena::Client {
             .map(|s| s.as_str().to_string()))
     }
 
-    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
+    fn with_credentials(&self, credentials: &Credentials) -> Arc<dyn AthenaClient> {
         let config = self
             .config()
             .to_builder()
             .credentials_provider(credentials.clone())
             .build();
-        Some(Arc::new(aws_sdk_athena::Client::from_conf(config)))
+        Arc::new(aws_sdk_athena::Client::from_conf(config))
     }
 }
 

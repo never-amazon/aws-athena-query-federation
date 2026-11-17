@@ -1,6 +1,7 @@
 mod handler_support;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -72,6 +73,8 @@ fn full_list_response() -> ListTablesResponse {
 #[derive(Default)]
 struct FakeGlue {
     databases: Vec<Database>,
+    database_next_token: Option<String>,
+    database_calls: AtomicUsize,
     table: Mutex<Option<Table>>,
 }
 
@@ -83,8 +86,14 @@ impl GlueClient for FakeGlue {
         _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> std::result::Result<GetDatabasesOutput, AwsServiceError> {
         assert_eq!(Some(ACCOUNT_ID), request.catalog_id());
+        let first_page = self.database_calls.fetch_add(1, Ordering::SeqCst) == 0;
         Ok(GetDatabasesOutput::builder()
             .set_database_list(Some(self.databases.clone()))
+            .set_next_token(if first_page {
+                self.database_next_token.clone()
+            } else {
+                None
+            })
             .build()
             .unwrap())
     }
@@ -220,10 +229,14 @@ struct Setup {
 }
 
 fn set_up_with(databases: Vec<Database>) -> Setup {
-    let glue = Arc::new(FakeGlue {
+    set_up_with_glue(FakeGlue {
         databases,
-        table: Mutex::new(None),
-    });
+        ..FakeGlue::default()
+    })
+}
+
+fn set_up_with_glue(glue: FakeGlue) -> Setup {
+    let glue = Arc::new(glue);
     let base = MetadataHandlerBase::builder("glue-test", Fakes::new().clients())
         .config_options(HashMap::new())
         .encryption_key_factory(Some(Arc::new(LocalKeyFactory::new())))
@@ -296,6 +309,23 @@ async fn do_list_schema_names() {
         .unwrap();
     let expected: Vec<String> = databases.iter().map(|d| d.name().to_string()).collect();
     assert_eq!(expected, res.schemas());
+}
+
+#[tokio::test]
+async fn do_list_schema_names_stops_on_empty_next_token() {
+    let s = set_up_with_glue(FakeGlue {
+        databases: vec![Database::builder().name("db1").build().unwrap()],
+        database_next_token: Some(String::new()),
+        ..FakeGlue::default()
+    });
+    let req = ListSchemasRequest::new(Some(fake_identity()), Some(QUERY_ID.into()), CATALOG);
+    let res = s
+        .handler
+        .do_list_schema_names(&s.allocator, &req)
+        .await
+        .unwrap();
+    assert_eq!(["db1".to_string()].as_slice(), res.schemas());
+    assert_eq!(1, s.glue.database_calls.load(Ordering::SeqCst));
 }
 
 #[tokio::test]

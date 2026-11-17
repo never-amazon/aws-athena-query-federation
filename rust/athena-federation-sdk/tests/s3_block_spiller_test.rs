@@ -12,6 +12,7 @@ use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::security::{AwsServiceError, EncryptionKeyFactory, LocalKeyFactory};
 use athena_federation_sdk::FederationError;
+use aws_credential_types::Credentials;
 
 const BUCKET: &str = "MyBucket";
 const PREFIX: &str = "blocks/spill";
@@ -64,6 +65,10 @@ impl S3Client for MockS3 {
 
     async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
         Ok(())
+    }
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn S3Client> {
+        unreachable!("this test does not pass FAS credentials")
     }
 }
 
@@ -506,6 +511,10 @@ impl S3Client for KeyedS3 {
 
     async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
         Ok(())
+    }
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Arc<dyn S3Client> {
+        unreachable!("this test does not pass FAS credentials")
     }
 }
 

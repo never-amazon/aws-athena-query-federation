@@ -72,7 +72,7 @@ impl AesGcmBlockCrypto {
     }
 
     fn make_cipher(mode: Mode, key: Option<&EncryptionKey>) -> Result<GcmCipher> {
-        let key = key.ok_or_else(|| FederationError::NullPointer("key was null".into()))?;
+        let key = key.ok_or_else(|| FederationError::null_pointer("key was null"))?;
         if key.nonce().len() != NONCE_BYTES {
             return Err(invalid_input(format!(
                 "Expected {} nonce bytes but found {}",

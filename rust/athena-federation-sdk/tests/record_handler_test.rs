@@ -15,8 +15,10 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
     FederationRequestHandler, RecordHandler, RecordHandlerBase, RecordHandlerExt,
+    RecordStreamHandler,
 };
-use athena_federation_sdk::metadata::GetDataSourceCapabilitiesRequest;
+use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
+use athena_federation_sdk::metadata::{GetDataSourceCapabilitiesRequest, ListSchemasRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::{
@@ -208,3 +210,38 @@ async fn ping_handle_request() {
     let response = round_trip(&s, ping_request.into()).await.unwrap();
     assert!(matches!(response, FederationResponse::Ping(_)));
 }
+
+#[tokio::test]
+async fn record_handler_runs_as_request_stream_handler() {
+    let Setup {
+        handler,
+        block_allocator,
+        ..
+    } = set_up();
+    let stream_handler = RecordStreamHandler::new(handler);
+    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&block_allocator));
+    let ping: FederationRequest = PingRequest::new(Some(identity()), "ok", "q1").into();
+    let input = object_mapper.write_value_as_bytes(&ping).unwrap();
+    let output = RequestStreamHandler::handle_request(&stream_handler, &input, None)
+        .await
+        .unwrap();
+    assert!(matches!(
+        object_mapper.read_response(&output).unwrap(),
+        FederationResponse::Ping(_)
+    ));
+    let wrong: FederationRequest =
+        ListSchemasRequest::new(Some(identity()), Some("q1".into()), "ok").into();
+    let input = object_mapper.write_value_as_bytes(&wrong).unwrap();
+    let err = RequestStreamHandler::handle_request(&stream_handler, &input, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
+         errorMessage: Expected a RecordRequest but found class com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest\n\
+         errorCode: InvalidInputException\n",
+        LambdaError::new(&err).to_report()
+    );
+    assert_runnable(&stream_handler);
+}
+
+fn assert_runnable<H: RequestStreamHandler + 'static>(_handler: &H) {}

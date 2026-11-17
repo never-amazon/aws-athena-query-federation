@@ -7,7 +7,7 @@ use crate::serde::schema_serializer::SCHEMA_FIELD_NAME;
 
 pub fn deserialize_tree(node: &serde_json::Value) -> Result<Schema> {
     let field = node.get(SCHEMA_FIELD_NAME).ok_or_else(|| {
-        FederationError::NullPointer("Cannot invoke \"com.fasterxml.jackson.databind.JsonNode.binaryValue()\" because the return value of \"com.fasterxml.jackson.databind.JsonNode.get(String)\" is null".into())
+        FederationError::null_pointer("Cannot invoke \"com.fasterxml.jackson.databind.JsonNode.binaryValue()\" because the return value of \"com.fasterxml.jackson.databind.JsonNode.get(String)\" is null")
     })?;
     let bytes = binary_value(field)?;
     schema_from_bytes(&bytes)

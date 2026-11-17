@@ -8,7 +8,9 @@ use athena_federation_sdk::data::{
 };
 use athena_federation_sdk::handlers::{
     JavaType, UdfMethod, UdfMethods, UserDefinedFunctionHandler, UserDefinedFunctionHandlerExt,
+    UserDefinedFunctionStreamHandler,
 };
+use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::ListSchemasRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::FederatedIdentity;
@@ -264,6 +266,17 @@ fn with_complex_methods(methods: UdfMethods) -> UdfMethods {
                 Value::Null => Ok(Value::Null),
                 Value::Decimal(x) => Ok(Value::Decimal(test_decimal(x))),
                 other => Err(class_cast(other)),
+            },
+        ))
+        .with_method(UdfMethod::new(
+            "decbad",
+            vec![JavaType::BigDecimal],
+            JavaType::BigDecimal,
+            |args| match &args[0] {
+                Value::Decimal(x) if x.sign() == bigdecimal::num_bigint::Sign::Plus => {
+                    Ok(Value::Decimal(BigDecimal::from_str("1E40").unwrap()))
+                }
+                _ => Err(FederationError::Runtime("after".into())),
             },
         ))
         .with_method(UdfMethod::new(
@@ -630,6 +643,42 @@ fn invocation_with_decimal_type() {
 }
 
 #[test]
+fn first_row_write_failure_wins_over_later_invoke_failure() {
+    let s = set_up();
+    let schema = build_schema(&[ArgType::BigDecimal]);
+    let mut block = s.allocator.create_block(Arc::new(schema.clone()));
+    block.set_row_count(2);
+    for (row, text) in ["1.000", "-1.000"].into_iter().enumerate() {
+        block
+            .set_value(
+                "col_0",
+                row,
+                Value::Decimal(BigDecimal::from_str(text).unwrap()),
+            )
+            .unwrap();
+    }
+    let request = UserDefinedFunctionRequest::new(
+        None,
+        block,
+        schema,
+        "decbad",
+        UserDefinedFunctionType::SCALAR,
+    );
+    let err = s
+        .handler
+        .process_function(&s.allocator, &request)
+        .unwrap_err();
+    assert_eq!(
+        "java.lang.UnsupportedOperationException",
+        err.java_class_name()
+    );
+    assert_eq!(
+        "BigDecimal precision cannot be greater than that in the Arrow vector: 44 > 38",
+        err.to_string()
+    );
+}
+
+#[test]
 fn invocation_with_date_day_type() {
     let s = set_up();
     let block = process(
@@ -762,3 +811,25 @@ fn test_method_not_found() {
         "{err:?}"
     );
 }
+
+#[tokio::test]
+async fn udf_handler_runs_as_request_stream_handler() {
+    let Setup { handler, allocator } = set_up();
+    let stream_handler = UserDefinedFunctionStreamHandler::new(handler);
+    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+    let wrong: FederationRequest =
+        ListSchemasRequest::new(None, Some("dummy_catalog".into()), "dummy_qid").into();
+    let input = object_mapper.write_value_as_bytes(&wrong).unwrap();
+    let err = RequestStreamHandler::handle_request(&stream_handler, &input, None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
+         errorMessage: Expected a UserDefinedFunctionRequest but found class com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest\n\
+         errorCode: InvalidInputException\n",
+        LambdaError::new(&err).to_report()
+    );
+    assert_runnable(&stream_handler);
+}
+
+fn assert_runnable<H: RequestStreamHandler + 'static>(_handler: &H) {}

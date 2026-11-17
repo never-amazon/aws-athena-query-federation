@@ -292,6 +292,25 @@ fn time_unit_name(unit: TimeUnit) -> &'static str {
     }
 }
 
+pub(crate) fn java_field_to_string(field: &Field) -> String {
+    let mut text = format!(
+        "{}: {}",
+        field.name(),
+        arrow_type_to_string(field.data_type())
+    );
+    let children = get_children(field);
+    if !children.is_empty() {
+        let children: Vec<String> = children.iter().map(|c| java_field_to_string(c)).collect();
+        text.push('<');
+        text.push_str(&children.join(", "));
+        text.push('>');
+    }
+    if !field.is_nullable() {
+        text.push_str(" not null");
+    }
+    text
+}
+
 pub fn arrow_type_to_string(arrow_type: &ArrowType) -> String {
     match arrow_type {
         DataType::Null => "Null".into(),
