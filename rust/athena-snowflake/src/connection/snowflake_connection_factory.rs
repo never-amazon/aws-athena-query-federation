@@ -12,7 +12,7 @@ use athena_jdbc::sql::{JdbcConnection, SqlException};
 
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::sql::{url_decode, SnowflakeDriver, SnowflakeJdbcDriver};
-use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils};
+use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
 
 const KEY_PAIR_FAILURE: &str = "Failed to create Snowflake connection with key-pair authentication";
 
@@ -102,7 +102,8 @@ impl SnowflakeConnectionFactory {
         let passphrase = credential_map
             .get(SnowflakeConstants::PEM_PRIVATE_KEY_PASSPHRASE)
             .map(String::as_str);
-        let private_key = SnowflakeAuthUtils::create_private_key(private_key_pem, passphrase)
+        let private_key = create_private_key_off_the_async_thread(private_key_pem, passphrase)
+            .await
             .map_err(|e| e.to_string())?;
         let mut properties = self.key_pair_base_properties.clone();
         let connection_string = GenericJdbcConnectionFactory::secret_name_pattern()
@@ -154,6 +155,19 @@ fn move_query_parameters_to_properties(
     Ok(url[..query_index].to_string())
 }
 
+async fn create_private_key_off_the_async_thread(
+    private_key_pem: &str,
+    passphrase: Option<&str>,
+) -> Result<SnowflakePrivateKey> {
+    let private_key_pem = private_key_pem.to_string();
+    let passphrase = passphrase.map(str::to_string);
+    tokio::task::spawn_blocking(move || {
+        SnowflakeAuthUtils::create_private_key(&private_key_pem, passphrase.as_deref())
+    })
+    .await
+    .map_err(|e| FederationError::internal(e.to_string()))?
+}
+
 #[async_trait]
 impl JdbcConnectionFactory for SnowflakeConnectionFactory {
     async fn get_connection(
@@ -176,5 +190,46 @@ impl JdbcConnectionFactory for SnowflakeConnectionFactory {
 
     async fn close(&self) -> Result<()> {
         self.generic.close().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SCRYPT_KEY: &str =
+        include_str!("../../tests/fixtures/pbes2/pbes2_scrypt_aes256_n_1024_r_8_p_1.p8");
+
+    #[tokio::test]
+    async fn private_key_derivation_runs_off_the_async_thread() {
+        let ticks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ticker = tokio::spawn({
+            let ticks = ticks.clone();
+            async move {
+                loop {
+                    ticks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    tokio::task::yield_now().await;
+                }
+            }
+        });
+        tokio::task::yield_now().await;
+        let before = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        let result = create_private_key_off_the_async_thread(SCRYPT_KEY, Some("test")).await;
+        let during = ticks.load(std::sync::atomic::Ordering::SeqCst) - before;
+        ticker.abort();
+        result.unwrap();
+        assert!(during > 1, "ticks while deriving the key: {during}");
+    }
+
+    #[tokio::test]
+    async fn private_key_errors_are_unchanged_off_the_async_thread() {
+        let error = create_private_key_off_the_async_thread(SCRYPT_KEY, Some("wrong"))
+            .await
+            .unwrap_err();
+        assert_eq!("Invalid private key format", error.to_string());
+        let error = create_private_key_off_the_async_thread(SCRYPT_KEY, None)
+            .await
+            .unwrap_err();
+        assert_eq!("Invalid private key format", error.to_string());
     }
 }
