@@ -620,3 +620,129 @@ fn test_create_private_key_rejects_pbe_iteration_count_over_bouncy_castle_limit(
         );
     }
 }
+
+const PBES2_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 8] = [
+    (
+        "PBKDF2 2048",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_2048.p8"),
+    ),
+    (
+        "scrypt N=1024 r=8 p=1",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_1024_r_8_p_1.p8"),
+    ),
+    (
+        "scrypt N=2 r=1 p=65536",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes128_n_2_r_1_p_65536.p8"),
+    ),
+    (
+        "scrypt DES-EDE3",
+        include_str!("fixtures/pbes2/pbes2_scrypt_3des_n_2_r_1_p_1.p8"),
+    ),
+    (
+        "scrypt keyLength ignored",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_key_length_16.p8"),
+    ),
+    (
+        "scrypt p=4294967297 read as int 1",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes128_p_4294967297.p8"),
+    ),
+    (
+        "scrypt N=2 r=1024 p=2",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_2_r_1024_p_2.p8"),
+    ),
+    (
+        "scrypt N=4 r=512",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_4_r_512.p8"),
+    ),
+];
+
+const PBES2_KEYS_REJECTED_BY_BOUNCY_CASTLE: [(&str, &str); 16] = [
+    (
+        "PBKDF2 10000001",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_10000001.p8"),
+    ),
+    (
+        "PBKDF2 2147483647",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_2147483647.p8"),
+    ),
+    (
+        "PBKDF2 2147483648",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_2147483648.p8"),
+    ),
+    (
+        "PBKDF2 -1",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_minus_1.p8"),
+    ),
+    (
+        "PBKDF2 0",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_0.p8"),
+    ),
+    (
+        "PBKDF2 empty salt",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_empty_salt.p8"),
+    ),
+    (
+        "scrypt N=0",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_0.p8"),
+    ),
+    (
+        "scrypt N=1",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_1.p8"),
+    ),
+    (
+        "scrypt N=2147483648",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_2147483648.p8"),
+    ),
+    (
+        "scrypt N=4 r=513",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_4_r_513.p8"),
+    ),
+    (
+        "scrypt r=1025",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_r_1025.p8"),
+    ),
+    (
+        "scrypt r=256 p=8192",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_r_256_p_8192.p8"),
+    ),
+    (
+        "scrypt r=8 p=262144",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_r_8_p_262144.p8"),
+    ),
+    (
+        "scrypt N=8192 r=1024",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_8192_r_1024.p8"),
+    ),
+    (
+        "scrypt N=16384 r=1024",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_16384_r_1024.p8"),
+    ),
+    (
+        "scrypt N=1073741824 r=8",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_1073741824_r_8.p8"),
+    ),
+];
+
+#[test]
+fn test_create_private_key_with_pbes2_keys_accepted_by_bouncy_castle() {
+    let expected = pbe_plain_der();
+    for (scheme, pem) in PBES2_KEYS_ACCEPTED_BY_BOUNCY_CASTLE {
+        let key = SnowflakeAuthUtils::create_private_key(pem, Some(PBE_PASSPHRASE))
+            .unwrap_or_else(|e| panic!("{scheme}: {e}"));
+        assert_eq!(expected, key.der(), "{scheme}");
+    }
+}
+
+#[test]
+fn test_create_private_key_rejects_pbes2_keys_over_bouncy_castle_limits() {
+    let started = std::time::Instant::now();
+    for (scheme, pem) in PBES2_KEYS_REJECTED_BY_BOUNCY_CASTLE {
+        let result = SnowflakeAuthUtils::create_private_key(pem, Some(PBE_PASSPHRASE));
+        assert_invalid_private_key(&result.expect_err(scheme));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{scheme} took {:?}",
+            started.elapsed()
+        );
+    }
+}

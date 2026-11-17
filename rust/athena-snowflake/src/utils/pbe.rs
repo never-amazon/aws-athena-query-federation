@@ -11,7 +11,7 @@ use pkcs8::ObjectIdentifier;
 use rc2::Rc2;
 use rc4::Rc4;
 
-const MAX_ITERATION_COUNT: u32 = 10_000_000;
+pub(super) const MAX_ITERATION_COUNT: u32 = 10_000_000;
 const MAX_JAVA_INT: u32 = 0x7fff_ffff;
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +24,30 @@ pub(crate) enum PrivateKeyError {
     InvalidIterationCount,
     #[error("iteration count ({0}) greater than {MAX_ITERATION_COUNT}")]
     IterationCountTooLarge(u32),
+    #[error("the salt parameter must not be empty")]
+    EmptySalt,
+    #[error("invalid iterationCount value")]
+    IterationCountNotPositive,
+    #[error("invalid scrypt parameters")]
+    InvalidScryptParameters,
+    #[error("scrypt block size ({0}) greater than 1024")]
+    ScryptBlockSizeTooLarge(i32),
+    #[error("scrypt cost parameters require more than 1073741824 bytes")]
+    ScryptMemoryTooLarge,
+    #[error("Cost parameter N must be > 1.")]
+    ScryptCostTooSmall,
+    #[error("Cost parameter N must be > 1 and a power of 2")]
+    ScryptCostNotPowerOfTwo,
+    #[error("Cost parameter N must be > 1 and < 65536.")]
+    ScryptCostTooLargeForBlockSizeOne,
+    #[error(
+        "Parallelisation parameter p must be >= 1 and <= {max_p} (based on block size r of {r})"
+    )]
+    ScryptParallelization { max_p: i32, r: i32 },
+    #[error("Could not generate secret key")]
+    ScryptKeyGeneration,
+    #[error("no key size for algorithm: {0}")]
+    UnsupportedPbes2Cipher(ObjectIdentifier),
     #[error("Passphrase is required for encrypted private key")]
     PassphraseRequired,
     #[error(
@@ -208,7 +232,11 @@ impl PbeScheme {
     }
 }
 
-fn cbc_decrypt<C>(cipher: C, iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, PrivateKeyError>
+pub(super) fn cbc_decrypt<C>(
+    cipher: C,
+    iv: &[u8],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, PrivateKeyError>
 where
     C: BlockCipher + BlockDecryptMut,
 {
