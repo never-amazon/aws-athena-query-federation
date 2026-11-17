@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
@@ -125,53 +126,59 @@ impl Decoder {
         let Some(raw) = raw else {
             return SqlValue::Null;
         };
-        self.decode_text(String::from_utf8_lossy(raw).into_owned())
+        self.decode_text(String::from_utf8_lossy(raw))
     }
 
-    fn decode_text(&self, text: String) -> SqlValue {
+    fn decode_text(&self, text: Cow<'_, str>) -> SqlValue {
+        let unparsed = |text: Cow<'_, str>| SqlValue::String(text.into_owned());
         match self {
             Decoder::Text => match trim_money(&text) {
-                Some(trimmed) => rendered(SqlValue::String(trimmed), text),
-                None => SqlValue::String(text),
+                Some(trimmed) => rendered(SqlValue::String(trimmed), text.into_owned()),
+                None => unparsed(text),
             },
-            Decoder::Bool => match text.as_str() {
-                "t" => rendered(SqlValue::Boolean(true), text),
-                "f" => rendered(SqlValue::Boolean(false), text),
-                _ => SqlValue::String(text),
+            Decoder::Bool => match text.as_ref() {
+                "t" => rendered(SqlValue::Boolean(true), text.into_owned()),
+                "f" => rendered(SqlValue::Boolean(false), text.into_owned()),
+                _ => unparsed(text),
             },
             Decoder::Int2 => text
                 .parse()
-                .map_or(SqlValue::String(text), SqlValue::SmallInt),
+                .map_or_else(|_| unparsed(text), SqlValue::SmallInt),
             Decoder::Int4 => text
                 .parse()
-                .map_or(SqlValue::String(text), SqlValue::Integer),
+                .map_or_else(|_| unparsed(text), SqlValue::Integer),
             Decoder::Int8 => text
                 .parse()
-                .map_or(SqlValue::String(text), SqlValue::BigInt),
+                .map_or_else(|_| unparsed(text), SqlValue::BigInt),
             Decoder::Float4 => match parse_f32(&text) {
-                Some(v) => rendered(SqlValue::Real(v), text),
-                None => SqlValue::String(text),
+                Some(v) => rendered(SqlValue::Real(v), text.into_owned()),
+                None => unparsed(text),
             },
             Decoder::Float8 => match parse_f64(&text) {
-                Some(v) => rendered(SqlValue::Double(v), text),
-                None => SqlValue::String(text),
+                Some(v) => rendered(SqlValue::Double(v), text.into_owned()),
+                None => unparsed(text),
             },
             Decoder::Numeric => match BigDecimal::from_str(&text) {
                 Ok(d) if big_decimal_to_string(&d) == text => SqlValue::Decimal(d),
-                Ok(d) => rendered(SqlValue::Decimal(d), text),
+                Ok(d) => rendered(SqlValue::Decimal(d), text.into_owned()),
                 Err(_) => match parse_f64(&text) {
-                    Some(v) if v.is_nan() || v.is_infinite() => rendered(SqlValue::Double(v), text),
-                    _ => SqlValue::String(text),
+                    Some(v) if v.is_nan() || v.is_infinite() => {
+                        rendered(SqlValue::Double(v), text.into_owned())
+                    }
+                    _ => unparsed(text),
                 },
             },
-            Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
+            Decoder::Date => java_date(&text).unwrap_or_else(|| unparsed(text)),
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+                java_timestamp(&text).unwrap_or_else(|| unparsed(text))
             }
-            Decoder::Bytea => decode_bytea(&text).map_or(SqlValue::String(text), SqlValue::Bytes),
+            Decoder::Bytea => decode_bytea(&text).map_or_else(|| unparsed(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
-                Some(items) => rendered(SqlValue::Array(element.decode_items(items)), text),
-                None => SqlValue::String(text),
+                Some(items) => rendered(
+                    SqlValue::Array(element.decode_items(items)),
+                    text.into_owned(),
+                ),
+                None => unparsed(text),
             },
         }
     }
@@ -202,7 +209,7 @@ impl Decoder {
                 Some(other) => other,
                 None => SqlValue::String(text),
             },
-            _ => match self.decode_text(text) {
+            _ => match self.decode_text(Cow::Owned(text)) {
                 SqlValue::Rendered { value, .. } => *value,
                 other => other,
             },
@@ -612,6 +619,29 @@ mod tests {
         assert_eq!(
             infinite.to_timestamp().unwrap_err().class_name(),
             "org.postgresql.util.PSQLException"
+        );
+    }
+
+    #[test]
+    fn timestamps_with_fields_outside_the_java_int_range_fail_as_bad_values() {
+        for text in [
+            "2020-01-01 00:00:00+9999999999999999",
+            "9223372036854775807-01-01 00:00:00",
+            "2020-01-01 2562047788015216:00:00",
+        ] {
+            for decoder in [Decoder::Timestamp, Decoder::TimestampTz] {
+                let value = decoder.decode(Some(text.as_bytes()));
+                assert_eq!(
+                    value.to_timestamp().unwrap_err().message(),
+                    format!("Bad value for type timestamp : {text}")
+                );
+            }
+        }
+        let text = "9223372036854775807-01-01";
+        let value = Decoder::Date.decode(Some(text.as_bytes()));
+        assert_eq!(
+            value.to_date().unwrap_err().message(),
+            format!("Bad value for type date : {text}")
         );
     }
 
