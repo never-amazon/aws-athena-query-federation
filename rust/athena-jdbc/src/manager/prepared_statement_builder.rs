@@ -25,7 +25,7 @@ impl fmt::Debug for PreparedStatementBuilder<'_> {
     }
 }
 
-fn not_empty(parameters: Option<&Vec<String>>) -> Result<&Vec<String>> {
+fn not_empty(parameters: Option<&[String]>) -> Result<&[String]> {
     match parameters {
         None => Err(FederationError::null_pointer(PARAMETERS_MESSAGE)),
         Some(p) if p.is_empty() => Err(FederationError::IllegalArgument(
@@ -44,7 +44,7 @@ impl<'a> PreparedStatementBuilder<'a> {
         mut self,
         parameters: Vec<String>,
     ) -> Result<PreparedStatementBuilder<'a>> {
-        not_empty(Some(&parameters))?;
+        not_empty(Some(parameters.as_slice()))?;
         self.parameters = Some(parameters);
         Ok(self)
     }
@@ -64,7 +64,7 @@ impl<'a> PreparedStatementBuilder<'a> {
     }
 
     pub async fn build(&self) -> Result<PreparedStatement> {
-        let parameters = not_empty(self.parameters.as_ref())?;
+        let parameters = not_empty(self.parameters.as_deref())?;
         let query = not_blank(self.query.as_deref(), QUERY_MESSAGE)?;
         let connection = self
             .connection
