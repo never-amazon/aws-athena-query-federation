@@ -5,11 +5,15 @@ use std::sync::LazyLock;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::{FederationError, Result};
 use base64::Engine;
+use pkcs8::der::asn1::{AnyRef, OctetStringRef};
 use pkcs8::der::pem::LineEnding;
+use pkcs8::der::Decode;
+use pkcs8::spki::AlgorithmIdentifierRef;
 use pkcs8::{EncryptedPrivateKeyInfo, ObjectIdentifier, PrivateKeyInfo};
 use regex::Regex;
 use rsa::pkcs8::DecodePrivateKey;
 
+use super::pbe::PbeScheme;
 use crate::snowflake_constants::{is_blank, java_trim, SnowflakeConstants};
 use crate::utils::SnowflakeAuthType;
 
@@ -187,16 +191,21 @@ fn parse_pem_object(pem: &str, passphrase: Option<&str>) -> std::result::Result<
     let (label, der) = read_pem(pem)?;
     match label.as_str() {
         "ENCRYPTED PRIVATE KEY" => {
-            let encrypted = EncryptedPrivateKeyInfo::try_from(der.as_slice())
-                .map_err(|e| e.to_string())?;
+            let (algorithm, ciphertext) = read_encrypted_private_key_info(&der)?;
             let Some(passphrase) = passphrase.filter(|p| !java_trim(p).is_empty()) else {
                 return Err("Passphrase is required for encrypted private key".to_string());
             };
-            let document = encrypted
-                .decrypt(passphrase.as_bytes())
-                .map_err(|e| e.to_string())?;
-            check_private_key_info(document.as_bytes())?;
-            Ok(document.as_bytes().to_vec())
+            let plaintext = match PbeScheme::from_oid(algorithm.oid) {
+                Some(scheme) => scheme.decrypt(algorithm.parameters, passphrase, ciphertext)?,
+                None => EncryptedPrivateKeyInfo::try_from(der.as_slice())
+                    .map_err(|e| e.to_string())?
+                    .decrypt(passphrase.as_bytes())
+                    .map_err(|e| e.to_string())?
+                    .as_bytes()
+                    .to_vec(),
+            };
+            check_private_key_info(&plaintext)?;
+            Ok(plaintext)
         }
         "PRIVATE KEY" => {
             check_private_key_info(&der)?;
@@ -206,6 +215,20 @@ fn parse_pem_object(pem: &str, passphrase: Option<&str>) -> std::result::Result<
             "Unsupported private key format. Expected PKCS8EncryptedPrivateKeyInfo or PrivateKeyInfo, got: {other}"
         )),
     }
+}
+
+fn read_encrypted_private_key_info(
+    der: &[u8],
+) -> std::result::Result<(AlgorithmIdentifierRef<'_>, &[u8]), String> {
+    AnyRef::from_der(der)
+        .and_then(|any| {
+            any.sequence(|reader| {
+                let algorithm = AlgorithmIdentifierRef::decode(reader)?;
+                let ciphertext = OctetStringRef::decode(reader)?;
+                Ok((algorithm, ciphertext.as_bytes()))
+            })
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn read_pem(pem: &str) -> std::result::Result<(String, Vec<u8>), String> {
