@@ -102,6 +102,44 @@ fn properties(extra: &[(&str, &str)]) -> HashMap<String, String> {
         .collect()
 }
 
+fn body(request: &str) -> serde_json::Value {
+    let (_, body) = request.split_once("\r\n\r\n").unwrap();
+    serde_json::from_str(body).unwrap()
+}
+
+#[tokio::test]
+async fn login_sends_json_query_result_format() {
+    let fake = Arc::new(FakeSnowflake::default());
+    let address = start(Arc::clone(&fake)).await;
+    SnowflakeJdbcDriver::new()
+        .connect(&url(address), &properties(&[]))
+        .await
+        .unwrap();
+    let login = body(&fake.requests()[0]);
+    assert_eq!(
+        "JSON",
+        login["data"]["SESSION_PARAMETERS"]["QUERY_RESULT_FORMAT"]
+    );
+}
+
+#[tokio::test]
+async fn login_keeps_an_explicit_query_result_format() {
+    let fake = Arc::new(FakeSnowflake::default());
+    let address = start(Arc::clone(&fake)).await;
+    SnowflakeJdbcDriver::new()
+        .connect(
+            &url(address),
+            &properties(&[("QUERY_RESULT_FORMAT", "ARROW")]),
+        )
+        .await
+        .unwrap();
+    let login = body(&fake.requests()[0]);
+    assert_eq!(
+        "ARROW",
+        login["data"]["SESSION_PARAMETERS"]["QUERY_RESULT_FORMAT"]
+    );
+}
+
 #[test]
 fn query_response_timeout_waits_for_the_lambda_limit() {
     let settings = parse_connection_settings(

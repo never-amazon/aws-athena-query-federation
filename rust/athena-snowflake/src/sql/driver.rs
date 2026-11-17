@@ -18,6 +18,8 @@ use crate::utils::SnowflakePrivateKey;
 
 const URL_PREFIX: &str = "jdbc:snowflake://";
 const QUERY_TIMEOUT: &str = "QUERYTIMEOUT";
+const QUERY_RESULT_FORMAT: &str = "QUERY_RESULT_FORMAT";
+const JSON_RESULT_FORMAT: &str = "JSON";
 pub const QUERY_RESPONSE_TIMEOUT: Duration = Duration::from_mins(15);
 
 const CLIENT_SIDE_PROPERTIES: [&str; 24] = [
@@ -68,10 +70,13 @@ impl SnowflakeConnectionSettings {
     }
 
     pub fn session_parameters(&self) -> impl Iterator<Item = (&str, &str)> {
+        let default_result_format = (!self.parameters.contains_key(QUERY_RESULT_FORMAT))
+            .then_some((QUERY_RESULT_FORMAT, JSON_RESULT_FORMAT));
         self.parameters
             .iter()
             .filter(|(key, _)| !CLIENT_SIDE_PROPERTIES.contains(&key.as_str()))
             .map(|(key, value)| (key.as_str(), value.as_str()))
+            .chain(default_result_format)
     }
 
     pub fn query_timeout(&self) -> Result<Option<Duration>, SqlException> {
