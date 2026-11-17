@@ -13,7 +13,7 @@ use super::http_client::{HttpClient, HttpClientError, HttpRequest, ReqwestHttpCl
 use super::initializable_credentials_provider::InitializableCredentialsProvider;
 use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
-use crate::security::CachableSecretsManager;
+use crate::security::{AwsService, AwsServiceError, CachableSecretsManager};
 
 const RESOURCE_NOT_FOUND_EXCEPTION: &str = "ResourceNotFoundException";
 
@@ -67,6 +67,13 @@ fn json_as_long(node: &JsonValue) -> i64 {
 
 fn connector_error(code: FederationSourceErrorCode, message: impl Into<String>, details: impl Into<String>) -> FederationError {
     FederationError::connector_with_details(code, message, details)
+}
+
+fn service_error(code: FederationSourceErrorCode, message: impl Into<String>, e: &AwsServiceError) -> FederationError {
+    match e.get_message() {
+        Some(details) => connector_error(code, message, details),
+        None => FederationError::connector(code, message),
+    }
 }
 
 impl OAuthCredentialsProvider {
@@ -201,20 +208,20 @@ impl OAuthCredentialsProvider {
             .put_secret_value(&secret_name, &secret_string)
             .await
             .map_err(|e| {
-                if e.is_error_code(RESOURCE_NOT_FOUND_EXCEPTION) {
-                    connector_error(
+                if !e.is_service_exception_of(AwsService::SecretsManager) {
+                    FederationError::from(e)
+                } else if e.is_error_code(RESOURCE_NOT_FOUND_EXCEPTION) {
+                    service_error(
                         FederationSourceErrorCode::EntityNotFoundException,
                         format!("Secret not found: {}", secret_name),
-                        e.message(),
-                    )
-                } else if e.error_code().is_some() {
-                    connector_error(
-                        FederationSourceErrorCode::InternalServiceException,
-                        "Failed to update OAuth credentials in Secrets Manager",
-                        e.message(),
+                        &e,
                     )
                 } else {
-                    FederationError::from(e)
+                    service_error(
+                        FederationSourceErrorCode::InternalServiceException,
+                        "Failed to update OAuth credentials in Secrets Manager",
+                        &e,
+                    )
                 }
             })?;
         Ok(access_token)

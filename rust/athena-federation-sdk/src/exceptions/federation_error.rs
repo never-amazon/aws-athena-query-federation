@@ -31,6 +31,8 @@ pub enum FederationError {
     Io(String),
     #[error("{0}")]
     Runtime(String),
+    #[error("{}", .0.get_message().unwrap_or_default())]
+    AwsService(crate::security::AwsServiceError),
 }
 
 pub type Result<T> = std::result::Result<T, FederationError>;

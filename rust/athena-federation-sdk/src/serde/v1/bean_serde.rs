@@ -85,10 +85,10 @@ fn write_string_map_bean<V: StringMapValue>(jgen: &mut JsonGenerator, name: &str
     jgen.write_end_object()
 }
 
-fn write_strings<'a, I: IntoIterator<Item = &'a String>>(jgen: &mut JsonGenerator, name: &str, values: I) -> Result<()> {
+fn write_strings<'a, V: StringMapValue + 'a, I: IntoIterator<Item = &'a V>>(jgen: &mut JsonGenerator, name: &str, values: I) -> Result<()> {
     jgen.write_array_field_start(name)?;
     for v in values {
-        jgen.write_string(Some(v))?;
+        jgen.write_string(v.as_opt_str())?;
     }
     jgen.write_end_array()
 }
@@ -681,20 +681,17 @@ fn string_list(node: &Json, name: &str) -> Result<Option<Vec<String>>> {
     }
 }
 
-fn string_map(node: &Json, name: &str) -> Result<Option<HashMap<String, String>>> {
+fn nullable_string_list(node: &Json, name: &str) -> Result<Option<Vec<Option<String>>>> {
     match prop(node, name) {
         None => Ok(None),
-        Some(Json::Object(map)) => {
-            let mut result = HashMap::new();
-            for (k, v) in map {
-                result.insert(k.clone(), scalar_text(v, name)?);
-            }
-            Ok(Some(result))
-        }
-        Some(other) => Err(io(format!(
-            "Cannot deserialize value of type `java.util.Map` from {}",
-            kind(other)
-        ))),
+        Some(v) => list_items(v)
+            .into_iter()
+            .map(|item| match item {
+                Json::Null => Ok(None),
+                other => scalar_text(other, name).map(Some),
+            })
+            .collect::<Result<Vec<Option<String>>>>()
+            .map(Some),
     }
 }
 
@@ -746,7 +743,7 @@ fn identity_from(node: &Json) -> Result<Option<FederatedIdentity>> {
         opt_string(value, "arn")?,
         opt_string(value, "account")?,
         nullable_string_map(value, "principalTags")?.unwrap_or_default(),
-        string_list(value, "iamGroups")?.unwrap_or_default(),
+        nullable_string_list(value, "iamGroups")?.unwrap_or_default(),
         nullable_string_map(value, "configOptions")?.unwrap_or_default(),
     )))
 }
@@ -1074,8 +1071,8 @@ fn encryption_key_from(value: Option<&Json>) -> Result<Option<EncryptionKey>> {
 fn split_from(value: &Json) -> Result<Split> {
     let spill_location = prop(value, "spillLocation").map(spill_location_from).transpose()?;
     let encryption_key = encryption_key_from(prop(value, "encryptionKey"))?;
-    let properties = string_map(value, "properties")?.ok_or_else(|| io("properties is null"))?;
-    Ok(Split::new(spill_location, encryption_key, properties))
+    let properties = nullable_string_map(value, "properties")?.ok_or_else(|| io("properties is null"))?;
+    Ok(Split::new_nullable(spill_location, encryption_key, properties))
 }
 
 fn required<T>(value: Option<T>, name: &str) -> Result<T> {

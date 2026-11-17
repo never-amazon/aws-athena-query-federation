@@ -215,3 +215,158 @@ fn verify_rejects_null_argument_value() {
     assert!(err.as_connector_exception().is_some(), "{:?}", err);
     assert_eq!("Missing Query Passthrough Value for Argument: QUERY", err.to_string());
 }
+
+fn null_property_split() -> Split {
+    let mut properties = HashMap::new();
+    properties.insert("year".to_string(), None);
+    Split::new_nullable(Some(spill_location("test-split-id")), Some(encryption_key("test-key", "test-nonce")), properties)
+}
+
+fn read_records_request_with_null_split_property() -> ReadRecordsRequest {
+    let schema = SchemaBuilder::new_builder().add_field_with_type("year", DataType::Int32).build();
+    let constraints = Constraints::new(
+        IndexMap::new(),
+        Vec::new(),
+        Vec::new(),
+        DEFAULT_NO_LIMIT,
+        null_query_passthrough_arguments(),
+        None,
+    );
+    ReadRecordsRequest::new(
+        Some(federated_identity()),
+        "test-catalog",
+        "test-query-id",
+        table_name(),
+        schema,
+        null_property_split(),
+        constraints,
+        100_000_000_000,
+        100_000_000_000,
+    )
+}
+
+#[test]
+fn split_null_property_kept_v1() {
+    let t = TypedSerDe::before();
+    let mapper = indented(t.allocator.clone(), 1);
+    let text = fixture(DIR, "ReadRecordsRequest-null-split-property-v1.json");
+
+    let actual = write_request(&mapper, read_records_request_with_null_split_property());
+    assert_serialized_matches(&text, &actual, &mapper);
+
+    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    assert_eq!(FederationRequest::from(read_records_request_with_null_split_property()), parsed);
+    let request = match parsed {
+        FederationRequest::ReadRecords(r) => r,
+        other => panic!("expected ReadRecordsRequest, got {:?}", other),
+    };
+    let split = request.get_split();
+    assert_eq!(Some(&None), split.get_properties().get("year"));
+    assert_eq!(None, split.get_property("year"));
+    assert!(split.to_string().ends_with("properties={year=null}}"), "{}", split);
+
+    let rewritten = write_request(&mapper, request);
+    assert_serialized_matches(&text, &rewritten, &mapper);
+}
+
+fn assert_split_null_property_written_then_rejected(version: i32) {
+    let t = TypedSerDe::before();
+    let mapper = indented(t.allocator.clone(), version);
+    let text = fixture(DIR, &format!("ReadRecordsRequest-null-split-property-v{}.json", version));
+
+    let actual = write_request(&mapper, read_records_request_with_null_split_property());
+    assert_serialized_matches(&text, &actual, &mapper);
+
+    match mapper.read_value::<FederationRequest>(text.as_bytes()) {
+        Err(FederationError::NullPointer(message)) => assert_eq!("null value in entry: year=null", message),
+        other => panic!("expected NullPointer, got {:?}", other),
+    }
+}
+
+#[test]
+fn split_null_property_rejected_v2() {
+    assert_split_null_property_written_then_rejected(2);
+}
+
+#[test]
+fn split_null_property_rejected_v3() {
+    assert_split_null_property_written_then_rejected(3);
+}
+
+#[test]
+fn split_null_property_rejected_v4() {
+    assert_split_null_property_written_then_rejected(4);
+}
+
+#[test]
+fn split_null_property_written_then_rejected_v5() {
+    assert_split_null_property_written_then_rejected(5);
+}
+
+#[test]
+fn split_null_property_written_then_rejected_v6() {
+    assert_split_null_property_written_then_rejected(6);
+}
+
+fn null_group_request() -> GetTableRequest {
+    let identity = FederatedIdentity::new(
+        "testArn",
+        "0123456789",
+        HashMap::new(),
+        vec![Some("admins".to_string()), None, Some("users".to_string())],
+        HashMap::new(),
+    );
+    GetTableRequest::new(Some(identity), Some("test-query-id".to_string()), "test-catalog", table_name(), HashMap::new())
+}
+
+fn assert_null_group_round_trip(version: i32) {
+    let t = TypedSerDe::before();
+    let mapper = indented(t.allocator.clone(), version);
+    let text = fixture(DIR, &format!("GetTableRequest-null-group-v{}.json", version));
+
+    let actual = write_request(&mapper, null_group_request());
+    assert_serialized_matches(&text, &actual, &mapper);
+
+    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    let request = match parsed {
+        FederationRequest::GetTable(r) => r,
+        other => panic!("expected GetTableRequest, got {:?}", other),
+    };
+    assert_eq!(
+        &[Some("admins".to_string()), None, Some("users".to_string())],
+        request.get_identity().expect("identity").get_iam_groups()
+    );
+
+    let rewritten = write_request(&mapper, request);
+    assert_serialized_matches(&text, &rewritten, &mapper);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v1() {
+    assert_null_group_round_trip(1);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v2() {
+    assert_null_group_round_trip(2);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v3() {
+    assert_null_group_round_trip(3);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v4() {
+    assert_null_group_round_trip(4);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v5() {
+    assert_null_group_round_trip(5);
+}
+
+#[test]
+fn federated_identity_null_group_kept_v6() {
+    assert_null_group_round_trip(6);
+}

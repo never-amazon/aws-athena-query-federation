@@ -8,13 +8,14 @@ use crate::exceptions::{FederationError, Result};
 
 pub const TYPE_FIELD: &str = "@type";
 
-pub fn write_string_array<'s, I>(jgen: &mut JsonGenerator, field_name: &str, values: I) -> Result<()>
+pub fn write_string_array<'s, V, I>(jgen: &mut JsonGenerator, field_name: &str, values: I) -> Result<()>
 where
-    I: IntoIterator<Item = &'s String>,
+    V: StringMapValue + 's,
+    I: IntoIterator<Item = &'s V>,
 {
     jgen.write_array_field_start(field_name)?;
     for next in values {
-        jgen.write_string(Some(next))?;
+        jgen.write_string(next.as_opt_str())?;
     }
     jgen.write_end_array()
 }

@@ -26,7 +26,7 @@ pub fn do_serialize(split: &Split, jgen: &mut JsonGenerator) -> Result<()> {
     let properties = split.get_properties();
     for key in java_hash_map_order(properties.keys()) {
         jgen.write_field_name(key)?;
-        jgen.write_string(properties.get(key).map(|v| v.as_str()))?;
+        jgen.write_string(properties.get(key).and_then(|v| v.as_deref()))?;
     }
     jgen.write_end_object()
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::exceptions::{FederationError, Result};
 use crate::request::FederatedIdentity;
 use crate::serde::base::{
-    get_next_string_array, get_next_string_field, get_next_string_map, nullable_map, non_null_strings, read_string_map_entries,
+    get_next_string_array, get_next_string_field, get_next_string_map, nullable_map, read_string_map_entries,
     serialize_nullable, validate_object_start, validate_object_start_token, write_string_array, write_string_map,
 };
 use crate::serde::json::{token_name, JsonGenerator, JsonParser, JsonToken};
@@ -47,7 +47,7 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<FederatedIdentity>
     let account = get_next_string_field(jparser, ACCOUNT_FIELD)?;
     let arn = get_next_string_field(jparser, ARN_FIELD)?;
     let principal_tags = nullable_map(get_next_string_map(jparser, TAGS_FIELD)?);
-    let groups = non_null_strings(get_next_string_array(jparser, GROUPS_FIELD)?, "null group")?;
+    let groups = get_next_string_array(jparser, GROUPS_FIELD)?;
     let mut config_options: HashMap<String, Option<String>> = HashMap::new();
     let next_token = jparser.next_token()?;
     if next_token == Some(JsonToken::FieldName) && jparser.current_name().as_deref() == Some(CONFIG_OPTIONS_FIELD) {

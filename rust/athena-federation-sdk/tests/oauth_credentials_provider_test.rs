@@ -9,6 +9,7 @@ use athena_federation_sdk::credentials::{
 };
 use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode};
 use athena_federation_sdk::security::{
+    AwsService,
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, SecretsManagerClient,
 };
 use athena_federation_sdk::Result;
@@ -226,7 +227,7 @@ async fn test_get_credential_map_when_interrupted_exception_throws_exception() {
 async fn test_get_credential_when_secret_not_found_throws_exception() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::with_code("ResourceNotFoundException", "secret missing"));
+    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, Some("ResourceNotFoundException".into()), Some("secret missing".into())));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
     assert_connector_error(e, FederationSourceErrorCode::EntityNotFoundException, Some("secret missing"));
 }
@@ -271,7 +272,7 @@ async fn test_get_credential_when_http_unexpected_status_throws_invalid_response
 async fn test_get_credential_when_secret_update_fails_with_resource_not_found() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::with_code("ResourceNotFoundException", "secret not found"));
+    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, Some("ResourceNotFoundException".into()), Some("secret not found".into())));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
     assert_connector_error(e, FederationSourceErrorCode::EntityNotFoundException, Some("secret not found"));
 }
@@ -280,7 +281,35 @@ async fn test_get_credential_when_secret_update_fails_with_resource_not_found() 
 async fn test_get_credential_when_secret_update_fails_with_secrets_manager_exception() {
     let s = set_up();
     s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
-    s.mock_put_error(AwsServiceError::with_code("SecretsManagerException", "SM failure"));
+    s.mock_put_error(AwsServiceError::service(AwsService::SecretsManager, None, Some("SM failure".into())));
     let e = s.credentials_provider.get_credential().await.unwrap_err();
     assert_connector_error(e, FederationSourceErrorCode::InternalServiceException, Some("SM failure"));
+}
+
+#[tokio::test]
+async fn test_get_credential_when_secret_update_fails_puts_java_get_message_in_error_details() {
+    let s = set_up();
+    s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
+    s.mock_put_error(
+        AwsServiceError::service(AwsService::SecretsManager, Some("ThrottlingException".into()), Some("Rate exceeded".into()))
+            .with_error_details()
+            .with_status_code(400)
+            .with_request_id("req-1"),
+    );
+    let e = s.credentials_provider.get_credential().await.unwrap_err();
+    assert_connector_error(
+        e,
+        FederationSourceErrorCode::InternalServiceException,
+        Some("Rate exceeded (Service: SecretsManager, Status Code: 400, Request ID: req-1)"),
+    );
+}
+
+#[tokio::test]
+async fn test_get_credential_when_secret_update_fails_with_client_error_passes_it_through() {
+    let s = set_up();
+    s.mock_http_response(200, "{\"access_token\":\"abc\",\"expires_in\":3600}");
+    let client_error = AwsServiceError::client("Unable to execute HTTP request: Connect timed out");
+    s.mock_put_error(client_error.clone());
+    let e = s.credentials_provider.get_credential().await.unwrap_err();
+    assert!(matches!(&e, FederationError::AwsService(inner) if inner == &client_error), "{:?}", e);
 }

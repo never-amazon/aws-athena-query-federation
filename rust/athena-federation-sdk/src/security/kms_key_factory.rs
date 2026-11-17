@@ -45,7 +45,10 @@ impl EncryptionKeyFactory for KmsKeyFactory {
             .await
             .map_err(|e| {
                 if e.is_error_code(NOT_FOUND_EXCEPTION) {
-                    FederationError::connector(FederationSourceErrorCode::EntityNotFoundException, e.message())
+                    FederationError::connector(
+                        FederationSourceErrorCode::EntityNotFoundException,
+                        e.get_message().unwrap_or_default(),
+                    )
                 } else {
                     FederationError::from(e)
                 }

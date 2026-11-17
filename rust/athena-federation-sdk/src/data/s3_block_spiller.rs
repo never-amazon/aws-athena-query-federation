@@ -115,8 +115,8 @@ impl SpillWriter {
         Ok(S3SpillLocation::new(split_spill_location.get_bucket(), block_key, false))
     }
 
-    async fn write_unrecorded(&self, block: &Block) -> Result<SpillLocation> {
-        let spill_location = self.make_spill_location()?;
+    async fn write_unrecorded(&self, spill_location: Result<S3SpillLocation>, block: &Block) -> Result<SpillLocation> {
+        let spill_location = spill_location?;
         let encryption_key = self.spill_config.get_encryption_key();
         tracing::info!("write: Started encrypting block for write to {}", spill_location);
         let bytes = self.block_crypto.encrypt(encryption_key, block)?;
@@ -136,7 +136,11 @@ impl SpillWriter {
     }
 
     async fn write(&self, block: &Block) -> Result<SpillLocation> {
-        match self.write_unrecorded(block).await {
+        self.write_to(self.make_spill_location(), block).await
+    }
+
+    async fn write_to(&self, spill_location: Result<S3SpillLocation>, block: &Block) -> Result<SpillLocation> {
+        match self.write_unrecorded(spill_location, block).await {
             Ok(location) => Ok(location),
             Err(ex) => {
                 let mut async_exception = lock(&self.async_exception);
@@ -302,13 +306,14 @@ impl S3BlockSpiller {
                     .map_err(|e| FederationError::internal(e.to_string()))?;
                 let workers = pool.workers.clone();
                 let writer = self.writer.clone();
+                let spill_location = writer.make_spill_location();
                 let handle = tokio::spawn(async move {
                     let _read_guard = read_guard;
                     let _slot = slot;
                     let Ok(_worker) = workers.acquire_owned().await else {
                         return;
                     };
-                    if let Ok(spill_location) = writer.write(&block).await {
+                    if let Ok(spill_location) = writer.write_to(spill_location, &block).await {
                         lock(&writer.spill_locations).push(spill_location);
                     }
                 });

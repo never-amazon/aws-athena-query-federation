@@ -347,7 +347,7 @@ async fn get_spill_locations_rethrows_sync_final_spill_error() {
     sync_spiller.close().await;
 
     let ex = result.expect_err("expected the S3 error");
-    assert!(matches!(&ex, FederationError::Runtime(m) if m == s3_error.message()));
+    assert!(matches!(&ex, FederationError::AwsService(e) if e == &s3_error));
     assert_eq!(1, s.mock_s3.put_count());
     s.tear_down().await;
 }
@@ -409,4 +409,80 @@ async fn get_spill_locations_succeeds_when_s3_write_succeeds() {
 
     assert!(!locations.is_empty());
     s.tear_down().await;
+}
+
+#[derive(Default)]
+struct KeyedS3 {
+    objects: Mutex<HashMap<String, Vec<u8>>>,
+}
+
+#[async_trait]
+impl S3Client for KeyedS3 {
+    async fn put_object(&self, request: PutObjectRequest, body: Vec<u8>) -> Result<(), AwsServiceError> {
+        tokio::task::yield_now().await;
+        self.objects.lock().unwrap().insert(request.key().to_string(), body);
+        Ok(())
+    }
+
+    async fn get_object(&self, request: GetObjectRequest) -> Result<Vec<u8>, AwsServiceError> {
+        Ok(self.objects.lock().unwrap().get(request.key()).cloned().unwrap_or_default())
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
+    const BLOCKS: i32 = 200;
+    let allocator = Arc::new(BlockAllocatorImpl::new());
+    let store = Arc::new(KeyedS3::default());
+    let spill_config = async_spill_config(1, 4).await;
+    let encryption_key = spill_config.get_encryption_key().cloned();
+    let spiller = S3BlockSpiller::new(
+        store.clone(),
+        spill_config,
+        allocator.clone(),
+        one_column_schema(),
+        Arc::new(ConstraintEvaluator::empty_evaluator()),
+        HashMap::new(),
+    )
+    .unwrap();
+
+    for i in 0..BLOCKS {
+        spiller
+            .write_rows(&mut |block: &mut Block, row_num: usize| {
+                set(block, "col1", row_num, i);
+                Ok(1)
+            })
+            .await
+            .unwrap();
+    }
+    let locations = spiller.get_spill_locations().await.unwrap();
+    assert_eq!(BLOCKS as usize, locations.len());
+
+    let base_key = match spill_location() {
+        SpillLocation::S3(l) => l.get_key().to_string(),
+    };
+    let mut seen = Vec::new();
+    for location in &locations {
+        let SpillLocation::S3(location) = location;
+        let number: i32 = location
+            .get_key()
+            .strip_prefix(&format!("{}.", base_key))
+            .and_then(|n| n.parse().ok())
+            .unwrap_or_else(|| panic!("unexpected key {}", location.get_key()));
+        let block = spiller.read(location, encryption_key.as_ref(), one_column_schema()).await.unwrap();
+        let expected = BlockUtils::new_block(allocator.as_ref(), "col1", &DataType::Int32, vec![number]).unwrap();
+        assert_eq!(
+            BlockUtils::row_to_string(&expected, 0).unwrap(),
+            BlockUtils::row_to_string(&block, 0).unwrap(),
+            "block spilled to {} is not block {}",
+            location.get_key(),
+            number
+        );
+        seen.push(number);
+    }
+    seen.sort_unstable();
+    assert_eq!((0..BLOCKS).collect::<Vec<_>>(), seen);
+
+    spiller.close().await;
+    allocator.close();
 }

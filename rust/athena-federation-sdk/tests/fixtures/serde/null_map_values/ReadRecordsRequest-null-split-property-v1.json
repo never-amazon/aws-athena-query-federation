@@ -1,0 +1,50 @@
+{
+  "@type" : "ReadRecordsRequest",
+  "identity" : {
+    "arn" : "testArn",
+    "account" : "0123456789",
+    "principalTags" : { },
+    "iamGroups" : [ ],
+    "configOptions" : { }
+  },
+  "catalogName" : "test-catalog",
+  "queryId" : "test-query-id",
+  "tableName" : {
+    "schemaName" : "test-schema",
+    "tableName" : "test-table",
+    "qualifiedTableName" : "test-schema.test-table"
+  },
+  "schema" : {
+    "schema" : "lAAAABAAAAAAAAoADgAGAA0ACAAKAAAAAAADABAAAAAAAQoADAAAAAgABAAKAAAACAAAAAgAAAAAAAAAAQAAABgAAAAAABIAGAAUABMAEgAMAAAACAAEABIAAAAUAAAAFAAAABwAAAAAAAIBIAAAAAAAAAAAAAAACAAMAAgABwAIAAAAAAAAASAAAAAEAAAAeWVhcgAAAAA="
+  },
+  "split" : {
+    "spillLocation" : {
+      "@type" : "S3SpillLocation",
+      "bucket" : "athena-virtuoso-test",
+      "key" : "lambda-spill/test-query-id/test-split-id",
+      "directory" : true
+    },
+    "encryptionKey" : {
+      "key" : "dGVzdC1rZXk=",
+      "nonce" : "dGVzdC1ub25jZQ=="
+    },
+    "properties" : {
+      "year" : null
+    }
+  },
+  "constraints" : {
+    "summary" : { },
+    "expression" : [ ],
+    "orderByClause" : [ ],
+    "limit" : -1,
+    "queryPassthroughArguments" : {
+      "schema" : null,
+      "query" : "SELECT 1"
+    },
+    "queryPlan" : null,
+    "queryPassThrough" : true
+  },
+  "maxBlockSize" : 100000000000,
+  "maxInlineBlockSize" : 100000000000,
+  "requestType" : "READ_RECORDS"
+}

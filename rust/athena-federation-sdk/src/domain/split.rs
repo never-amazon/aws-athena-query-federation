@@ -9,7 +9,7 @@ use crate::security::EncryptionKey;
 pub struct Split {
     spill_location: Option<SpillLocation>,
     encryption_key: Option<EncryptionKey>,
-    properties: HashMap<String, String>,
+    properties: HashMap<String, Option<String>>,
 }
 
 fn missing(key: &str) -> FederationError {
@@ -22,6 +22,18 @@ impl Split {
         encryption_key: Option<EncryptionKey>,
         properties: HashMap<String, String>,
     ) -> Split {
+        Split::new_nullable(
+            spill_location,
+            encryption_key,
+            properties.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+        )
+    }
+
+    pub fn new_nullable(
+        spill_location: Option<SpillLocation>,
+        encryption_key: Option<EncryptionKey>,
+        properties: HashMap<String, Option<String>>,
+    ) -> Split {
         Split {
             spill_location,
             encryption_key,
@@ -30,7 +42,7 @@ impl Split {
     }
 
     pub fn get_property(&self, key: &str) -> Option<&str> {
-        self.properties.get(key).map(|s| s.as_str())
+        self.properties.get(key).and_then(|s| s.as_deref())
     }
 
     pub fn get_property_as_int(&self, key: &str) -> Result<i32> {
@@ -52,7 +64,7 @@ impl Split {
             .map_err(|_| FederationError::Runtime(format!("For input string: \"{}\"", v)))
     }
 
-    pub fn get_properties(&self) -> &HashMap<String, String> {
+    pub fn get_properties(&self) -> &HashMap<String, Option<String>> {
         &self.properties
     }
 
@@ -78,7 +90,11 @@ impl fmt::Display for Split {
             .as_ref()
             .map(|s| s.to_string())
             .unwrap_or_else(|| "null".to_string());
-        let mut props: Vec<String> = self.properties.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+        let mut props: Vec<String> = self
+            .properties
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v.as_deref().unwrap_or("null")))
+            .collect();
         props.sort();
         write!(
             f,
@@ -91,14 +107,14 @@ impl fmt::Display for Split {
 
 #[derive(Debug, Clone, Default)]
 pub struct SplitBuilder {
-    properties: HashMap<String, String>,
+    properties: HashMap<String, Option<String>>,
     spill_location: Option<SpillLocation>,
     encryption_key: Option<EncryptionKey>,
 }
 
 impl SplitBuilder {
     pub fn add(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.properties.insert(key.into(), value.into());
+        self.properties.insert(key.into(), Some(value.into()));
         self
     }
 
@@ -114,7 +130,7 @@ impl SplitBuilder {
 
     pub fn apply_properties(mut self, input_properties: &HashMap<String, String>) -> Self {
         self.properties
-            .extend(input_properties.iter().map(|(k, v)| (k.clone(), v.clone())));
+            .extend(input_properties.iter().map(|(k, v)| (k.clone(), Some(v.clone()))));
         self
     }
 

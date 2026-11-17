@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::task::JoinHandle;
 
-use crate::security::AwsServiceError;
+use crate::security::{AwsService, AwsServiceError};
 use crate::throttling_invoker::ThrottlingInvoker;
 
 const FIBONACCI: [u64; 10] = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55];
@@ -25,7 +25,7 @@ impl AthenaClient for aws_sdk_athena::Client {
             .query_execution_id(query_execution_id)
             .send()
             .await
-            .map_err(|e| AwsServiceError::from_sdk_error(&e))?;
+            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::Athena, &e))?;
         Ok(output
             .query_execution()
             .and_then(|q| q.status())

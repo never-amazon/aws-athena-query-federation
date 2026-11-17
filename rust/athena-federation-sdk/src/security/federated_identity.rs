@@ -6,7 +6,7 @@ pub struct FederatedIdentity {
     arn: Option<String>,
     account: Option<String>,
     principal_tags: HashMap<String, Option<String>>,
-    iam_groups: Vec<String>,
+    iam_groups: Vec<Option<String>>,
     config_options: HashMap<String, Option<String>>,
 }
 
@@ -15,7 +15,7 @@ impl FederatedIdentity {
         arn: impl Into<String>,
         account: impl Into<String>,
         principal_tags: HashMap<String, Option<String>>,
-        iam_groups: Vec<String>,
+        iam_groups: Vec<Option<String>>,
         config_options: HashMap<String, Option<String>>,
     ) -> FederatedIdentity {
         FederatedIdentity::new_nullable(Some(arn.into()), Some(account.into()), principal_tags, iam_groups, config_options)
@@ -25,7 +25,7 @@ impl FederatedIdentity {
         arn: Option<String>,
         account: Option<String>,
         principal_tags: HashMap<String, Option<String>>,
-        iam_groups: Vec<String>,
+        iam_groups: Vec<Option<String>>,
         config_options: HashMap<String, Option<String>>,
     ) -> FederatedIdentity {
         FederatedIdentity {
@@ -49,7 +49,7 @@ impl FederatedIdentity {
         &self.principal_tags
     }
 
-    pub fn get_iam_groups(&self) -> &[String] {
+    pub fn get_iam_groups(&self) -> &[Option<String>] {
         &self.iam_groups
     }
 

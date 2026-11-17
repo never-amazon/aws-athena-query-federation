@@ -20,7 +20,7 @@ pub use aes_gcm_block_crypto::{AesGcmBlockCrypto, ALGO, GCM_TAG_LENGTH_BITS, KEY
 pub use aws_crypto::{AwsCrypto, EsdkAwsCrypto};
 pub(crate) use aws_request_override_configuration::send_with_override;
 pub use aws_request_override_configuration::{AwsRequestOverrideConfiguration, AwsRequestOverrideConfigurationBuilder};
-pub use aws_service_error::AwsServiceError;
+pub use aws_service_error::{AwsService, AwsServiceError};
 pub use block_crypto::BlockCrypto;
 pub use cachable_secrets_manager::CachableSecretsManager;
 pub use encryption_key::EncryptionKey;

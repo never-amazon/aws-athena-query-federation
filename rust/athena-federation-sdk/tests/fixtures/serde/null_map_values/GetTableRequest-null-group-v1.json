@@ -1,0 +1,21 @@
+{
+  "@type" : "GetTableRequest",
+  "identity" : {
+    "arn" : "testArn",
+    "account" : "0123456789",
+    "principalTags" : { },
+    "iamGroups" : [ "admins", null, "users" ],
+    "configOptions" : { }
+  },
+  "queryId" : "test-query-id",
+  "catalogName" : "test-catalog",
+  "tableName" : {
+    "schemaName" : "test-schema",
+    "tableName" : "test-table",
+    "qualifiedTableName" : "test-schema.test-table"
+  },
+  "queryPassthroughArguments" : { },
+  "requestType" : "GET_TABLE",
+  "context" : null,
+  "queryPassthrough" : false
+}

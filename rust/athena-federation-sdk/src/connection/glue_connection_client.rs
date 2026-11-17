@@ -6,7 +6,7 @@ use aws_config::BehaviorVersion;
 use aws_sdk_glue::types::Connection;
 
 use super::environment_constants::EnvironmentConstants;
-use crate::security::AwsServiceError;
+use crate::security::{AwsService, AwsServiceError};
 
 #[async_trait]
 pub trait GlueConnectionClient: Send + Sync {
@@ -21,7 +21,7 @@ impl GlueConnectionClient for aws_sdk_glue::Client {
             .name(name)
             .send()
             .await
-            .map_err(|e| AwsServiceError::from_sdk_error(&e))?;
+            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::Glue, &e))?;
         output
             .connection
             .ok_or_else(|| AwsServiceError::new(format!("Glue returned no connection named {}", name)))

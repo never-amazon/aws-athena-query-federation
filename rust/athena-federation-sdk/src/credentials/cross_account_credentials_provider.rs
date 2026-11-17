@@ -6,7 +6,7 @@ use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_credential_types::Credentials;
 
 use crate::exceptions::{FederationError, Result};
-use crate::security::AwsServiceError;
+use crate::security::{AwsService, AwsServiceError};
 
 const CROSS_ACCOUNT_ROLE_ARN_CONFIG: &str = "cross_account_role_arn";
 
@@ -27,7 +27,7 @@ impl CrossAccountCredentialsProvider {
                 .role_session_name(role_session_name)
                 .send()
                 .await
-                .map_err(|e| FederationError::from(AwsServiceError::from_sdk_error(&e)))?;
+                .map_err(|e| FederationError::from(AwsServiceError::from_sdk_error(AwsService::Sts, &e)))?;
             let credentials = response
                 .credentials()
                 .ok_or_else(|| FederationError::NullPointer("AssumeRole returned no credentials".into()))?;

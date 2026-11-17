@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use athena_federation_sdk::domain::spill::{BucketState, HeadBucketClient, S3ServiceError, SpillLocationVerifier};
+use athena_federation_sdk::domain::spill::{BucketState, HeadBucketClient, SpillLocationVerifier};
+use athena_federation_sdk::exceptions::{FederationError, FederationSourceErrorCode};
+use athena_federation_sdk::security::{AwsService, AwsServiceError};
 
 struct MockS3 {
     buckets: Vec<String>,
@@ -9,21 +11,15 @@ struct MockS3 {
 }
 
 impl HeadBucketClient for MockS3 {
-    async fn head_bucket(&self, bucket: &str) -> Result<(), S3ServiceError> {
+    async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.buckets.iter().any(|b| b == bucket) {
             return Ok(());
         }
         if bucket == "forbidden" {
-            Err(S3ServiceError {
-                status_code: 403,
-                message: "Forbidden".into(),
-            })
+            Err(AwsServiceError::service(AwsService::S3, None, Some("Forbidden".into())).with_status_code(403))
         } else {
-            Err(S3ServiceError {
-                status_code: 404,
-                message: "Not Found".into(),
-            })
+            Err(AwsServiceError::service(AwsService::S3, None, Some("Not Found".into())).with_status_code(404))
         }
     }
 }
@@ -101,4 +97,37 @@ async fn check_bucket_auth_z_fail() {
         .expect_err("checkBucketAuthZFail failed");
     assert_eq!(invalid_message(bucket_not_own), err.to_string());
     assert_eq!(1, update_bucket_state_calls.load(Ordering::SeqCst));
+}
+
+struct FailingS3 {
+    error: AwsServiceError,
+}
+
+impl HeadBucketClient for FailingS3 {
+    async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
+        Err(self.error.clone())
+    }
+}
+
+#[tokio::test]
+async fn client_error_passes_through_unchanged() {
+    let error = AwsServiceError::client("Unable to execute HTTP request: Connect timed out");
+    let mut verifier = SpillLocationVerifier::new(FailingS3 { error: error.clone() });
+    let result = verifier.check_bucket_auth_z(Some("bucket1")).await;
+    match result {
+        Err(FederationError::AwsService(e)) => assert_eq!(error, e),
+        other => panic!("expected the client error unchanged, got {:?}", other),
+    }
+    assert_eq!(BucketState::Unchecked, verifier.get_state());
+}
+
+#[tokio::test]
+async fn s3_error_other_than_403_or_404_raises_access_denied() {
+    let error = AwsServiceError::service(AwsService::S3, Some("InternalError".into()), Some("We encountered an internal error.".into()))
+        .with_error_details()
+        .with_status_code(500);
+    let mut verifier = SpillLocationVerifier::new(FailingS3 { error });
+    let e = verifier.check_bucket_auth_z(Some("bucket1")).await.unwrap_err();
+    assert_eq!(Some(FederationSourceErrorCode::AccessDeniedException), e.error_code());
+    assert_eq!("Error while checking bucket ownership for bucket1", e.to_string());
 }

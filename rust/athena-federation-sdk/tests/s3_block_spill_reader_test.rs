@@ -8,7 +8,7 @@ use athena_federation_sdk::data::{
 };
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::exceptions::FederationError;
-use athena_federation_sdk::security::{
+use athena_federation_sdk::security::{AwsService, 
     AesGcmBlockCrypto, AwsServiceError, BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
     NoOpBlockCrypto,
 };
@@ -159,7 +159,7 @@ async fn read_null_spill_location_throws_null_pointer_exception() {
 async fn read_s3_failure_throws_s3_exception() {
     let s = setup().await;
     s.mock_s3
-        .when_get_object(Err(AwsServiceError::with_code("S3Exception", "Failed to read from S3")));
+        .when_get_object(Err(AwsServiceError::service(AwsService::S3, None, Some("Failed to read from S3".into()))));
 
     let exception = s
         .block_reader
@@ -167,7 +167,11 @@ async fn read_s3_failure_throws_s3_exception() {
         .await
         .unwrap_err();
 
-    assert!(matches!(&exception, FederationError::Runtime(_)));
+    assert!(
+        matches!(&exception, FederationError::AwsService(e) if e.is_service_exception_of(AwsService::S3)),
+        "{:?}",
+        exception
+    );
     assert_eq!("Failed to read from S3", exception.to_string());
     assert_eq!(1, s.mock_s3.get_count());
 }

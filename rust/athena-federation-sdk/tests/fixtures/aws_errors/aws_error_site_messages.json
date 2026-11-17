@@ -1,0 +1,4 @@
+{
+  "throttlingInvokerMessage" : "ThrottlingInvoker requesting slow down due to software.amazon.awssdk.services.athena.model.AthenaException: Rate exceeded (Service: Athena, Status Code: 400, Request ID: req-8)",
+  "kmsKeyFactoryMessage" : "Key 'arn:aws:kms:us-east-1:123456789012:key/abc' does not exist (Service: Kms, Status Code: 400, Request ID: req-3)"
+}

@@ -2,23 +2,10 @@ use std::fmt;
 use std::future::Future;
 
 use crate::exceptions::{AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct S3ServiceError {
-    pub status_code: i32,
-    pub message: String,
-}
-
-impl fmt::Display for S3ServiceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} (Status Code: {})", self.message, self.status_code)
-    }
-}
-
-impl std::error::Error for S3ServiceError {}
+use crate::security::{AwsService, AwsServiceError};
 
 pub trait HeadBucketClient: Send + Sync {
-    fn head_bucket(&self, bucket: &str) -> impl Future<Output = std::result::Result<(), S3ServiceError>> + Send;
+    fn head_bucket(&self, bucket: &str) -> impl Future<Output = std::result::Result<(), AwsServiceError>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +63,8 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
                 self.state = BucketState::Valid;
                 Ok(())
             }
-            Err(ex) if ex.status_code == 404 || ex.status_code == 403 => {
+            Err(ex) if !ex.is_service_exception_of(AwsService::S3) => Err(FederationError::from(ex)),
+            Err(ex) if matches!(ex.status_code(), Some(404) | Some(403)) => {
                 self.state = BucketState::Invalid;
                 Ok(())
             }

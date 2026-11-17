@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 
-use crate::domain::spill::{HeadBucketClient, S3ServiceError};
-use crate::security::{send_with_override, AwsRequestOverrideConfiguration, AwsServiceError};
+use crate::domain::spill::HeadBucketClient;
+use crate::security::{send_with_override, AwsRequestOverrideConfiguration, AwsService, AwsServiceError};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PutObjectRequest {
@@ -120,7 +120,7 @@ impl S3Client for aws_sdk_s3::Client {
             builder = builder.set_metadata(Some(request.metadata.clone()));
         }
         send_with_override!(builder, request.override_configuration.as_ref(), aws_sdk_s3::config::Builder)
-            .map_err(|e| AwsServiceError::from_sdk_error(&e))?;
+            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))?;
         Ok(())
     }
 
@@ -131,7 +131,7 @@ impl S3Client for aws_sdk_s3::Client {
             .key(request.key)
             .send()
             .await
-            .map_err(|e| AwsServiceError::from_sdk_error(&e))?;
+            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))?;
         let bytes = output
             .body
             .collect()
@@ -142,13 +142,12 @@ impl S3Client for aws_sdk_s3::Client {
 }
 
 impl HeadBucketClient for aws_sdk_s3::Client {
-    async fn head_bucket(&self, bucket: &str) -> Result<(), S3ServiceError> {
-        self.head_bucket().bucket(bucket).send().await.map(|_| ()).map_err(|e| {
-            let error = AwsServiceError::from_sdk_error(&e);
-            S3ServiceError {
-                status_code: error.status_code().map(i32::from).unwrap_or(0),
-                message: error.message().to_string(),
-            }
-        })
+    async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError> {
+        self.head_bucket()
+            .bucket(bucket)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))
     }
 }
