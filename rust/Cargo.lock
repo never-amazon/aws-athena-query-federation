@@ -403,6 +403,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "athena-jdbc"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "async-trait",
+ "athena-federation-sdk",
+ "athena-federation-substrait",
+ "aws-credential-types",
+ "aws-sdk-kms",
+ "bigdecimal",
+ "chrono",
+ "indexmap",
+ "num-traits",
+ "regex",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "atoi"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,27 @@
+[package]
+name = "athena-jdbc"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+athena-federation-sdk = { workspace = true }
+athena-federation-substrait = { workspace = true }
+arrow = { workspace = true }
+async-trait = { workspace = true }
+bigdecimal = { workspace = true }
+chrono = { workspace = true }
+indexmap = { workspace = true }
+num-traits = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+
+[dev-dependencies]
+aws-credential-types = { workspace = true }
+aws-sdk-kms = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+
+[lints]
+workspace = true

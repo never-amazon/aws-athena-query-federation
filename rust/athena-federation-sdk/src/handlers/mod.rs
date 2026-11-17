@@ -25,7 +25,9 @@ pub use metadata_handler::{
     DEFAULT_SPILL_PREFIX, DISABLE_SPILL_ENCRYPTION, KMS_KEY_ID_ENV, PARTITION_ID_COL,
     SPILL_BUCKET_ENV, SPILL_PREFIX_ENV,
 };
-pub use record_handler::{RecordHandler, RecordHandlerBase, RecordHandlerExt};
+pub use record_handler::{
+    default_do_read_records, RecordHandler, RecordHandlerBase, RecordHandlerExt,
+};
 pub use user_defined_function_handler::{
     JavaType, UdfFunction, UdfMethod, UdfMethods, UserDefinedFunctionHandler,
     UserDefinedFunctionHandlerExt,

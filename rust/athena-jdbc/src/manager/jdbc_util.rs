@@ -1,0 +1,196 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use indexmap::IndexMap;
+
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::{FederationError, Result};
+
+use super::jdbc_metadata_handler::JdbcMetadataHandler;
+use super::jdbc_metadata_handler_factory::JdbcMetadataHandlerFactory;
+use super::jdbc_record_handler::JdbcRecordHandler;
+use super::jdbc_record_handler_factory::JdbcRecordHandlerFactory;
+use crate::connection::{
+    DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
+};
+use crate::sql::{JdbcConnection, PreparedStatement, ResultSet, SqlException};
+use crate::validate::not_blank;
+
+const DEFAULT_CATALOG_PREFIX: &str = "lambda:";
+const LAMBDA_FUNCTION_NAME_PROPERTY: &str = "AWS_LAMBDA_FUNCTION_NAME";
+const TABLES_AND_VIEWS: &str = "Tables and Views";
+
+pub struct JdbcUtil;
+
+fn insert_unique<V>(map: &mut IndexMap<String, V>, key: String, value: V) -> Result<()> {
+    if map.contains_key(&key) {
+        return Err(FederationError::IllegalArgument(format!(
+            "Multiple entries with same key: {key}"
+        )));
+    }
+    map.insert(key, value);
+    Ok(())
+}
+
+fn connection_configs(
+    engine: &str,
+    config_options: &HashMap<String, String>,
+) -> Result<(String, Vec<DatabaseConnectionConfig>)> {
+    let function_name = not_blank(
+        config_options
+            .get(LAMBDA_FUNCTION_NAME_PROPERTY)
+            .map(String::as_str),
+        "Lambda function name not present in environment.",
+    )?
+    .to_string();
+    let configs = DatabaseConnectionConfigBuilder::new()
+        .engine(engine)
+        .properties(config_options.clone())
+        .build()?;
+    if configs.is_empty() {
+        return Err(FederationError::invalid_input(
+            "At least one connection string required.",
+        ));
+    }
+    Ok((function_name, configs))
+}
+
+fn missing_default() -> FederationError {
+    FederationError::invalid_input(format!(
+        "Must provide connection parameters for default database instance {DEFAULT_CONNECTION_STRING_PROPERTY}"
+    ))
+}
+
+impl JdbcUtil {
+    pub fn get_single_database_config_from_env(
+        database_engine: &str,
+        config_options: &HashMap<String, String>,
+    ) -> Result<DatabaseConnectionConfig> {
+        let configs = DatabaseConnectionConfigBuilder::build_from_system_env(
+            database_engine,
+            config_options.clone(),
+        )?;
+        configs
+            .into_iter()
+            .find(|config| config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY && config.engine() == database_engine)
+            .ok_or_else(|| {
+                FederationError::invalid_input(format!(
+                    "Must provide default connection string parameter {DEFAULT_CONNECTION_STRING_PROPERTY} for database type {database_engine}"
+                ))
+            })
+    }
+
+    pub async fn create_jdbc_metadata_handler_map(
+        config_options: &HashMap<String, String>,
+        metadata_handler_factory: &dyn JdbcMetadataHandlerFactory,
+    ) -> Result<IndexMap<String, Arc<dyn JdbcMetadataHandler>>> {
+        let (function_name, configs) =
+            connection_configs(metadata_handler_factory.engine(), config_options)?;
+        let mut handlers: IndexMap<String, Arc<dyn JdbcMetadataHandler>> = IndexMap::new();
+        let mut default_present = false;
+        for config in &configs {
+            let handler = metadata_handler_factory
+                .create_jdbc_metadata_handler(config, config_options)
+                .await?;
+            insert_unique(
+                &mut handlers,
+                config.catalog().to_string(),
+                Arc::clone(&handler),
+            )?;
+            if config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY {
+                insert_unique(
+                    &mut handlers,
+                    format!("{DEFAULT_CATALOG_PREFIX}{function_name}"),
+                    handler,
+                )?;
+                default_present = true;
+            }
+        }
+        if !default_present {
+            return Err(missing_default());
+        }
+        Ok(handlers)
+    }
+
+    pub async fn create_jdbc_record_handler_map(
+        config_options: &HashMap<String, String>,
+        record_handler_factory: &dyn JdbcRecordHandlerFactory,
+    ) -> Result<IndexMap<String, Arc<dyn JdbcRecordHandler>>> {
+        let (function_name, configs) =
+            connection_configs(record_handler_factory.engine(), config_options)?;
+        let mut handlers: IndexMap<String, Arc<dyn JdbcRecordHandler>> = IndexMap::new();
+        let mut default_present = false;
+        for config in &configs {
+            let handler = record_handler_factory
+                .create_jdbc_record_handler(config, config_options)
+                .await?;
+            insert_unique(
+                &mut handlers,
+                config.catalog().to_string(),
+                Arc::clone(&handler),
+            )?;
+            if config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY {
+                insert_unique(
+                    &mut handlers,
+                    format!("{DEFAULT_CATALOG_PREFIX}{function_name}"),
+                    handler,
+                )?;
+                default_present = true;
+            }
+        }
+        if !default_present {
+            return Err(missing_default());
+        }
+        Ok(handlers)
+    }
+
+    pub async fn get_tables(
+        connection: &dyn JdbcConnection,
+        database_name: &str,
+    ) -> std::result::Result<Vec<TableName>, SqlException> {
+        let sql = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?";
+        let mut prepared_statement = connection.prepare_statement(sql).await?;
+        prepared_statement.set_string(1, database_name)?;
+        tracing::debug!(
+            "Prepared Statement for getting tables in schema {} : {}",
+            database_name,
+            prepared_statement.sql()
+        );
+        JdbcUtil::get_table_metadata(connection, &prepared_statement, TABLES_AND_VIEWS).await
+    }
+
+    pub async fn get_table_metadata(
+        connection: &dyn JdbcConnection,
+        prepared_statement: &PreparedStatement,
+        table_type: &str,
+    ) -> std::result::Result<Vec<TableName>, SqlException> {
+        let listed = async {
+            let mut result_set = connection.execute_query(prepared_statement).await?;
+            let mut list = Vec::new();
+            while result_set.next().await? {
+                list.push(schema_table_name(&result_set)?);
+            }
+            Ok(list)
+        }
+        .await;
+        if let Err(ex) = &listed {
+            tracing::warn!(
+                "Unable to return list of {} from data source! {}",
+                table_type,
+                ex
+            );
+        }
+        listed
+    }
+
+    pub fn get_schema_table_name(result_set: &ResultSet) -> Result<TableName> {
+        Ok(schema_table_name(result_set)?)
+    }
+}
+
+fn schema_table_name(result_set: &ResultSet) -> std::result::Result<TableName, SqlException> {
+    Ok(TableName::new(
+        result_set.get_string("TABLE_SCHEM")?.unwrap_or_default(),
+        result_set.get_string("TABLE_NAME")?.unwrap_or_default(),
+    ))
+}

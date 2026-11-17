@@ -1,0 +1,43 @@
+pub struct Types;
+
+impl Types {
+    pub const BIT: i32 = -7;
+    pub const TINYINT: i32 = -6;
+    pub const SMALLINT: i32 = 5;
+    pub const INTEGER: i32 = 4;
+    pub const BIGINT: i32 = -5;
+    pub const FLOAT: i32 = 6;
+    pub const REAL: i32 = 7;
+    pub const DOUBLE: i32 = 8;
+    pub const NUMERIC: i32 = 2;
+    pub const DECIMAL: i32 = 3;
+    pub const CHAR: i32 = 1;
+    pub const VARCHAR: i32 = 12;
+    pub const LONGVARCHAR: i32 = -1;
+    pub const DATE: i32 = 91;
+    pub const TIME: i32 = 92;
+    pub const TIMESTAMP: i32 = 93;
+    pub const BINARY: i32 = -2;
+    pub const VARBINARY: i32 = -3;
+    pub const LONGVARBINARY: i32 = -4;
+    pub const NULL: i32 = 0;
+    pub const OTHER: i32 = 1111;
+    pub const JAVA_OBJECT: i32 = 2000;
+    pub const DISTINCT: i32 = 2001;
+    pub const STRUCT: i32 = 2002;
+    pub const ARRAY: i32 = 2003;
+    pub const BLOB: i32 = 2004;
+    pub const CLOB: i32 = 2005;
+    pub const REF: i32 = 2006;
+    pub const DATALINK: i32 = 70;
+    pub const BOOLEAN: i32 = 16;
+    pub const ROWID: i32 = -8;
+    pub const NCHAR: i32 = -15;
+    pub const NVARCHAR: i32 = -9;
+    pub const LONGNVARCHAR: i32 = -16;
+    pub const NCLOB: i32 = 2011;
+    pub const SQLXML: i32 = 2009;
+    pub const REF_CURSOR: i32 = 2012;
+    pub const TIME_WITH_TIMEZONE: i32 = 2013;
+    pub const TIMESTAMP_WITH_TIMEZONE: i32 = 2014;
+}

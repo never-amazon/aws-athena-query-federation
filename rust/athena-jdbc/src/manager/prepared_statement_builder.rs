@@ -1,0 +1,87 @@
+use std::fmt;
+
+use athena_federation_sdk::{FederationError, Result};
+
+use crate::sql::{JdbcConnection, PreparedStatement};
+use crate::validate::{not_blank, runtime_with_cause};
+
+const PARAMETERS_MESSAGE: &str = "parameters must not be null";
+const QUERY_MESSAGE: &str = "query must not be blank";
+const CONNECTION_MESSAGE: &str = "connection must not be null";
+
+#[derive(Default)]
+pub struct PreparedStatementBuilder<'a> {
+    query: Option<String>,
+    parameters: Option<Vec<String>>,
+    connection: Option<&'a dyn JdbcConnection>,
+}
+
+impl fmt::Debug for PreparedStatementBuilder<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedStatementBuilder")
+            .field("query", &self.query)
+            .field("parameters", &self.parameters)
+            .finish_non_exhaustive()
+    }
+}
+
+fn not_empty(parameters: Option<&Vec<String>>) -> Result<&Vec<String>> {
+    match parameters {
+        None => Err(FederationError::NullPointer(PARAMETERS_MESSAGE.to_string())),
+        Some(p) if p.is_empty() => Err(FederationError::IllegalArgument(
+            PARAMETERS_MESSAGE.to_string(),
+        )),
+        Some(p) => Ok(p),
+    }
+}
+
+impl<'a> PreparedStatementBuilder<'a> {
+    pub fn new() -> PreparedStatementBuilder<'a> {
+        PreparedStatementBuilder::default()
+    }
+
+    pub fn with_parameters(
+        mut self,
+        parameters: Vec<String>,
+    ) -> Result<PreparedStatementBuilder<'a>> {
+        not_empty(Some(&parameters))?;
+        self.parameters = Some(parameters);
+        Ok(self)
+    }
+
+    pub fn with_query(mut self, query: &str) -> Result<PreparedStatementBuilder<'a>> {
+        self.query = Some(not_blank(Some(query), QUERY_MESSAGE)?.to_string());
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_connection(
+        mut self,
+        connection: &'a dyn JdbcConnection,
+    ) -> PreparedStatementBuilder<'a> {
+        self.connection = Some(connection);
+        self
+    }
+
+    pub async fn build(&self) -> Result<PreparedStatement> {
+        let parameters = not_empty(self.parameters.as_ref())?;
+        let query = not_blank(self.query.as_deref(), QUERY_MESSAGE)?;
+        let connection = self
+            .connection
+            .ok_or_else(|| FederationError::NullPointer(CONNECTION_MESSAGE.to_string()))?;
+        tracing::info!("Running query {}", query);
+        tracing::info!("Parameters {:?}", parameters);
+        let prepared = async {
+            let mut statement = connection.prepare_statement(query).await?;
+            for (i, parameter) in parameters.iter().enumerate() {
+                statement.set_string(i + 1, parameter.as_str())?;
+            }
+            Ok(statement)
+        }
+        .await;
+        prepared.map_err(|e: crate::sql::SqlException| {
+            let message = format!("{}: {}", e.error_code(), e.message());
+            runtime_with_cause(message, FederationError::from(e))
+        })
+    }
+}

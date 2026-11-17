@@ -46,6 +46,19 @@ impl EnvironmentProperties {
     }
 
     pub async fn create_environment(&self) -> Result<HashMap<String, String>> {
+        self.create_environment_with(|properties| {
+            self.connection_properties_to_environment(properties)
+        })
+        .await
+    }
+
+    pub async fn create_environment_with<F>(
+        &self,
+        connection_properties_to_environment: F,
+    ) -> Result<HashMap<String, String>>
+    where
+        F: Fn(HashMap<String, String>) -> HashMap<String, String> + Send + Sync,
+    {
         let lambda_environment = self.get_env_map();
         let mut connection_environment = HashMap::new();
         if let Some(glue_connection_name) = lambda_environment
@@ -69,9 +82,9 @@ impl EnvironmentProperties {
             connection_properties_with_secret.extend(Self::authentication_configuration_to_map(
                 connection.authentication_configuration(),
             ));
-            connection_environment.extend(
-                self.connection_properties_to_environment(connection_properties_with_secret),
-            );
+            connection_environment.extend(connection_properties_to_environment(
+                connection_properties_with_secret,
+            ));
             let athena_properties = connection.athena_properties().cloned().unwrap_or_default();
             connection_environment
                 .extend(self.athena_properties_to_environment(&athena_properties));

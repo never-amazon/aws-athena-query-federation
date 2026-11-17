@@ -103,62 +103,7 @@ pub trait RecordHandler: FederationRequestHandler {
         allocator: &Arc<dyn BlockAllocator>,
         request: &ReadRecordsRequest,
     ) -> Result<FederationResponse> {
-        tracing::info!(
-            "doReadRecords: {:?}:{}",
-            request.schema(),
-            request
-                .split()
-                .spill_location()
-                .map_or_else(|| "null".to_string(), ToString::to_string)
-        );
-        let base = self.record_base();
-        let identity = require_identity(request.identity())?;
-        let override_config = self
-            .get_request_override_config_with_config_options(Some(identity.config_options()))
-            .await?;
-        let spill_config = self.get_spill_config(request)?;
-        let athena_client = self.get_athena_client(override_config.as_ref(), base.athena());
-        let s3_client = self.get_s3_client(override_config.as_ref(), base.amazon_s3());
-        let schema = Arc::new(request.schema().clone());
-        let evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(allocator.as_ref()),
-            request.schema(),
-            request.constraints().clone(),
-        ));
-        let spiller = S3BlockSpiller::new(
-            s3_client,
-            spill_config.clone(),
-            Arc::clone(allocator),
-            Arc::clone(&schema),
-            evaluator,
-            base.config_options().clone(),
-        )?;
-        let query_status_checker = QueryStatusChecker::new(
-            athena_client,
-            Arc::clone(base.athena_invoker()),
-            request.query_id(),
-        );
-        let result = async {
-            self.read_with_constraint(&spiller, request, &query_status_checker)
-                .await?;
-            if spiller.spilled().await? {
-                Ok(FederationResponse::from(RemoteReadRecordsResponse::new(
-                    request.catalog_name(),
-                    request.schema().clone(),
-                    spiller.get_spill_locations().await?,
-                    spill_config.encryption_key().cloned(),
-                )))
-            } else {
-                Ok(FederationResponse::from(ReadRecordsResponse::new(
-                    request.catalog_name(),
-                    spiller.get_block().await?,
-                )))
-            }
-        }
-        .await;
-        spiller.close().await;
-        query_status_checker.close();
-        result
+        default_do_read_records(self, allocator, request).await
     }
 
     async fn read_with_constraint(
@@ -194,6 +139,70 @@ pub trait RecordHandler: FederationRequestHandler {
     async fn on_ping(&self, _request: &PingRequest) -> Result<()> {
         Ok(())
     }
+}
+
+pub async fn default_do_read_records<H: RecordHandler + ?Sized>(
+    handler: &H,
+    allocator: &Arc<dyn BlockAllocator>,
+    request: &ReadRecordsRequest,
+) -> Result<FederationResponse> {
+    tracing::info!(
+        "doReadRecords: {:?}:{}",
+        request.schema(),
+        request
+            .split()
+            .spill_location()
+            .map_or_else(|| "null".to_string(), ToString::to_string)
+    );
+    let base = handler.record_base();
+    let identity = require_identity(request.identity())?;
+    let override_config = handler
+        .get_request_override_config_with_config_options(Some(identity.config_options()))
+        .await?;
+    let spill_config = handler.get_spill_config(request)?;
+    let athena_client = handler.get_athena_client(override_config.as_ref(), base.athena());
+    let s3_client = handler.get_s3_client(override_config.as_ref(), base.amazon_s3());
+    let schema = Arc::new(request.schema().clone());
+    let evaluator = Arc::new(ConstraintEvaluator::new(
+        Some(allocator.as_ref()),
+        request.schema(),
+        request.constraints().clone(),
+    ));
+    let spiller = S3BlockSpiller::new(
+        s3_client,
+        spill_config.clone(),
+        Arc::clone(allocator),
+        Arc::clone(&schema),
+        evaluator,
+        base.config_options().clone(),
+    )?;
+    let query_status_checker = QueryStatusChecker::new(
+        athena_client,
+        Arc::clone(base.athena_invoker()),
+        request.query_id(),
+    );
+    let result = async {
+        handler
+            .read_with_constraint(&spiller, request, &query_status_checker)
+            .await?;
+        if spiller.spilled().await? {
+            Ok(FederationResponse::from(RemoteReadRecordsResponse::new(
+                request.catalog_name(),
+                request.schema().clone(),
+                spiller.get_spill_locations().await?,
+                spill_config.encryption_key().cloned(),
+            )))
+        } else {
+            Ok(FederationResponse::from(ReadRecordsResponse::new(
+                request.catalog_name(),
+                spiller.get_block().await?,
+            )))
+        }
+    }
+    .await;
+    spiller.close().await;
+    query_status_checker.close();
+    result
 }
 
 #[async_trait]
