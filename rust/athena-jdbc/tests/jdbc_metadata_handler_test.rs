@@ -30,7 +30,8 @@ use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
 use jdbc_support::{
-    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, ResultSetData,
+    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetColumnsCall,
+    GetTablesCall, ResultSetData,
 };
 
 const TABLE_TYPES: [&str; 4] = ["TABLE", "VIEW", "EXTERNAL TABLE", "MATERIALIZED VIEW"];
@@ -209,6 +210,26 @@ fn five_tables() -> ResultSetData {
     ])
 }
 
+fn get_tables_call(schema_pattern: &str) -> GetTablesCall {
+    GetTablesCall {
+        catalog: Some("testCatalog".to_string()),
+        schema_pattern: Some(schema_pattern.to_string()),
+        table_name_pattern: None,
+        types: Some(TABLE_TYPES.iter().map(ToString::to_string).collect()),
+    }
+}
+
+fn assert_get_tables_calls(fixture: &Fixture, schema_pattern: &str) {
+    let calls = fixture.connection.meta.get_tables_calls();
+    assert!(!calls.is_empty());
+    assert!(
+        calls
+            .iter()
+            .all(|call| *call == get_tables_call(schema_pattern)),
+        "{calls:?}"
+    );
+}
+
 fn table_names(names: &[(&str, &str)]) -> Vec<TableName> {
     names.iter().map(|(s, t)| TableName::new(*s, *t)).collect()
 }
@@ -335,14 +356,7 @@ async fn do_list_tables() {
         response.tables(),
         table_names(&[("testSchema", "testTable"), ("testSchema", "testtable2")])
     );
-    let call = &fixture.connection.meta.get_tables_calls()[0];
-    assert_eq!(call.catalog.as_deref(), Some("testCatalog"));
-    assert_eq!(call.schema_pattern.as_deref(), Some("testSchema"));
-    assert_eq!(call.table_name_pattern, None);
-    assert_eq!(
-        call.types,
-        Some(TABLE_TYPES.iter().map(ToString::to_string).collect())
-    );
+    assert_get_tables_calls(&fixture, "testSchema");
 }
 
 #[tokio::test]
@@ -368,6 +382,7 @@ async fn do_list_tables_fake_pagination_single_page() {
         table_names(&[("testSchema", "testTable")])
     );
     assert_eq!(response.next_token(), Some("1"));
+    assert_get_tables_calls(&fixture, "testSchema");
 }
 
 #[tokio::test]
@@ -393,6 +408,7 @@ async fn do_list_tables_fake_pagination_multi_page() {
         ])
     );
     assert_eq!(response.next_token(), None);
+    assert_get_tables_calls(&fixture, "testSchema");
 }
 
 #[tokio::test]
@@ -417,6 +433,7 @@ async fn do_list_tables_fake_pagination_unlimited_page_size() {
         ])
     );
     assert_eq!(response.next_token(), None);
+    assert_get_tables_calls(&fixture, "testSchema");
 }
 
 #[tokio::test]
@@ -436,6 +453,13 @@ async fn do_list_tables_number_format_exception() {
         .await
         .unwrap_err();
     assert_connector_exception(&error);
+    let calls = fixture.connection.meta.get_tables_calls();
+    assert!(
+        calls
+            .iter()
+            .all(|call| *call == get_tables_call("testSchema")),
+        "{calls:?}"
+    );
 }
 
 #[tokio::test]
@@ -451,6 +475,13 @@ async fn do_list_tables_invalid_argument_exception_negative_token() {
         .await
         .unwrap_err();
     assert_connector_exception(&error);
+    let calls = fixture.connection.meta.get_tables_calls();
+    assert!(
+        calls
+            .iter()
+            .all(|call| *call == get_tables_call("testSchema")),
+        "{calls:?}"
+    );
 }
 
 #[tokio::test]
@@ -466,6 +497,13 @@ async fn do_list_tables_invalid_argument_exception_negative_page_size() {
         .await
         .unwrap_err();
     assert_connector_exception(&error);
+    let calls = fixture.connection.meta.get_tables_calls();
+    assert!(
+        calls
+            .iter()
+            .all(|call| *call == get_tables_call("testSchema")),
+        "{calls:?}"
+    );
 }
 
 #[tokio::test]
@@ -488,9 +526,7 @@ async fn do_list_tables_escaped() {
         response.tables(),
         table_names(&[("test_Schema", "testTable"), ("test_Schema", "testtable2")])
     );
-    let call = &fixture.connection.meta.get_tables_calls()[0];
-    assert_eq!(call.catalog.as_deref(), Some("testCatalog"));
-    assert_eq!(call.schema_pattern.as_deref(), Some("test\\_Schema"));
+    assert_get_tables_calls(&fixture, "test\\_Schema");
 }
 
 #[tokio::test]
@@ -621,6 +657,18 @@ async fn do_get_table_case_insensitive() {
         .await
         .unwrap();
     assert_eq!(response.table_name().table_name(), "testTable");
+    let calls = fixture.connection.meta.get_columns_calls();
+    assert!(!calls.is_empty());
+    assert!(
+        calls.iter().all(|call| *call
+            == GetColumnsCall {
+                catalog: Some("testCatalog".to_string()),
+                schema_pattern: Some("testSchema".to_string()),
+                table_name_pattern: Some("testTable".to_string()),
+                column_name_pattern: None,
+            }),
+        "{calls:?}"
+    );
 }
 
 #[tokio::test]

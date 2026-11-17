@@ -23,7 +23,7 @@ use athena_jdbc::manager::{JdbcRecordHandler, JdbcRecordHandlerBase};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 use athena_jdbc::MultiplexingJdbcRecordHandler;
 use indexmap::IndexMap;
-use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes};
+use jdbc_support::{addr, FakeConnection, FakeConnectionFactory, Fakes};
 
 const FAKE_DATABASE: &str = "fakedatabase";
 const TEST_CATALOG: &str = "testCatalog";
@@ -33,10 +33,20 @@ const CONNECTION_STRING: &str = "fakedatabase://jdbc:fakedatabase://hostname/${t
 const MAX_CATALOGS: usize = 100;
 const TOO_MANY_CATALOGS: usize = 101;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BuildSplitSqlCall {
+    connection: usize,
+    catalog_name: String,
+    table_name: TableName,
+    schema: usize,
+    constraints: usize,
+    split: usize,
+}
+
 #[derive(Default)]
 struct Calls {
-    read_with_constraint: AtomicUsize,
-    build_split_sql: Mutex<Vec<(String, TableName)>>,
+    read_with_constraint: Mutex<Vec<[usize; 3]>>,
+    build_split_sql: Mutex<Vec<BuildSplitSqlCall>>,
     close: AtomicUsize,
 }
 
@@ -64,13 +74,15 @@ impl RecordHandler for FakeJdbcRecordHandler {
 
     async fn read_with_constraint(
         &self,
-        _spiller: &dyn BlockSpiller,
-        _request: &ReadRecordsRequest,
-        _query_status_checker: &QueryStatusChecker,
+        spiller: &dyn BlockSpiller,
+        request: &ReadRecordsRequest,
+        query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        self.calls
-            .read_with_constraint
-            .fetch_add(1, Ordering::SeqCst);
+        self.calls.read_with_constraint.lock().unwrap().push([
+            addr(spiller),
+            addr(request),
+            addr(query_status_checker),
+        ]);
         Ok(())
     }
 }
@@ -83,18 +95,25 @@ impl JdbcRecordHandler for FakeJdbcRecordHandler {
 
     async fn build_split_sql(
         &self,
-        _jdbc_connection: &dyn JdbcConnection,
+        jdbc_connection: &dyn JdbcConnection,
         catalog_name: &str,
         table_name: &TableName,
-        _schema: &Schema,
-        _constraints: &Constraints,
-        _split: &Split,
+        schema: &Schema,
+        constraints: &Constraints,
+        split: &Split,
     ) -> Result<PreparedStatement> {
         self.calls
             .build_split_sql
             .lock()
             .unwrap()
-            .push((catalog_name.to_string(), table_name.clone()));
+            .push(BuildSplitSqlCall {
+                connection: addr(jdbc_connection),
+                catalog_name: catalog_name.to_string(),
+                table_name: table_name.clone(),
+                schema: addr(schema),
+                constraints: addr(constraints),
+                split: addr(split),
+            });
         Ok(PreparedStatement::new("delegate"))
     }
 
@@ -213,12 +232,20 @@ async fn read_with_constraint() {
     let s = set_up();
     let block_spiller = spiller(&s.fakes);
     let checker = checker(&s);
+    let read_records_request = request(FAKE_DATABASE);
     s.handler
-        .read_with_constraint(&block_spiller, &request(FAKE_DATABASE), &checker)
+        .read_with_constraint(&block_spiller, &read_records_request, &checker)
         .await
         .unwrap();
+    assert_eq!(
+        vec![[
+            addr(&block_spiller),
+            addr(&read_records_request),
+            addr(&checker)
+        ]],
+        s.calls.read_with_constraint.lock().unwrap().clone()
+    );
     checker.close();
-    assert_eq!(1, s.calls.read_with_constraint.load(Ordering::SeqCst));
 }
 
 #[tokio::test]
@@ -237,28 +264,39 @@ async fn read_with_constraint_with_unsupported_catalog() {
         "Catalog is not supported in multiplexer. After registering the catalog in Athena, must set 'unsupportedCatalog_connection_string' environment variable in Lambda. See JDBC connector README for further details.",
         e.as_connector_exception().unwrap().message()
     );
-    assert_eq!(0, s.calls.read_with_constraint.load(Ordering::SeqCst));
+    assert!(s.calls.read_with_constraint.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn build_split_sql() {
     let s = set_up();
+    let jdbc_connection = FakeConnection::new();
     let table_name = TableName::new("testSchema", "tableName");
+    let schema = Schema::empty();
+    let constraints = Constraints::empty();
+    let split = Split::new_builder(None, None).build();
     let statement = s
         .handler
         .build_split_sql(
-            &FakeConnection::new(),
+            &jdbc_connection,
             FAKE_DATABASE,
             &table_name,
-            &Schema::empty(),
-            &Constraints::empty(),
-            &Split::new_builder(None, None).build(),
+            &schema,
+            &constraints,
+            &split,
         )
         .await
         .unwrap();
     assert_eq!("delegate", statement.sql());
     assert_eq!(
-        vec![(FAKE_DATABASE.to_string(), table_name)],
+        vec![BuildSplitSqlCall {
+            connection: addr(&jdbc_connection),
+            catalog_name: "fakedatabase".to_string(),
+            table_name,
+            schema: addr(&schema),
+            constraints: addr(&constraints),
+            split: addr(&split),
+        }],
         s.calls.build_split_sql.lock().unwrap().clone()
     );
 }

@@ -658,3 +658,7 @@ impl Fakes {
 pub fn string_column(label: &str) -> ColumnMetadata {
     ColumnMetadata::new(label, Types::VARCHAR)
 }
+
+pub fn addr<T: ?Sized>(value: &T) -> usize {
+    std::ptr::from_ref(value).cast::<()>().addr()
+}
