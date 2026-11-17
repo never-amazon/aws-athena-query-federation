@@ -1,38 +1,91 @@
-const JAVA_BASE_PACKAGES: [&str; 7] = [
-    "java.lang.",
-    "java.math.",
-    "java.util.",
-    "java.time.",
-    "java.io.",
-    "java.nio.",
-    "java.net.",
-];
-const OTHER_MODULE_PACKAGES: [&str; 3] =
-    ["java.util.logging.", "java.util.prefs.", "java.net.http."];
+const BOOTSTRAP: &str = "bootstrap";
+const PLATFORM: &str = "platform";
 
-fn java_base_class(name: &str) -> bool {
+const JDK_PACKAGES: [(&str, &str, &str); 41] = [
+    ("java.lang", "java.base", BOOTSTRAP),
+    ("java.lang.instrument", "java.instrument", BOOTSTRAP),
+    ("java.lang.management", "java.management", BOOTSTRAP),
+    ("java.math", "java.base", BOOTSTRAP),
+    ("java.util", "java.base", BOOTSTRAP),
+    ("java.util.logging", "java.logging", BOOTSTRAP),
+    ("java.util.prefs", "java.prefs", BOOTSTRAP),
+    ("java.time", "java.base", BOOTSTRAP),
+    ("java.io", "java.base", BOOTSTRAP),
+    ("java.nio", "java.base", BOOTSTRAP),
+    ("java.net", "java.base", BOOTSTRAP),
+    ("java.net.http", "java.net.http", PLATFORM),
+    ("java.text", "java.base", BOOTSTRAP),
+    ("java.security", "java.base", BOOTSTRAP),
+    ("javax.crypto", "java.base", BOOTSTRAP),
+    ("javax.net", "java.base", BOOTSTRAP),
+    ("javax.security.auth", "java.base", BOOTSTRAP),
+    (
+        "javax.security.auth.kerberos",
+        "java.security.jgss",
+        PLATFORM,
+    ),
+    ("javax.security.cert", "java.base", BOOTSTRAP),
+    ("javax.security.sasl", "java.security.sasl", BOOTSTRAP),
+    ("org.ietf.jgss", "java.security.jgss", PLATFORM),
+    ("java.sql", "java.sql", PLATFORM),
+    ("javax.sql", "java.sql", PLATFORM),
+    ("javax.sql.rowset", "java.sql.rowset", PLATFORM),
+    ("java.awt", "java.desktop", BOOTSTRAP),
+    ("java.awt.datatransfer", "java.datatransfer", BOOTSTRAP),
+    ("java.beans", "java.desktop", BOOTSTRAP),
+    ("javax.swing", "java.desktop", BOOTSTRAP),
+    ("javax.imageio", "java.desktop", BOOTSTRAP),
+    ("javax.sound", "java.desktop", BOOTSTRAP),
+    ("javax.print", "java.desktop", BOOTSTRAP),
+    ("javax.naming", "java.naming", BOOTSTRAP),
+    ("java.rmi", "java.rmi", BOOTSTRAP),
+    ("javax.rmi.ssl", "java.rmi", BOOTSTRAP),
+    ("javax.management", "java.management", BOOTSTRAP),
+    ("javax.script", "java.scripting", PLATFORM),
+    ("javax.lang.model", "java.compiler", PLATFORM),
+    ("javax.tools", "java.compiler", PLATFORM),
+    ("javax.annotation.processing", "java.compiler", PLATFORM),
+    ("javax.xml", "java.xml", BOOTSTRAP),
+    ("javax.xml.crypto", "java.xml.crypto", PLATFORM),
+];
+
+fn package_matches(package: &str, prefix: &str) -> bool {
+    package
+        .strip_prefix(prefix)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+}
+
+fn module_and_loader(name: &str) -> Option<(&'static str, &'static str)> {
     if let Some(element) = name.strip_prefix('[') {
         let element = element.trim_start_matches('[');
         return match element.strip_prefix('L') {
-            Some(class) => class.strip_suffix(';').is_some_and(java_base_class),
-            None => matches!(element, "Z" | "B" | "C" | "S" | "I" | "J" | "F" | "D"),
+            Some(class) => module_and_loader(class.strip_suffix(';')?),
+            None => matches!(element, "Z" | "B" | "C" | "S" | "I" | "J" | "F" | "D")
+                .then_some(("java.base", BOOTSTRAP)),
         };
     }
-    JAVA_BASE_PACKAGES.iter().any(|package| {
-        name.strip_prefix(package)
-            .is_some_and(|rest| !rest.is_empty())
-    }) && !OTHER_MODULE_PACKAGES
+    let (package, class) = name.rsplit_once('.')?;
+    if class.is_empty() {
+        return None;
+    }
+    JDK_PACKAGES
         .iter()
-        .any(|package| name.starts_with(package))
+        .filter(|(prefix, _, _)| package_matches(package, prefix))
+        .max_by_key(|(prefix, _, _)| prefix.len())
+        .map(|(_, module, loader)| (*module, *loader))
 }
 
 pub fn class_cast_message(from: &str, to: &str) -> String {
-    if java_base_class(from) && java_base_class(to) {
-        format!(
-            "class {from} cannot be cast to class {to} ({from} and {to} are in module java.base of loader 'bootstrap')"
-        )
-    } else {
-        format!("class {from} cannot be cast to class {to}")
+    let base = format!("class {from} cannot be cast to class {to}");
+    match (module_and_loader(from), module_and_loader(to)) {
+        (Some(source), Some(target)) if source == target => {
+            let (module, loader) = source;
+            format!("{base} ({from} and {to} are in module {module} of loader '{loader}')")
+        }
+        (Some((from_module, from_loader)), Some((to_module, to_loader))) => format!(
+            "{base} ({from} is in module {from_module} of loader '{from_loader}'; {to} is in module {to_module} of loader '{to_loader}')"
+        ),
+        _ => base,
     }
 }
 
@@ -58,6 +111,42 @@ mod tests {
             class_cast_message("java.util.ImmutableCollections$List12", "java.lang.Integer"),
             "class java.util.ImmutableCollections$List12 cannot be cast to class java.lang.Integer (java.util.ImmutableCollections$List12 and java.lang.Integer are in module java.base of loader 'bootstrap')"
         );
+        assert_eq!(
+            class_cast_message("[[I", "java.lang.Integer"),
+            "class [[I cannot be cast to class java.lang.Integer ([[I and java.lang.Integer are in module java.base of loader 'bootstrap')"
+        );
+    }
+
+    #[test]
+    fn names_each_module_and_loader_for_jdk_platform_modules() {
+        assert_eq!(
+            class_cast_message("java.lang.String", "java.sql.Date"),
+            "class java.lang.String cannot be cast to class java.sql.Date (java.lang.String is in module java.base of loader 'bootstrap'; java.sql.Date is in module java.sql of loader 'platform')"
+        );
+        assert_eq!(
+            class_cast_message("java.util.logging.Level", "java.lang.Integer"),
+            "class java.util.logging.Level cannot be cast to class java.lang.Integer (java.util.logging.Level is in module java.logging of loader 'bootstrap'; java.lang.Integer is in module java.base of loader 'bootstrap')"
+        );
+        assert_eq!(
+            class_cast_message("java.sql.Timestamp", "java.lang.Long"),
+            "class java.sql.Timestamp cannot be cast to class java.lang.Long (java.sql.Timestamp is in module java.sql of loader 'platform'; java.lang.Long is in module java.base of loader 'bootstrap')"
+        );
+        assert_eq!(
+            class_cast_message("java.sql.Timestamp", "java.sql.Date"),
+            "class java.sql.Timestamp cannot be cast to class java.sql.Date (java.sql.Timestamp and java.sql.Date are in module java.sql of loader 'platform')"
+        );
+        assert_eq!(
+            class_cast_message("[Ljava.sql.Date;", "java.lang.Integer"),
+            "class [Ljava.sql.Date; cannot be cast to class java.lang.Integer ([Ljava.sql.Date; is in module java.sql of loader 'platform'; java.lang.Integer is in module java.base of loader 'bootstrap')"
+        );
+        assert_eq!(
+            class_cast_message("java.util.logging.Level", "java.sql.Date"),
+            "class java.util.logging.Level cannot be cast to class java.sql.Date (java.util.logging.Level is in module java.logging of loader 'bootstrap'; java.sql.Date is in module java.sql of loader 'platform')"
+        );
+        assert_eq!(
+            class_cast_message("java.util.logging.Level", "java.util.logging.Logger"),
+            "class java.util.logging.Level cannot be cast to class java.util.logging.Logger (java.util.logging.Level and java.util.logging.Logger are in module java.logging of loader 'bootstrap')"
+        );
     }
 
     #[test]
@@ -67,16 +156,12 @@ mod tests {
             "class org.apache.calcite.util.TimestampString cannot be cast to class java.lang.Long"
         );
         assert_eq!(
-            class_cast_message("java.lang.String", "java.sql.Date"),
-            "class java.lang.String cannot be cast to class java.sql.Date"
-        );
-        assert_eq!(
-            class_cast_message("java.util.logging.Level", "java.lang.Integer"),
-            "class java.util.logging.Level cannot be cast to class java.lang.Integer"
-        );
-        assert_eq!(
             class_cast_message("[Lorg.example.Thing;", "java.lang.Integer"),
             "class [Lorg.example.Thing; cannot be cast to class java.lang.Integer"
+        );
+        assert_eq!(
+            class_cast_message("Thing", "java.lang.Integer"),
+            "class Thing cannot be cast to class java.lang.Integer"
         );
     }
 }
