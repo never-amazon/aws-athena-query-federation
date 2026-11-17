@@ -18,7 +18,7 @@ use chrono::NaiveDateTime;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-use super::java_time::local_date_time_of_epoch_milli_utc;
+use super::java_time::{local_date_time_of_epoch_micro_utc, local_date_time_of_epoch_milli_utc};
 use super::types::{minor_type_of, MinorType};
 use super::value::Value;
 use crate::exceptions::{FederationError, Result};
@@ -212,16 +212,13 @@ impl FieldVector {
                 };
                 match (self.minor_type, raw) {
                     (MinorType::DATEMILLI | MinorType::TIMESTAMPMILLI, Value::Long(ms)) => {
-                        local_date_time_of_epoch_milli_utc(*ms)
-                            .map_or(Value::Null, Value::LocalDateTime)
+                        Value::LocalDateTime(local_date_time_of_epoch_milli_utc(*ms))
                     }
-                    (MinorType::TIMESTAMPSEC, Value::Long(s)) => {
-                        chrono::DateTime::from_timestamp(*s, 0)
-                            .map_or(Value::Null, |d| Value::LocalDateTime(d.naive_utc()))
-                    }
+                    (MinorType::TIMESTAMPSEC, Value::Long(s)) => Value::LocalDateTime(
+                        local_date_time_of_epoch_milli_utc(s.saturating_mul(1000)),
+                    ),
                     (MinorType::TIMESTAMPMICRO, Value::Long(us)) => {
-                        chrono::DateTime::from_timestamp_micros(*us)
-                            .map_or(Value::Null, |d| Value::LocalDateTime(d.naive_utc()))
+                        Value::LocalDateTime(local_date_time_of_epoch_micro_utc(*us))
                     }
                     (MinorType::TIMESTAMPNANO, Value::Long(ns)) => Value::LocalDateTime(
                         chrono::DateTime::from_timestamp_nanos(*ns).naive_utc(),

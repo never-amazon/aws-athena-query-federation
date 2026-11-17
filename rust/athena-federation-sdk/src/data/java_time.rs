@@ -416,8 +416,22 @@ pub fn local_date_to_epoch_day(date: &NaiveDate) -> i64 {
     date.signed_duration_since(epoch()).num_days()
 }
 
-pub fn local_date_time_of_epoch_milli_utc(millis: i64) -> Option<NaiveDateTime> {
-    DateTime::<Utc>::from_timestamp_millis(millis).map(|d| d.naive_utc())
+fn saturated_local_date_time(sign: i64) -> NaiveDateTime {
+    if sign < 0 {
+        NaiveDateTime::MIN
+    } else {
+        NaiveDateTime::MAX
+    }
+}
+
+pub fn local_date_time_of_epoch_milli_utc(millis: i64) -> NaiveDateTime {
+    DateTime::<Utc>::from_timestamp_millis(millis)
+        .map_or_else(|| saturated_local_date_time(millis), |d| d.naive_utc())
+}
+
+pub(crate) fn local_date_time_of_epoch_micro_utc(micros: i64) -> NaiveDateTime {
+    DateTime::<Utc>::from_timestamp_micros(micros)
+        .map_or_else(|| saturated_local_date_time(micros), |d| d.naive_utc())
 }
 
 pub fn local_date_time_to_epoch_milli_utc(dt: &NaiveDateTime) -> i64 {
