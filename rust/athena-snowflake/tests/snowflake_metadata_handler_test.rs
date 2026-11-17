@@ -611,7 +611,7 @@ async fn do_get_splits_with_s3_export() {
         .sql()
         .starts_with("COPY INTO 's3://test-bucket/export/queryId/"));
     assert!(copy.sql().contains(
-        "FROM (SELECT \"day\", \"month\", \"year\", \"preparedStmt\", \"queryId\" FROM \"schema\".\"table_name\" ) STORAGE_INTEGRATION = \"TEST_INTEGRATION\" HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800"
+        "FROM (SELECT \"day\", \"month\", \"year\", \"preparedStmt\", \"queryId\" FROM \"schema\".\"table_name\") STORAGE_INTEGRATION = \"TEST_INTEGRATION\" HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800"
     ));
     let (bucket, prefix) = f.lister.calls()[0].clone();
     assert_eq!("test-bucket", bucket);
@@ -1021,7 +1021,7 @@ async fn test_handle_s3_export_splits_empty_objects() {
     assert_eq!(Some(""), split.get_property("s3ObjectKey"));
     assert_eq!(Some("test-bucket"), split.get_property("exportBucket"));
     let copy = f.connection.executed().last().unwrap().sql().to_string();
-    assert!(copy.contains("FROM (SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" )"));
+    assert!(copy.contains("FROM (SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\")"));
 }
 
 #[tokio::test]

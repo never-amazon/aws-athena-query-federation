@@ -109,7 +109,7 @@ fn test_get_from_clause_with_split() {
     );
     assert!(result.contains("\"testSchema\""));
     assert!(result.contains("\"testTable\""));
-    assert_eq!(result, " FROM \"testSchema\".\"testTable\" ");
+    assert_eq!(result, " FROM \"testSchema\".\"testTable\"");
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn test_get_from_clause_with_split_no_schema() {
         query_builder().get_from_clause_with_split("testCatalog", "", "testTable", &empty_split());
     assert!(result.contains("\"testTable\""));
     assert!(!result.contains("null"));
-    assert_eq!(result, " FROM \"testTable\" ");
+    assert_eq!(result, " FROM \"testTable\"");
 }
 
 #[test]
@@ -139,7 +139,7 @@ async fn test_build_sql_with_simple_constraints() {
 
     let statement = build(&connection, &two_column_schema(), &constraints, &split).await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"  WHERE (\"col2\" = ?)ORDER BY col1  LIMIT 1000 OFFSET 0";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE (\"col2\" = ?) ORDER BY col1 LIMIT 1000 OFFSET 0";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert_eq!(statement.parameters(), &[SqlValue::Integer(42)]);
@@ -157,7 +157,7 @@ async fn test_build_sql_with_order_by() {
 
     let statement = build(&connection, &two_column_schema(), &constraints, &split).await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"  ORDER BY \"col1\" ASC NULLS FIRST, \"col2\" DESC NULLS LASTORDER BY col1  LIMIT 1000 OFFSET 0";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST, \"col2\" DESC NULLS LAST, col1 LIMIT 1000 OFFSET 0";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert!(statement.parameters().is_empty());
@@ -171,7 +171,7 @@ async fn test_build_sql_with_limit() {
 
     let statement = build(&connection, &two_column_schema(), &constraints, &split).await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"  LIMIT 100";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" LIMIT 100";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert!(statement.parameters().is_empty());
@@ -190,7 +190,7 @@ async fn test_build_sql_with_partition_constraints() {
     )
     .await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert!(statement.parameters().is_empty());
@@ -214,7 +214,7 @@ fn test_get_base_export_sql_string() {
     assert!(!result.contains("\"partition\""));
     assert_eq!(
         result,
-        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" "
+        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\""
     );
 }
 
@@ -230,7 +230,7 @@ fn test_get_base_export_sql_string_with_constraints() {
     assert!(result.contains("LIMIT"));
     assert_eq!(
         result,
-        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"  WHERE ((\"col2\" > 10)) LIMIT 100"
+        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE ((\"col2\" > 10)) LIMIT 100"
     );
 }
 
@@ -245,7 +245,7 @@ fn test_get_base_export_sql_string_with_order_by() {
     assert!(result.contains("\"col1\""));
     assert_eq!(
         result,
-        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"  ORDER BY \"col1\" ASC NULLS FIRST"
+        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST"
     );
 }
 
@@ -257,7 +257,7 @@ fn test_get_base_export_sql_string_no_catalog() {
     assert!(!result.contains("null"));
     assert_eq!(
         result,
-        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" "
+        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\""
     );
 }
 
@@ -274,7 +274,7 @@ async fn test_build_sql_with_complex_partition() {
     )
     .await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"id\",\"name\"  LIMIT 5000 OFFSET 10000";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"id\",\"name\" LIMIT 5000 OFFSET 10000";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert!(statement.parameters().is_empty());
@@ -293,7 +293,7 @@ async fn test_build_sql_with_all_partition() {
     )
     .await;
 
-    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ";
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\"";
     assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
     assert_eq!(statement.sql(), expected);
     assert!(statement.parameters().is_empty());
@@ -302,52 +302,70 @@ async fn test_build_sql_with_all_partition() {
 #[test]
 fn test_append_limit_offset_with_null_split() {
     assert_eq!(
-        query_builder().append_limit_offset_with_optional_split(None),
+        query_builder().append_order_by_limit_offset(None, &empty_constraints()),
         ""
     );
 }
 
 #[test]
 fn test_append_limit_offset_with_empty_split() {
-    assert_eq!(query_builder().append_limit_offset(&empty_split()), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&empty_split()), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_missing_markers() {
     let split = partition_split("some-random-value");
-    assert_eq!(query_builder().append_limit_offset(&split), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_malformed_partition() {
     let split = partition_split("partition-offset-0-limit-100-primary-col1");
-    assert_eq!(query_builder().append_limit_offset(&split), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_empty_primary_key() {
     let split = partition_split("partition-primary--limit-1000-offset-0");
-    assert_eq!(query_builder().append_limit_offset(&split), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_non_numeric_limit() {
     let split = partition_split("partition-primary-col1-limit-abc-offset-0");
-    assert_eq!(query_builder().append_limit_offset(&split), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_non_numeric_offset() {
     let split = partition_split("partition-primary-col1-limit-1000-offset-xyz");
-    assert_eq!(query_builder().append_limit_offset(&split), "");
+    assert_eq!(
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        ""
+    );
 }
 
 #[test]
 fn test_append_limit_offset_with_valid_partition() {
     let split = partition_split("partition-primary-\"id\"-limit-1000-offset-500");
     assert_eq!(
-        query_builder().append_limit_offset(&split),
-        "ORDER BY \"id\"  LIMIT 1000 OFFSET 500"
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        " ORDER BY \"id\" LIMIT 1000 OFFSET 500"
     );
 }
 
@@ -355,8 +373,8 @@ fn test_append_limit_offset_with_valid_partition() {
 fn test_append_limit_offset_with_composite_primary_key() {
     let split = partition_split("partition-primary-\"col1\",\"col2\"-limit-5000-offset-10000");
     assert_eq!(
-        query_builder().append_limit_offset(&split),
-        "ORDER BY \"col1\",\"col2\"  LIMIT 5000 OFFSET 10000"
+        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        " ORDER BY \"col1\",\"col2\" LIMIT 5000 OFFSET 10000"
     );
 }
 
@@ -374,11 +392,57 @@ fn test_append_limit_offset_with_casing_filter_before_partition() {
     ]);
     let split = Split::new(Some(spill_location()), None, properties);
 
-    let result = query_builder().append_limit_offset(&split);
+    let result = query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints());
 
     assert!(result.contains("ORDER BY \"id\""));
     assert!(result.contains("LIMIT 100 OFFSET 200"));
-    assert_eq!(result, "ORDER BY \"id\"  LIMIT 100 OFFSET 200");
+    assert_eq!(result, " ORDER BY \"id\" LIMIT 100 OFFSET 200");
+}
+
+#[tokio::test]
+async fn test_build_sql_with_order_by_limit_and_pagination() {
+    let allocator = BlockAllocatorImpl::new();
+    let connection = FakeConnection::new();
+    let range = Range::greater_than(&allocator, &DataType::Int32, 10_i32).unwrap();
+    let order_by = vec![OrderByField::new("col2", Direction::DESC_NULLS_LAST)];
+    let constraints = constraints(int_summary(range), order_by, 5000);
+    let split = partition_split("partition-primary-\"id\"-limit-1000-offset-3000");
+
+    let statement = build(&connection, &two_column_schema(), &constraints, &split).await;
+
+    let expected = "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" WHERE ((\"col2\" > ?)) ORDER BY \"col2\" DESC NULLS LAST, \"id\" LIMIT 1000 OFFSET 3000";
+    assert_eq!(connection.prepared_sql(), vec![expected.to_string()]);
+    assert_eq!(statement.parameters(), &[SqlValue::Integer(10)]);
+}
+
+#[tokio::test]
+async fn test_build_sql_with_limit_below_page_size_and_pagination() {
+    let connection = FakeConnection::new();
+    let constraints = constraints(IndexMap::new(), Vec::new(), 100);
+    let split = partition_split("partition-primary-\"id\"-limit-1000-offset-2000");
+
+    build(&connection, &two_column_schema(), &constraints, &split).await;
+
+    assert_eq!(
+        connection.prepared_sql(),
+        vec![
+            "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"id\" LIMIT 100 OFFSET 2000"
+                .to_string()
+        ]
+    );
+}
+
+#[test]
+fn test_get_base_export_sql_string_with_order_by_and_limit() {
+    let order_by = vec![OrderByField::new("col1", Direction::ASC_NULLS_FIRST)];
+    let constraints = constraints(IndexMap::new(), order_by, 10);
+
+    let result = base_export_sql("testCatalog", &two_column_schema(), &constraints);
+
+    assert_eq!(
+        result,
+        "SELECT \"col1\", \"col2\" FROM \"testSchema\".\"testTable\" ORDER BY \"col1\" ASC NULLS FIRST LIMIT 10"
+    );
 }
 
 #[test]

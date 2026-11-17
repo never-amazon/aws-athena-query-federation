@@ -418,7 +418,7 @@ async fn test_build_split_sql() {
         .unwrap();
     assert_eq!(1, f.connection.prepared_sql().len());
     assert_eq!(
-        "SELECT \"id\", \"name\" FROM \"default\".\"test_table\" ORDER BY id  LIMIT 1000 OFFSET 0",
+        "SELECT \"id\", \"name\" FROM \"default\".\"test_table\" ORDER BY id LIMIT 1000 OFFSET 0",
         statement.sql()
     );
     assert_eq!(1000, statement.fetch_size());
