@@ -370,17 +370,9 @@ pub trait JdbcRecordHandler: RecordHandler {
         spill_locations: &mut Vec<SpillLocation>,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<Schema> {
-        let direct_query = request
-            .constraints()
-            .query_passthrough_arguments()
-            .get(QUERY)
-            .cloned()
-            .flatten()
-            .unwrap_or_default();
-        write_pass_through_query_using_result_schema(
+        default_export_result_set_to_spill(
             self,
             request,
-            &direct_query,
             allocator,
             spill_locations,
             query_status_checker,
@@ -566,6 +558,31 @@ pub trait JdbcRecordHandler: RecordHandler {
             None => Ok(()),
         }
     }
+}
+
+pub async fn default_export_result_set_to_spill<H: JdbcRecordHandler + ?Sized>(
+    handler: &H,
+    request: &ReadRecordsRequest,
+    allocator: &Arc<dyn BlockAllocator>,
+    spill_locations: &mut Vec<SpillLocation>,
+    query_status_checker: &QueryStatusChecker,
+) -> Result<Schema> {
+    let direct_query = request
+        .constraints()
+        .query_passthrough_arguments()
+        .get(QUERY)
+        .cloned()
+        .flatten()
+        .unwrap_or_default();
+    write_pass_through_query_using_result_schema(
+        handler,
+        request,
+        &direct_query,
+        allocator,
+        spill_locations,
+        query_status_checker,
+    )
+    .await
 }
 
 async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Sized>(

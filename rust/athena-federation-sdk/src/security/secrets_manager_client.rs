@@ -18,6 +18,16 @@ pub trait SecretsManagerClient: Send + Sync {
         secret_id: &str,
         secret_string: &str,
     ) -> Result<(), AwsServiceError>;
+
+    async fn put_secret_value_with_override_configuration(
+        &self,
+        secret_id: &str,
+        secret_string: &str,
+        override_configuration: Option<&AwsRequestOverrideConfiguration>,
+    ) -> Result<(), AwsServiceError> {
+        let _ = override_configuration;
+        self.put_secret_value(secret_id, secret_string).await
+    }
 }
 
 #[async_trait]
@@ -48,6 +58,25 @@ impl SecretsManagerClient for aws_sdk_secretsmanager::Client {
             .send()
             .await
             .map_err(|e| AwsServiceError::from_sdk_error(AwsService::SecretsManager, &e))?;
+        Ok(())
+    }
+
+    async fn put_secret_value_with_override_configuration(
+        &self,
+        secret_id: &str,
+        secret_string: &str,
+        override_configuration: Option<&AwsRequestOverrideConfiguration>,
+    ) -> Result<(), AwsServiceError> {
+        let builder = self
+            .put_secret_value()
+            .secret_id(secret_id)
+            .secret_string(secret_string);
+        send_with_override!(
+            builder,
+            override_configuration,
+            aws_sdk_secretsmanager::config::Builder
+        )
+        .map_err(|e| AwsServiceError::from_sdk_error(AwsService::SecretsManager, &e))?;
         Ok(())
     }
 }

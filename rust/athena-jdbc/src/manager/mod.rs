@@ -23,7 +23,8 @@ pub use jdbc_metadata_handler::{
 };
 pub use jdbc_metadata_handler_factory::JdbcMetadataHandlerFactory;
 pub use jdbc_record_handler::{
-    JdbcRecordHandler, JdbcRecordHandlerBase, JdbcRecordHandlerExt, EXPORT_SCHEMA,
+    default_export_result_set_to_spill, JdbcRecordHandler, JdbcRecordHandlerBase,
+    JdbcRecordHandlerExt, EXPORT_SCHEMA,
 };
 pub use jdbc_record_handler_factory::JdbcRecordHandlerFactory;
 pub use jdbc_split_query_builder::{JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase};
