@@ -41,7 +41,7 @@ fn now_seconds() -> i64 {
 fn parse_long(value: &str) -> Result<i64> {
     value
         .parse::<i64>()
-        .map_err(|_| FederationError::Runtime(format!("For input string: \"{value}\"")))
+        .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{value}\"")))
 }
 
 fn json_as_text(node: &JsonValue) -> String {

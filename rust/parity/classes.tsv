@@ -1,0 +1,267 @@
+java_class	rust_path	status	note
+com.amazonaws.athena.connector.credentials.Credentials	athena-federation-sdk/src/credentials/credentials.rs::Credentials	ported	
+com.amazonaws.athena.connector.credentials.CredentialsConstants	athena-federation-sdk/src/credentials/credentials_constants.rs::CredentialsConstants	ported	
+com.amazonaws.athena.connector.credentials.CredentialsProvider	athena-federation-sdk/src/credentials/credentials_provider.rs::CredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-federation-sdk/src/credentials/credentials_provider_factory.rs::CredentialsProviderFactory	ported	
+com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account_credentials_provider.rs::CrossAccountCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.DefaultCredentials	athena-federation-sdk/src/credentials/default_credentials.rs::DefaultCredentials	ported	
+com.amazonaws.athena.connector.credentials.DefaultCredentialsProvider	athena-federation-sdk/src/credentials/default_credentials_provider.rs::DefaultCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/initializable_credentials_provider.rs::InitializableCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.OAuthAccessTokenCredentials	athena-federation-sdk/src/credentials/oauth_access_token_credentials.rs::OAuthAccessTokenCredentials	ported	
+com.amazonaws.athena.connector.credentials.OAuthCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-federation-sdk/src/credentials/static_credentials_provider.rs::StaticCredentialsProvider	ported	
+com.amazonaws.athena.connector.lambda.CollectionsUtils	athena-federation-sdk/src/metadata/mod.rs::collections_equals	merged	the only method, equals, is the crate-private collections_equals used by the response PartialEq impls
+com.amazonaws.athena.connector.lambda.QueryStatusChecker	athena-federation-sdk/src/query_status_checker.rs::QueryStatusChecker	ported	
+com.amazonaws.athena.connector.lambda.ThrottlingInvoker	athena-federation-sdk/src/throttling_invoker.rs::ThrottlingInvoker	ported	
+com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants	athena-federation-sdk/src/connection/environment_constants.rs::EnvironmentConstants	ported	
+com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties	athena-federation-sdk/src/connection/environment_properties.rs::EnvironmentProperties	ported	
+com.amazonaws.athena.connector.lambda.data.ArrowSchemaUtils	athena-federation-sdk/src/data/arrow_schema_utils.rs::ArrowSchemaUtils	ported	
+com.amazonaws.athena.connector.lambda.data.ArrowTypeComparator	athena-federation-sdk/src/data/arrow_type_comparator.rs::ArrowTypeComparator	ported	
+com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption	athena-federation-sdk/src/data/record_batch_serde.rs::AthenaFederationIpcOption	ported	
+com.amazonaws.athena.connector.lambda.data.Block	athena-federation-sdk/src/data/block.rs::Block	ported	
+com.amazonaws.athena.connector.lambda.data.BlockAllocator	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocator	ported	
+com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorImpl	ported	
+com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorRegistry	ported	
+com.amazonaws.athena.connector.lambda.data.BlockSpiller	athena-federation-sdk/src/data/block_spiller.rs::BlockSpiller	ported	
+com.amazonaws.athena.connector.lambda.data.BlockUtils	athena-federation-sdk/src/data/block_utils.rs::BlockUtils	ported	
+com.amazonaws.athena.connector.lambda.data.BlockWriter	athena-federation-sdk/src/data/block_writer.rs::BlockWriter	ported	
+com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtil	athena-federation-sdk/src/data/date_time_formatter_util.rs::DateTimeFormatterUtil	ported	
+com.amazonaws.athena.connector.lambda.data.FieldBuilder	athena-federation-sdk/src/data/field_builder.rs::FieldBuilder	ported	
+com.amazonaws.athena.connector.lambda.data.FieldResolver	athena-federation-sdk/src/data/field_resolver.rs::FieldResolver	ported	
+com.amazonaws.athena.connector.lambda.data.RecordBatchSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::RecordBatchSerDe	ported	
+com.amazonaws.athena.connector.lambda.data.S3BlockSpillReader	athena-federation-sdk/src/data/s3_block_spill_reader.rs::S3BlockSpillReader	ported	
+com.amazonaws.athena.connector.lambda.data.S3BlockSpiller	athena-federation-sdk/src/data/s3_block_spiller.rs::S3BlockSpiller	ported	
+com.amazonaws.athena.connector.lambda.data.SchemaAware	athena-federation-sdk/src/data/schema_aware.rs::SchemaAware	ported	
+com.amazonaws.athena.connector.lambda.data.SchemaBuilder	athena-federation-sdk/src/data/schema_builder.rs::SchemaBuilder	ported	
+com.amazonaws.athena.connector.lambda.data.SchemaSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::SchemaSerDe	ported	
+com.amazonaws.athena.connector.lambda.data.SimpleBlockWriter	athena-federation-sdk/src/data/simple_block_writer.rs::SimpleBlockWriter	ported	
+com.amazonaws.athena.connector.lambda.data.SpillConfig	athena-federation-sdk/src/data/spill_config.rs::SpillConfig	ported	
+com.amazonaws.athena.connector.lambda.data.SupportedTypes	athena-federation-sdk/src/data/supported_types.rs::SupportedTypes	ported	
+com.amazonaws.athena.connector.lambda.data.TimeZoneKey	athena-federation-sdk/src/data/time_zone_key.rs::TimeZoneKey	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjector	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjectorImpl	athena-federation-sdk/src/data/projectors/arrow_value_projector_impl.rs::create_value_projection	merged	the abstract base class becomes the shared create_value_projection function used by each projector
+com.amazonaws.athena.connector.lambda.data.projectors.ListArrowValueProjector	athena-federation-sdk/src/data/projectors/list_arrow_value_projector.rs::ListArrowValueProjector	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-federation-sdk/src/data/projectors/projector_utils.rs::ProjectorUtils	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.SimpleArrowValueProjector	athena-federation-sdk/src/data/projectors/simple_arrow_value_projector.rs::SimpleArrowValueProjector	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.StructArrowValueProjector	athena-federation-sdk/src/data/projectors/struct_arrow_value_projector.rs::StructArrowValueProjector	ported	
+com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter	athena-federation-sdk/src/data/writers/generated_row_writer.rs::GeneratedRowWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BigIntExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BitExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateDayExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateMilliExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DecimalExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DecimalExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float4Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float4Extractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float8Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float8Extractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.IntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::IntExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.SmallIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::SmallIntExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.TinyIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::TinyIntExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarBinaryExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarBinaryExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarCharExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BigIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/big_int_field_writer.rs::BigIntFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BitFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/bit_field_writer.rs::BitFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateDayFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_day_field_writer.rs::DateDayFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateMilliFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_milli_field_writer.rs::DateMilliFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DecimalFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/decimal_field_writer.rs::DecimalFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriterFactory	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriterFactory	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float4FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float4_field_writer.rs::Float4FieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float8FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float8_field_writer.rs::Float8FieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.IntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/int_field_writer.rs::IntFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.SmallIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/small_int_field_writer.rs::SmallIntFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.TinyIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/tiny_int_field_writer.rs::TinyIntFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarBinaryFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_binary_field_writer.rs::VarBinaryFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarCharFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_char_field_writer.rs::VarCharFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableDecimalHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableDecimalHolder	ported	
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarBinaryHolder	ported	
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarCharHolder	ported	
+com.amazonaws.athena.connector.lambda.domain.Split	athena-federation-sdk/src/domain/split.rs::Split	ported	
+com.amazonaws.athena.connector.lambda.domain.TableName	athena-federation-sdk/src/domain/table_name.rs::TableName	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.AllOrNoneValueSet	athena-federation-sdk/src/domain/predicate/all_or_none_value_set.rs::AllOrNoneValueSet	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator	athena-federation-sdk/src/domain/predicate/constraint_evaluator.rs::ConstraintEvaluator	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector	athena-federation-sdk/src/domain/predicate/constraint_projector.rs::ConstraintProjector	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Constraints	athena-federation-sdk/src/domain/predicate/constraints.rs::Constraints	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.EquatableValueSet	athena-federation-sdk/src/domain/predicate/equatable_value_set.rs::EquatableValueSet	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::LiteralValueMarker	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Marker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker_factory.rs::MarkerFactory	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.OrderByField	athena-federation-sdk/src/domain/predicate/order_by_field.rs::OrderByField	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan	athena-federation-sdk/src/domain/predicate/query_plan.rs::QueryPlan	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Range	athena-federation-sdk/src/domain/predicate/range.rs::Range	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/ranges.rs::Ranges	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarker	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarkerComparator	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet	athena-federation-sdk/src/domain/predicate/value_set.rs::ValueSet	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.ConstantExpression	athena-federation-sdk/src/domain/predicate/expression/constant_expression.rs::ConstantExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression	athena-federation-sdk/src/domain/predicate/expression/federation_expression.rs::FederationExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.FunctionCallExpression	athena-federation-sdk/src/domain/predicate/expression/function_call_expression.rs::FunctionCallExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.VariableExpression	athena-federation-sdk/src/domain/predicate/expression/variable_expression.rs::VariableExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.FunctionName	athena-federation-sdk/src/domain/predicate/functions/function_name.rs::FunctionName	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.OperatorType	athena-federation-sdk/src/domain/predicate/functions/operator_type.rs::OperatorType	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.StandardFunctions	athena-federation-sdk/src/domain/predicate/functions/standard_functions.rs::StandardFunctions	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation	athena-federation-sdk/src/domain/spill/s3_spill_location.rs::S3SpillLocation	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation	athena-federation-sdk/src/domain/spill/spill_location.rs::SpillLocation	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.SpillLocationVerifier	athena-federation-sdk/src/domain/spill/spill_location_verifier.rs::SpillLocationVerifier	ported	
+com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException	athena-federation-sdk/src/exceptions/athena_connector_exception.rs::AthenaConnectorException	ported	
+com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException	athena-federation-sdk/src/exceptions/federation_throttle_exception.rs::FederationThrottleException	ported	
+com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::AthenaExceptionFilter	ported	
+com.amazonaws.athena.connector.lambda.handlers.CompositeHandler	athena-federation-sdk/src/handlers/composite_handler.rs::CompositeHandler	ported	
+com.amazonaws.athena.connector.lambda.handlers.FederationCapabilities	athena-federation-sdk/src/handlers/federation_capabilities.rs::CAPABILITIES	merged	constant holder class; its one constant is CAPABILITIES
+com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-federation-sdk/src/handlers/federation_request_handler.rs::FederationRequestHandler	ported	
+com.amazonaws.athena.connector.lambda.handlers.GlueMetadataHandler	athena-federation-sdk/src/handlers/glue_metadata_handler.rs::GlueMetadataHandler	ported	abstract class becomes a trait over MetadataHandler
+com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation-sdk/src/handlers/metadata_handler.rs::MetadataHandler	ported	abstract class becomes a trait; final methods live in MetadataHandlerExt and fields in MetadataHandlerBase
+com.amazonaws.athena.connector.lambda.handlers.RecordHandler	athena-federation-sdk/src/handlers/record_handler.rs::RecordHandler	ported	abstract class becomes a trait; final methods live in RecordHandlerExt and fields in RecordHandlerBase
+com.amazonaws.athena.connector.lambda.handlers.SerDeVersion	athena-federation-sdk/src/serde/mod.rs::SERDE_VERSION	merged	constant holder class; its one constant is SERDE_VERSION
+com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler	athena-federation-sdk/src/handlers/user_defined_function_handler.rs::UserDefinedFunctionHandler	ported	abstract class becomes a trait; reflection lookup becomes the UdfMethods registry
+com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesRequest	athena-federation-sdk/src/metadata/get_data_source_capabilities_request.rs::GetDataSourceCapabilitiesRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesResponse	athena-federation-sdk/src/metadata/get_data_source_capabilities_response.rs::GetDataSourceCapabilitiesResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetSplitsRequest	athena-federation-sdk/src/metadata/get_splits_request.rs::GetSplitsRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetSplitsResponse	athena-federation-sdk/src/metadata/get_splits_response.rs::GetSplitsResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutRequest	athena-federation-sdk/src/metadata/get_table_layout_request.rs::GetTableLayoutRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutResponse	athena-federation-sdk/src/metadata/get_table_layout_response.rs::GetTableLayoutResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableRequest	athena-federation-sdk/src/metadata/get_table_request.rs::GetTableRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableResponse	athena-federation-sdk/src/metadata/get_table_response.rs::GetTableResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest	athena-federation-sdk/src/metadata/list_schemas_request.rs::ListSchemasRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListSchemasResponse	athena-federation-sdk/src/metadata/list_schemas_response.rs::ListSchemasResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListTablesRequest	athena-federation-sdk/src/metadata/list_tables_request.rs::ListTablesRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListTablesResponse	athena-federation-sdk/src/metadata/list_tables_response.rs::ListTablesResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/metadata_request.rs::MetadataRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/metadata_request_type.rs::MetadataRequestType	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::MetadataResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.glue.DefaultGlueType	athena-federation-sdk/src/metadata/glue/default_glue_type.rs::DefaultGlueType	ported	
+com.amazonaws.athena.connector.lambda.metadata.glue.GlueFieldLexer	athena-federation-sdk/src/metadata/glue/glue_field_lexer.rs::GlueFieldLexer	ported	
+com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser	athena-federation-sdk/src/metadata/glue/glue_type_parser.rs::GlueTypeParser	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.DataSourceOptimizations	athena-federation-sdk/src/metadata/optimizations/data_source_optimizations.rs::DataSourceOptimizations	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.OptimizationSubType	athena-federation-sdk/src/metadata/optimizations/optimization_sub_type.rs::OptimizationSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.ComplexExpressionPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/complex_expression_pushdown_sub_type.rs::ComplexExpressionPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.FilterPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/filter_pushdown_sub_type.rs::FilterPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.HintsSubtype	athena-federation-sdk/src/metadata/optimizations/pushdown/hints_subtype.rs::HintsSubtype	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.LimitPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/limit_pushdown_sub_type.rs::LimitPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.PushdownSubTypes	athena-federation-sdk/src/metadata/optimizations/pushdown/pushdown_sub_types.rs::PushdownSubTypes	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.SubTypeProperties	athena-federation-sdk/src/metadata/optimizations/pushdown/sub_type_properties.rs::SubTypeProperties	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.TopNPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/top_n_pushdown_sub_type.rs::TopNPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthrough	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough.rs::QueryPassthrough	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthroughSignature	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough_signature.rs::QueryPassthroughSignature	ported	
+com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest	athena-federation-sdk/src/records/read_records_request.rs::ReadRecordsRequest	ported	
+com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse	athena-federation-sdk/src/records/read_records_response.rs::ReadRecordsResponse	ported	
+com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records/record_request.rs::RecordRequest	ported	
+com.amazonaws.athena.connector.lambda.records.RecordRequestType	athena-federation-sdk/src/records/record_request_type.rs::RecordRequestType	ported	
+com.amazonaws.athena.connector.lambda.records.RecordResponse	athena-federation-sdk/src/records/record_response.rs::RecordResponse	ported	
+com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse	athena-federation-sdk/src/records/remote_read_records_response.rs::RemoteReadRecordsResponse	ported	
+com.amazonaws.athena.connector.lambda.request.FederationRequest	athena-federation-sdk/src/request/federation_request.rs::FederationRequest	ported	
+com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federation-sdk/src/request/federation_response.rs::FederationResponse	ported	
+com.amazonaws.athena.connector.lambda.request.PingRequest	athena-federation-sdk/src/request/ping_request.rs::PingRequest	ported	
+com.amazonaws.athena.connector.lambda.request.PingResponse	athena-federation-sdk/src/request/ping_response.rs::PingResponse	ported	
+com.amazonaws.athena.connector.lambda.resolver.CaseResolver	athena-federation-sdk/src/resolver/case_resolver.rs::CaseResolver	ported	
+com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/aes_gcm_block_crypto.rs::AesGcmBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.BlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.CachableSecretsManager	athena-federation-sdk/src/security/cachable_secrets_manager.rs::CachableSecretsManager	ported	
+com.amazonaws.athena.connector.lambda.security.EncryptionKey	athena-federation-sdk/src/security/encryption_key.rs::EncryptionKey	ported	
+com.amazonaws.athena.connector.lambda.security.EncryptionKeyFactory	athena-federation-sdk/src/security/encryption_key_factory.rs::EncryptionKeyFactory	ported	
+com.amazonaws.athena.connector.lambda.security.FASToken	athena-federation-sdk/src/security/fas_token.rs::FasToken	ported	
+com.amazonaws.athena.connector.lambda.security.FederatedIdentity	athena-federation-sdk/src/security/federated_identity.rs::FederatedIdentity	ported	
+com.amazonaws.athena.connector.lambda.security.KmsEncryptionProvider	athena-federation-sdk/src/security/kms_encryption_provider.rs::KmsEncryptionProvider	ported	
+com.amazonaws.athena.connector.lambda.security.KmsKeyFactory	athena-federation-sdk/src/security/kms_key_factory.rs::KmsKeyFactory	ported	
+com.amazonaws.athena.connector.lambda.security.LocalKeyFactory	athena-federation-sdk/src/security/local_key_factory.rs::LocalKeyFactory	ported	
+com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto	athena-federation-sdk/src/security/no_op_block_crypto.rs::NoOpBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.serde.BaseDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.BaseSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.BlockDeserializer	athena-federation-sdk/src/serde/mod.rs::block_deserializer	ported	Jackson deserializer class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.BlockSerializer	athena-federation-sdk/src/serde/mod.rs::block_serializer	ported	Jackson serializer class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.DelegatingDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.DelegatingSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.FederatedIdentitySerDe	athena-federation-sdk/src/serde/mod.rs::federated_identity_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.ObjectMapperFactory	athena-federation-sdk/src/serde/mod.rs::object_mapper_factory	ported	factory class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.PingRequestSerDe	athena-federation-sdk/src/serde/mod.rs::ping_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.PingResponseSerDe	athena-federation-sdk/src/serde/mod.rs::ping_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.SchemaDeserializer	athena-federation-sdk/src/serde/mod.rs::schema_deserializer	ported	Jackson deserializer class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.SchemaSerializer	athena-federation-sdk/src/serde/mod.rs::schema_serializer	ported	Jackson serializer class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.TypedDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.TypedSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.VersionedObjectMapperFactory	athena-federation-sdk/src/serde/versioned_object_mapper_factory.rs::VersionedObjectMapperFactory	ported	
+com.amazonaws.athena.connector.lambda.serde.VersionedSerDe	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
+com.amazonaws.athena.connector.lambda.serde.v2.AllOrNoneValueSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::all_or_none_value_set_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ArrowRecordBatchSerDe	athena-federation-sdk/src/serde/v2/mod.rs::arrow_record_batch_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ArrowTypeSerDe	athena-federation-sdk/src/serde/v2/mod.rs::arrow_type_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.BlockSerDe	athena-federation-sdk/src/serde/v2/mod.rs::block_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ConstraintsSerDe	athena-federation-sdk/src/serde/v2/mod.rs::constraints_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.EncryptionKeySerDe	athena-federation-sdk/src/serde/v2/mod.rs::encryption_key_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.EquatableValueSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::equatable_value_set_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.FederationRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::federation_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.FederationResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::federation_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetSplitsRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_splits_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetSplitsResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_splits_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetTableLayoutRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_table_layout_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetTableLayoutResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_table_layout_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetTableRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_table_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.GetTableResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::get_table_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.LambdaFunctionExceptionSerDe	athena-federation-sdk/src/serde/v2/mod.rs::lambda_function_exception_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ListSchemasRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::list_schemas_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ListSchemasResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::list_schemas_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ListTablesRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::list_tables_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ListTablesResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::list_tables_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.MarkerSerDe	athena-federation-sdk/src/serde/v2/mod.rs::marker_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.MetadataRequestDeserializer	athena-federation-sdk/src/serde/v2/mod.rs::metadata_request_serde	merged	serializer and deserializer base classes share the metadata_request_serde module
+com.amazonaws.athena.connector.lambda.serde.v2.MetadataRequestSerializer	athena-federation-sdk/src/serde/v2/mod.rs::metadata_request_serde	merged	serializer and deserializer base classes share the metadata_request_serde module
+com.amazonaws.athena.connector.lambda.serde.v2.ObjectMapperFactoryV2	athena-federation-sdk/src/serde/v2/mod.rs::object_mapper_factory_v2	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.RangeSerDe	athena-federation-sdk/src/serde/v2/mod.rs::range_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ReadRecordsRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::read_records_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ReadRecordsResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::read_records_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.RemoteReadRecordsResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::remote_read_records_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.S3SpillLocationSerDe	athena-federation-sdk/src/serde/v2/mod.rs::s3_spill_location_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.SchemaSerDe	athena-federation-sdk/src/serde/v2/mod.rs::schema_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.SortedRangeSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::sorted_range_set_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.SpillLocationSerDe	athena-federation-sdk/src/serde/v2/mod.rs::spill_location_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.SplitSerDe	athena-federation-sdk/src/serde/v2/mod.rs::split_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.TableNameSerDe	athena-federation-sdk/src/serde/v2/mod.rs::table_name_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.UserDefinedFunctionRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::user_defined_function_request_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.UserDefinedFunctionResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::user_defined_function_response_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ValueSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::value_set_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v3.ArrowRecordBatchSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::arrow_record_batch_serde_v3	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v3.BlockSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::block_serde_v3	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v3.ObjectMapperFactoryV3	athena-federation-sdk/src/serde/v3/mod.rs::object_mapper_factory_v3	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v3.SchemaSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::schema_serde_v3	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ArrowRecordBatchSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::arrow_record_batch_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.BlockSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::block_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ConstantExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::constant_expression_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ConstraintsSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::constraints_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FederationExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_expression_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FederationRequestSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_request_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FederationResponseSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_response_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FunctionCallExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::function_call_expression_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FunctionNameSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::function_name_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.GetDataSourceCapabilitiesRequestSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::get_data_source_capabilities_request_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.GetDataSourceCapabilitiesResponseSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::get_data_source_capabilities_response_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ObjectMapperFactoryV4	athena-federation-sdk/src/serde/v4/mod.rs::object_mapper_factory_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.OptimizationSubTypeSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::optimization_sub_type_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.OrderByFieldSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::order_by_field_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.SchemaSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::schema_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.VariableExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::variable_expression_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.ConstraintsSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::constraints_serde_v5	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.FederationRequestSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::federation_request_serde_v5	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.GetTableRequestSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::get_table_request_serde_v5	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.ObjectMapperFactoryV5	athena-federation-sdk/src/serde/v5/mod.rs::object_mapper_factory_v5	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v6.ConstraintsSerDeV6	athena-federation-sdk/src/serde/v6/mod.rs::constraints_serde_v6	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v6.FederationRequestSerDeV6	athena-federation-sdk/src/serde/v6/mod.rs::federation_request_serde_v6	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v6.ObjectMapperFactoryV6	athena-federation-sdk/src/serde/v6/mod.rs::object_mapper_factory_v6	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v6.QueryPlanSerDe	athena-federation-sdk/src/serde/v6/mod.rs::query_plan_serde	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-federation-sdk/src/udf/user_defined_function_request.rs::UserDefinedFunctionRequest	ported	
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf/user_defined_function_response.rs::UserDefinedFunctionResponse	ported	
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType	athena-federation-sdk/src/udf/user_defined_function_type.rs::UserDefinedFunctionType	ported	
+com.amazonaws.athena.connector.substrait.SubstraitAccumulatorVisitor	athena-federation-substrait/src/substrait_accumulator_visitor.rs::SubstraitAccumulatorVisitor	ported	
+com.amazonaws.athena.connector.substrait.SubstraitFunctionParser	athena-federation-substrait/src/substrait_function_parser.rs::SubstraitFunctionParser	ported	
+com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federation-substrait/src/substrait_literal_converter.rs::SubstraitLiteralConverter	ported	
+com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federation-substrait/src/substrait_metadata_parser.rs::SubstraitMetadataParser	ported	
+com.amazonaws.athena.connector.substrait.SubstraitRelUtils	athena-federation-substrait/src/substrait_rel_utils.rs::SubstraitRelUtils	ported	
+com.amazonaws.athena.connector.substrait.SubstraitSqlUtils	athena-federation-substrait/src/substrait_sql_utils.rs::SubstraitSqlUtils	ported	
+com.amazonaws.athena.connector.substrait.SubstraitTypeAndValue	athena-federation-substrait/src/substrait_type_and_value.rs::SubstraitTypeAndValue	ported	
+com.amazonaws.athena.connector.substrait.model.ColumnPredicate	athena-federation-substrait/src/model/column_predicate.rs::ColumnPredicate	ported	
+com.amazonaws.athena.connector.substrait.model.LogicalExpression	athena-federation-substrait/src/model/logical_expression.rs::LogicalExpression	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitField	athena-federation-substrait/src/model/substrait_field.rs::SubstraitField	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-federation-substrait/src/model/substrait_function_names.rs::SubstraitFunctionNames	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/model/substrait_operator.rs::SubstraitOperator	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	athena-federation-substrait/src/model/substrait_rel_model.rs::SubstraitRelModel	ported	
+com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	athena-federation-substrait/src/util/limit_and_sort_helper.rs::LimitAndSortHelper	ported	
+com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
+com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::PaginationHelper	ported	

@@ -4,7 +4,11 @@ const DEFAULT_INITIAL_CAPACITY: usize = 16;
 const MAXIMUM_CAPACITY: usize = 1 << 30;
 
 fn spread(key: &str) -> u32 {
-    let h = java_string_hash(key).cast_unsigned();
+    spread_hash(java_string_hash(key))
+}
+
+fn spread_hash(hash: i32) -> u32 {
+    let h = hash.cast_unsigned();
     h ^ (h >> 16)
 }
 
@@ -48,6 +52,20 @@ where
         .collect();
     indexed.sort_by_key(|(bucket, order, _)| (*bucket, *order));
     indexed.into_iter().map(|(_, _, k)| k).collect()
+}
+
+pub fn java_hash_set_order_by_hash<T, F>(distinct_in_insertion_order: Vec<T>, hash: F) -> Vec<T>
+where
+    F: Fn(&T) -> i32,
+{
+    let table = final_table_size(DEFAULT_INITIAL_CAPACITY, distinct_in_insertion_order.len());
+    let mut indexed: Vec<(usize, usize, T)> = distinct_in_insertion_order
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| ((spread_hash(hash(&item)) as usize) & (table - 1), i, item))
+        .collect();
+    indexed.sort_by_key(|(bucket, order, _)| (*bucket, *order));
+    indexed.into_iter().map(|(_, _, item)| item).collect()
 }
 
 pub fn java_hash_order_default<'a, I>(keys_in_insertion_order: I) -> Vec<&'a str>

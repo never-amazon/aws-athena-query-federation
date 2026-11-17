@@ -16,7 +16,33 @@ pub enum JavaExceptionKind {
     UnsupportedOperation,
     IndexOutOfBounds,
     NullPointer,
+    NumberFormat,
+    Unchecked(&'static str),
+    Checked(&'static str),
 }
+
+impl JavaExceptionKind {
+    pub fn java_class_name(&self) -> &'static str {
+        match self {
+            JavaExceptionKind::Runtime => RUNTIME_EXCEPTION,
+            JavaExceptionKind::IllegalArgument => "java.lang.IllegalArgumentException",
+            JavaExceptionKind::IllegalState => "java.lang.IllegalStateException",
+            JavaExceptionKind::UnsupportedOperation => "java.lang.UnsupportedOperationException",
+            JavaExceptionKind::IndexOutOfBounds => "java.lang.IndexOutOfBoundsException",
+            JavaExceptionKind::NullPointer => "java.lang.NullPointerException",
+            JavaExceptionKind::NumberFormat => "java.lang.NumberFormatException",
+            JavaExceptionKind::Unchecked(name) | JavaExceptionKind::Checked(name) => name,
+        }
+    }
+
+    pub fn is_runtime_exception(&self) -> bool {
+        !matches!(self, JavaExceptionKind::Checked(_))
+    }
+}
+
+const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
+const IO_EXCEPTION: &str = "java.io.IOException";
+const AWS_SERVICE_EXCEPTION: &str = "software.amazon.awssdk.awscore.exception.AwsServiceException";
 
 #[derive(Debug, Error, Clone)]
 pub enum FederationError {
@@ -39,6 +65,8 @@ pub enum FederationError {
     #[error("{0}")]
     IndexOutOfBounds(String),
     #[error("{0}")]
+    NumberFormat(String),
+    #[error("{0}")]
     Arrow(#[source] Arc<ArrowError>),
     #[error("{0}")]
     Io(String),
@@ -54,6 +82,15 @@ pub enum FederationError {
         #[source]
         source: Arc<dyn StdError + Send + Sync>,
     },
+    #[error("{}", java_to_string(source))]
+    RuntimeWrapper {
+        #[source]
+        source: Arc<FederationError>,
+    },
+}
+
+fn java_to_string(error: &FederationError) -> String {
+    format!("{}: {}", error.java_class_name(), error)
 }
 
 pub type Result<T> = std::result::Result<T, FederationError>;
@@ -126,7 +163,58 @@ impl FederationError {
     }
 
     pub fn is_runtime_exception(&self) -> bool {
-        !matches!(self, FederationError::Io(_) | FederationError::IoError(_))
+        match self {
+            FederationError::Io(_) | FederationError::IoError(_) => false,
+            FederationError::Wrapped { kind, .. } => kind.is_runtime_exception(),
+            _ => true,
+        }
+    }
+
+    #[must_use]
+    pub fn into_runtime_exception(self) -> FederationError {
+        if self.is_runtime_exception() {
+            self
+        } else {
+            FederationError::RuntimeWrapper {
+                source: Arc::new(self),
+            }
+        }
+    }
+
+    pub fn java_class_name(&self) -> String {
+        let name = match self {
+            FederationError::AthenaConnector(_) => {
+                "com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException"
+            }
+            FederationError::Throttle(_) => {
+                "com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException"
+            }
+            FederationError::IllegalArgument(_) => {
+                JavaExceptionKind::IllegalArgument.java_class_name()
+            }
+            FederationError::IllegalState(_) => JavaExceptionKind::IllegalState.java_class_name(),
+            FederationError::UnsupportedOperation(_) => {
+                JavaExceptionKind::UnsupportedOperation.java_class_name()
+            }
+            FederationError::ClassCast(_) => "java.lang.ClassCastException",
+            FederationError::NullPointer(_) => JavaExceptionKind::NullPointer.java_class_name(),
+            FederationError::Arithmetic(_) => "java.lang.ArithmeticException",
+            FederationError::IndexOutOfBounds(_) => {
+                JavaExceptionKind::IndexOutOfBounds.java_class_name()
+            }
+            FederationError::NumberFormat(_) => JavaExceptionKind::NumberFormat.java_class_name(),
+            FederationError::Io(_) | FederationError::IoError(_) => IO_EXCEPTION,
+            FederationError::Arrow(_)
+            | FederationError::Runtime(_)
+            | FederationError::RuntimeWrapper { .. } => RUNTIME_EXCEPTION,
+            FederationError::AwsService(e) => {
+                return e
+                    .java_class_name()
+                    .unwrap_or_else(|| AWS_SERVICE_EXCEPTION.to_string())
+            }
+            FederationError::Wrapped { kind, .. } => kind.java_class_name(),
+        };
+        name.to_string()
     }
 }
 

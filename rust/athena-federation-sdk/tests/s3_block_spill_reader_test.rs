@@ -54,6 +54,10 @@ impl S3Client for MockS3 {
             .clone()
             .unwrap_or_else(|| Ok(Vec::new()))
     }
+
+    async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
+        Ok(())
+    }
 }
 
 struct Setup {

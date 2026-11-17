@@ -2,6 +2,7 @@ use std::fmt;
 
 use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
 pub const UNLIMITED_PAGE_SIZE_VALUE: i32 = -1;
@@ -14,6 +15,7 @@ pub struct ListTablesRequest {
     schema_name: Option<String>,
     next_token: Option<String>,
     page_size: i32,
+    context: Option<LambdaContext>,
 }
 
 impl ListTablesRequest {
@@ -32,6 +34,7 @@ impl ListTablesRequest {
             schema_name,
             next_token,
             page_size,
+            context: None,
         }
     }
 

@@ -35,6 +35,7 @@ aws-sdk-glue.workspace = true
 aws-sdk-sts.workspace = true
 aws-esdk.workspace = true
 reqwest.workspace = true
+lambda_runtime.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

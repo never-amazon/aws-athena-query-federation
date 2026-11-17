@@ -2,6 +2,7 @@ use std::fmt;
 
 use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
 #[derive(Debug, Clone)]
@@ -9,6 +10,7 @@ pub struct ListSchemasRequest {
     identity: Option<FederatedIdentity>,
     query_id: Option<String>,
     catalog_name: String,
+    context: Option<LambdaContext>,
 }
 
 impl ListSchemasRequest {
@@ -21,6 +23,7 @@ impl ListSchemasRequest {
             identity,
             query_id,
             catalog_name: catalog_name.into(),
+            context: None,
         }
     }
 }

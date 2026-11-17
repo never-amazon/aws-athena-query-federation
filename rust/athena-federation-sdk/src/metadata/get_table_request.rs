@@ -6,6 +6,7 @@ use crate::serde::java_hash::java_hash_map_order;
 use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
 use crate::domain::table_name::TableName;
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
 #[derive(Debug, Clone)]
@@ -15,6 +16,7 @@ pub struct GetTableRequest {
     catalog_name: String,
     table_name: TableName,
     query_passthrough_arguments: HashMap<String, Option<String>>,
+    context: Option<LambdaContext>,
 }
 
 impl GetTableRequest {
@@ -31,6 +33,7 @@ impl GetTableRequest {
             catalog_name: catalog_name.into(),
             table_name,
             query_passthrough_arguments,
+            context: None,
         }
     }
 

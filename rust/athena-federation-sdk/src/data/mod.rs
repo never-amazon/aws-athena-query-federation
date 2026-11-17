@@ -55,7 +55,9 @@ pub use record_batch_serde::{
 };
 pub use s3_block_spill_reader::S3BlockSpillReader;
 pub use s3_block_spiller::S3BlockSpiller;
-pub use s3_client::{GetObjectRequest, PutObjectRequest, PutObjectRequestBuilder, S3Client};
+pub use s3_client::{
+    GetObjectRequest, PutObjectRequest, PutObjectRequestBuilder, S3Client, S3HeadBucketClient,
+};
 pub use schema_aware::SchemaAware;
 pub use schema_builder::SchemaBuilder;
 pub use simple_block_writer::SimpleBlockWriter;

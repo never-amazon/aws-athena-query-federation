@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use aws_credential_types::Credentials;
 use aws_sdk_s3::primitives::ByteStream;
 
 use crate::domain::spill::HeadBucketClient;
@@ -119,6 +121,12 @@ pub trait S3Client: Send + Sync {
     ) -> Result<(), AwsServiceError>;
 
     async fn get_object(&self, request: GetObjectRequest) -> Result<Vec<u8>, AwsServiceError>;
+
+    async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError>;
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Option<Arc<dyn S3Client>> {
+        None
+    }
 }
 
 #[async_trait]
@@ -161,9 +169,7 @@ impl S3Client for aws_sdk_s3::Client {
             .map_err(|e| AwsServiceError::io(e.to_string()))?;
         Ok(bytes.into_bytes().to_vec())
     }
-}
 
-impl HeadBucketClient for aws_sdk_s3::Client {
     async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError> {
         self.head_bucket()
             .bucket(bucket)
@@ -171,5 +177,40 @@ impl HeadBucketClient for aws_sdk_s3::Client {
             .await
             .map(|_| ())
             .map_err(|e| AwsServiceError::from_sdk_error(AwsService::S3, &e))
+    }
+
+    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn S3Client>> {
+        let config = self
+            .config()
+            .to_builder()
+            .credentials_provider(credentials.clone())
+            .build();
+        Some(Arc::new(aws_sdk_s3::Client::from_conf(config)))
+    }
+}
+
+impl HeadBucketClient for aws_sdk_s3::Client {
+    async fn head_bucket(&self, bucket: &str) -> Result<(), AwsServiceError> {
+        S3Client::head_bucket(self, bucket).await
+    }
+}
+
+#[derive(Clone)]
+pub struct S3HeadBucketClient(Arc<dyn S3Client>);
+
+impl S3HeadBucketClient {
+    pub fn new(s3: Arc<dyn S3Client>) -> S3HeadBucketClient {
+        S3HeadBucketClient(s3)
+    }
+}
+
+impl HeadBucketClient for S3HeadBucketClient {
+    fn head_bucket(
+        &self,
+        bucket: &str,
+    ) -> impl std::future::Future<Output = Result<(), AwsServiceError>> + Send {
+        let s3 = Arc::clone(&self.0);
+        let bucket = bucket.to_string();
+        async move { s3.head_bucket(&bucket).await }
     }
 }

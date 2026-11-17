@@ -312,6 +312,8 @@ pub fn arrow_type_to_string(arrow_type: &ArrowType) -> String {
         DataType::Binary => "Binary".into(),
         DataType::LargeBinary => "LargeBinary".into(),
         DataType::FixedSizeBinary(n) => format!("FixedSizeBinary({n})"),
+        DataType::Decimal32(p, s) => format!("Decimal({p}, {s}, 32)"),
+        DataType::Decimal64(p, s) => format!("Decimal({p}, {s}, 64)"),
         DataType::Decimal128(p, s) => format!("Decimal({p}, {s}, 128)"),
         DataType::Decimal256(p, s) => format!("Decimal({p}, {s}, 256)"),
         DataType::Date32 => "Date(DAY)".into(),

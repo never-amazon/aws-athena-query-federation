@@ -61,6 +61,10 @@ impl S3Client for MockS3 {
         self.get_requests.lock().unwrap().push(request);
         Ok(self.bytes.lock().unwrap().clone().unwrap_or_default())
     }
+
+    async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
+        Ok(())
+    }
 }
 
 struct Setup {
@@ -498,6 +502,10 @@ impl S3Client for KeyedS3 {
             .get(request.key())
             .cloned()
             .unwrap_or_default())
+    }
+
+    async fn head_bucket(&self, _bucket: &str) -> Result<(), AwsServiceError> {
+        Ok(())
     }
 }
 

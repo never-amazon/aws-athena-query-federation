@@ -1,0 +1,210 @@
+mod handler_support;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use arrow::datatypes::DataType;
+use async_trait::async_trait;
+use athena_federation_sdk::data::{
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, S3BlockSpillReader, S3Client,
+    SchemaBuilder,
+};
+use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
+use athena_federation_sdk::domain::spill::S3SpillLocation;
+use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::handlers::{
+    FederationRequestHandler, RecordHandler, RecordHandlerBase, RecordHandlerExt,
+};
+use athena_federation_sdk::metadata::GetDataSourceCapabilitiesRequest;
+use athena_federation_sdk::records::ReadRecordsRequest;
+use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
+use athena_federation_sdk::security::{
+    CachableSecretsManager, EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider,
+    LocalKeyFactory,
+};
+use athena_federation_sdk::serde::VersionedObjectMapperFactory;
+use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
+use handler_support::Fakes;
+use indexmap::IndexMap;
+
+const CATALOG: &str = "catalog";
+const QUERY_ID: &str = "queryId";
+
+struct TestRecordHandler {
+    base: RecordHandlerBase,
+}
+
+impl FederationRequestHandler for TestRecordHandler {
+    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
+        self.base.cachable_secrets_manager()
+    }
+
+    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
+        self.base.kms_encryption_provider()
+    }
+}
+
+#[async_trait]
+impl RecordHandler for TestRecordHandler {
+    fn record_base(&self) -> &RecordHandlerBase {
+        &self.base
+    }
+
+    async fn read_with_constraint(
+        &self,
+        _spiller: &dyn BlockSpiller,
+        _records_request: &ReadRecordsRequest,
+        _query_status_checker: &QueryStatusChecker,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+struct Setup {
+    fakes: Fakes,
+    handler: TestRecordHandler,
+    block_allocator: Arc<dyn BlockAllocator>,
+}
+
+fn set_up() -> Setup {
+    let fakes = Fakes::new();
+    let config_options = HashMap::from([
+        ("spill_bucket".to_string(), "bucket".to_string()),
+        ("spill_prefix".to_string(), "prefix".to_string()),
+    ]);
+    let base = RecordHandlerBase::new("test", fakes.clients(), config_options).unwrap();
+    Setup {
+        fakes,
+        handler: TestRecordHandler { base },
+        block_allocator: Arc::new(BlockAllocatorImpl::new()),
+    }
+}
+
+fn identity() -> FederatedIdentity {
+    FederatedIdentity::new("arn", "account", HashMap::new(), Vec::new(), HashMap::new())
+}
+
+async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<FederationResponse> {
+    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&setup.block_allocator));
+    let input = object_mapper.write_value_as_bytes(&request)?;
+    let output = setup.handler.handle_request(&input, None).await?;
+    object_mapper.read_response(&output)
+}
+
+#[tokio::test]
+async fn handle_request() {
+    let s = set_up();
+    let invalid_request =
+        GetDataSourceCapabilitiesRequest::new(Some(identity()), Some(QUERY_ID.into()), CATALOG);
+    let err = round_trip(&s, invalid_request.into()).await.unwrap_err();
+    assert!(
+        matches!(err, FederationError::AthenaConnector(_)),
+        "{err:?}"
+    );
+    assert!(err
+        .to_string()
+        .contains("Expected a RecordRequest but found"));
+}
+
+#[tokio::test]
+async fn handle_request_catch_block() {
+    let s = set_up();
+    let err = s
+        .handler
+        .handle_request(b"invalid json", None)
+        .await
+        .unwrap_err();
+    let FederationError::RuntimeWrapper { source } = &err else {
+        panic!("expected a RuntimeException wrapper, got {err:?}");
+    };
+    assert_eq!("java.io.IOException", source.java_class_name());
+}
+
+#[tokio::test]
+async fn do_read_records_spill() {
+    let s = set_up();
+    let allocator = s.block_allocator.as_ref();
+    let mut constraints_map = IndexMap::new();
+    constraints_map.insert(
+        "c_current_cdemo_sk".to_string(),
+        ValueSet::from(
+            SortedRangeSet::of_ranges(
+                Range::range(
+                    allocator,
+                    &DataType::Int64,
+                    100i64,
+                    true,
+                    100_000_000i64,
+                    true,
+                )
+                .unwrap(),
+                Vec::new(),
+            )
+            .unwrap(),
+        ),
+    );
+    let spill_location = S3SpillLocation::new_builder()
+        .with_bucket(uuid::Uuid::new_v4().to_string())
+        .with_split_id(uuid::Uuid::new_v4().to_string())
+        .with_query_id(uuid::Uuid::new_v4().to_string())
+        .with_is_directory(true)
+        .build();
+    let split = Split::new_builder(
+        Some(spill_location.into()),
+        Some(LocalKeyFactory::new().create().await.unwrap()),
+    )
+    .add("splitNum", "0")
+    .add("totalNumberSplits", "10000")
+    .add("scaleFactor", "1")
+    .build();
+    let request = ReadRecordsRequest::new(
+        Some(identity()),
+        CATALOG,
+        format!("queryId-{}", uuid::Uuid::new_v4()),
+        TableName::new("testSchema", "testTable"),
+        SchemaBuilder::new_builder().build(),
+        split,
+        Constraints::new(
+            constraints_map,
+            Vec::new(),
+            Vec::new(),
+            -1,
+            HashMap::new(),
+            None,
+        ),
+        1_500_000,
+        0,
+    );
+
+    let raw_response = s
+        .handler
+        .do_read_records(&s.block_allocator, &request)
+        .await
+        .unwrap();
+    let FederationResponse::RemoteReadRecords(response) = raw_response else {
+        panic!("expected a RemoteReadRecordsResponse, got {raw_response:?}");
+    };
+    let s3: Arc<dyn S3Client> = Arc::new(s.fakes.s3.clone());
+    let spill_reader = S3BlockSpillReader::new(s3, Arc::clone(&s.block_allocator));
+    for next in response.remote_blocks() {
+        let spill_location = next.as_s3().unwrap();
+        let block = spill_reader
+            .read_with_schema(
+                spill_location,
+                response.encryption_key(),
+                Some(Arc::new(response.schema().clone())),
+            )
+            .await
+            .unwrap();
+        assert!(BlockUtils::row_to_string(&block, 0).is_ok());
+    }
+}
+
+#[tokio::test]
+async fn ping_handle_request() {
+    let s = set_up();
+    let ping_request = PingRequest::new(Some(identity()), CATALOG, QUERY_ID);
+    let response = round_trip(&s, ping_request.into()).await.unwrap();
+    assert!(matches!(response, FederationResponse::Ping(_)));
+}

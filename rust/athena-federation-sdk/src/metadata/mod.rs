@@ -6,6 +6,7 @@ mod get_table_layout_request;
 mod get_table_layout_response;
 mod get_table_request;
 mod get_table_response;
+pub mod glue;
 mod list_schemas_request;
 mod list_schemas_response;
 mod list_tables_request;

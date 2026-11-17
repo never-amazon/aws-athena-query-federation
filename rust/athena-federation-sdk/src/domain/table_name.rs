@@ -22,6 +22,15 @@ impl TableName {
         &self.table_name
     }
 
+    pub fn java_hash_code(&self) -> i32 {
+        let schema = crate::data::java_format::java_string_hash(&self.schema_name);
+        let table = crate::data::java_format::java_string_hash(&self.table_name);
+        31i32
+            .wrapping_add(schema)
+            .wrapping_mul(31)
+            .wrapping_add(table)
+    }
+
     pub fn get_qualified_table_name(&self) -> String {
         format!("{}.{}", self.schema_name, self.table_name)
     }

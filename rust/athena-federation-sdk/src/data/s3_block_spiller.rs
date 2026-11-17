@@ -272,7 +272,7 @@ impl S3BlockSpiller {
             .or_else(|| config_options.get(&SPILL_QUEUE_CAPACITY.to_lowercase()));
         if let Some(capacity) = capacity {
             let parsed = capacity.parse::<i32>().map_err(|_| {
-                FederationError::Runtime(format!("For input string: \"{capacity}\""))
+                FederationError::NumberFormat(format!("For input string: \"{capacity}\""))
             })?;
             if parsed <= 0 {
                 return Err(FederationError::IllegalArgument(format!(

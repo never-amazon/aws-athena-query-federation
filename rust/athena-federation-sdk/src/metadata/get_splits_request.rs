@@ -7,6 +7,7 @@ use super::{collections_equals, opt_str, MetadataRequestType};
 use crate::data::Block;
 use crate::domain::predicate::Constraints;
 use crate::domain::table_name::TableName;
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
 #[derive(Debug, Clone)]
@@ -19,6 +20,7 @@ pub struct GetSplitsRequest {
     partition_cols: Vec<String>,
     constraints: Constraints,
     continuation_token: Option<String>,
+    context: Option<LambdaContext>,
 }
 
 impl GetSplitsRequest {
@@ -42,6 +44,7 @@ impl GetSplitsRequest {
             partition_cols,
             constraints,
             continuation_token,
+            context: None,
         }
     }
 

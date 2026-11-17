@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use aws_credential_types::Credentials;
 use tokio::task::JoinHandle;
 
 use crate::security::{AwsService, AwsServiceError};
@@ -18,6 +19,10 @@ pub trait AthenaClient: Send + Sync {
         &self,
         query_execution_id: &str,
     ) -> Result<Option<String>, AwsServiceError>;
+
+    fn with_credentials(&self, _credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
+        None
+    }
 }
 
 #[async_trait]
@@ -37,6 +42,15 @@ impl AthenaClient for aws_sdk_athena::Client {
             .and_then(|q| q.status())
             .and_then(|s| s.state())
             .map(|s| s.as_str().to_string()))
+    }
+
+    fn with_credentials(&self, credentials: &Credentials) -> Option<Arc<dyn AthenaClient>> {
+        let config = self
+            .config()
+            .to_builder()
+            .credentials_provider(credentials.clone())
+            .build();
+        Some(Arc::new(aws_sdk_athena::Client::from_conf(config)))
     }
 }
 

@@ -1,6 +1,7 @@
 use std::fmt;
 
 use super::{FederatedIdentity, PingRequest};
+use crate::lambda::LambdaContext;
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
     ListSchemasRequest, ListTablesRequest, MetadataRequest,
@@ -59,6 +60,20 @@ impl FederationRequest {
             FederationRequest::GetSplits(r) => Some(r),
             FederationRequest::GetDataSourceCapabilities(r) => Some(r),
             _ => None,
+        }
+    }
+
+    pub fn set_context(&mut self, context: Option<LambdaContext>) {
+        match self {
+            FederationRequest::ListSchemas(r) => r.set_context(context),
+            FederationRequest::ListTables(r) => r.set_context(context),
+            FederationRequest::GetTable(r) => r.set_context(context),
+            FederationRequest::GetTableLayout(r) => r.set_context(context),
+            FederationRequest::GetSplits(r) => r.set_context(context),
+            FederationRequest::GetDataSourceCapabilities(r) => r.set_context(context),
+            FederationRequest::Ping(_)
+            | FederationRequest::ReadRecords(_)
+            | FederationRequest::UserDefinedFunction(_) => {}
         }
     }
 

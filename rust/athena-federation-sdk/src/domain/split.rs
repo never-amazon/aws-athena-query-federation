@@ -13,7 +13,7 @@ pub struct Split {
 }
 
 fn missing(key: &str) -> FederationError {
-    FederationError::Runtime(format!(
+    FederationError::NumberFormat(format!(
         "Cannot parse null string: property {key} not found"
     ))
 }
@@ -50,20 +50,20 @@ impl Split {
     pub fn get_property_as_int(&self, key: &str) -> Result<i32> {
         let v = self.get_property(key).ok_or_else(|| missing(key))?;
         v.parse::<i32>()
-            .map_err(|_| FederationError::Runtime(format!("For input string: \"{v}\"")))
+            .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{v}\"")))
     }
 
     pub fn get_property_as_long(&self, key: &str) -> Result<i64> {
         let v = self.get_property(key).ok_or_else(|| missing(key))?;
         v.parse::<i64>()
-            .map_err(|_| FederationError::Runtime(format!("For input string: \"{v}\"")))
+            .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{v}\"")))
     }
 
     pub fn get_property_as_double(&self, key: &str) -> Result<f64> {
         let v = self.get_property(key).ok_or_else(|| missing(key))?;
         v.trim()
             .parse::<f64>()
-            .map_err(|_| FederationError::Runtime(format!("For input string: \"{v}\"")))
+            .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{v}\"")))
     }
 
     pub fn properties(&self) -> &HashMap<String, Option<String>> {

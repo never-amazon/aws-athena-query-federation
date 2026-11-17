@@ -7,6 +7,7 @@ use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
 use crate::domain::predicate::Constraints;
 use crate::domain::table_name::TableName;
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 use crate::serde::java_hash::java_hash_set_copy_order;
 
@@ -19,6 +20,7 @@ pub struct GetTableLayoutRequest {
     constraints: Constraints,
     schema: Schema,
     partition_cols: IndexSet<String>,
+    context: Option<LambdaContext>,
 }
 
 impl GetTableLayoutRequest {
@@ -52,6 +54,7 @@ impl GetTableLayoutRequest {
             constraints,
             schema,
             partition_cols,
+            context: None,
         }
     }
 

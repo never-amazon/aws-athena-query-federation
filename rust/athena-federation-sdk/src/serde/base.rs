@@ -318,7 +318,7 @@ pub fn no_enum_constant(enum_class: &str, name: Option<&str>) -> FederationError
 
 pub fn parse_java_long(value: Option<&str>) -> Result<i64> {
     match value {
-        None => Err(FederationError::IllegalArgument(
+        None => Err(FederationError::NumberFormat(
             "Cannot parse null string: null".into(),
         )),
         Some(s) => {
@@ -330,12 +330,12 @@ pub fn parse_java_long(value: Option<&str>) -> Result<i64> {
                 !body.is_empty() && body.chars().all(|c| c.is_ascii_digit())
             };
             if !valid {
-                return Err(FederationError::IllegalArgument(format!(
+                return Err(FederationError::NumberFormat(format!(
                     "For input string: \"{s}\""
                 )));
             }
             s.parse::<i64>()
-                .map_err(|_| FederationError::IllegalArgument(format!("For input string: \"{s}\"")))
+                .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{s}\"")))
         }
     }
 }

@@ -1,4 +1,5 @@
 use super::MetadataRequestType;
+use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
 pub trait MetadataRequest {
@@ -9,6 +10,10 @@ pub trait MetadataRequest {
     fn catalog_name(&self) -> &str;
 
     fn query_id(&self) -> Option<&str>;
+
+    fn context(&self) -> Option<&LambdaContext>;
+
+    fn set_context(&mut self, context: Option<LambdaContext>);
 }
 
 macro_rules! impl_metadata_request {
@@ -29,6 +34,14 @@ macro_rules! impl_metadata_request {
             fn query_id(&self) -> Option<&str> {
                 self.query_id.as_deref()
             }
+
+            fn context(&self) -> Option<&$crate::lambda::LambdaContext> {
+                self.context.as_ref()
+            }
+
+            fn set_context(&mut self, context: Option<$crate::lambda::LambdaContext>) {
+                self.context = context;
+            }
         }
 
         impl $t {
@@ -46,6 +59,14 @@ macro_rules! impl_metadata_request {
 
             pub fn query_id(&self) -> Option<&str> {
                 self.query_id.as_deref()
+            }
+
+            pub fn context(&self) -> Option<&$crate::lambda::LambdaContext> {
+                self.context.as_ref()
+            }
+
+            pub fn set_context(&mut self, context: Option<$crate::lambda::LambdaContext>) {
+                self.context = context;
             }
         }
     };
