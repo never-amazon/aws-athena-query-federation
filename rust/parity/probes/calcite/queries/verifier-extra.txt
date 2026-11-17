@@ -39,3 +39,5 @@ std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>ÿ edge
 std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>Ā edge
 std	SELECT * FROM test_table WHERE varchar_col LIKE 'UNICODE1'	UNICODE1=>日%
 std	SELECT * FROM test_table WHERE decimal_col3 < 0.0000001 AND decimal_col3 > -0.0000000012
+std	SELECT int_col, COUNT(*) FROM test_table WHERE date_col > DATE '2024-01-01' - INTERVAL '7' DAY GROUP BY GROUPING SETS ((int_col), ())
+std	SELECT * FROM test_table WHERE date_col < DATE '2024-01-01' + INTERVAL '-1-1' YEAR TO MONTH

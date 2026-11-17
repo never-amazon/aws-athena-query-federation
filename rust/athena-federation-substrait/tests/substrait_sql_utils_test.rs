@@ -1,6 +1,8 @@
 use athena_federation_substrait::SqlDialect;
+use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitRelUtils;
 use athena_federation_substrait::SubstraitSqlUtils;
+use athena_federation_substrait::SubstraitValue;
 use base64::Engine;
 
 fn dialect() -> SqlDialect {
@@ -270,4 +272,68 @@ fn test_substrait_plan_generation() {
     let encoded = encoded_plan("SELECT * FROM test_table LIMIT 10");
     let plan = SubstraitRelUtils::deserialize_substrait_plan(&encoded).expect("plan");
     assert!(!plan.relations.is_empty());
+}
+
+fn patched(query: &str, value: &str) -> String {
+    format!("{query} [patched UNICODE1 => {value}]")
+}
+
+fn patched_sql(query: &str, value: &str) -> String {
+    sql(&patched(query, value))
+}
+
+#[test]
+fn test_sql_conversion_non_latin1_string_literals() {
+    let d = dialect();
+    let equality = encoded_plan(&patched(
+        "SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'",
+        "日本語",
+    ));
+    let node =
+        SubstraitSqlUtils::get_sql_node_from_substrait_plan(&equality, &d).expect("sql node");
+    let s = node.to_sql_string(&d);
+    assert!(s.ends_with("WHERE `varchar_col` = '日本語'"), "{s}");
+
+    let schema =
+        SubstraitSqlUtils::get_table_schema_from_substrait_plan(&equality, &d).expect("schema");
+    let mut accumulator = Vec::new();
+    let parameterized = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
+        .visit(&node)
+        .expect("visit")
+        .to_sql_string(&d);
+    assert!(
+        parameterized.ends_with("WHERE `varchar_col` = ?"),
+        "{parameterized}"
+    );
+    assert_eq!(1, accumulator.len());
+    assert_eq!(
+        &SubstraitValue::String("日本語".to_string()),
+        accumulator[0].value()
+    );
+
+    assert!(patched_sql(
+        "SELECT * FROM test_table WHERE varchar_col IN ('UNICODE1', 'b')",
+        "😀"
+    )
+    .ends_with("WHERE `varchar_col` IN ('b', '😀')"));
+    assert!(patched_sql(
+        "SELECT * FROM test_table WHERE varchar_col LIKE 'UNICODE1'",
+        "%日本%"
+    )
+    .ends_with("WHERE `varchar_col` LIKE '%日本%'"));
+    assert!(patched_sql(
+        "SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'",
+        "日本語"
+    )
+    .ends_with("WHERE UPPER(`varchar_col`) = '日本語'"));
+    assert!(patched_sql(
+        "SELECT varchar_col, 'UNICODE1' AS k FROM test_table",
+        "日'本😀"
+    )
+    .contains("'日''本😀' AS `$f24`"));
+    assert!(patched_sql(
+        "SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'",
+        "ab"
+    )
+    .ends_with("WHERE UPPER(`varchar_col`) = 'ab'"));
 }

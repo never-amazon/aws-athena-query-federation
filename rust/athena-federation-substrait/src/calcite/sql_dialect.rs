@@ -234,7 +234,7 @@ impl SqlDialect {
             scale = SCALE_NOT_SPECIFIED;
         }
         let charset = if tn.is_character() && self.supports_char_set() {
-            Some("ISO-8859-1".to_string())
+            Some("UTF-8".to_string())
         } else {
             None
         };

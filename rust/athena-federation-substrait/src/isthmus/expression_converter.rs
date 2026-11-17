@@ -174,7 +174,7 @@ fn interval_day_to_second_literal(
 }
 
 fn char_length(value: &str) -> i32 {
-    i32::try_from(value.chars().count()).unwrap_or(i32::MAX)
+    i32::try_from(value.encode_utf16().count()).unwrap_or(i32::MAX)
 }
 
 fn millis_to_seconds_split(value: i64, unit_per_second: i64, nanos_per_unit: i64) -> (i64, u32) {
@@ -674,11 +674,6 @@ impl ExpressionConverter<'_> {
             SubstraitError::illegal_state("Unexpected value: LITERALTYPE_NOT_SET")
         })?;
         let s = self.system;
-        match lt {
-            LiteralType::String(v) | LiteralType::FixedChar(v) => require_latin1(v)?,
-            LiteralType::VarChar(v) => require_latin1(&v.value)?,
-            _ => {}
-        }
         let exact = |v: i64, name: SqlTypeName| -> RexNode {
             Self::lit(
                 LiteralValue::Exact(BigDecimal::from(v)),
@@ -812,15 +807,6 @@ impl ExpressionConverter<'_> {
             None => literal,
         }
     }
-}
-
-fn require_latin1(value: &str) -> Result<()> {
-    if value.chars().all(|c| u32::from(c) <= 0xFF) {
-        return Ok(());
-    }
-    Err(SubstraitError::runtime(format!(
-        "Failed to encode '{value}' in character set 'ISO-8859-1'"
-    )))
 }
 
 fn same_family(a: SqlTypeFamily, b: SqlTypeFamily) -> bool {

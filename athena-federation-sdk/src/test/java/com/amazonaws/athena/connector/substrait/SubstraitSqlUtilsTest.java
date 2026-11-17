@@ -20,12 +20,15 @@
 package com.amazonaws.athena.connector.substrait;
 
 import com.amazonaws.athena.connector.util.EncodedSubstraitPlanStringGenerator;
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.Message;
 import io.substrait.isthmus.calcite.SubstraitSchema;
 import io.substrait.proto.Plan;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.stream.Stream;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -392,5 +396,65 @@ public class SubstraitSqlUtilsTest {
                         "SELECT `varchar_col` AS `varchar_col0`, COUNT(*) AS `$f1`\n"
                                 + "FROM `test_schema`.`test_table`\n" + "GROUP BY `varchar_col`\n"
                                 + "ORDER BY 2 DESC\n" + "FETCH NEXT 50 ROWS ONLY"));
+    }
+
+    @Test
+    void testSqlConversion_NonLatin1StringLiterals() throws SqlParseException {
+        String equality = encodedPlanWith("SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'", "日本語");
+        String sql = SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(equality, EncodedSubstraitPlanStringGenerator.DIALECT)
+                .toSqlString(EncodedSubstraitPlanStringGenerator.DIALECT).getSql();
+        Assertions.assertTrue(sql.endsWith("WHERE `varchar_col` = '日本語'"), sql);
+
+        List<SubstraitTypeAndValue> accumulator = new ArrayList<>();
+        SqlNode node = SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(equality, EncodedSubstraitPlanStringGenerator.DIALECT);
+        RelDataType schema = SubstraitSqlUtils.getTableSchemaFromSubstraitPlan(equality, EncodedSubstraitPlanStringGenerator.DIALECT);
+        String parameterized = new SubstraitAccumulatorVisitor(accumulator, schema).visit((SqlSelect) node)
+                .toSqlString(EncodedSubstraitPlanStringGenerator.DIALECT).getSql();
+        Assertions.assertTrue(parameterized.endsWith("WHERE `varchar_col` = ?"), parameterized);
+        Assertions.assertEquals(1, accumulator.size());
+        Assertions.assertEquals("日本語", accumulator.get(0).getValue());
+
+        Assertions.assertTrue(patchedSql("SELECT * FROM test_table WHERE varchar_col IN ('UNICODE1', 'b')", "😀")
+                .endsWith("WHERE `varchar_col` IN ('b', '😀')"));
+        Assertions.assertTrue(patchedSql("SELECT * FROM test_table WHERE varchar_col LIKE 'UNICODE1'", "%日本%")
+                .endsWith("WHERE `varchar_col` LIKE '%日本%'"));
+        Assertions.assertTrue(patchedSql("SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'", "日本語")
+                .endsWith("WHERE UPPER(`varchar_col`) = '日本語'"));
+        Assertions.assertTrue(patchedSql("SELECT varchar_col, 'UNICODE1' AS k FROM test_table", "日'本😀")
+                .contains("'日''本😀' AS `$f24`"));
+        Assertions.assertTrue(patchedSql("SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'", "ab")
+                .endsWith("WHERE UPPER(`varchar_col`) = 'ab'"));
+    }
+
+    private static String patchedSql(String query, String value) throws SqlParseException {
+        return SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(encodedPlanWith(query, value), EncodedSubstraitPlanStringGenerator.DIALECT)
+                .toSqlString(EncodedSubstraitPlanStringGenerator.DIALECT).getSql();
+    }
+
+    private static String encodedPlanWith(String query, String value) throws SqlParseException {
+        Plan plan = (Plan) replaceString(EncodedSubstraitPlanStringGenerator.convertSqlToSubstraitPlan(query), "UNICODE1", value);
+        return Base64.getEncoder().encodeToString(plan.toByteArray());
+    }
+
+    private static Message replaceString(Message message, String from, String to) {
+        Message.Builder builder = message.toBuilder();
+        for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : message.getAllFields().entrySet()) {
+            Descriptors.FieldDescriptor field = entry.getKey();
+            if (field.getJavaType() == Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                if (field.isRepeated()) {
+                    List<?> values = (List<?>) entry.getValue();
+                    for (int i = 0; i < values.size(); i++) {
+                        builder.setRepeatedField(field, i, replaceString((Message) values.get(i), from, to));
+                    }
+                }
+                else {
+                    builder.setField(field, replaceString((Message) entry.getValue(), from, to));
+                }
+            }
+            else if (!field.isRepeated() && from.equals(entry.getValue())) {
+                builder.setField(field, to);
+            }
+        }
+        return builder.build();
     }
 }

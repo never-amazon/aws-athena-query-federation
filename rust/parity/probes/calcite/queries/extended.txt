@@ -157,3 +157,13 @@ nullable	SELECT * FROM test_table WHERE varchar_col LIKE 'A%' AND int_col > 100 
 nullable	SELECT * FROM test_table WHERE COALESCE(int_col, 0) > 5
 nullable	SELECT *, ROW_NUMBER() OVER (PARTITION BY varchar_col ORDER BY int_col DESC) as rn FROM test_table
 nullable	SELECT * FROM test_table WHERE varchar_col = 'a' ORDER BY int_col DESC, varchar_col LIMIT 5
+std	SELECT * FROM test_table WHERE int_col = (SELECT MIN(int_col) FROM test_table WHERE bool_col AND bigint_col = 3)
+std	SELECT * FROM test_table WHERE int_col = (SELECT MIN(int_col) FROM test_table WHERE NOT bool_col AND bigint_col = 3)
+std	SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'	UNICODE1=>日本語
+std	SELECT * FROM test_table WHERE varchar_col IN ('UNICODE1', 'b')	UNICODE1=>😀
+std	SELECT * FROM test_table WHERE varchar_col LIKE 'UNICODE1'	UNICODE1=>%日本%
+std	SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'	UNICODE1=>日本語
+std	SELECT varchar_col, 'UNICODE1' AS k FROM test_table	UNICODE1=>日'本😀
+std	SELECT varchar_col FROM test_table WHERE int_col > 1 ORDER BY varchar_col || 'UNICODE1'	UNICODE1=>日本語
+std	SELECT * FROM test_table WHERE char_col = 'UNICODE1'	UNICODE1=>😀
+std	SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'	UNICODE1=>ab

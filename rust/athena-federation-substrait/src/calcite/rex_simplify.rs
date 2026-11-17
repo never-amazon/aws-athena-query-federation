@@ -1787,7 +1787,7 @@ fn fold_literal_cast(lit: &RexLiteral, target: &RelDataType) -> Option<RexNode> 
         (LiteralValue::Char(s), SqlTypeName::Varchar) => LiteralValue::Char(s.clone()),
         (LiteralValue::Char(s), SqlTypeName::Char) => {
             let p = usize::try_from(target.precision()).ok();
-            let len = s.chars().count();
+            let len = s.encode_utf16().count();
             if p.is_some_and(|p| len > p) {
                 return None;
             }

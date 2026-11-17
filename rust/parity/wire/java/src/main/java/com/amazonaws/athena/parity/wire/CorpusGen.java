@@ -335,6 +335,7 @@ public final class CorpusGen
         defineGetSplits();
         defineReadRecords();
         defineExtra();
+        defineUnicode();
     }
 
     private void defineUnsupported()
@@ -894,7 +895,7 @@ public final class CorpusGen
             @Override
             protected Map<String, Table> getTableMap()
             {
-                return Map.of("all_types", table);
+                return Map.of("all_types", table, "unicode_text", table);
             }
         };
         CalciteSchema root = CalciteSchema.createRootSchema(false);
@@ -904,6 +905,66 @@ public final class CorpusGen
                 CalciteConnectionConfig.DEFAULT.set(CalciteConnectionProperty.CASE_SENSITIVE, Boolean.FALSE.toString()));
         io.substrait.plan.Plan plan = new SqlToSubstrait().convert(sql, catalog);
         return Base64.getEncoder().encodeToString(new PlanProtoConverter().toProto(plan).toByteArray());
+    }
+
+    static String substraitPlan(String sql, String from, String to) throws Exception
+    {
+        io.substrait.proto.Plan plan = io.substrait.proto.Plan.parseFrom(Base64.getDecoder().decode(substraitPlan(sql)));
+        return Base64.getEncoder().encodeToString(replaceString(plan, from, to).toByteArray());
+    }
+
+    private static com.google.protobuf.Message replaceString(com.google.protobuf.Message message, String from, String to)
+    {
+        com.google.protobuf.Message.Builder builder = message.toBuilder();
+        for (Map.Entry<com.google.protobuf.Descriptors.FieldDescriptor, Object> entry : message.getAllFields().entrySet()) {
+            com.google.protobuf.Descriptors.FieldDescriptor field = entry.getKey();
+            if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                if (field.isRepeated()) {
+                    List<?> values = (List<?>) entry.getValue();
+                    for (int i = 0; i < values.size(); i++) {
+                        builder.setRepeatedField(field, i, replaceString((com.google.protobuf.Message) values.get(i), from, to));
+                    }
+                }
+                else {
+                    builder.setField(field, replaceString((com.google.protobuf.Message) entry.getValue(), from, to));
+                }
+            }
+            else if (!field.isRepeated() && from.equals(entry.getValue())) {
+                builder.setField(field, to);
+            }
+        }
+        return builder.build();
+    }
+
+    private void defineUnicode() throws Exception
+    {
+        TableName unicode = new TableName("parity", "unicode_text");
+        String[][] cases = {
+            {"eq_cjk", "SELECT id, text_col FROM unicode_text WHERE text_col = 'U1'", "日本語"},
+            {"eq_emoji", "SELECT id, varchar_col FROM unicode_text WHERE varchar_col = 'U1'", "😀"},
+            {"eq_latin1", "SELECT id, text_col FROM unicode_text WHERE text_col = 'U1'", "café"},
+            {"in_list", "SELECT id, text_col FROM unicode_text WHERE text_col IN ('U1', 'ascii')", "日本語"},
+            {"like_cjk", "SELECT id, text_col FROM unicode_text WHERE text_col LIKE 'U1'", "%日本%"},
+            {"like_emoji", "SELECT id, varchar_col FROM unicode_text WHERE varchar_col LIKE 'U1'", "%😀%"},
+            {"inline_upper", "SELECT id, text_col FROM unicode_text WHERE UPPER(text_col) = 'U1'", "😀 EMOJI"},
+            {"inline_quote", "SELECT id, text_col FROM unicode_text WHERE UPPER(text_col) = 'U1'", "IT'S 日本"},
+        };
+        for (String[] c : cases) {
+            String plan = substraitPlan(c[1], "U1", c[2]);
+            String[] cols = c[1].substring(7, c[1].indexOf(" FROM")).split(", ");
+            add("x_unicode", c[0], 6, c[1] + " with U1 = " + c[2],
+                    q -> read(q, unicode, Schemas.project(Schemas.allTypes(), cols), split(q, "*", "*"), planConstraints(plan)));
+        }
+        TableName allTypes = new TableName("parity", "all_types");
+        String[][] subqueries = {
+            {"subquery_bool_literal", "SELECT id, int_col FROM all_types WHERE int_col = (SELECT MIN(int_col) FROM all_types WHERE bool_col AND bigint_col > 0)"},
+            {"subquery_not_bool_literal", "SELECT id, int_col FROM all_types WHERE int_col = (SELECT MIN(int_col) FROM all_types WHERE NOT bool_col AND bigint_col > 0)"},
+        };
+        for (String[] c : subqueries) {
+            String plan = substraitPlan(c[1]);
+            add("x_substrait", c[0], 6, c[1],
+                    q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"), planConstraints(plan)));
+        }
     }
 
     private void defineExtra() throws Exception

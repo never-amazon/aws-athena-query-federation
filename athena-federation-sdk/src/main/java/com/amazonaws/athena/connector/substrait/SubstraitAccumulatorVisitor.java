@@ -392,6 +392,10 @@ public class SubstraitAccumulatorVisitor extends SqlShuttle
         // Let the default SqlShuttle traversal handle all other clauses
         // (SELECT list, FROM, GROUP BY, HAVING, WINDOW, ORDER BY, OFFSET, FETCH, etc.)
         SqlSelect result = (SqlSelect) super.visit(select);
+        select.setWhere(where);
+        if (result == select) {
+            result = (SqlSelect) select.clone(select.getParserPosition());
+        }
 
         // Restore the (transformed) WHERE clause
         result.setWhere(newWhere);

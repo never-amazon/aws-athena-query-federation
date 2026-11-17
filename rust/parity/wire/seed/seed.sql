@@ -191,6 +191,15 @@ INSERT INTO parity.odd_types VALUES
  (2, -92233720368547758.08, '-1 days', -999.99, NULL, NULL, NULL, NULL, '{}', NULL, NULL, NULL, NULL, NULL, NULL),
  (3, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
+CREATE TABLE parity.unicode_text (LIKE parity.all_types INCLUDING ALL);
+INSERT INTO parity.unicode_text (id, text_col, varchar_col) VALUES
+ (1, '日本語', '日本語'),
+ (2, '😀 emoji', '😀'),
+ (3, 'ascii', 'ascii'),
+ (4, 'café', 'café'),
+ (5, 'it''s 日本', 'x 😀 y'),
+ (6, NULL, NULL);
+
 CREATE TABLE parity.big (LIKE parity.all_types INCLUDING ALL);
 INSERT INTO parity.big SELECT a.id + k * 3000, a.smallint_col, a.int_col, a.bigint_col, a.numeric_scaled, a.numeric_noscale, a.numeric_unbounded, a.real_col, a.double_col, a.text_col, a.varchar_col, a.char_col, a.bool_col, a.date_col, a.ts_col, a.tstz_col, a.bytea_col, a.int_arr, a.bigint_arr, a.text_arr, a.float8_arr, a.bool_arr, a.date_arr, a.numeric_arr, a.uuid_col, a.json_col, a.time_col
 FROM parity.all_types a CROSS JOIN generate_series(0, 66) k;

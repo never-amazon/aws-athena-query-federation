@@ -328,6 +328,9 @@ impl RelDataType {
 
     pub fn get_full_type_string(&self) -> String {
         let mut s = self.type_string();
+        if self.type_name.is_character() {
+            s.push_str(" CHARACTER SET \"UTF-8\"");
+        }
         if !self.nullable {
             s.push_str(" NOT NULL");
         }
