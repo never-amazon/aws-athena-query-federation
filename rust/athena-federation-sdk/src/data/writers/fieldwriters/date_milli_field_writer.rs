@@ -35,8 +35,7 @@ impl DateMilliFieldWriter {
                 let value = if h.is_set == 0 {
                     Value::Null
                 } else {
-                    local_date_time_of_epoch_milli_utc(h.value)
-                        .map_or(Value::Null, Value::LocalDateTime)
+                    Value::LocalDateTime(local_date_time_of_epoch_milli_utc(h.value))
                 };
                 c.apply(&value)
             }

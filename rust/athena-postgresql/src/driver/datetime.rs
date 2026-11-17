@@ -46,9 +46,12 @@ impl Cursor<'_> {
     }
 
     fn number(&mut self) -> Option<i64> {
-        self.digits()?.iter().try_fold(0i64, |n, d| {
-            n.checked_mul(10)?.checked_add(i64::from(d - b'0'))
-        })
+        self.digits()?
+            .iter()
+            .try_fold(0i32, |n, d| {
+                n.checked_mul(10)?.checked_add(i32::from(d - b'0'))
+            })
+            .map(i64::from)
     }
 
     fn eat(&mut self, byte: u8) -> bool {
@@ -124,8 +127,11 @@ pub(crate) fn parse_backend_timestamp(text: &str) -> Option<ParsedTimestamp> {
         let hours = c.number()?;
         let minutes = if c.eat(b':') { c.number()? } else { 0 };
         let seconds = if c.eat(b':') { c.number()? } else { 0 };
+        if hours > 18 || minutes > 59 || seconds > 59 {
+            return None;
+        }
         let total = hours * 3600 + minutes * 60 + seconds;
-        if hours > 18 || minutes > 59 || seconds > 59 || total > 18 * 3600 {
+        if total > 18 * 3600 {
             return None;
         }
         parsed.offset_seconds = if sign == b'-' { -total } else { total };
@@ -294,6 +300,40 @@ mod tests {
         assert!(parse_backend_timestamp("").is_none());
         assert!(parse_backend_timestamp("2020-01-01 00:00:00.1234567890").is_none());
         assert!(parse_backend_timestamp("0001-01-01 BC").unwrap().bc);
+    }
+
+    #[test]
+    fn fields_outside_the_java_int_range_are_rejected_without_overflow() {
+        for text in [
+            "2020-01-01 00:00:00+9999999999999999",
+            "2020-01-01 00:00:00-9999999999999999:00",
+            "2020-01-01 00:00:00+00:9999999999999999",
+            "9223372036854775807-01-01 00:00:00",
+            "2147483648-01-01 00:00:00",
+            "2020-9223372036854775807-01 00:00:00",
+            "2020-01-9223372036854775807 00:00:00",
+            "2020-01-01 2562047788015216:00:00",
+            "2020-01-01 00:9223372036854775807:00",
+            "2020-01-01 00:00:9223372036854775807",
+        ] {
+            let parsed = parse_backend_timestamp(text);
+            assert!(
+                parsed.is_none_or(|p| p.java_millis().is_none() && p.java_date_millis().is_none()),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn fields_inside_the_java_int_range_do_not_overflow() {
+        for text in [
+            "2147483647-12-31 2147483647:2147483647:2147483647",
+            "2147483647-2147483647-2147483647 00:00:00 BC",
+        ] {
+            let parsed = parse_backend_timestamp(text).unwrap();
+            assert!(parsed.java_millis().is_none(), "{text}");
+            assert!(parsed.java_date_millis().is_none(), "{text}");
+        }
     }
 
     #[test]
