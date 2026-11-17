@@ -142,7 +142,9 @@ fn parse_map(
     let key_type = key_type.ok_or_else(|| {
         FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getType()\" because \"keyType\" is null")
     })?;
-    let value_type = required_child(value_type)?;
+    let value_type = value_type.ok_or_else(|| {
+        FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getField(com.google.flatbuffers.FlatBufferBuilder)\" because the return value of \"java.util.List.get(int)\" is null")
+    })?;
     let key_not_nullable = key_type.with_nullable(false);
     Ok(Field::new(
         name,

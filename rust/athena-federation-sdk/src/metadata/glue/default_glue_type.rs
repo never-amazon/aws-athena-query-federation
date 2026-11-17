@@ -97,20 +97,25 @@ fn decimal_arrow_type(id: &str) -> Result<Option<ArrowType>> {
         [precision, scale, bit_width] => (*precision, *scale, *bit_width),
         _ => return Ok(None),
     };
+    let constructor: fn(u8, i8) -> DataType = match bit_width {
+        32 => DataType::Decimal32,
+        64 => DataType::Decimal64,
+        128 => DataType::Decimal128,
+        256 => DataType::Decimal256,
+        _ => {
+            return Err(FederationError::IllegalArgument(
+                "Library only supports 128-bit and 256-bit decimal values".into(),
+            ))
+        }
+    };
     let unsupported = || {
         FederationError::invalid_input(format!(
-            "Unsupported decimal type {id}: arrow-rs supports precision up to 255, scale up to 127 and bit widths 32, 64, 128 and 256"
+            "Unsupported decimal type {id}: arrow-rs supports precision up to 255 and scale up to 127"
         ))
     };
     let precision = u8::try_from(precision).map_err(|_| unsupported())?;
     let scale = i8::try_from(scale).map_err(|_| unsupported())?;
-    Ok(Some(match bit_width {
-        32 => DataType::Decimal32(precision, scale),
-        64 => DataType::Decimal64(precision, scale),
-        128 => DataType::Decimal128(precision, scale),
-        256 => DataType::Decimal256(precision, scale),
-        _ => return Err(unsupported()),
-    }))
+    Ok(Some(constructor(precision, scale)))
 }
 
 fn parse_int(value: &str) -> Result<i32> {

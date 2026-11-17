@@ -40,12 +40,15 @@ pub const GLUE_TABLE_CONTAINS_PREVIOUSLY_UNSUPPORTED_TYPE: &str =
     "glueTableContainsPreviouslyUnsupportedType";
 
 static TABLE_ARN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^arn:(?:aws|aws-cn|aws-us-gov):[a-z]+:[a-z1-9-]+:[0-9]{12}:table/(.+)$")
-        .expect("valid table arn pattern")
+    Regex::new(concat!(
+        r"^arn:(?:aws|aws-cn|aws-us-gov):[a-z]+:[a-z1-9-]+:[0-9]{12}:table/",
+        r"([^\n\r\x{85}\x{2028}\x{2029}]+)$"
+    ))
+    .expect("valid table arn pattern")
 });
 
 static FUNCTION_ARN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^arn:aws[a-zA-Z-]*?:lambda:[a-zA-Z0-9-]+:(\d{12}):function:[a-zA-Z0-9_-]+$")
+    Regex::new(r"^arn:aws[a-zA-Z-]*?:lambda:[a-zA-Z0-9-]+:([0-9]{12}):function:[a-zA-Z0-9_-]+$")
         .expect("valid function arn pattern")
 });
 

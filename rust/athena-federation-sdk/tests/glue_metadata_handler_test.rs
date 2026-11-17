@@ -490,6 +490,51 @@ fn populate_source_table_from_location() {
     }
 }
 
+#[test]
+fn source_table_arn_dot_excludes_java_line_terminators_only() {
+    let cases = [
+        ("t\u{e9}", Some("t\u{e9}")),
+        ("a\tb", Some("a\tb")),
+        ("a\rb", None),
+        ("a\u{85}b", None),
+        ("a\u{2028}b", None),
+        ("a\u{2029}b", None),
+        ("a\nb", None),
+        ("x\n", None),
+    ];
+    for (suffix, expected) in cases {
+        let storage_descriptor = StorageDescriptor::builder()
+            .location(format!(
+                "arn:aws:glue:us-east-1:123456789012:table/{suffix}"
+            ))
+            .build();
+        let table = Table::builder()
+            .name(TABLE)
+            .set_parameters(Some(HashMap::new()))
+            .storage_descriptor(storage_descriptor)
+            .build()
+            .unwrap();
+        let mut schema_builder = SchemaBuilder::new_builder();
+        populate_source_table_name_if_available(&table, &mut schema_builder);
+        let schema = schema_builder.build();
+        assert_eq!(expected, get_source_table_name(&schema), "{suffix:?}");
+    }
+}
+
+#[test]
+fn function_arn_owner_digits_are_ascii_only() {
+    let s = set_up();
+    let mut req = get_table_request();
+    req.set_context(Some(LambdaContext::default().with_invoked_function_arn(
+        Some(
+            "arn:aws:lambda:us-east-1:\u{661}\u{662}\u{663}\u{664}\u{665}\u{666}\u{667}\u{668}\u{669}\u{660}\u{661}\u{662}:function:fn"
+                .into(),
+        ),
+    )));
+    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    assert_eq!(Some(ACCOUNT_ID.to_string()), catalog);
+}
+
 #[tokio::test]
 async fn do_get_table_empty_comment() {
     let s = set_up();
