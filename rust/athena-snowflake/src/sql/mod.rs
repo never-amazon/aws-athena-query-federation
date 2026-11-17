@@ -1,6 +1,7 @@
 mod connection;
 mod driver;
 mod executor;
+mod hybrid_calendar;
 mod type_map;
 mod wildcard;
 

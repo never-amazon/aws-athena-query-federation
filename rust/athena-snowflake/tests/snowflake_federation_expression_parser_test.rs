@@ -1,6 +1,10 @@
 use arrow::datatypes::{DataType, TimeUnit};
 
-use athena_federation_sdk::domain::predicate::expression::VariableExpression;
+use athena_federation_sdk::domain::predicate::expression::{
+    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
+};
+use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
+use athena_federation_sdk::FederationError;
 use athena_jdbc::manager::{FederationExpressionParser, JdbcFederationExpressionParser};
 use athena_snowflake::SnowflakeFederationExpressionParser;
 
@@ -97,9 +101,29 @@ fn write_array_constructor_clause_with_empty_list_returns_empty_string() {
 
 #[test]
 fn write_array_constructor_clause_with_null_arguments_throws_null_pointer_exception() {
+    let parser = parser();
+    let variable = |name: &str| {
+        FederationExpression::Variable(VariableExpression::new(name, DataType::Utf8).unwrap())
+    };
+    let call = FunctionCallExpression::new(
+        DataType::Utf8,
+        StandardFunctions::ARRAY_CONSTRUCTOR_FUNCTION_NAME.function_name(),
+        vec![
+            variable(TEST_ARG_1),
+            FederationExpression::Constant(ConstantExpression::new(None, DataType::Utf8)),
+            variable(TEST_ARG_2),
+        ],
+    );
+    let error = parser
+        .parse_function_call_expression(&call, &mut Vec::new())
+        .unwrap_err();
+    assert!(
+        matches!(error, FederationError::NullPointer(_)),
+        "expected NullPointer, got {error:?}"
+    );
     assert_eq!(
-        write_clause(&DataType::Utf8, &[TEST_ARG_1, TEST_ARG_2]),
-        EXPECTED_TWO_ARGS
+        "Cannot invoke \"com.amazonaws.athena.connector.lambda.data.Block.getFieldReader(String)\" because \"values\" is null",
+        error.to_string()
     );
 }
 

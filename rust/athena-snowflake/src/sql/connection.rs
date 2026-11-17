@@ -29,6 +29,13 @@ static DESCRIBABLE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?is)^\s*(select|with)\b").expect("valid literal pattern")
 });
 
+pub(crate) fn positive_seconds(seconds: i32) -> Option<Duration> {
+    u64::try_from(seconds)
+        .ok()
+        .filter(|seconds| *seconds > 0)
+        .map(Duration::from_secs)
+}
+
 fn int_column(name: &str) -> ColumnMetadata {
     ColumnMetadata::new(name, Types::INTEGER).with_type_name("INTEGER")
 }
@@ -265,6 +272,7 @@ pub struct SnowflakeConnection {
     session_context: OnceCell<(Option<String>, Option<String>)>,
     auto_commit: AtomicBool,
     closed: AtomicBool,
+    query_timeout: Option<Duration>,
 }
 
 impl SnowflakeConnection {
@@ -275,7 +283,14 @@ impl SnowflakeConnection {
             session_context: OnceCell::new(),
             auto_commit: AtomicBool::new(true),
             closed: AtomicBool::new(false),
+            query_timeout: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_query_timeout(mut self, query_timeout: Option<Duration>) -> SnowflakeConnection {
+        self.query_timeout = query_timeout;
+        self
     }
 
     fn check_open(&self) -> Result<(), SqlException> {
@@ -293,7 +308,9 @@ impl SnowflakeConnection {
     ) -> Result<SnowflakeQueryResult, SqlException> {
         self.check_open()?;
         tracing::debug!("Snowflake query: {sql}");
-        self.executor.query(sql, binds, timeout).await
+        self.executor
+            .query(sql, binds, timeout.or(self.query_timeout))
+            .await
     }
 
     async fn collect_rows(&self, sql: &str) -> Result<Vec<Vec<SqlValue>>, SqlException> {
@@ -617,10 +634,7 @@ impl JdbcConnection for SnowflakeConnection {
         &self,
         statement: &PreparedStatement,
     ) -> Result<ResultSet, SqlException> {
-        let timeout = u64::try_from(statement.query_timeout())
-            .ok()
-            .filter(|seconds| *seconds > 0)
-            .map(Duration::from_secs);
+        let timeout = positive_seconds(statement.query_timeout());
         let result = self
             .run(statement.sql(), statement.parameters(), timeout)
             .await?;
@@ -668,10 +682,7 @@ impl JdbcConnection for SnowflakeConnection {
         if self.closed.load(Ordering::SeqCst) {
             return Ok(false);
         }
-        let timeout = u64::try_from(timeout_seconds)
-            .ok()
-            .filter(|seconds| *seconds > 0)
-            .map(Duration::from_secs);
+        let timeout = positive_seconds(timeout_seconds);
         Ok(self.run("select 1", &[], timeout).await.is_ok())
     }
 

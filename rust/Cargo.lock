@@ -496,14 +496,21 @@ dependencies = [
  "base64 0.22.1",
  "bigdecimal",
  "bytes",
+ "cbc",
  "chrono",
+ "des",
  "indexmap",
+ "md-5",
+ "md2",
  "parquet",
  "pkcs8 0.10.2",
+ "rc2",
+ "rc4",
  "regex",
  "reqwest 0.12.28",
  "rsa",
  "serde_json",
+ "sha1 0.11.0",
  "snowflake-connector-rs",
  "tokio",
  "tracing",
@@ -2827,6 +2834,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "md2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d503fa42a36d0bae709eee924b9531ac3dd5a7f30e47d85185fa7d3ea588a08"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3596,6 +3612,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60aa6af80be32871323012e02e6e65f8a7cc7890931ae421d217ad8fe0df2ccf"
 dependencies = [
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "rc2"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62c64daa8e9438b84aaae55010a93f396f8e60e3911590fcba770d04643fc1dd"
+dependencies = [
+ "cipher 0.4.4",
+]
+
+[[package]]
+name = "rc4"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f1256e23efe6097f27aa82d6ca6889361c001586ae0f6917cbad072f05eb275"
+dependencies = [
+ "cipher 0.4.4",
 ]
 
 [[package]]

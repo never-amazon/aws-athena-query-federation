@@ -505,3 +505,85 @@ fn test_create_private_key_from_unencrypted_pem_with_passphrase() {
         &SnowflakeAuthUtils::create_private_key(&multi_line_pem(), Some(PASSPHRASE)).unwrap(),
     );
 }
+
+const PBE_PLAIN_KEY: &str = include_str!("fixtures/pbe/plain.p8");
+const PBE_PASSPHRASE: &str = "test";
+const PBE_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 11] = [
+    (
+        "pbeWithMD2AndDES-CBC",
+        include_str!("fixtures/pbe/pbe_md2_des.p8"),
+    ),
+    (
+        "pbeWithMD5AndDES-CBC",
+        include_str!("fixtures/pbe/pbe_md5_des.p8"),
+    ),
+    (
+        "pbeWithMD5AndRC2-CBC",
+        include_str!("fixtures/pbe/pbe_md5_rc2_64.p8"),
+    ),
+    (
+        "pbeWithSHA1AndDES-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_des.p8"),
+    ),
+    (
+        "pbeWithSHA1AndRC2-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_rc2_64.p8"),
+    ),
+    (
+        "pbeWithSHAAnd128BitRC4",
+        include_str!("fixtures/pbe/pbe_sha1_rc4_128.p8"),
+    ),
+    (
+        "pbeWithSHAAnd40BitRC4",
+        include_str!("fixtures/pbe/pbe_sha1_rc4_40.p8"),
+    ),
+    (
+        "pbeWithSHAAnd3-KeyTripleDES-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_3des.p8"),
+    ),
+    (
+        "pbeWithSHAAnd2-KeyTripleDES-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_2des.p8"),
+    ),
+    (
+        "pbeWithSHAAnd128BitRC2-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_rc2_128.p8"),
+    ),
+    (
+        "pbeWithSHAAnd40BitRC2-CBC",
+        include_str!("fixtures/pbe/pbe_sha1_rc2_40.p8"),
+    ),
+];
+const PBE_MD2_RC2_KEY: &str = include_str!("fixtures/pbe/pbe_md2_rc2_64.p8");
+
+fn pbe_plain_der() -> Vec<u8> {
+    SnowflakeAuthUtils::create_private_key(PBE_PLAIN_KEY, None)
+        .unwrap()
+        .der()
+        .to_vec()
+}
+
+#[test]
+fn test_create_private_key_with_pbes1_and_pkcs12_encrypted_keys() {
+    let expected = pbe_plain_der();
+    for (scheme, pem) in PBE_KEYS_ACCEPTED_BY_BOUNCY_CASTLE {
+        let key = SnowflakeAuthUtils::create_private_key(pem, Some(PBE_PASSPHRASE))
+            .unwrap_or_else(|e| panic!("{scheme}: {e}"));
+        assert_eq!(expected, key.der(), "{scheme}");
+    }
+}
+
+#[test]
+fn test_create_private_key_with_pbes1_and_pkcs12_encrypted_keys_and_wrong_passphrase() {
+    for (scheme, pem) in PBE_KEYS_ACCEPTED_BY_BOUNCY_CASTLE {
+        let error = SnowflakeAuthUtils::create_private_key(pem, Some("wrong")).unwrap_err();
+        assert_eq!("Invalid private key format", error.to_string(), "{scheme}");
+    }
+}
+
+#[test]
+fn test_create_private_key_with_pbe_md2_and_rc2_is_rejected() {
+    let error =
+        SnowflakeAuthUtils::create_private_key(PBE_MD2_RC2_KEY, Some(PBE_PASSPHRASE)).unwrap_err();
+    assert_invalid_private_key(&error);
+}
