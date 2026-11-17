@@ -27,7 +27,9 @@ pub use jdbc_record_handler::{
     JdbcRecordHandlerExt, EXPORT_SCHEMA,
 };
 pub use jdbc_record_handler_factory::JdbcRecordHandlerFactory;
-pub use jdbc_split_query_builder::{JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase};
+pub use jdbc_split_query_builder::{
+    default_build_sql_string_literal, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase,
+};
 pub use jdbc_to_arrow_utils::{get_arrow_type_from_jdbc_type, jdbc_to_arrow_schema};
 pub use jdbc_util::JdbcUtil;
 pub use prepared_statement_builder::PreparedStatementBuilder;

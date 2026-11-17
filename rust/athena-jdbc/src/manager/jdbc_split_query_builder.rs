@@ -124,34 +124,17 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         column_names: &str,
         accumulator: &mut Vec<TypeAndValue>,
     ) -> Result<String> {
-        let mut sql = String::from("SELECT ");
-        sql.push_str(column_names);
-        if column_names.is_empty() {
-            sql.push_str("null");
-        }
-        sql.push_str(&self.get_from_clause_with_split(catalog, schema, table, split));
-
-        let mut clauses =
-            to_conjuncts(self, table_schema.fields(), constraints, accumulator, split)?;
-        self.add_partition_where_clauses(split, &mut clauses, accumulator);
-        if !clauses.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&clauses.join(" AND "));
-        }
-
-        let order_by_clause = self.extract_order_by_clause(constraints);
-        if !order_by_clause.is_empty() {
-            sql.push(' ');
-            sql.push_str(&order_by_clause);
-        }
-
-        if constraints.limit() > 0 {
-            sql.push_str(&self.append_limit_offset_with_constraints(split, constraints));
-        } else {
-            sql.push_str(&self.append_limit_offset(split));
-        }
-        tracing::info!("Generated SQL : {}", sql);
-        Ok(sql)
+        default_build_sql_string_literal(
+            self,
+            catalog,
+            schema,
+            table,
+            table_schema,
+            constraints,
+            split,
+            column_names,
+            accumulator,
+        )
     }
 
     #[allow(
@@ -345,6 +328,56 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
             runtime_with_cause("Failed to prepare statement with Calcite", e)
         })
     }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the signature mirrors JdbcSplitQueryBuilder.buildSQLStringLiteral"
+)]
+pub fn default_build_sql_string_literal<B: JdbcSplitQueryBuilder + ?Sized>(
+    builder: &B,
+    catalog: &str,
+    schema: &str,
+    table: &str,
+    table_schema: &Schema,
+    constraints: &Constraints,
+    split: &Split,
+    column_names: &str,
+    accumulator: &mut Vec<TypeAndValue>,
+) -> Result<String> {
+    let mut sql = String::from("SELECT ");
+    sql.push_str(column_names);
+    if column_names.is_empty() {
+        sql.push_str("null");
+    }
+    sql.push_str(&builder.get_from_clause_with_split(catalog, schema, table, split));
+
+    let mut clauses = to_conjuncts(
+        builder,
+        table_schema.fields(),
+        constraints,
+        accumulator,
+        split,
+    )?;
+    builder.add_partition_where_clauses(split, &mut clauses, accumulator);
+    if !clauses.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&clauses.join(" AND "));
+    }
+
+    let order_by_clause = builder.extract_order_by_clause(constraints);
+    if !order_by_clause.is_empty() {
+        sql.push(' ');
+        sql.push_str(&order_by_clause);
+    }
+
+    if constraints.limit() > 0 {
+        sql.push_str(&builder.append_limit_offset_with_constraints(split, constraints));
+    } else {
+        sql.push_str(&builder.append_limit_offset(split));
+    }
+    tracing::info!("Generated SQL : {}", sql);
+    Ok(sql)
 }
 
 fn build_calcite_sql(

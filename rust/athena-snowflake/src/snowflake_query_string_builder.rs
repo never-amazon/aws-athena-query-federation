@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 use athena_federation_sdk::data::{MinorType, Value};
-use athena_federation_sdk::domain::predicate::Constraints;
+use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{
-    FederationExpressionParser, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase, TypeAndValue,
+    default_build_sql_string_literal, FederationExpressionParser, JdbcSplitQueryBuilder,
+    JdbcSplitQueryBuilderBase, TypeAndValue,
 };
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
@@ -331,12 +332,21 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
         column_names: &str,
         accumulator: &mut Vec<TypeAndValue>,
     ) -> Result<String> {
-        let mut sql = SelectFromWhere(self).build_sql_string_literal(
+        let filter_constraints = Constraints::new(
+            constraints.summary().clone(),
+            constraints.expression().to_vec(),
+            Vec::new(),
+            DEFAULT_NO_LIMIT,
+            constraints.query_passthrough_arguments().clone(),
+            constraints.query_plan().cloned(),
+        );
+        let mut sql = default_build_sql_string_literal(
+            self,
             catalog,
             schema,
             table,
             table_schema,
-            constraints,
+            &filter_constraints,
             split,
             column_names,
             accumulator,
@@ -355,44 +365,5 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
         catalog_casing_filter: bool,
     ) -> SqlDialect {
         SnowflakeDialect::new(catalog_casing_filter).into_sql_dialect()
-    }
-}
-
-struct SelectFromWhere<'a>(&'a SnowflakeQueryStringBuilder);
-
-impl JdbcSplitQueryBuilder for SelectFromWhere<'_> {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-        self.0.query_builder_base()
-    }
-
-    fn get_from_clause_with_split(
-        &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        split: &Split,
-    ) -> String {
-        self.0
-            .get_from_clause_with_split(catalog, schema, table, split)
-    }
-
-    fn get_partition_where_clauses(&self, split: &Split) -> Vec<String> {
-        self.0.get_partition_where_clauses(split)
-    }
-
-    fn quote(&self, name: &str) -> String {
-        self.0.quote(name)
-    }
-
-    fn extract_order_by_clause(&self, _constraints: &Constraints) -> String {
-        String::new()
-    }
-
-    fn append_limit_offset_with_constraints(
-        &self,
-        _split: &Split,
-        _constraints: &Constraints,
-    ) -> String {
-        String::new()
     }
 }
