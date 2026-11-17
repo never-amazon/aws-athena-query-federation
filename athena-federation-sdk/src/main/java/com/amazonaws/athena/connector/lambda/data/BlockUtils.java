@@ -301,27 +301,24 @@ public class BlockUtils
                     }
                     break;
                 case FLOAT8:
-                    ((Float8Vector) vector).setSafe(pos, (double) value);
+                    ((Float8Vector) vector).setSafe(pos, ((Number) value).doubleValue());
                     break;
                 case FLOAT4:
-                    ((Float4Vector) vector).setSafe(pos, (float) value);
+                    ((Float4Vector) vector).setSafe(pos, ((Number) value).floatValue());
                     break;
-                case INT:
-                    if (value != null && value instanceof Long) {
-                        //This may seem odd at first but many frameworks (like Presto) use long as the preferred
-                        //native java type for representing integers. We do this to keep type conversions simple.
-                        ((IntVector) vector).setSafe(pos, ((Long) value).intValue());
-                    }
-                    else {
-                        ((IntVector) vector).setSafe(pos, (int) value);
-                    }
+                case INT: {
+                    // Drivers such as Snowflake return BigDecimal for NUMBER columns, so accept any Number.
+                    Number number = (Number) value;
+                    ((IntVector) vector).setSafe(pos, toExactInt(number));
                     break;
+                }
                 case TINYINT:
                     if (value instanceof Byte) {
                         ((TinyIntVector) vector).setSafe(pos, (byte) value);
                     }
                     else {
-                        ((TinyIntVector) vector).setSafe(pos, (int) value);
+                        Number number = (Number) value;
+                        ((TinyIntVector) vector).setSafe(pos, toExactByte(number));
                     }
                     break;
                 case SMALLINT:
@@ -329,7 +326,8 @@ public class BlockUtils
                         ((SmallIntVector) vector).setSafe(pos, (short) value);
                     }
                     else {
-                        ((SmallIntVector) vector).setSafe(pos, (int) value);
+                        Number number = (Number) value;
+                        ((SmallIntVector) vector).setSafe(pos, toExactShort(number));
                     }
                     break;
                 case UINT1:
@@ -359,23 +357,18 @@ public class BlockUtils
                         ((UInt8Vector) vector).setSafe(pos, (int) value);
                     }
                     break;
-                case BIGINT:
-                    ((BigIntVector) vector).setSafe(pos, (long) value);
+                case BIGINT: {
+                    Number number = (Number) value;
+                    ((BigIntVector) vector).setSafe(pos, toExactLong(number));
                     break;
+                }
                 case VARBINARY:
                     ((VarBinaryVector) vector).setSafe(pos, (byte[]) value);
                     break;
                 case DECIMAL:
                     DecimalVector dVector = ((DecimalVector) vector);
-                    if (value instanceof Double) {
-                        BigDecimal bdVal = new BigDecimal((double) value);
-                        bdVal = bdVal.setScale(dVector.getScale(), RoundingMode.HALF_UP);
-                        dVector.setSafe(pos, bdVal);
-                    }
-                    else {
-                        BigDecimal scaledValue = ((BigDecimal) value).setScale(dVector.getScale(), RoundingMode.HALF_UP);
-                        ((DecimalVector) vector).setSafe(pos, scaledValue);
-                    }
+                    BigDecimal decimalValue = toBigDecimal((Number) value).setScale(dVector.getScale(), RoundingMode.HALF_UP);
+                    dVector.setSafe(pos, decimalValue);
                     break;
                 case VARCHAR:
                     if (value instanceof Text) {
@@ -407,6 +400,45 @@ public class BlockUtils
                 + " using value " + value
                 + " of type " + vector.getMinorType(), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).build());
         }
+    }
+
+    // Non-boxed-integer Numbers (BigDecimal, BigInteger, Double, ...) go through *ValueExact, so a fraction or an
+    // out-of-range value fails instead of being truncated or wrapped. Boxed integers keep the old narrowing cast.
+    private static long toExactLong(Number value)
+    {
+        return isBoxedInteger(value) ? value.longValue() : toBigDecimal(value).longValueExact();
+    }
+
+    private static int toExactInt(Number value)
+    {
+        return isBoxedInteger(value) ? value.intValue() : toBigDecimal(value).intValueExact();
+    }
+
+    private static short toExactShort(Number value)
+    {
+        return isBoxedInteger(value) ? value.shortValue() : toBigDecimal(value).shortValueExact();
+    }
+
+    private static byte toExactByte(Number value)
+    {
+        return isBoxedInteger(value) ? value.byteValue() : toBigDecimal(value).byteValueExact();
+    }
+
+    private static boolean isBoxedInteger(Number value)
+    {
+        return value instanceof Long || value instanceof Integer || value instanceof Short || value instanceof Byte;
+    }
+
+    // Double and Float use their shortest decimal form, so 2.675 stays 2.675 rather than 2.67499...
+    private static BigDecimal toBigDecimal(Number value)
+    {
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof Double || value instanceof Float) {
+            return BigDecimal.valueOf(value.doubleValue());
+        }
+        return new BigDecimal(value.toString());
     }
 
     /**

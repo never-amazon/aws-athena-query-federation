@@ -38,6 +38,8 @@ import java.io.StringReader;
 import java.security.PrivateKey;
 import java.security.Security;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Utility class for Snowflake authentication methods.
@@ -45,6 +47,8 @@ import java.util.Map;
 public class SnowflakeAuthUtils
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeAuthUtils.class);
+    private static final Pattern PEM_BEGIN_LABEL = Pattern.compile("-----BEGIN ([^-]+)-----");
+    private static final int PEM_LINE_LENGTH = 64;
 
     private SnowflakeAuthUtils()
     {
@@ -98,8 +102,7 @@ public class SnowflakeAuthUtils
             PrivateKeyInfo privateKeyInfo = null;
             Security.addProvider(new BouncyCastleProvider());
             
-            // Format the private key string with proper PEM headers if needed
-            String pemFormattedKey = formatPrivateKeyWithPemHeaders(privateKeyString, passphrase);
+            String pemFormattedKey = normalizeToPem(privateKeyString, passphrase);
             
             // Parse the PEM object and create PrivateKey
             privateKeyInfo = parsePemObject(pemFormattedKey, passphrase);
@@ -114,34 +117,41 @@ public class SnowflakeAuthUtils
     }
 
     /**
-     * Formats a private key string with PEM headers if it's not already formatted.
-     * 
+     * Rewrites a private key string as a PEM with 64-character lines.
+     *
      * @param privateKeyString The private key string (PEM-formatted or raw base64)
      * @param passphrase The passphrase for encrypted private keys (can be null for unencrypted keys)
      * @return Properly formatted PEM string
      */
-    private static String formatPrivateKeyWithPemHeaders(String privateKeyString, String passphrase)
+    private static String normalizeToPem(String privateKeyString, String passphrase)
     {
-        // Check if the input is already in PEM format (contains headers/footers)
-        if (!privateKeyString.contains("-----BEGIN") && !privateKeyString.contains("-----END")) {
-            // Input is raw base64, wrap it with PEM headers and footers
-            // Try to determine if it's encrypted by checking if passphrase is provided
-            if (passphrase != null && !passphrase.trim().isEmpty()) {
-                String formattedKey = "-----BEGIN ENCRYPTED PRIVATE KEY-----\n" + 
-                                     privateKeyString + 
-                                     "\n-----END ENCRYPTED PRIVATE KEY-----";
-                LOGGER.debug("Wrapped raw encrypted private key with PEM headers and footers");
-                return formattedKey;
-            }
-            else {
-                String formattedKey = "-----BEGIN PRIVATE KEY-----\n" + 
-                                     privateKeyString + 
-                                     "\n-----END PRIVATE KEY-----";
-                LOGGER.debug("Wrapped raw private key with PEM headers and footers");
-                return formattedKey;
-            }
+        // PEMParser rejects a PEM on a single line, which is how JSON secrets often store it, so re-wrap the body.
+        // A BEGIN header keeps its own label. Only header-less base64 takes its label from the passphrase.
+        Matcher beginLabel = PEM_BEGIN_LABEL.matcher(privateKeyString);
+        final String keyType;
+        if (beginLabel.find()) {
+            keyType = beginLabel.group(1).trim();
         }
-        return privateKeyString;
+        else if (passphrase != null && !passphrase.trim().isEmpty()) {
+            keyType = "ENCRYPTED PRIVATE KEY";
+        }
+        else {
+            keyType = "PRIVATE KEY";
+        }
+
+        String body = privateKeyString
+                .replaceAll("-----BEGIN[^-]*-----", "")
+                .replaceAll("-----END[^-]*-----", "")
+                .replaceAll("\\s", "");
+
+        StringBuilder pem = new StringBuilder();
+        pem.append("-----BEGIN ").append(keyType).append("-----\n");
+        for (int i = 0; i < body.length(); i += PEM_LINE_LENGTH) {
+            pem.append(body, i, Math.min(i + PEM_LINE_LENGTH, body.length())).append('\n');
+        }
+        pem.append("-----END ").append(keyType).append("-----\n");
+        LOGGER.debug("Normalized private key into well-formed PEM ({})", keyType);
+        return pem.toString();
     }
 
     /**
@@ -196,9 +206,31 @@ public class SnowflakeAuthUtils
             username = credentials.get(SnowflakeConstants.USERNAME);
         }
         if (StringUtils.isBlank(username)) {
+            username = credentials.get(SnowflakeConstants.USERNAME_UPPERCASE);
+        }
+        if (StringUtils.isBlank(username)) {
             throw new IllegalArgumentException("Missing required parameter: username/sfUser");
         }
         return username;
+    }
+
+    /**
+     * Gets the password from credentials, falling back to "PASSWORD" when "password" is blank.
+     *
+     * @param credentials The credentials map
+     * @return The password value
+     * @throws IllegalArgumentException if both fields are missing or blank
+     */
+    public static String getPassword(Map<String, String> credentials)
+    {
+        String password = credentials.get(SnowflakeConstants.PASSWORD);
+        if (StringUtils.isBlank(password)) {
+            password = credentials.get(SnowflakeConstants.PASSWORD_UPPERCASE);
+        }
+        if (StringUtils.isBlank(password)) {
+            throw new IllegalArgumentException("password is required for password authentication");
+        }
+        return password;
     }
 
     /**
@@ -213,7 +245,7 @@ public class SnowflakeAuthUtils
         if (credentials == null || credentials.isEmpty()) {
             throw new IllegalArgumentException("Credentials cannot be null or empty");
         }
-        // Check for sfUser (or "username" field)
+        // Check for sfUser (or "username" / "USERNAME" field)
         getUsername(credentials);
 
         switch (authType) {
@@ -229,9 +261,7 @@ public class SnowflakeAuthUtils
                 }
                 break;
             case SNOWFLAKE:
-                if (StringUtils.isBlank(credentials.get(SnowflakeConstants.PASSWORD))) {
-                    throw new IllegalArgumentException("password is required for password authentication");
-                }
+                getPassword(credentials);
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported authentication type: " + authType);

@@ -94,8 +94,8 @@ public class S3BlockSpiller
     private final Schema schema;
     //The max number of rows that are allowed to be written per call to writeRows(...)
     private final long maxRowsPerCall;
-    //If we spilled, the spill locations are kept here.
-    private final List<SpillLocation> spillLocations = new ArrayList<>();
+    //If we spilled, the spill locations are kept here. Synchronized because async spill threads add to it concurrently.
+    private final List<SpillLocation> spillLocations = Collections.synchronizedList(new ArrayList<>());
     //Reference to the in progress Block.
     private final AtomicReference<Block> inProgressBlock = new AtomicReference<>();
     //Allows a degree of pipelining to take place so we don't block reading from the source
@@ -269,23 +269,21 @@ public class S3BlockSpiller
             throw new AthenaConnectorException("Blocks have not spilled, calls to getSpillLocations not permitted. use getBlock instead.", ErrorDetails.builder().errorCode(FederationSourceErrorCode.INTERNAL_SERVICE_EXCEPTION.toString()).build());
         }
 
+        Block block = inProgressBlock.get();
+        if (block.getRowCount() > 0) {
+            logger.info("getSpillLocations: Spilling final block with {} rows and {} bytes and config {} bytes",
+                    new Object[] {block.getRowCount(), block.getSize(), spillConfig.getMaxBlockBytes()});
+
+            spillBlock(block);
+
+            inProgressBlock.set(this.allocator.createBlock(this.schema));
+            inProgressBlock.get().constrain(constraintEvaluator);
+        }
+
+        // Lock only after the final spill: an async spill holds the read lock, and a failed spill must not reach unlock().
         Lock lock = spillLock.writeLock();
+        lock.lock();
         try {
-            /**
-             * Flush the in-progress block in nessesary.
-             */
-            Block block = inProgressBlock.get();
-            if (block.getRowCount() > 0) {
-                logger.info("getSpillLocations: Spilling final block with {} rows and {} bytes and config {} bytes",
-                        new Object[] {block.getRowCount(), block.getSize(), spillConfig.getMaxBlockBytes()});
-
-                spillBlock(block);
-
-                inProgressBlock.set(this.allocator.createBlock(this.schema));
-                inProgressBlock.get().constrain(constraintEvaluator);
-            }
-
-            lock.lock();
             if (asyncException.get() != null) {
                 throw asyncException.get();
             }

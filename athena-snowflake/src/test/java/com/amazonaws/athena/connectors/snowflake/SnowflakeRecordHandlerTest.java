@@ -43,7 +43,9 @@ import com.amazonaws.athena.connector.lambda.security.FederatedIdentity;
 import com.amazonaws.athena.connector.lambda.security.LocalKeyFactory;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
+import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
+import com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
 import org.apache.arrow.memory.BufferAllocator;
@@ -60,16 +62,20 @@ import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.Text;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -87,7 +93,9 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -111,6 +119,7 @@ public class SnowflakeRecordHandlerTest
         extends TestBase
 {
     private static final Logger logger = LoggerFactory.getLogger(SnowflakeRecordHandlerTest.class);
+    private static final String EXPORT_QUERY = "SELECT id FROM t";
     private SnowflakeRecordHandler handler;
     private FederatedIdentity identity = new FederatedIdentity("arn", "account", Collections.emptyMap(), Collections.emptyList(), Collections.emptyMap());
     private EncryptionKeyFactory keyFactory = new LocalKeyFactory();
@@ -517,6 +526,20 @@ public class SnowflakeRecordHandlerTest
         
         CredentialsProvider provider = handler.getCredentialProvider();
         assertNotNull(provider);
+    }
+
+    @Test
+    public void testCreateCredentialsProviderPassesRequestOverrideConfiguration()
+    {
+        AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(30))
+                .build();
+        List<List<?>> constructorArguments = new ArrayList<>();
+        try (MockedConstruction<SnowflakeCredentialsProvider> providers = mockConstruction(SnowflakeCredentialsProvider.class,
+                (mock, context) -> constructorArguments.add(context.arguments()))) {
+            handler.createCredentialsProvider("testSecret", overrideConfig);
+        }
+        assertEquals(Collections.singletonList(Arrays.asList("testSecret", overrideConfig)), constructorArguments);
     }
 
     @Test
@@ -951,6 +974,146 @@ public class SnowflakeRecordHandlerTest
         // Skip this test as it requires complex S3 mocking for parquet file operations
         // This test would need proper S3 HeadObject and GetObject mocking which is beyond basic unit testing
         org.junit.Assume.assumeTrue("Arrow reader test skipped due to S3 mocking complexity", false);
+    }
+
+        @Test
+    public void exportSchemaUsesJdbcWhenS3ExportDisabled() throws Exception
+    {
+        try (MockedStatic<SnowflakeConstants> snowflakeConstantsMockedStatic = mockStatic(SnowflakeConstants.class)) {
+            snowflakeConstantsMockedStatic.when(() -> SnowflakeConstants.isS3ExportEnabled(any())).thenReturn(false);
+            assertExportUsesJdbc(Split.newBuilder(exportSpillLocation(), keyFactory.create()).build());
+        }
+    }
+
+    @Test
+    public void exportSchemaUsesJdbcWhenS3ExportIsEmpty() throws Exception
+    {
+        try (MockedStatic<SnowflakeConstants> snowflakeConstantsMockedStatic = mockStatic(SnowflakeConstants.class)) {
+            snowflakeConstantsMockedStatic.when(() -> SnowflakeConstants.isS3ExportEnabled(any())).thenReturn(true);
+            assertExportUsesJdbc(Split.newBuilder(exportSpillLocation(), keyFactory.create())
+                    .add(SNOWFLAKE_SPLIT_EXPORT_BUCKET, "export_bucket")
+                    .add(SNOWFLAKE_SPLIT_OBJECT_KEY, "")
+                    .build());
+        }
+    }
+
+    @Test
+    public void exportSchemaRespillsExportedParquet() throws Exception
+    {
+        try (MockedStatic<SnowflakeConstants> snowflakeConstantsMockedStatic = mockStatic(SnowflakeConstants.class)) {
+            snowflakeConstantsMockedStatic.when(() -> SnowflakeConstants.isS3ExportEnabled(any())).thenReturn(true);
+
+            VectorSchemaRoot schemaRoot = createRoot();
+            ArrowReader mockReader = mock(ArrowReader.class);
+            when(mockReader.loadNextBatch()).thenReturn(true, false);
+            when(mockReader.getVectorSchemaRoot()).thenReturn(schemaRoot);
+            SnowflakeRecordHandler handlerSpy = spy(handler);
+            doReturn(schemaRoot.getSchema()).when(handlerSpy).inspectParquetSchema(any());
+            doReturn(mockReader).when(handlerSpy).constructArrowReader(any(), any());
+
+            S3SpillLocation splitLoc = exportSpillLocation();
+            Split split = Split.newBuilder(splitLoc, keyFactory.create())
+                    .add(SNOWFLAKE_SPLIT_EXPORT_BUCKET, "export_bucket")
+                    .add(SNOWFLAKE_SPLIT_OBJECT_KEY, "test_key.parquet")
+                    .build();
+
+            RecordResponse rawResponse = handlerSpy.doReadRecords(allocator, exportRequest(split));
+
+            assertTrue(rawResponse instanceof RemoteReadRecordsResponse);
+            RemoteReadRecordsResponse response = (RemoteReadRecordsResponse) rawResponse;
+            assertEquals(schemaRoot.getSchema(), response.getSchema());
+            assertEquals(1, response.getRemoteBlocks().size());
+            assertEquals(splitLoc.getKey() + ".0", ((S3SpillLocation) response.getRemoteBlocks().get(0)).getKey());
+            assertTrue(putKeys().contains(splitLoc.getKey() + ".schema"));
+            verify(connection, never()).prepareStatement(anyString());
+        }
+    }
+
+    @Test
+    public void deriveExportSchemaMapsScaleZeroNumberToDecimal() throws SQLException
+    {
+        // label, JDBC type, precision, scale
+        Object[][] columns = {
+                {"number_19_0", java.sql.Types.BIGINT, 19, 0},
+                {"number_precision_0", java.sql.Types.BIGINT, 0, 0},
+                {"number_precision_39", java.sql.Types.BIGINT, 39, 0},
+                {"bigint_scale_2", java.sql.Types.BIGINT, 19, 2},
+                {"number_10_2", java.sql.Types.DECIMAL, 10, 2}};
+        java.sql.ResultSetMetaData metadata = mock(java.sql.ResultSetMetaData.class);
+        when(metadata.getColumnCount()).thenReturn(columns.length);
+        for (int i = 0; i < columns.length; i++) {
+            int column = i + 1;
+            when(metadata.getColumnLabel(column)).thenReturn((String) columns[i][0]);
+            when(metadata.getColumnType(column)).thenReturn((Integer) columns[i][1]);
+            when(metadata.getPrecision(column)).thenReturn((Integer) columns[i][2]);
+            when(metadata.getScale(column)).thenReturn((Integer) columns[i][3]);
+        }
+
+        Schema schema = handler.deriveExportSchema(metadata);
+
+        assertEquals(new ArrowType.Decimal(19, 0, 128), schema.findField("number_19_0").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("number_precision_0").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("number_precision_39").getType());
+        assertEquals(Types.MinorType.BIGINT.getType(), schema.findField("bigint_scale_2").getType());
+        assertEquals(new ArrowType.Decimal(10, 2, 128), schema.findField("number_10_2").getType());
+    }
+
+    private void assertExportUsesJdbc(Split split) throws Exception
+    {
+        PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        when(connection.prepareStatement(EXPORT_QUERY)).thenReturn(preparedStatement);
+        java.sql.ResultSet resultSet = mock(java.sql.ResultSet.class);
+        when(preparedStatement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(false);
+        java.sql.ResultSetMetaData metadata = mock(java.sql.ResultSetMetaData.class);
+        when(resultSet.getMetaData()).thenReturn(metadata);
+        when(metadata.getColumnCount()).thenReturn(1);
+        when(metadata.getColumnLabel(1)).thenReturn("id");
+        when(metadata.getColumnName(1)).thenReturn("id");
+        when(metadata.getColumnType(1)).thenReturn(java.sql.Types.BIGINT);
+        when(metadata.getPrecision(1)).thenReturn(19);
+
+        SnowflakeRecordHandler handlerSpy = spy(handler);
+        RecordResponse rawResponse = handlerSpy.doReadRecords(allocator, exportRequest(split));
+
+        assertTrue(rawResponse instanceof RemoteReadRecordsResponse);
+        RemoteReadRecordsResponse response = (RemoteReadRecordsResponse) rawResponse;
+        assertEquals("id", response.getSchema().getFields().get(0).getName());
+        verify(connection).prepareStatement(EXPORT_QUERY);
+        verify(handlerSpy, never()).constructArrowReader(any(), any());
+        assertTrue(putKeys().contains(((S3SpillLocation) split.getSpillLocation()).getKey() + ".schema"));
+    }
+
+    private ReadRecordsRequest exportRequest(Split split)
+    {
+        Map<String, String> qptArgs = new HashMap<>();
+        qptArgs.put(JdbcRecordHandler.EXPORT_SCHEMA, "true");
+        qptArgs.put(JdbcQueryPassthrough.QUERY, EXPORT_QUERY);
+        return new ReadRecordsRequest(identity, DEFAULT_CATALOG, QUERY_ID, TABLE_NAME,
+                SchemaBuilder.newBuilder().addStringField("unused").build(), split,
+                new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(), DEFAULT_NO_LIMIT, qptArgs, null),
+                100_000_000_000L, 100_000_000_000L);
+    }
+
+    private static S3SpillLocation exportSpillLocation()
+    {
+        return S3SpillLocation.newBuilder()
+                .withBucket(UUID.randomUUID().toString())
+                .withSplitId(UUID.randomUUID().toString())
+                .withQueryId(UUID.randomUUID().toString())
+                .withIsDirectory(true)
+                .build();
+    }
+
+    private List<String> putKeys()
+    {
+        ArgumentCaptor<PutObjectRequest> captor = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(amazonS3, atLeastOnce()).putObject(captor.capture(), any(RequestBody.class));
+        List<String> keys = new ArrayList<>();
+        for (PutObjectRequest putRequest : captor.getAllValues()) {
+            keys.add(putRequest.key());
+        }
+        return keys;
     }
 
     private void fail(String message) {

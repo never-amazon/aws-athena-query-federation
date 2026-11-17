@@ -19,6 +19,7 @@
  */
 package com.amazonaws.athena.connectors.snowflake;
 
+import com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
 import com.amazonaws.athena.connector.lambda.data.SchemaBuilder;
@@ -41,6 +42,7 @@ import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -118,7 +120,7 @@ public class SnowflakeQueryStringBuilderTest
         Split split = Split.newBuilder(
                 S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
                 null
-        ).add("partition", "test-partition").build();
+        ).add("partition", "partition-primary-col1-limit-1000-offset-0").build();
 
         PreparedStatement result = queryBuilder.buildSql(
                 mockConnection,
@@ -155,7 +157,7 @@ public class SnowflakeQueryStringBuilderTest
         Split split = Split.newBuilder(
                 S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
                 null
-        ).add("partition", "test-partition").build();
+        ).add("partition", "partition-primary-col1-limit-1000-offset-0").build();
 
         PreparedStatement result = queryBuilder.buildSql(
                 mockConnection,
@@ -404,5 +406,147 @@ public class SnowflakeQueryStringBuilderTest
         );
 
         assertNotNull(result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithNullSplit()
+    {
+        String result = queryBuilder.appendLimitOffset(null);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithEmptySplit()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithMissingMarkers()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "some-random-value").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithMalformedPartition()
+    {
+        // Markers in wrong order: offset before limit
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-offset-0-limit-100-primary-col1").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithEmptyPrimaryKey()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-primary--limit-1000-offset-0").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithNonNumericLimit()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-primary-col1-limit-abc-offset-0").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithNonNumericOffset()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-primary-col1-limit-1000-offset-xyz").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithValidPartition()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-primary-\"id\"-limit-1000-offset-500").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("ORDER BY \"id\"  LIMIT 1000 OFFSET 500", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithCompositePrimaryKey()
+    {
+        Split split = Split.newBuilder(
+                S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(),
+                null
+        ).add("partition", "partition-primary-\"col1\",\"col2\"-limit-5000-offset-10000").build();
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertEquals("ORDER BY \"col1\",\"col2\"  LIMIT 5000 OFFSET 10000", result);
+    }
+
+    @Test
+    public void testAppendLimitOffsetWithCasingFilterBeforePartition()
+    {
+        // Direct-query splits can carry the casing filter too, and SplitSerDe keeps the key order it receives.
+        Map<String, String> properties = new LinkedHashMap<>();
+        properties.put(EnvironmentConstants.CATALOG_CASING_FILTER, EnvironmentConstants.UPPERCASE_ONLY);
+        properties.put("partition", "partition-primary-\"id\"-limit-100-offset-200");
+        Split split = new Split(S3SpillLocation.newBuilder().withBucket("test").withPrefix("test").build(), null, properties);
+
+        String result = queryBuilder.appendLimitOffset(split);
+        assertTrue(result.contains("ORDER BY \"id\""));
+        assertTrue(result.contains("LIMIT 100 OFFSET 200"));
+    }
+
+    @Test
+    public void testGetSqlDialect()
+    {
+        org.apache.calcite.sql.SqlDialect dialect = queryBuilder.getSqlDialect();
+        assertNotNull(dialect);
+        assertTrue(dialect instanceof org.apache.calcite.sql.dialect.SnowflakeSqlDialect);
+    }
+
+    @Test
+    public void testGetSqlDialectWithCasingFilter()
+    {
+        org.apache.calcite.sql.SqlDialect dialect = queryBuilder.getSqlDialect(true);
+        assertNotNull(dialect);
+        assertTrue(dialect instanceof SnowflakeDialect);
+    }
+
+    @Test
+    public void testGetSqlDialectWithCasingFilterFalse()
+    {
+        org.apache.calcite.sql.SqlDialect dialect = queryBuilder.getSqlDialect(false);
+        assertNotNull(dialect);
+        assertTrue(dialect instanceof SnowflakeDialect);
     }
 }

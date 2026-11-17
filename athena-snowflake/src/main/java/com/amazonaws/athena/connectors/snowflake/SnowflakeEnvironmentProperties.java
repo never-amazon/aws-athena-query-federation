@@ -43,6 +43,7 @@ public class SnowflakeEnvironmentProperties extends JdbcEnvironmentProperties
     private static final String DB_PROPERTY_KEY = "db";
     private static final String SCHEMA_PROPERTY_KEY = "schema";
     private static final String SNOWFLAKE_ESCAPE_CHARACTER = "\"";
+    private static final String NULL_LITERAL = "null";
 
     @Override
     public Map<String, String> connectionPropertiesToEnvironment(Map<String, String> connectionProperties)
@@ -137,6 +138,17 @@ public class SnowflakeEnvironmentProperties extends JdbcEnvironmentProperties
         return SNOWFLAKE_ESCAPE_CHARACTER + input + SNOWFLAKE_ESCAPE_CHARACTER;
     }
 
+    /**
+     * Returns true when a Glue connection value is safe to forward to the Snowflake driver.
+     * Quoting a blank or {@code "null"} value names an object that does not exist, so omit it and let Snowflake use the user's default.
+     */
+    private static boolean isUsableValue(String value)
+    {
+        return !Strings.isNullOrEmpty(value)
+                && !value.trim().isEmpty()
+                && !NULL_LITERAL.equalsIgnoreCase(value.trim());
+    }
+
     private static boolean isGlueConnection(Map<String, String> properties)
     {
         return properties.containsKey(DEFAULT_GLUE_CONNECTION);
@@ -156,20 +168,29 @@ public class SnowflakeEnvironmentProperties extends JdbcEnvironmentProperties
         }
 
         String warehouse = connectionProperties.get(WAREHOUSE);
-        if (warehouse != null) {
+        if (isUsableValue(warehouse)) {
             parameters.put(WAREHOUSE_PROPERTY_KEY, getValueWrapperWithEscapedCharacter(warehouse));
+        }
+        else if (warehouse != null) {
+            logger.warn("Ignoring unusable warehouse value; the session will fall back to the user's default warehouse");
         }
 
         String database = connectionProperties.get(DATABASE);
-        if (database != null) {
+        if (isUsableValue(database)) {
             parameters.put(DB_PROPERTY_KEY, getValueWrapperWithEscapedCharacter(database));
+        }
+        else if (database != null) {
+            logger.warn("Ignoring unusable database value; the session will fall back to the user's default database");
         }
 
         if (connectionProperties.containsKey(SCHEMA)) {
             String schema = connectionProperties.get(SCHEMA);
-            if (schema != null) {
+            if (isUsableValue(schema)) {
                 logger.debug("Found schema specified");
                 parameters.put(SCHEMA_PROPERTY_KEY, getValueWrapperWithEscapedCharacter(schema));
+            }
+            else if (schema != null) {
+                logger.warn("Ignoring unusable schema value; the session will fall back to the user's default schema");
             }
         }
 

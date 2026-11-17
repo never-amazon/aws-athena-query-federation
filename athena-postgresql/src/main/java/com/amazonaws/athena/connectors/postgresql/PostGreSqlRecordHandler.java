@@ -19,6 +19,7 @@
  */
 package com.amazonaws.athena.connectors.postgresql;
 
+import com.amazonaws.athena.connector.lambda.data.SupportedTypes;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
@@ -28,9 +29,14 @@ import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo;
 import com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory;
 import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
 import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
+import com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.arrow.adapter.jdbc.JdbcFieldInfo;
+import org.apache.arrow.adapter.jdbc.JdbcToArrowUtils;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
@@ -43,7 +49,13 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.TimeZone;
 
 import static com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants.POSTGRESQL_DEFAULT_PORT;
 import static com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants.POSTGRESQL_DRIVER_CLASS;
@@ -103,5 +115,44 @@ public class PostGreSqlRecordHandler
         }
 
         return preparedStatement;
+    }
+
+    @Override
+    protected PreparedStatement prepareExportStatement(Connection connection, String query) throws SQLException
+    {
+        PreparedStatement preparedStatement = super.prepareExportStatement(connection, query);
+        // Without a fetch size, pgjdbc reads the whole result into memory, even with auto-commit off.
+        preparedStatement.setFetchSize(FETCH_SIZE);
+        return preparedStatement;
+    }
+
+    /**
+     * Unbounded numeric becomes Decimal(38, default_scale), as on the normal read path. Types that the spill
+     * cannot write (time, uuid, json, interval, arrays) become VARCHAR, as in doGetQueryPassthroughSchema.
+     */
+    @Override
+    protected Schema deriveExportSchema(ResultSetMetaData metadata) throws SQLException
+    {
+        Calendar utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+        List<Field> fields = new ArrayList<>();
+        for (int column = 1; column <= metadata.getColumnCount(); column++) {
+            fields.add(Field.nullable(metadata.getColumnLabel(column), exportArrowType(metadata, column, utc)));
+        }
+        return new Schema(fields);
+    }
+
+    private ArrowType exportArrowType(ResultSetMetaData metadata, int column, Calendar utc) throws SQLException
+    {
+        if (metadata.getColumnType(column) == Types.NUMERIC && metadata.getPrecision(column) == 0 && metadata.getScale(column) <= 0) {
+            return JdbcArrowTypeConverter.toArrowType(Types.NUMERIC, 0, 0, configOptions).get();
+        }
+        ArrowType type;
+        try {
+            type = JdbcToArrowUtils.getArrowTypeFromJdbcType(new JdbcFieldInfo(metadata, column), utc);
+        }
+        catch (UnsupportedOperationException e) {
+            return ArrowType.Utf8.INSTANCE;
+        }
+        return SupportedTypes.isSupported(type) && !(type instanceof ArrowType.List) ? type : ArrowType.Utf8.INSTANCE;
     }
 }

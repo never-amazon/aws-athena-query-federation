@@ -22,10 +22,16 @@ package com.amazonaws.athena.connectors.snowflake;
 import com.amazonaws.athena.connector.credentials.CredentialsProvider;
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.Block;
+import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.S3BlockSpiller;
+import com.amazonaws.athena.connector.lambda.data.SpillConfig;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
+import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation;
 import com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
@@ -36,6 +42,7 @@ import com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler;
 import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory;
+import com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.arrow.dataset.file.FileFormat;
 import org.apache.arrow.dataset.file.FileSystemDatasetFactory;
@@ -53,7 +60,10 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.TimeStampMilliTZVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
+import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.VectorAppender;
 import org.apache.commons.lang3.StringUtils;
@@ -70,7 +80,10 @@ import software.amazon.awssdk.utils.Validate;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
@@ -85,6 +98,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private static final int EXPORT_READ_BATCH_SIZE_BYTE = 32768;
     private static final int FETCH_SIZE = 1000;
+    private static final int DECIMAL128_BIT_WIDTH = 128;
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
     /**
@@ -98,10 +112,14 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
 
     public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, java.util.Map<String, String> configOptions)
     {
-        this(databaseConnectionConfig,
-                new SnowflakeConnectionFactory(databaseConnectionConfig, SnowflakeEnvironmentProperties.getSnowFlakeParameter(JDBC_PROPERTIES, configOptions),
-                new DatabaseConnectionInfo(SnowflakeConstants.SNOWFLAKE_DRIVER_CLASS,
-                        SnowflakeConstants.SNOWFLAKE_DEFAULT_PORT)), configOptions);
+        this(
+            databaseConnectionConfig,
+            new SnowflakeConnectionFactory(
+                databaseConnectionConfig,
+                SnowflakeEnvironmentProperties.getSnowFlakeParameter(JDBC_PROPERTIES, configOptions),
+                new DatabaseConnectionInfo(SnowflakeConstants.SNOWFLAKE_DRIVER_CLASS, SnowflakeConstants.SNOWFLAKE_DEFAULT_PORT),
+                configOptions),
+            configOptions);
     }
 
     public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, GenericJdbcConnectionFactory jdbcConnectionFactory, java.util.Map<String, String> configOptions)
@@ -111,7 +129,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     @VisibleForTesting
-    SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, S3Client amazonS3, SecretsManagerClient secretsManager, AthenaClient athena, JdbcConnectionFactory jdbcConnectionFactory, JdbcSplitQueryBuilder jdbcSplitQueryBuilder, java.util.Map<String, String> configOptions)
+    public SnowflakeRecordHandler(DatabaseConnectionConfig databaseConnectionConfig, S3Client amazonS3, SecretsManagerClient secretsManager, AthenaClient athena, JdbcConnectionFactory jdbcConnectionFactory, JdbcSplitQueryBuilder jdbcSplitQueryBuilder, java.util.Map<String, String> configOptions)
     {
         super(amazonS3, secretsManager, athena, databaseConnectionConfig, jdbcConnectionFactory, configOptions);
         this.jdbcConnectionFactory = jdbcConnectionFactory;
@@ -198,6 +216,64 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
       super.readWithConstraint(spiller, recordsRequest, queryStatusChecker);
     }
 
+    /**
+     * Re-spills the Parquet that {@code COPY INTO} already exported, with its own schema. Falls back to the
+     * JDBC path when S3 export is off or the export is empty.
+     */
+    @Override
+    protected Schema exportResultSetToSpill(ReadRecordsRequest request, BlockAllocator allocator, List<SpillLocation> spillLocations,
+            QueryStatusChecker queryStatusChecker)
+            throws Exception
+    {
+        if (!SnowflakeConstants.isS3ExportEnabled(configOptions)) {
+            return super.exportResultSetToSpill(request, allocator, spillLocations, queryStatusChecker);
+        }
+
+        Split split = request.getSplit();
+        String exportBucket = split.getProperty(SNOWFLAKE_SPLIT_EXPORT_BUCKET);
+        String s3ObjectKey = split.getProperty(SNOWFLAKE_SPLIT_OBJECT_KEY);
+        if (s3ObjectKey == null || s3ObjectKey.isEmpty()) {
+            return super.exportResultSetToSpill(request, allocator, spillLocations, queryStatusChecker);
+        }
+
+        S3SpillLocation spillLocation = (S3SpillLocation) split.getSpillLocation();
+        S3Client s3Client = resolveScopedS3Client(request);
+        SpillConfig spillConfig = buildExportSpillConfig(request);
+        String s3path = constructS3Uri(exportBucket, s3ObjectKey);
+        LOGGER.info("exportResultSetToSpill(S3 export): reading exported Parquet {} and re-spilling as Arrow", s3path);
+
+        Schema derivedSchema = inspectParquetSchema(s3path);
+
+        try (ArrowReader reader = constructArrowReader(s3path, derivedSchema);
+                ConstraintEvaluator evaluator = new ConstraintEvaluator(allocator, derivedSchema, request.getConstraints());
+                S3BlockSpiller spiller = new S3BlockSpiller(s3Client, spillConfig, allocator, derivedSchema, evaluator, configOptions)) {
+            VectorSchemaRoot root = reader.getVectorSchemaRoot();
+            // Sidecar first, so readers find the schema as soon as the first data object appears.
+            writeSchemaSidecar(s3Client, spillLocation, split.getEncryptionKey(), derivedSchema, allocator);
+            while (reader.loadNextBatch() && queryStatusChecker.isQueryRunning()) {
+                spiller.writeRows((Block block, int startRowNum) -> {
+                    for (Field field : root.getSchema().getFields()) {
+                        FieldVector src = root.getVector(field.getName());
+                        VectorAppender appender = new VectorAppender(block.getFieldVector(field.getName()));
+                        src.accept(appender, null);
+                    }
+                    return root.getRowCount();
+                });
+            }
+            if (spiller.spilled()) {
+                spillLocations.addAll(spiller.getSpillLocations());
+            }
+        }
+        return derivedSchema;
+    }
+
+    @VisibleForTesting
+    protected Schema inspectParquetSchema(String uri)
+    {
+        DatasetFactory datasetFactory = new FileSystemDatasetFactory(new RootAllocator(), NativeMemoryPool.getDefault(), FileFormat.PARQUET, uri);
+        return datasetFactory.inspect();
+    }
+
     @VisibleForTesting
     protected ArrowReader constructArrowReader(String uri, Schema schema)
     {
@@ -251,7 +327,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     public CredentialsProvider createCredentialsProvider(String secretName, AwsRequestOverrideConfiguration requestOverrideConfiguration)
     {
         if (StringUtils.isNotBlank(secretName)) {
-            return new SnowflakeCredentialsProvider(secretName);
+            return new SnowflakeCredentialsProvider(secretName, requestOverrideConfiguration);
         }
 
         return null;
@@ -295,5 +371,38 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         resultVector.setValueCount(rowCount);
 
         return resultVector;
+    }
+
+    /**
+     * Maps scale-0 {@code NUMBER(p)} columns, which the driver reports as integer types, to {@code Decimal(p, 0)}
+     * so the export keeps the declared precision.
+     */
+    @Override
+    protected Schema deriveExportSchema(ResultSetMetaData metadata) throws SQLException
+    {
+        Schema baseSchema = super.deriveExportSchema(metadata);
+        List<Field> fields = new ArrayList<>(baseSchema.getFields().size());
+
+        for (int i = 0; i < baseSchema.getFields().size(); i++) {
+            Field baseField = baseSchema.getFields().get(i);
+            int column = i + 1; // ResultSetMetaData columns are 1-indexed
+            Types.MinorType minorType = Types.getMinorTypeForArrowType(baseField.getType());
+            boolean isArrowInteger = minorType == Types.MinorType.TINYINT || minorType == Types.MinorType.SMALLINT
+                    || minorType == Types.MinorType.INT || minorType == Types.MinorType.BIGINT;
+
+            if (isArrowInteger && metadata.getScale(column) == 0) {
+                int precision = metadata.getPrecision(column);
+                if (precision >= 1 && precision <= SnowflakeArrowTypeConverter.DEFAULT_PRECISION) {
+                    ArrowType.Decimal decimalType = new ArrowType.Decimal(precision, 0, DECIMAL128_BIT_WIDTH);
+                    fields.add(new Field(baseField.getName(),
+                            new FieldType(baseField.isNullable(), decimalType, null), baseField.getChildren()));
+                    continue;
+                }
+                LOGGER.debug("deriveExportSchema: column {} precision {} outside Arrow decimal range; keeping {}",
+                        baseField.getName(), precision, baseField.getType());
+            }
+            fields.add(baseField);
+        }
+        return new Schema(fields, baseSchema.getCustomMetadata());
     }
 }
