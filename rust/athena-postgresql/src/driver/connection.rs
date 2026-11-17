@@ -9,11 +9,11 @@ use athena_jdbc::sql::{
 };
 use tokio::sync::Mutex;
 
-use super::error::{psql, DATA_TYPE_MISMATCH, NO_DATA};
-use super::messages::FieldDescription;
+use super::error::{psql, psql_with_cause, CONNECTION_FAILURE, DATA_TYPE_MISMATCH, NO_DATA};
 use super::metadata::PgDatabaseMetaData;
 use super::parser::{to_native_sql, NativeSql};
-use super::session::{lock_buffer, Session, SharedBuffer};
+use super::session::{lock_buffer, FieldDescription, Session, SharedBuffer};
+use super::startup::{connect, send_cancel, CancelTarget};
 use super::types::TypeCache;
 use super::url::parse_url;
 
@@ -42,6 +42,17 @@ pub(crate) type SharedSession = Arc<Mutex<Session>>;
 pub struct PgConnection {
     session: SharedSession,
     metadata: PgDatabaseMetaData,
+    cancel: Option<CancelTarget>,
+}
+
+struct QueryTimer(Option<tokio::task::JoinHandle<()>>);
+
+impl Drop for QueryTimer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -96,17 +107,32 @@ struct PgRowSource {
     session: SharedSession,
     id: u64,
     buffer: SharedBuffer,
+    timer: QueryTimer,
 }
 
 #[async_trait]
 impl RowSource for PgRowSource {
     async fn next_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+        let next = self.read_row().await;
+        if !matches!(next, Ok(Some(_))) {
+            self.timer = QueryTimer(None);
+        }
+        next
+    }
+}
+
+impl PgRowSource {
+    async fn read_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlException> {
         if let Some(next) = lock_buffer(&self.buffer).pop() {
             return next;
         }
         let mut session = self.session.lock().await;
         if session.active_id() == Some(self.id) {
-            return session.next_row(self.id).await;
+            return session.next_row(self.id, true).await;
+        }
+        if session.has_portal(self.id) {
+            session.resume(self.id).await?;
+            return session.next_row(self.id, true).await;
         }
         drop(session);
         let mut buffer = lock_buffer(&self.buffer);
@@ -159,12 +185,45 @@ impl PgConnection {
     ) -> Result<PgConnection, SqlException> {
         let info: HashMap<String, String> = properties.clone();
         let settings = parse_url(url, &info)?;
-        let session = Session::connect(&settings).await?;
+        let (session, host) = connect(&settings).await?;
+        let cancel = session.backend_key().map(|key| CancelTarget {
+            host,
+            key,
+            timeout: settings.cancel_signal_timeout,
+        });
         let session: SharedSession = Arc::new(Mutex::new(session));
         Ok(PgConnection {
             metadata: PgDatabaseMetaData::new(Arc::clone(&session)),
             session,
+            cancel,
         })
+    }
+
+    pub async fn cancel_query(&self) -> Result<(), SqlException> {
+        let Some(target) = &self.cancel else {
+            return Ok(());
+        };
+        send_cancel(target).await.map_err(|e| {
+            psql_with_cause(
+                "Unable to send the cancel request to the server.",
+                CONNECTION_FAILURE,
+                e,
+            )
+        })
+    }
+
+    fn query_timer(&self, statement: &PreparedStatement) -> QueryTimer {
+        let seconds = statement.query_timeout();
+        let Some(target) = self.cancel.clone().filter(|_| seconds > 0) else {
+            return QueryTimer(None);
+        };
+        let limit = std::time::Duration::from_secs(u64::from(seconds.unsigned_abs()));
+        QueryTimer(Some(tokio::spawn(async move {
+            tokio::time::sleep(limit).await;
+            if let Err(e) = send_cancel(&target).await {
+                tracing::debug!("Failed to cancel the statement after its timeout: {}", e);
+            }
+        })))
     }
 
     async fn field_metadata(
@@ -270,9 +329,15 @@ impl JdbcConnection for PgConnection {
     ) -> Result<ResultSet, SqlException> {
         let native = native_sql(statement);
         check_parameters(&native, statement)?;
+        let timer = self.query_timer(statement);
         let mut session = self.session.lock().await;
         let executed = session
-            .execute(&native.sql, statement.parameters(), false)
+            .execute(
+                &native.sql,
+                statement.parameters(),
+                false,
+                statement.fetch_size(),
+            )
             .await?;
         let (Some(fields), Some((id, buffer))) = (executed.fields, executed.result) else {
             return Err(psql("No results were returned by the query.", NO_DATA));
@@ -285,6 +350,7 @@ impl JdbcConnection for PgConnection {
                 session: Arc::clone(&self.session),
                 id,
                 buffer,
+                timer,
             }),
         ))
     }
@@ -292,12 +358,13 @@ impl JdbcConnection for PgConnection {
     async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlException> {
         let native = native_sql(statement);
         check_parameters(&native, statement)?;
+        let _timer = self.query_timer(statement);
         let mut session = self.session.lock().await;
         let executed = session
-            .execute(&native.sql, statement.parameters(), false)
+            .execute(&native.sql, statement.parameters(), false, 0)
             .await?;
         if let Some((id, _)) = executed.result {
-            while session.next_row(id).await?.is_some() {}
+            while session.next_row(id, true).await?.is_some() {}
         }
         Ok(executed.fields.is_some())
     }

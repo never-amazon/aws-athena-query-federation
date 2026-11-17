@@ -1,27 +1,36 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::Duration;
 
 use athena_jdbc::sql::{SqlException, SqlValue};
-use rustls_pki_types::ServerName;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio_rustls::TlsConnector;
+use bytes::BytesMut;
+use fallible_iterator::FallibleIterator;
+use postgres_protocol::message::backend::{ErrorFields, Message, RowDescriptionBody};
+use postgres_protocol::message::frontend;
+use postgres_protocol::IsNull;
 
-use super::auth::{md5_password, ScramClient, SCRAM_SHA_256};
 use super::codec::{encode_parameter, Decoder};
-use super::error::{
-    connection_closed, io_failure, protocol_violation, psql, psql_with_cause, server_error,
-    CONNECTION_REJECTED, CONNECTION_UNABLE_TO_CONNECT, INVALID_PASSWORD, NOT_IMPLEMENTED,
-};
-use super::messages::{Backend, FieldDescription, Frontend, Wire};
-use super::stream::PgSocket;
-use super::tls::client_config;
+use super::error::{connection_closed, io_failure, protocol_violation, server_error};
 use super::types::{LookedUpType, TypeCache, TYPE_LOOKUP_QUERY};
-use super::url::{ConnectSettings, HostSpec, SslMode};
+use super::wire::Wire;
 
 const STATUS_IDLE: u8 = b'I';
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FieldDescription {
+    pub(crate) name: String,
+    pub(crate) table_oid: u32,
+    pub(crate) column: i16,
+    pub(crate) type_oid: u32,
+    pub(crate) type_modifier: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BackendKey {
+    pub(crate) process_id: i32,
+    pub(crate) secret_key: i32,
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct Buffered {
@@ -54,12 +63,32 @@ impl Buffered {
         self.abandoned = true;
         self.rows.clear();
     }
+
+    fn finish(&mut self, error: Option<SqlException>) {
+        self.done = true;
+        if self.error.is_none() {
+            self.error = error;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Portal {
+    name: String,
+    fetch_size: i32,
+}
+
+struct ResultStream {
+    decoders: Arc<[Decoder]>,
+    buffer: SharedBuffer,
+    portal: Option<Portal>,
 }
 
 struct ActiveResult {
     id: u64,
-    decoders: Arc<[Decoder]>,
-    buffer: SharedBuffer,
+    stream: ResultStream,
+    suspended: bool,
+    error: Option<SqlException>,
 }
 
 pub(crate) struct Described {
@@ -72,297 +101,113 @@ pub(crate) struct Executed {
     pub(crate) result: Option<(u64, SharedBuffer)>,
 }
 
+pub(crate) struct SessionOptions {
+    pub(crate) string_type_unspecified: bool,
+    pub(crate) log_server_error_detail: bool,
+    pub(crate) socket_timeout: Option<Duration>,
+    pub(crate) user: Option<String>,
+}
+
 pub(crate) struct Session {
     wire: Option<Wire>,
     tx_status: u8,
     auto_commit: bool,
     types: TypeCache,
     active: Option<ActiveResult>,
-    next_result_id: u64,
-    string_type_unspecified: bool,
-    log_server_error_detail: bool,
-    socket_timeout: Option<Duration>,
-    user: Option<String>,
+    portals: HashMap<u64, ResultStream>,
+    next_id: u64,
+    pending_syncs: u32,
+    unsynced: bool,
+    options: SessionOptions,
+    backend_key: Option<BackendKey>,
 }
 
-fn connect_error(host: &HostSpec, cause: io::Error) -> SqlException {
-    if cause.kind() == io::ErrorKind::ConnectionRefused {
-        psql_with_cause(
-            format!(
-                "Connection to {}:{} refused. Check that the hostname and port are correct and that the postmaster is accepting TCP/IP connections.",
-                host.host, host.port
-            ),
-            CONNECTION_UNABLE_TO_CONNECT,
-            cause,
-        )
-    } else {
-        psql_with_cause(
-            "The connection attempt failed.",
-            CONNECTION_UNABLE_TO_CONNECT,
-            cause,
-        )
+fn error_fields(fields: ErrorFields<'_>) -> Vec<(u8, String)> {
+    let mut out = Vec::new();
+    let mut fields = fields;
+    while let Ok(Some(field)) = fields.next() {
+        out.push((
+            field.type_(),
+            String::from_utf8_lossy(field.value_bytes()).into_owned(),
+        ));
     }
+    out
 }
 
-async fn open_tcp(host: &HostSpec, settings: &ConnectSettings) -> Result<TcpStream, SqlException> {
-    let connect = TcpStream::connect((host.host.as_str(), host.port));
-    let stream = match settings.connect_timeout {
-        Some(limit) => tokio::time::timeout(limit, connect).await.map_err(|_| {
-            connect_error(
-                host,
-                io::Error::new(io::ErrorKind::TimedOut, "connect timed out"),
-            )
-        })?,
-        None => connect.await,
-    }
-    .map_err(|e| connect_error(host, e))?;
-    stream
-        .set_nodelay(true)
-        .map_err(|e| connect_error(host, e))?;
-    Ok(stream)
+fn field_descriptions(body: &RowDescriptionBody) -> Result<Vec<FieldDescription>, SqlException> {
+    body.fields()
+        .map(|f| {
+            Ok(FieldDescription {
+                name: f.name().to_string(),
+                table_oid: f.table_oid(),
+                column: f.column_id(),
+                type_oid: f.type_oid(),
+                type_modifier: f.type_modifier(),
+            })
+        })
+        .collect()
+        .map_err(|e| protocol_violation(format!("Invalid RowDescription message: {e}")))
 }
 
-async fn negotiate_tls(
-    mut stream: TcpStream,
-    host: &HostSpec,
-    settings: &ConnectSettings,
-) -> Result<Option<PgSocket>, SqlException> {
-    let mut frontend = Frontend::default();
-    frontend.ssl_request();
-    stream
-        .write_all(&frontend.take())
-        .await
-        .map_err(|e| connect_error(host, e))?;
-    let answer = stream.read_u8().await.map_err(|e| connect_error(host, e))?;
-    match answer {
-        b'S' => {
-            let config = client_config(
-                &settings.ssl_verification,
-                settings.ssl_root_cert.as_deref(),
-            )?;
-            let server_name = ServerName::try_from(host.host.clone()).map_err(|e| {
-                psql(
-                    format!("The hostname {} could not be verified. {e}", host.host),
-                    CONNECTION_UNABLE_TO_CONNECT,
-                )
-            })?;
-            let tls = TlsConnector::from(config)
-                .connect(server_name, stream)
-                .await
-                .map_err(|e| {
-                    psql_with_cause(
-                        "SSL error: ".to_string() + &e.to_string(),
-                        CONNECTION_UNABLE_TO_CONNECT,
-                        e,
-                    )
-                })?;
-            Ok(Some(PgSocket::Tls(Box::new(tls))))
-        }
-        b'N' => {
-            if settings.ssl_mode.requires_ssl() {
-                return Err(psql(
-                    "The server does not support SSL.",
-                    CONNECTION_REJECTED,
-                ));
-            }
-            Ok(Some(PgSocket::Plain(stream)))
-        }
-        b'E' => Ok(None),
-        other => Err(protocol_violation(format!(
-            "An error occurred while setting up the SSL connection: unexpected response {other}"
-        ))),
-    }
-}
-
-async fn open_socket(
-    host: &HostSpec,
-    settings: &ConnectSettings,
-) -> Result<PgSocket, SqlException> {
-    match settings.ssl_mode {
-        SslMode::Disable | SslMode::Allow => Ok(PgSocket::Plain(open_tcp(host, settings).await?)),
-        _ => {
-            let stream = open_tcp(host, settings).await?;
-            match negotiate_tls(stream, host, settings).await {
-                Ok(Some(socket)) => Ok(socket),
-                Ok(None) => Ok(PgSocket::Plain(open_tcp(host, settings).await?)),
-                Err(e)
-                    if settings.ssl_mode == SslMode::Prefer
-                        && e.sql_state() == Some(CONNECTION_UNABLE_TO_CONNECT) =>
-                {
-                    tracing::debug!("SSL connection failed, retrying without SSL: {}", e);
-                    Ok(PgSocket::Plain(open_tcp(host, settings).await?))
-                }
-                Err(e) => Err(e),
-            }
-        }
-    }
-}
-
-fn no_password() -> SqlException {
-    psql(
-        "The server requested password-based authentication, but no password was provided by plugin null",
-        INVALID_PASSWORD,
-    )
+fn encoding_error(message: &str) -> SqlException {
+    io_failure(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        message.to_string(),
+    ))
 }
 
 impl Session {
-    pub(crate) async fn connect(settings: &ConnectSettings) -> Result<Session, SqlException> {
-        let mut last_error = None;
-        for host in &settings.hosts {
-            match Session::connect_host(host, settings).await {
-                Ok(session) => return Ok(session),
-                Err(e) => {
-                    tracing::debug!("Connection to {}:{} failed: {}", host.host, host.port, e);
-                    last_error = Some(e);
-                }
-            }
-        }
-        Err(last_error.unwrap_or_else(|| {
-            psql(
-                "The connection attempt failed.",
-                CONNECTION_UNABLE_TO_CONNECT,
-            )
-        }))
-    }
-
-    async fn connect_host(
-        host: &HostSpec,
-        settings: &ConnectSettings,
-    ) -> Result<Session, SqlException> {
-        let socket = open_socket(host, settings).await?;
-        let mut session = Session {
-            wire: Some(Wire::new(socket)),
+    pub(crate) fn new(wire: Wire, options: SessionOptions) -> Session {
+        Session {
+            wire: Some(wire),
             tx_status: STATUS_IDLE,
             auto_commit: true,
             types: TypeCache::default(),
             active: None,
-            next_result_id: 0,
-            string_type_unspecified: settings.string_type_unspecified,
-            log_server_error_detail: settings.log_server_error_detail,
-            socket_timeout: settings.socket_timeout,
-            user: settings.user.clone(),
-        };
-        let user = settings.user.clone().unwrap_or_default();
-        let mut params: Vec<(&str, &str)> = vec![
-            ("user", user.as_str()),
-            ("database", settings.database.as_str()),
-            ("client_encoding", "UTF8"),
-            ("DateStyle", "ISO"),
-            ("TimeZone", settings.time_zone.as_str()),
-            ("extra_float_digits", "3"),
-            ("application_name", settings.application_name.as_str()),
-        ];
-        if let Some(schema) = &settings.current_schema {
-            params.push(("search_path", schema.as_str()));
-        }
-        if let Some(options) = &settings.options {
-            params.push(("options", options.as_str()));
-        }
-        let mut frontend = Frontend::default();
-        frontend.startup(&params).map_err(io_failure)?;
-        session.send(&mut frontend).await?;
-        session
-            .authenticate(&user, settings.password.as_deref())
-            .await?;
-        Ok(session)
-    }
-
-    async fn authenticate(
-        &mut self,
-        user: &str,
-        password: Option<&str>,
-    ) -> Result<(), SqlException> {
-        let mut scram: Option<ScramClient> = None;
-        loop {
-            match self.receive().await? {
-                Backend::Authentication { code: 0, .. } => {}
-                Backend::Authentication { code: 3, .. } => {
-                    let password = password.ok_or_else(no_password)?;
-                    let mut frontend = Frontend::default();
-                    frontend.password(password.as_bytes()).map_err(io_failure)?;
-                    self.send(&mut frontend).await?;
-                }
-                Backend::Authentication { code: 5, data } => {
-                    let password = password.ok_or_else(no_password)?;
-                    let hashed = md5_password(user, password, &data);
-                    let mut frontend = Frontend::default();
-                    frontend.password(hashed.as_bytes()).map_err(io_failure)?;
-                    self.send(&mut frontend).await?;
-                }
-                Backend::Authentication { code: 10, data } => {
-                    let password = password.ok_or_else(no_password)?;
-                    let mechanisms: Vec<String> = data
-                        .split(|b| *b == 0)
-                        .filter(|m| !m.is_empty())
-                        .map(|m| String::from_utf8_lossy(m).into_owned())
-                        .collect();
-                    if !mechanisms.iter().any(|m| m == SCRAM_SHA_256) {
-                        return Err(psql(
-                            format!(
-                                "SCRAM authentication failed: none of the server's mechanisms ({}) are supported",
-                                mechanisms.join(", ")
-                            ),
-                            NOT_IMPLEMENTED,
-                        ));
-                    }
-                    let client = ScramClient::new(password)?;
-                    let mut frontend = Frontend::default();
-                    frontend
-                        .sasl_initial_response(SCRAM_SHA_256, client.client_first().as_bytes())
-                        .map_err(io_failure)?;
-                    self.send(&mut frontend).await?;
-                    scram = Some(client);
-                }
-                Backend::Authentication { code: 11, data } => {
-                    let client = scram
-                        .as_mut()
-                        .ok_or_else(|| protocol_violation("Unexpected SASL continue message"))?;
-                    let response = client.client_final(&data)?;
-                    let mut frontend = Frontend::default();
-                    frontend
-                        .sasl_response(response.as_bytes())
-                        .map_err(io_failure)?;
-                    self.send(&mut frontend).await?;
-                }
-                Backend::Authentication { code: 12, data } => {
-                    scram
-                        .as_ref()
-                        .ok_or_else(|| protocol_violation("Unexpected SASL final message"))?
-                        .verify_server_final(&data)?;
-                }
-                Backend::Authentication { code, .. } => {
-                    return Err(psql(
-                        format!(
-                            "The authentication type {code} is not supported. Check that you have configured the pg_hba.conf file to include the client's IP address or subnet, and that it is using an authentication scheme supported by the driver."
-                        ),
-                        CONNECTION_REJECTED,
-                    ));
-                }
-                Backend::Error(fields) => return Err(self.server_error(&fields)),
-                Backend::ReadyForQuery(status) => {
-                    self.tx_status = status;
-                    return Ok(());
-                }
-                _ => {}
-            }
+            portals: HashMap::new(),
+            next_id: 0,
+            pending_syncs: 0,
+            unsynced: false,
+            options,
+            backend_key: None,
         }
     }
 
-    fn server_error(&self, fields: &[(u8, String)]) -> SqlException {
-        if self.log_server_error_detail {
-            server_error(fields)
+    pub(crate) fn wire_mut(&mut self) -> Result<&mut Wire, SqlException> {
+        self.wire.as_mut().ok_or_else(connection_closed)
+    }
+
+    pub(crate) fn wire_ref(&self) -> Option<&Wire> {
+        self.wire.as_ref()
+    }
+
+    pub(crate) fn set_backend_key(&mut self, key: BackendKey) {
+        self.backend_key = Some(key);
+    }
+
+    pub(crate) fn backend_key(&self) -> Option<BackendKey> {
+        self.backend_key
+    }
+
+    pub(crate) fn set_tx_status(&mut self, status: u8) {
+        self.tx_status = status;
+    }
+
+    pub(crate) fn server_error(&self, fields: ErrorFields<'_>) -> SqlException {
+        let fields = error_fields(fields);
+        if self.options.log_server_error_detail {
+            server_error(&fields)
         } else {
             let without_detail: Vec<(u8, String)> = fields
-                .iter()
+                .into_iter()
                 .filter(|(code, _)| *code != b'D')
-                .cloned()
                 .collect();
             server_error(&without_detail)
         }
     }
 
     pub(crate) fn user(&self) -> Option<&str> {
-        self.user.as_deref()
+        self.options.user.as_deref()
     }
 
     pub(crate) fn is_closed(&self) -> bool {
@@ -377,63 +222,109 @@ impl Session {
         &self.types
     }
 
-    fn wire(&mut self) -> Result<&mut Wire, SqlException> {
-        self.wire.as_mut().ok_or_else(connection_closed)
+    pub(crate) fn output(&mut self) -> Result<&mut BytesMut, SqlException> {
+        Ok(self.wire_mut()?.output())
     }
 
-    async fn send(&mut self, frontend: &mut Frontend) -> Result<(), SqlException> {
-        let bytes = frontend.take();
-        let result = self.wire()?.send(&bytes).await;
+    fn queue_sync(&mut self) -> Result<(), SqlException> {
+        frontend::sync(self.output()?);
+        self.pending_syncs += 1;
+        self.unsynced = false;
+        Ok(())
+    }
+
+    fn queue_query(&mut self, sql: &str) -> Result<(), SqlException> {
+        frontend::query(sql, self.output()?).map_err(io_failure)?;
+        self.pending_syncs += 1;
+        Ok(())
+    }
+
+    pub(crate) async fn flush(&mut self) -> Result<(), SqlException> {
+        let result = self.wire_mut()?.flush().await;
         result.map_err(|e| self.broken(e))
     }
 
-    async fn receive(&mut self) -> Result<Backend, SqlException> {
-        let timeout = self.socket_timeout;
-        let wire = self.wire()?;
-        let result = match timeout {
-            Some(limit) => match tokio::time::timeout(limit, wire.receive()).await {
-                Ok(r) => r,
-                Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Read timed out")),
-            },
+    pub(crate) async fn receive_io(&mut self) -> Result<Message, io::Error> {
+        let timeout = self.options.socket_timeout;
+        let wire = self
+            .wire
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "connection closed"))?;
+        let message = match timeout {
+            Some(limit) => tokio::time::timeout(limit, wire.receive())
+                .await
+                .unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::TimedOut, "Read timed out"))),
             None => wire.receive().await,
         };
-        result.map_err(|e| self.broken(e))
+        match message {
+            Ok(Message::ReadyForQuery(body)) => {
+                self.pending_syncs = self.pending_syncs.saturating_sub(1);
+                self.tx_status = body.status();
+                Ok(Message::ReadyForQuery(body))
+            }
+            Ok(other) => Ok(other),
+            Err(e) => {
+                self.wire = None;
+                self.abort_results();
+                Err(e)
+            }
+        }
+    }
+
+    async fn receive(&mut self) -> Result<Message, SqlException> {
+        self.receive_io().await.map_err(io_failure)
+    }
+
+    fn abort_results(&mut self) {
+        if let Some(active) = self.active.take() {
+            lock_buffer(&active.stream.buffer).finish(Some(connection_closed()));
+        }
+        for (_, stream) in self.portals.drain() {
+            lock_buffer(&stream.buffer).finish(Some(connection_closed()));
+        }
     }
 
     fn broken(&mut self, cause: io::Error) -> SqlException {
         self.wire = None;
-        if let Some(active) = self.active.take() {
-            let mut buffer = lock_buffer(&active.buffer);
-            buffer.done = true;
-            buffer.error = Some(connection_closed());
-        }
+        self.abort_results();
         io_failure(cause)
     }
 
-    async fn read_until_ready(&mut self) -> Result<Option<SqlException>, SqlException> {
+    async fn read_until_idle(&mut self) -> Result<Option<SqlException>, SqlException> {
         let mut error = None;
-        loop {
-            match self.receive().await? {
-                Backend::ReadyForQuery(status) => {
-                    self.tx_status = status;
-                    return Ok(error);
+        while self.pending_syncs > 0 {
+            if let Message::ErrorResponse(body) = self.receive().await? {
+                if error.is_none() {
+                    error = Some(self.server_error(body.fields()));
                 }
-                Backend::Error(fields) if error.is_none() => {
-                    error = Some(self.server_error(&fields));
-                }
-                _ => {}
             }
         }
+        Ok(error)
+    }
+
+    async fn resync(&mut self) -> Result<(), SqlException> {
+        if self.unsynced {
+            self.queue_sync()?;
+        }
+        if self.pending_syncs > 0 {
+            self.flush().await?;
+            self.read_until_idle().await?;
+        }
+        Ok(())
     }
 
     pub(crate) fn active_id(&self) -> Option<u64> {
         self.active.as_ref().map(|a| a.id)
     }
 
+    pub(crate) fn has_portal(&self, id: u64) -> bool {
+        self.portals.contains_key(&id)
+    }
+
     pub(crate) async fn finish_active(&mut self) -> Result<(), SqlException> {
         while let Some(active) = &self.active {
-            let (id, buffer) = (active.id, Arc::clone(&active.buffer));
-            match self.next_row(id).await {
+            let (id, buffer) = (active.id, Arc::clone(&active.stream.buffer));
+            match self.next_row(id, false).await {
                 Ok(Some(row)) => {
                     let mut buffered = lock_buffer(&buffer);
                     if !buffered.abandoned {
@@ -441,80 +332,120 @@ impl Session {
                     }
                 }
                 Ok(None) => {}
-                Err(e) => {
-                    let mut buffered = lock_buffer(&buffer);
-                    buffered.done = true;
-                    buffered.error = Some(e);
-                }
+                Err(e) => lock_buffer(&buffer).finish(Some(e)),
             }
         }
+        self.portals
+            .retain(|_, stream| !lock_buffer(&stream.buffer).abandoned);
         Ok(())
+    }
+
+    fn decode_row(
+        decoders: &[Decoder],
+        body: &postgres_protocol::message::backend::DataRowBody,
+    ) -> Result<Vec<SqlValue>, SqlException> {
+        let buffer = body.buffer();
+        body.ranges()
+            .enumerate()
+            .map(|(i, range)| {
+                let raw = range.map(|r| &buffer[r]);
+                Ok(decoders.get(i).unwrap_or(&Decoder::Text).decode(raw))
+            })
+            .collect()
+            .map_err(|e| protocol_violation(format!("Invalid DataRow message: {e}")))
     }
 
     pub(crate) async fn next_row(
         &mut self,
         id: u64,
+        fetch_more: bool,
     ) -> Result<Option<Vec<SqlValue>>, SqlException> {
-        let Some(decoders) = self
-            .active
-            .as_ref()
-            .filter(|a| a.id == id)
-            .map(|a| Arc::clone(&a.decoders))
-        else {
-            return Ok(None);
-        };
         loop {
+            let Some(decoders) = self
+                .active
+                .as_ref()
+                .filter(|a| a.id == id)
+                .map(|a| Arc::clone(&a.stream.decoders))
+            else {
+                return Ok(None);
+            };
             match self.receive().await? {
-                Backend::DataRow(values) => {
-                    let row = values
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, raw)| match decoders.get(i) {
-                            Some(decoder) => decoder.decode(raw),
-                            None => Decoder::Text.decode(raw),
-                        })
-                        .collect();
-                    return Ok(Some(row));
+                Message::DataRow(body) => {
+                    return Self::decode_row(&decoders, &body).map(Some);
                 }
-                Backend::Error(fields) => {
-                    let error = self.server_error(&fields);
-                    self.read_until_ready().await?;
-                    self.finish_result(None);
-                    return Err(error);
+                Message::PortalSuspended => {
+                    if let Some(active) = self.active.as_mut() {
+                        active.suspended = true;
+                    }
                 }
-                Backend::ReadyForQuery(status) => {
-                    self.tx_status = status;
-                    self.finish_result(None);
-                    return Ok(None);
+                Message::ErrorResponse(body) => {
+                    let error = self.server_error(body.fields());
+                    if let Some(active) = self.active.as_mut() {
+                        active.error.get_or_insert(error);
+                    }
+                }
+                Message::ReadyForQuery(_) if self.pending_syncs == 0 => {
+                    let Some(active) = self.active.take() else {
+                        return Ok(None);
+                    };
+                    if let Some(error) = active.error {
+                        lock_buffer(&active.stream.buffer).finish(Some(error.clone()));
+                        return Err(error);
+                    }
+                    if !active.suspended {
+                        lock_buffer(&active.stream.buffer).finish(None);
+                        return Ok(None);
+                    }
+                    if !fetch_more {
+                        self.portals.insert(id, active.stream);
+                        return Ok(None);
+                    }
+                    self.fetch(id, active.stream)?;
+                    self.flush().await?;
                 }
                 _ => {}
             }
         }
     }
 
-    fn finish_result(&mut self, error: Option<SqlException>) {
-        if let Some(active) = self.active.take() {
-            let mut buffer = lock_buffer(&active.buffer);
-            buffer.done = true;
-            if buffer.error.is_none() {
-                buffer.error = error;
-            }
+    fn fetch(&mut self, id: u64, stream: ResultStream) -> Result<(), SqlException> {
+        let portal = stream
+            .portal
+            .clone()
+            .ok_or_else(|| protocol_violation("Portal suspended without a fetch size"))?;
+        frontend::execute(&portal.name, portal.fetch_size, self.output()?).map_err(io_failure)?;
+        self.queue_sync()?;
+        self.active = Some(ActiveResult {
+            id,
+            stream,
+            suspended: false,
+            error: None,
+        });
+        Ok(())
+    }
+
+    pub(crate) async fn resume(&mut self, id: u64) -> Result<(), SqlException> {
+        self.prepare().await?;
+        if let Some(stream) = self.portals.remove(&id) {
+            self.fetch(id, stream)?;
+            self.flush().await?;
         }
+        Ok(())
     }
 
     pub(crate) async fn prepare(&mut self) -> Result<(), SqlException> {
         if self.wire.is_none() {
             return Err(connection_closed());
         }
-        self.finish_active().await
+        self.finish_active().await?;
+        self.resync().await
     }
 
     pub(crate) async fn simple_query(&mut self, sql: &str) -> Result<(), SqlException> {
         self.prepare().await?;
-        let mut frontend = Frontend::default();
-        frontend.query(sql).map_err(io_failure)?;
-        self.send(&mut frontend).await?;
-        match self.read_until_ready().await? {
+        self.queue_query(sql)?;
+        self.flush().await?;
+        match self.read_until_idle().await? {
             Some(error) => Err(error),
             None => Ok(()),
         }
@@ -530,7 +461,10 @@ impl Session {
 
     pub(crate) async fn commit(&mut self) -> Result<(), SqlException> {
         if self.auto_commit {
-            return Err(psql("Cannot commit when autoCommit is enabled.", "25000"));
+            return Err(super::error::psql(
+                "Cannot commit when autoCommit is enabled.",
+                "25000",
+            ));
         }
         self.prepare().await?;
         if self.tx_status != STATUS_IDLE {
@@ -541,7 +475,10 @@ impl Session {
 
     pub(crate) async fn rollback(&mut self) -> Result<(), SqlException> {
         if self.auto_commit {
-            return Err(psql("Cannot rollback when autoCommit is enabled.", "25000"));
+            return Err(super::error::psql(
+                "Cannot rollback when autoCommit is enabled.",
+                "25000",
+            ));
         }
         self.prepare().await?;
         if self.tx_status != STATUS_IDLE {
@@ -556,41 +493,37 @@ impl Session {
 
     pub(crate) async fn close(&mut self) {
         if let Some(mut wire) = self.wire.take() {
-            let mut frontend = Frontend::default();
-            if frontend.terminate().is_ok() {
-                if let Err(e) = wire.send(&frontend.take()).await {
-                    tracing::debug!("Failed to send terminate message: {}", e);
-                }
+            frontend::terminate(wire.output());
+            if let Err(e) = wire.flush().await {
+                tracing::debug!("Failed to send terminate message: {}", e);
             }
             if let Err(e) = wire.shutdown().await {
                 tracing::debug!("Failed to shut down the socket: {}", e);
             }
         }
-        self.finish_result(Some(connection_closed()));
+        self.abort_results();
     }
 
     pub(crate) async fn describe(&mut self, sql: &str) -> Result<Described, SqlException> {
         self.prepare().await?;
-        let mut frontend = Frontend::default();
-        frontend.parse("", sql, &[]).map_err(io_failure)?;
-        frontend.describe_statement("").map_err(io_failure)?;
-        frontend.sync().map_err(io_failure)?;
-        self.send(&mut frontend).await?;
+        let out = self.output()?;
+        frontend::parse("", sql, std::iter::empty(), out).map_err(io_failure)?;
+        frontend::describe(b'S', "", out).map_err(io_failure)?;
+        self.queue_sync()?;
+        self.flush().await?;
         let mut parameter_types = Vec::new();
         let mut fields = None;
         let mut error = None;
-        loop {
+        while self.pending_syncs > 0 {
             match self.receive().await? {
-                Backend::ParameterDescription(oids) => parameter_types = oids,
-                Backend::RowDescription(f) => fields = Some(f),
-                Backend::Error(e) => {
-                    if error.is_none() {
-                        error = Some(self.server_error(&e));
-                    }
+                Message::ParameterDescription(body) => {
+                    parameter_types = body.parameters().collect().map_err(|e| {
+                        protocol_violation(format!("Invalid ParameterDescription message: {e}"))
+                    })?;
                 }
-                Backend::ReadyForQuery(status) => {
-                    self.tx_status = status;
-                    break;
+                Message::RowDescription(body) => fields = Some(field_descriptions(&body)?),
+                Message::ErrorResponse(body) if error.is_none() => {
+                    error = Some(self.server_error(body.fields()));
                 }
                 _ => {}
             }
@@ -608,46 +541,82 @@ impl Session {
         })
     }
 
+    fn queue_parse_bind(
+        &mut self,
+        sql: &str,
+        portal: &str,
+        oids: &[u32],
+        values: &[Option<String>],
+    ) -> Result<(), SqlException> {
+        let out = self.output()?;
+        frontend::parse("", sql, oids.iter().copied(), out).map_err(io_failure)?;
+        frontend::bind(
+            portal,
+            "",
+            std::iter::empty(),
+            values,
+            |value, buf| match value {
+                Some(text) => {
+                    buf.extend_from_slice(text.as_bytes());
+                    Ok(IsNull::No)
+                }
+                None => Ok(IsNull::Yes),
+            },
+            std::iter::empty(),
+            out,
+        )
+        .map_err(|_| encoding_error("Unable to encode the bind parameters"))?;
+        frontend::describe(b'P', portal, out).map_err(io_failure)?;
+        frontend::flush(out);
+        self.unsynced = true;
+        Ok(())
+    }
+
     pub(crate) async fn execute(
         &mut self,
         sql: &str,
         parameters: &[SqlValue],
         suppress_begin: bool,
+        fetch_size: i32,
     ) -> Result<Executed, SqlException> {
         self.prepare().await?;
         let (oids, values): (Vec<u32>, Vec<Option<String>>) = parameters
             .iter()
-            .map(|p| encode_parameter(p, self.string_type_unspecified))
+            .map(|p| encode_parameter(p, self.options.string_type_unspecified))
             .unzip();
+        let use_portal = fetch_size > 0 && !self.auto_commit;
         let mut retried = false;
         loop {
             let begin = !suppress_begin && !self.auto_commit && self.tx_status == STATUS_IDLE;
-            let mut frontend = Frontend::default();
             if begin {
-                frontend.query("BEGIN").map_err(io_failure)?;
+                self.queue_query("BEGIN")?;
             }
-            frontend.parse("", sql, &oids).map_err(io_failure)?;
-            frontend.bind("", "", &values).map_err(io_failure)?;
-            frontend.describe_portal("").map_err(io_failure)?;
-            frontend.flush().map_err(io_failure)?;
-            self.send(&mut frontend).await?;
+            self.next_id += 1;
+            let id = self.next_id;
+            let portal = use_portal.then(|| Portal {
+                name: format!("C_{id}"),
+                fetch_size,
+            });
+            let portal_name = portal.as_ref().map_or("", |p| p.name.as_str()).to_string();
+            self.queue_parse_bind(sql, &portal_name, &oids, &values)?;
+            self.flush().await?;
             if begin {
-                if let Some(error) = self.read_until_ready().await? {
-                    self.sync_after_error().await?;
+                if let Some(error) = self.read_until_idle().await? {
+                    self.resync().await?;
                     return Err(error);
                 }
             }
             let mut fields = None;
             loop {
                 match self.receive().await? {
-                    Backend::RowDescription(f) => {
-                        fields = Some(f);
+                    Message::RowDescription(body) => {
+                        fields = Some(field_descriptions(&body)?);
                         break;
                     }
-                    Backend::NoData => break,
-                    Backend::Error(e) => {
-                        let error = self.server_error(&e);
-                        self.sync_after_error().await?;
+                    Message::NoData => break,
+                    Message::ErrorResponse(body) => {
+                        let error = self.server_error(body.fields());
+                        self.resync().await?;
                         return Err(error);
                     }
                     _ => {}
@@ -658,17 +627,17 @@ impl Session {
                     .missing(&f.iter().map(|d| d.type_oid).collect::<Vec<_>>())
             });
             if !unknown.is_empty() && !retried {
-                self.sync_after_error().await?;
+                self.resync().await?;
                 self.resolve_types(unknown).await?;
                 retried = true;
                 continue;
             }
-            let mut frontend = Frontend::default();
-            frontend.execute("", 0).map_err(io_failure)?;
-            frontend.sync().map_err(io_failure)?;
-            self.send(&mut frontend).await?;
+            let max_rows = portal.as_ref().map_or(0, |p| p.fetch_size);
+            frontend::execute(&portal_name, max_rows, self.output()?).map_err(io_failure)?;
+            self.queue_sync()?;
+            self.flush().await?;
             let Some(fields) = fields else {
-                if let Some(error) = self.read_until_ready().await? {
+                if let Some(error) = self.read_until_idle().await? {
                     return Err(error);
                 }
                 return Ok(Executed {
@@ -680,26 +649,22 @@ impl Session {
                 .iter()
                 .map(|f| Decoder::for_type(&self.types, f.type_oid))
                 .collect();
-            self.next_result_id += 1;
             let buffer: SharedBuffer = Arc::new(StdMutex::new(Buffered::default()));
             self.active = Some(ActiveResult {
-                id: self.next_result_id,
-                decoders,
-                buffer: Arc::clone(&buffer),
+                id,
+                stream: ResultStream {
+                    decoders,
+                    buffer: Arc::clone(&buffer),
+                    portal,
+                },
+                suspended: false,
+                error: None,
             });
             return Ok(Executed {
                 fields: Some(fields),
-                result: Some((self.next_result_id, buffer)),
+                result: Some((id, buffer)),
             });
         }
-    }
-
-    async fn sync_after_error(&mut self) -> Result<(), SqlException> {
-        let mut frontend = Frontend::default();
-        frontend.sync().map_err(io_failure)?;
-        self.send(&mut frontend).await?;
-        self.read_until_ready().await?;
-        Ok(())
     }
 
     pub(crate) async fn query_all(
@@ -708,11 +673,11 @@ impl Session {
         parameters: &[SqlValue],
         suppress_begin: bool,
     ) -> Result<(Vec<FieldDescription>, Vec<Vec<SqlValue>>), SqlException> {
-        let executed = self.execute(sql, parameters, suppress_begin).await?;
+        let executed = self.execute(sql, parameters, suppress_begin, 0).await?;
         let fields = executed.fields.unwrap_or_default();
         let mut rows = Vec::new();
         if let Some((id, _)) = executed.result {
-            while let Some(row) = self.next_row(id).await? {
+            while let Some(row) = self.next_row(id, true).await? {
                 rows.push(row);
             }
         }

@@ -55,9 +55,9 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tokio-rustls = { version = "0.26", default-features = false }
 rustls-pki-types = { version = "1", features = ["std"] }
 webpki-roots = "1"
-md-5 = "0.11"
-hmac = "0.13"
 sha2 = "0.11"
+postgres-protocol = "0.6.12"
+fallible-iterator = "0.2"
 athena-snowflake = { path = "athena-snowflake" }
 snowflake-connector-rs = { version = "=1.1.1", default-features = false, features = ["key-pair-auth", "pkcs8-3des"] }
 pkcs8 = { version = "0.10", features = ["encryption", "pem", "3des", "sha1-insecure", "std"] }

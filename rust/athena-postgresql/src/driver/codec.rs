@@ -3,12 +3,76 @@ use std::str::FromStr;
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
 use athena_jdbc::sql::SqlValue;
 use bigdecimal::BigDecimal;
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
 
+use super::datetime::{
+    java_sql_date_local_date, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
+    DATE_POSITIVE_INFINITY,
+};
+use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
-const TIMESTAMPTZ_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f%#z";
+pub(crate) const MAX_ARRAY_DEPTH: usize = 6;
+
+fn rendered(value: SqlValue, text: String) -> SqlValue {
+    SqlValue::rendered(value, text).with_exception_class(PSQL_EXCEPTION)
+}
+
+fn infinity_millis(text: &str) -> Option<i64> {
+    match text {
+        "infinity" => Some(DATE_POSITIVE_INFINITY),
+        "-infinity" => Some(DATE_NEGATIVE_INFINITY),
+        _ => None,
+    }
+}
+
+fn java_timestamp(text: &str) -> Option<SqlValue> {
+    if let Some(millis) = infinity_millis(text) {
+        return Some(SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION));
+    }
+    let parsed = parse_backend_timestamp(text)?;
+    let millis = parsed.java_millis()?;
+    Some(match millis_to_naive(millis, parsed.nanos) {
+        Some(ts) => rendered(SqlValue::Timestamp(ts), text.to_string()),
+        None => SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION),
+    })
+}
+
+fn java_date_millis(text: &str) -> Option<i64> {
+    infinity_millis(text).or_else(|| parse_backend_timestamp(text)?.java_date_millis())
+}
+
+fn java_date(text: &str) -> Option<SqlValue> {
+    let millis = java_date_millis(text)?;
+    Some(rendered(
+        SqlValue::Date(java_sql_date_local_date(millis)?),
+        text.to_string(),
+    ))
+}
+
+fn java_date_element(text: &str) -> Option<SqlValue> {
+    let millis = java_date_millis(text)?;
+    Some(match millis_to_naive(millis, 0) {
+        Some(ts) => SqlValue::Timestamp(ts),
+        None => SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION),
+    })
+}
+
+fn trim_money(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 2 {
+        return None;
+    }
+    match bytes[0] {
+        b'(' => {
+            let inner = text[1..].strip_suffix(')').unwrap_or(&text[1..]);
+            Some(format!("-{}", inner.get(1..).unwrap_or_default()))
+        }
+        b'$' => Some(text[1..].to_string()),
+        b'-' if bytes[1] == b'$' => Some(format!("-{}", &text[2..])),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Decoder {
@@ -57,23 +121,22 @@ impl Decoder {
         }
     }
 
-    pub(crate) fn decode(&self, raw: Option<Vec<u8>>) -> SqlValue {
+    pub(crate) fn decode(&self, raw: Option<&[u8]>) -> SqlValue {
         let Some(raw) = raw else {
             return SqlValue::Null;
         };
-        let text = match String::from_utf8(raw) {
-            Ok(text) => text,
-            Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
-        };
-        self.decode_text(text)
+        self.decode_text(String::from_utf8_lossy(raw).into_owned())
     }
 
     fn decode_text(&self, text: String) -> SqlValue {
         match self {
-            Decoder::Text => SqlValue::String(text),
+            Decoder::Text => match trim_money(&text) {
+                Some(trimmed) => rendered(SqlValue::String(trimmed), text),
+                None => SqlValue::String(text),
+            },
             Decoder::Bool => match text.as_str() {
-                "t" => SqlValue::rendered(SqlValue::Boolean(true), text),
-                "f" => SqlValue::rendered(SqlValue::Boolean(false), text),
+                "t" => rendered(SqlValue::Boolean(true), text),
+                "f" => rendered(SqlValue::Boolean(false), text),
                 _ => SqlValue::String(text),
             },
             Decoder::Int2 => text
@@ -86,33 +149,28 @@ impl Decoder {
                 .parse()
                 .map_or(SqlValue::String(text), SqlValue::BigInt),
             Decoder::Float4 => match parse_f32(&text) {
-                Some(v) => SqlValue::rendered(SqlValue::Real(v), text),
+                Some(v) => rendered(SqlValue::Real(v), text),
                 None => SqlValue::String(text),
             },
             Decoder::Float8 => match parse_f64(&text) {
-                Some(v) => SqlValue::rendered(SqlValue::Double(v), text),
+                Some(v) => rendered(SqlValue::Double(v), text),
                 None => SqlValue::String(text),
             },
             Decoder::Numeric => match BigDecimal::from_str(&text) {
                 Ok(d) if big_decimal_to_string(&d) == text => SqlValue::Decimal(d),
-                Ok(d) => SqlValue::rendered(SqlValue::Decimal(d), text),
-                Err(_) => SqlValue::String(text),
+                Ok(d) => rendered(SqlValue::Decimal(d), text),
+                Err(_) => match parse_f64(&text) {
+                    Some(v) if v.is_nan() || v.is_infinite() => rendered(SqlValue::Double(v), text),
+                    _ => SqlValue::String(text),
+                },
             },
-            Decoder::Date => NaiveDate::parse_from_str(&text, "%Y-%m-%d")
-                .map_or(SqlValue::String(text), SqlValue::Date),
-            Decoder::Timestamp => match NaiveDateTime::parse_from_str(&text, TIMESTAMP_FORMAT) {
-                Ok(ts) => SqlValue::rendered(SqlValue::Timestamp(ts), text),
-                Err(_) => SqlValue::String(text),
-            },
-            Decoder::TimestampTz => match DateTime::parse_from_str(&text, TIMESTAMPTZ_FORMAT) {
-                Ok(ts) => SqlValue::rendered(SqlValue::TimestampTz(ts), text),
-                Err(_) => SqlValue::String(text),
-            },
+            Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
+            Decoder::Timestamp | Decoder::TimestampTz => {
+                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+            }
             Decoder::Bytea => decode_bytea(&text).map_or(SqlValue::String(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
-                Some(items) => {
-                    SqlValue::rendered(SqlValue::Array(element.decode_items(items)), text)
-                }
+                Some(items) => rendered(SqlValue::Array(element.decode_items(items)), text),
                 None => SqlValue::String(text),
             },
         }
@@ -130,9 +188,24 @@ impl Decoder {
     }
 
     fn decode_element(&self, text: String) -> SqlValue {
-        match self.decode_text(text) {
-            SqlValue::Rendered { value, .. } => *value,
-            other => other,
+        match self {
+            Decoder::Date => java_date_element(&text).unwrap_or(SqlValue::String(text)),
+            Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
+                SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
+            }
+            Decoder::Timestamp | Decoder::TimestampTz => match java_timestamp(&text) {
+                Some(SqlValue::Rendered { value, .. })
+                    if matches!(*value, SqlValue::Timestamp(_)) =>
+                {
+                    *value
+                }
+                Some(other) => other,
+                None => SqlValue::String(text),
+            },
+            _ => match self.decode_text(text) {
+                SqlValue::Rendered { value, .. } => *value,
+                other => other,
+            },
         }
     }
 }
@@ -218,12 +291,17 @@ pub(crate) fn parse_array(text: &str, delimiter: u8) -> Option<Vec<ArrayItem>> {
     };
     let bytes = text.as_bytes();
     let mut pos = start;
-    let items = parse_level(bytes, &mut pos, delimiter)?;
+    let items = parse_level(bytes, &mut pos, delimiter, 1)?;
     (pos == bytes.len()).then_some(items)
 }
 
-fn parse_level(bytes: &[u8], pos: &mut usize, delimiter: u8) -> Option<Vec<ArrayItem>> {
-    if bytes.get(*pos) != Some(&b'{') {
+fn parse_level(
+    bytes: &[u8],
+    pos: &mut usize,
+    delimiter: u8,
+    depth: usize,
+) -> Option<Vec<ArrayItem>> {
+    if bytes.get(*pos) != Some(&b'{') || depth > MAX_ARRAY_DEPTH {
         return None;
     }
     *pos += 1;
@@ -234,7 +312,12 @@ fn parse_level(bytes: &[u8], pos: &mut usize, delimiter: u8) -> Option<Vec<Array
     }
     loop {
         match bytes.get(*pos)? {
-            b'{' => items.push(ArrayItem::Nested(parse_level(bytes, pos, delimiter)?)),
+            b'{' => items.push(ArrayItem::Nested(parse_level(
+                bytes,
+                pos,
+                delimiter,
+                depth + 1,
+            )?)),
             b'"' => {
                 *pos += 1;
                 let mut value = Vec::new();
@@ -265,7 +348,7 @@ fn parse_level(bytes: &[u8], pos: &mut usize, delimiter: u8) -> Option<Vec<Array
                     *pos += 1;
                 }
                 let raw = std::str::from_utf8(&bytes[begin..*pos]).ok()?.trim();
-                if raw.eq_ignore_ascii_case("NULL") {
+                if raw == "NULL" {
                     items.push(ArrayItem::Null);
                 } else {
                     items.push(ArrayItem::Value(raw.to_string()));
@@ -352,6 +435,7 @@ pub(crate) fn encode_parameter(
 mod tests {
     use super::*;
     use athena_jdbc::sql::Types;
+    use chrono::NaiveDate;
 
     fn cache() -> TypeCache {
         TypeCache::default()
@@ -359,14 +443,14 @@ mod tests {
 
     #[test]
     fn booleans_keep_the_server_text() {
-        let value = Decoder::Bool.decode(Some(b"t".to_vec()));
+        let value = Decoder::Bool.decode(Some(b"t"));
         assert_eq!(value.to_boolean().unwrap(), Some(true));
         assert_eq!(value.to_java_string().as_deref(), Some("t"));
     }
 
     #[test]
     fn timestamps_with_time_zone_parse_short_offsets() {
-        let value = Decoder::TimestampTz.decode(Some(b"2000-01-02 12:59:00+00".to_vec()));
+        let value = Decoder::TimestampTz.decode(Some(b"2000-01-02 12:59:00+00"));
         assert_eq!(
             value.to_timestamp().unwrap().unwrap().to_string(),
             "2000-01-02 12:59:00"
@@ -375,7 +459,7 @@ mod tests {
             value.to_java_string().as_deref(),
             Some("2000-01-02 12:59:00+00")
         );
-        let shifted = Decoder::TimestampTz.decode(Some(b"2000-01-01 05:30:00+05:30".to_vec()));
+        let shifted = Decoder::TimestampTz.decode(Some(b"2000-01-01 05:30:00+05:30"));
         assert_eq!(
             shifted.to_timestamp().unwrap().unwrap().to_string(),
             "2000-01-01 00:00:00"
@@ -405,7 +489,7 @@ mod tests {
     #[test]
     fn int_arrays_decode_to_typed_elements_and_keep_text() {
         let decoder = Decoder::for_type(&cache(), 1007);
-        let value = decoder.decode(Some(b"{7,8,9}".to_vec()));
+        let value = decoder.decode(Some(b"{7,8,9}"));
         assert_eq!(
             value.to_array().unwrap().unwrap(),
             vec![
@@ -432,13 +516,13 @@ mod tests {
 
     #[test]
     fn numeric_keeps_plain_text_when_java_would_use_an_exponent() {
-        let value = Decoder::Numeric.decode(Some(b"0.0000001".to_vec()));
+        let value = Decoder::Numeric.decode(Some(b"0.0000001"));
         assert_eq!(value.to_java_string().as_deref(), Some("0.0000001"));
         assert_eq!(
             value.to_big_decimal().unwrap().unwrap(),
             BigDecimal::from_str("0.0000001").unwrap()
         );
-        let plain = Decoder::Numeric.decode(Some(b"86.4199".to_vec()));
+        let plain = Decoder::Numeric.decode(Some(b"86.4199"));
         assert!(matches!(plain, SqlValue::Decimal(_)));
         assert_eq!(plain.to_long().unwrap(), Some(86));
     }
@@ -467,5 +551,126 @@ mod tests {
             (oid::BOOL, Some("TRUE".to_string()))
         );
         assert_eq!(Types::ARRAY, cache().sql_type(1007));
+    }
+
+    fn epoch_day(value: &SqlValue) -> i64 {
+        value
+            .to_date()
+            .unwrap()
+            .unwrap()
+            .signed_duration_since(NaiveDate::default())
+            .num_days()
+    }
+
+    fn millis(value: &SqlValue) -> i64 {
+        value.to_timestamp_millis().unwrap().unwrap()
+    }
+
+    fn array_value(oid: u32, text: &str) -> athena_federation_sdk::data::Value {
+        let value = Decoder::for_type(&cache(), oid).decode(Some(text.as_bytes()));
+        athena_federation_sdk::data::Value::List(
+            value
+                .to_array()
+                .unwrap()
+                .unwrap()
+                .iter()
+                .map(SqlValue::to_value)
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
+        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        assert_eq!(day("0001-01-01 BC"), -719_162);
+        assert_eq!(day("infinity"), 2_565_691);
+        assert_eq!(day("-infinity"), 2_588_078);
+        assert_eq!(day("10000-01-01"), -719_528);
+        assert_eq!(day("1582-10-04"), -141_438);
+        assert_eq!(day("9999-12-31"), 2_932_896);
+        let value = Decoder::Date.decode(Some(b"infinity"));
+        assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn timestamps_decode_to_java_sql_timestamp_millis() {
+        let ts = |text: &str| millis(&Decoder::Timestamp.decode(Some(text.as_bytes())));
+        assert_eq!(ts("1000-01-01 12:00:00"), -30_609_748_800_000);
+        assert_eq!(ts("0044-03-15 12:00:00 BC"), -63_517_953_600_000);
+        assert_eq!(ts("1582-10-04 23:59:59.999"), -12_219_292_800_001);
+        assert_eq!(ts("10000-01-01 00:00:00"), 253_402_300_800_000);
+        assert_eq!(ts("infinity"), 9_223_372_036_825_200_000);
+        let tz = |text: &str| millis(&Decoder::TimestampTz.decode(Some(text.as_bytes())));
+        assert_eq!(tz("-infinity"), -9_223_372_036_832_400_000);
+        assert_eq!(tz("0001-01-01 00:00:00+00 BC"), -719_530 * 86_400_000);
+        assert_eq!(tz("1900-01-01 00:00:00-04:56:02"), -2_208_971_038_000);
+        let infinite = Decoder::Timestamp.decode(Some(b"infinity"));
+        assert_eq!(
+            infinite.to_timestamp().unwrap_err().message(),
+            "Bad value for type timestamp : infinity"
+        );
+        assert_eq!(
+            infinite.to_timestamp().unwrap_err().class_name(),
+            "org.postgresql.util.PSQLException"
+        );
+    }
+
+    #[test]
+    fn date_arrays_write_java_date_millis_like_the_java_record_handler() {
+        use athena_federation_sdk::data::Value;
+        assert_eq!(
+            array_value(1182, "{infinity}"),
+            Value::List(vec![Value::Date(9_223_372_036_825_200_000)])
+        );
+        assert_eq!(
+            array_value(1182, "{0001-01-01 BC,1970-01-01,NULL}"),
+            Value::List(vec![
+                Value::Date(-719_530 * 86_400_000),
+                Value::Date(0),
+                Value::Null
+            ])
+        );
+    }
+
+    #[test]
+    fn numeric_nan_fails_like_pgjdbc() {
+        let nan = Decoder::Numeric.decode(Some(b"NaN"));
+        let error = nan.to_big_decimal().unwrap_err();
+        assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
+        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+        assert!(nan.to_double().unwrap().unwrap().is_nan());
+        let array = Decoder::for_type(&cache(), 1231).decode(Some(b"{1.5,NaN}"));
+        let error = array.to_array().unwrap_err();
+        assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
+        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+    }
+
+    #[test]
+    fn money_text_is_trimmed_for_numeric_getters() {
+        let money = Decoder::Text.decode(Some(b"$1,001.50"));
+        assert_eq!(money.to_java_string().as_deref(), Some("$1,001.50"));
+        assert!(money.to_double().is_err());
+        let money = Decoder::Text.decode(Some(b"-$1.50"));
+        assert_eq!(money.to_double().unwrap(), Some(-1.5));
+        assert_eq!(
+            money.to_big_decimal().unwrap().unwrap().to_string(),
+            "-1.50"
+        );
+        let money = Decoder::Text.decode(Some(b"($2.25)"));
+        assert_eq!(money.to_double().unwrap(), Some(-2.25));
+        assert_eq!(
+            Decoder::Text.decode(Some(b"$")).to_java_string().as_deref(),
+            Some("$")
+        );
+    }
+
+    #[test]
+    fn array_nesting_is_capped_at_six_levels() {
+        let six = format!("{}1{}", "{".repeat(6), "}".repeat(6));
+        assert!(parse_array(&six, b',').is_some());
+        let seven = format!("{}1{}", "{".repeat(7), "}".repeat(7));
+        assert!(parse_array(&seven, b',').is_none());
+        let deep = format!("{}1{}", "{".repeat(100_000), "}".repeat(100_000));
+        assert!(parse_array(&deep, b',').is_none());
     }
 }

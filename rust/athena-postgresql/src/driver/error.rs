@@ -10,8 +10,7 @@ pub(crate) const CONNECTION_REJECTED: &str = "08004";
 pub(crate) const CONNECTION_FAILURE: &str = "08006";
 pub(crate) const PROTOCOL_VIOLATION: &str = "08P01";
 pub(crate) const INVALID_PARAMETER_VALUE: &str = "22023";
-pub(crate) const INVALID_PASSWORD: &str = "28P01";
-pub(crate) const NOT_IMPLEMENTED: &str = "0A000";
+pub(crate) const INVALID_AUTHORIZATION: &str = "28000";
 pub(crate) const NO_DATA: &str = "02000";
 pub(crate) const DATA_TYPE_MISMATCH: &str = "42821";
 

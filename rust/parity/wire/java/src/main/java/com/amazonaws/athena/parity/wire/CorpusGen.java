@@ -334,6 +334,7 @@ public final class CorpusGen
         defineGetTableLayout();
         defineGetSplits();
         defineReadRecords();
+        defineExtra();
     }
 
     private void defineUnsupported()
@@ -904,4 +905,134 @@ public final class CorpusGen
         io.substrait.plan.Plan plan = new SqlToSubstrait().convert(sql, catalog);
         return Base64.getEncoder().encodeToString(new PlanProtoConverter().toProto(plan).toByteArray());
     }
+
+    private void defineExtra() throws Exception
+    {
+        TableName edges = new TableName("parity", "edges");
+        TableName big = new TableName("parity", "big");
+        TableName allTypes = new TableName("parity", "all_types");
+        ArrowType int32 = Types.MinorType.INT.getType();
+        ArrowType int64 = Types.MinorType.BIGINT.getType();
+        ArrowType float8 = Types.MinorType.FLOAT8.getType();
+        ArrowType float4 = Types.MinorType.FLOAT4.getType();
+        ArrowType int16 = Types.MinorType.SMALLINT.getType();
+        ArrowType bool = Types.MinorType.BIT.getType();
+        ArrowType dateDay = Types.MinorType.DATEDAY.getType();
+        ArrowType dateMilli = Types.MinorType.DATEMILLI.getType();
+        ArrowType dec184 = new ArrowType.Decimal(18, 4, 128);
+        ArrowType dec380 = new ArrowType.Decimal(38, 0, 128);
+        int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 40, 41, 42, 60, 61, 62, 63, 64, 65, 80};
+        for (int id : ids) {
+            add("x_edge", "row_" + id, 6, "edges row " + id,
+                    q -> read(q, edges, Schemas.allTypes(), split(q, "*", "*"), constraints(Map.of("id",
+                            SortedRangeSet.copyOf(int32, List.of(Range.equal(allocator, int32, id)), false)))));
+        }
+        add("x_edge", "get_table", 6, "GetTable edges", q -> new GetTableRequest(identity(), q, CATALOG, edges, Map.of()));
+        add("x_edge", "get_table_odd", 6, "GetTable odd_types", q -> new GetTableRequest(identity(), q, CATALOG, new TableName("parity", "odd_types"), Map.of()));
+        Schema odd = SchemaBuilder.newBuilder().addField("id", int32).addField("m", float8).addField("iv", utf8()).addField("n52", new ArrowType.Decimal(5, 2, 128))
+                .addField("ts3", dateMilli).addField("tstz0", dateMilli).addField("vc", utf8()).addField("ch", utf8()).addListField("i2arr", int16)
+                .addListField("f4", float4).addField("ja", utf8()).addField("ip", utf8()).addField("bits", utf8()).addField("xm", utf8()).addField("en", utf8())
+                .addField("partition_schema_name", utf8()).addField("partition_name", utf8()).build();
+        add("x_edge", "odd_full", 6, "odd types full read", q -> read(q, new TableName("parity", "odd_types"), odd, split(q, "*", "*"), constraints(Map.of())));
+        for (String col : new String[]{"m", "iv", "n52", "ts3", "tstz0", "i2arr", "f4", "ja", "ip", "bits", "xm"}) {
+            add("x_edge", "odd_col_" + col, 6, "odd types column " + col,
+                    q -> read(q, new TableName("parity", "odd_types"), Schemas.project(odd, "id", col), split(q, "*", "*"), constraints(Map.of())));
+        }
+        add("x_pred", "bigint_min_eq", 6, "bigint = Long.MIN", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "bigint_col"), split(q, "*", "*"),
+                constraints(Map.of("bigint_col", SortedRangeSet.copyOf(int64, List.of(Range.equal(allocator, int64, Long.MIN_VALUE)), false)))));
+        add("x_pred", "bigint_extremes_in", 6, "bigint in (min,max)", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "bigint_col"), split(q, "*", "*"),
+                constraints(Map.of("bigint_col", SortedRangeSet.copyOf(int64, List.of(Range.equal(allocator, int64, Long.MIN_VALUE), Range.equal(allocator, int64, Long.MAX_VALUE)), true)))));
+        add("x_pred", "int_not_equal", 6, "int_col <> 2 as two ranges", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"),
+                constraints(Map.of("int_col", SortedRangeSet.copyOf(int32, List.of(Range.lessThan(allocator, int32, 2), Range.greaterThan(allocator, int32, 2)), false)))));
+        add("x_pred", "int_mixed_in_range", 6, "int in (9,16) or between 100 and 120 or null", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"),
+                constraints(Map.of("int_col", SortedRangeSet.copyOf(int32, List.of(Range.equal(allocator, int32, 9), Range.equal(allocator, int32, 16), Range.range(allocator, int32, 100, true, 120, true)), true)))));
+        add("x_pred", "double_nan_eq", 6, "double_col = NaN", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "double_col"), split(q, "*", "*"),
+                constraints(Map.of("double_col", SortedRangeSet.copyOf(float8, List.of(Range.equal(allocator, float8, Double.NaN)), false)))));
+        add("x_pred", "double_gt_inf_range", 6, "double_col > 1e300", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "double_col"), split(q, "*", "*"),
+                constraints(Map.of("double_col", SortedRangeSet.copyOf(float8, List.of(Range.greaterThan(allocator, float8, 1e300)), false)))));
+        add("x_pred", "real_small", 6, "real_col < 1e-40", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "real_col"), split(q, "*", "*"),
+                constraints(Map.of("real_col", SortedRangeSet.copyOf(float4, List.of(Range.range(allocator, float4, 0.0F, false, 1e-40F, true)), false)))));
+        add("x_pred", "varchar_quote", 6, "varchar = O'Brien", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "varchar_col", "text_col"), split(q, "*", "*"),
+                constraints(Map.of("varchar_col", EquatableValueSet.newBuilder(allocator, utf8(), true, false).add("O'Brien").build()))));
+        add("x_pred", "text_backslash_range", 6, "text_col range with backslash", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "text_col"), split(q, "*", "*"),
+                constraints(Map.of("text_col", SortedRangeSet.copyOf(utf8(), List.of(Range.range(allocator, utf8(), "it's \\", true, "it's \\ \"r", false)), false)))));
+        add("x_pred", "text_empty_eq", 6, "text_col = ''", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "text_col"), split(q, "*", "*"),
+                constraints(Map.of("text_col", SortedRangeSet.copyOf(utf8(), List.of(Range.equal(allocator, utf8(), "")), false)))));
+        add("x_pred", "ts_eq_millis", 6, "ts_col = 2020-06-01 12:00:00.123", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "ts_col"), split(q, "*", "*"),
+                constraints(Map.of("ts_col", SortedRangeSet.copyOf(dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_000_000))), false)))));
+        add("x_pred", "ts_old_range", 6, "ts_col < 1500", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "ts_col"), split(q, "*", "*"),
+                constraints(Map.of("ts_col", SortedRangeSet.copyOf(dateMilli, List.of(Range.lessThan(allocator, dateMilli, LocalDateTime.of(1500, 1, 1, 0, 0))), false)))));
+        add("x_pred", "tstz_lt", 6, "tstz_col <= 1970", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "tstz_col"), split(q, "*", "*"),
+                constraints(Map.of("tstz_col", SortedRangeSet.copyOf(dateMilli, List.of(Range.lessThanOrEqual(allocator, dateMilli, LocalDateTime.of(1970, 1, 1, 0, 0))), false)))));
+        add("x_pred", "date_multi_null", 6, "dates in two ranges or null", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "date_col"), split(q, "*", "*"),
+                constraints(Map.of("date_col", SortedRangeSet.copyOf(dateDay, List.of(Range.lessThan(allocator, dateDay, (int) LocalDate.of(1600, 1, 1).toEpochDay()),
+                        Range.range(allocator, dateDay, (int) LocalDate.of(1969, 12, 31).toEpochDay(), true, (int) LocalDate.of(2020, 6, 1).toEpochDay(), true)), true)))));
+        add("x_pred", "date_in_list", 6, "date in list", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "date_col"), split(q, "*", "*"),
+                constraints(Map.of("date_col", SortedRangeSet.copyOf(dateDay, List.of(Range.equal(allocator, dateDay, (int) LocalDate.of(1960, 1, 12).toEpochDay()),
+                        Range.equal(allocator, dateDay, (int) LocalDate.of(1960, 1, 23).toEpochDay()), Range.equal(allocator, dateDay, (int) LocalDate.of(1960, 2, 3).toEpochDay())), false)))));
+        add("x_pred", "decimal_eq", 6, "numeric_scaled = 12.3457", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "numeric_scaled"), split(q, "*", "*"),
+                constraints(Map.of("numeric_scaled", SortedRangeSet.copyOf(dec184, List.of(Range.equal(allocator, dec184, new BigDecimal("12.3457"))), false)))));
+        add("x_pred", "decimal38_gt", 6, "numeric_unbounded > 10^37", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "numeric_unbounded"), split(q, "*", "*"),
+                constraints(Map.of("numeric_unbounded", SortedRangeSet.copyOf(dec380, List.of(Range.greaterThan(allocator, dec380, new BigDecimal("10000000000000000000000000000000000000"))), false)))));
+        add("x_pred", "smallint_in", 6, "smallint in extremes", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "smallint_col"), split(q, "*", "*"),
+                constraints(Map.of("smallint_col", SortedRangeSet.copyOf(int16, List.of(Range.equal(allocator, int16, (short) -32768), Range.equal(allocator, int16, (short) 32767)), false)))));
+        add("x_pred", "equatable_deny_null", 6, "varchar not in (alpha,beta) with null allowed", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "varchar_col"), split(q, "*", "*"),
+                constraints(Map.of("varchar_col", EquatableValueSet.newBuilder(allocator, utf8(), false, true).add("alpha").add("beta").build()))));
+        add("x_pred", "bool_false_or_null", 6, "bool false or null", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "bool_col"), split(q, "*", "*"),
+                constraints(Map.of("bool_col", SortedRangeSet.copyOf(bool, List.of(Range.equal(allocator, bool, false)), true)))));
+        add("x_pred", "limit_zero", 6, "limit 0", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(), List.of(), 0)));
+        add("x_pred", "order_multi", 6, "order by three columns", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "bool_col", "varchar_col", "date_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(), List.of(new OrderByField("bool_col", OrderByField.Direction.DESC_NULLS_FIRST),
+                        new OrderByField("varchar_col", OrderByField.Direction.ASC_NULLS_LAST), new OrderByField("date_col", OrderByField.Direction.DESC_NULLS_LAST)), 25)));
+        add("x_pred", "expr_neq_mod", 6, "int_col % 7 <> 0", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.NOT_EQUAL_OPERATOR_FUNCTION_NAME,
+                        call(int32, StandardFunctions.MODULUS_FUNCTION_NAME, var("int_col", int32), constant(int32, 7)), constant(int32, 0))), List.of(), 40)));
+        add("x_pred", "expr_negate_lte", 6, "-int_col <= -5000", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.LESS_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME,
+                        call(int32, StandardFunctions.NEGATE_FUNCTION_NAME, var("int_col", int32)), constant(int32, -5000))), List.of(), -1)));
+        add("x_pred", "expr_distinct", 6, "varchar is distinct from alpha", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "varchar_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.IS_DISTINCT_FROM_OPERATOR_FUNCTION_NAME, var("varchar_col", utf8()), constant(utf8(), "alpha"))), List.of(), 30)));
+        add("x_pred", "expr_like_quote", 6, "text like with quote", q -> read(q, edges, Schemas.project(Schemas.allTypes(), "id", "text_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.LIKE_PATTERN_FUNCTION_NAME, var("text_col", utf8()), constant(utf8(), "it's%"))), List.of(), -1)));
+        add("x_pred", "expr_and_mul_div", 6, "and of mul and div", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col", "bigint_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.AND_FUNCTION_NAME,
+                        call(bool, StandardFunctions.GREATER_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME, call(int32, StandardFunctions.MULTIPLY_FUNCTION_NAME, var("int_col", int32), constant(int32, 3)), constant(int32, 900)),
+                        call(bool, StandardFunctions.LESS_THAN_OPERATOR_FUNCTION_NAME, call(int32, StandardFunctions.DIVIDE_FUNCTION_NAME, var("int_col", int32), constant(int32, 2)), constant(int32, 600)))), List.of(), -1)));
+        add("x_pred", "expr_nullif", 6, "nullif", q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id", "int_col"), split(q, "*", "*"),
+                constraints(Map.of(), List.of(call(bool, StandardFunctions.IS_NULL_FUNCTION_NAME,
+                        call(int32, StandardFunctions.NULLIF_FUNCTION_NAME, var("int_col", int32), constant(int32, 2))) ), List.of(), 20)));
+        String[] plans = {
+            "SELECT id, text_col FROM all_types WHERE text_col LIKE 'text_0001%' AND id < 2000",
+            "SELECT id, int_col FROM all_types WHERE NOT (int_col BETWEEN -4000 AND 15000)",
+            "SELECT id, bigint_col, double_col FROM all_types WHERE bigint_col IS NULL OR double_col < 0",
+            "SELECT id, date_col FROM all_types WHERE date_col >= DATE '1990-01-01' ORDER BY date_col LIMIT 10",
+            "SELECT id, ts_col FROM all_types WHERE ts_col < TIMESTAMP '1966-01-01 00:00:00'",
+            "SELECT id, int_col FROM all_types ORDER BY int_col NULLS FIRST, id DESC LIMIT 7",
+            "SELECT id, varchar_col FROM all_types WHERE varchar_col <> 'beta' AND varchar_col NOT IN ('alpha', 'gamma') AND id < 100",
+            "SELECT id, numeric_scaled FROM all_types WHERE numeric_scaled > 100.5 AND numeric_scaled <= 1000 ORDER BY numeric_scaled DESC LIMIT 5",
+            "SELECT id, text_col FROM all_types WHERE text_col = 'it''s' OR id = 3",
+            "SELECT id, real_col FROM all_types WHERE real_col BETWEEN 10 AND 20 OR real_col IS NULL",
+            "SELECT id, int_col FROM all_types WHERE int_col + 1 > 100 AND int_col * 2 < 1000 AND int_col - 3 <> 50",
+        };
+        for (int i = 0; i < plans.length; i++) {
+            String sql = plans[i];
+            String plan;
+            try {
+                plan = substraitPlan(sql);
+            }
+            catch (Exception e) {
+                System.err.println("plan failed: " + sql + ": " + e);
+                continue;
+            }
+            String[] cols = sql.substring(7, sql.indexOf(" FROM")).split(", ");
+            add("x_substrait", "plan_" + i, 6, sql, q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), cols), split(q, "*", "*"), planConstraints(plan)));
+        }
+        add("x_big", "full_spill", 6, "200k rows all types, 1MB blocks", q -> read(q, CATALOG, big, Schemas.allTypes(), split(q, "*", "*"), constraints(Map.of()), 1_000_000L, 0L));
+        add("x_big", "full_spill_encrypted", 6, "200k rows encrypted spill", q -> read(q, CATALOG, big, Schemas.project(Schemas.allTypes(), "id", "text_col", "numeric_unbounded", "int_arr", "tstz_col"), encryptedSplit(q, "*", "*"), constraints(Map.of()), 4_000_000L, 0L));
+        add("x_big", "inline_large", 6, "big inline response", q -> read(q, big, Schemas.project(Schemas.allTypes(), "id", "int_col", "date_col"), split(q, "*", "*"),
+                constraints(Map.of("id", SortedRangeSet.copyOf(int32, List.of(Range.lessThanOrEqual(allocator, int32, 60000)), false)))));
+        add("x_big", "edges_full", 6, "edges full", q -> read(q, edges, Schemas.allTypes(), split(q, "*", "*"), constraints(Map.of())));
+    }
+
 }
