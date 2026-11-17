@@ -1,4 +1,5 @@
 use std::fmt;
+use std::future::Future;
 
 use crate::exceptions::{AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result};
 
@@ -17,7 +18,7 @@ impl fmt::Display for S3ServiceError {
 impl std::error::Error for S3ServiceError {}
 
 pub trait HeadBucketClient: Send + Sync {
-    fn head_bucket(&self, bucket: &str) -> std::result::Result<(), S3ServiceError>;
+    fn head_bucket(&self, bucket: &str) -> impl Future<Output = std::result::Result<(), S3ServiceError>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +42,6 @@ pub struct SpillLocationVerifier<C: HeadBucketClient> {
     amazons3: C,
     bucket: Option<String>,
     state: BucketState,
-    update_bucket_state_calls: usize,
-    pass_or_fail_calls: usize,
 }
 
 impl<C: HeadBucketClient> SpillLocationVerifier<C> {
@@ -51,12 +50,10 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
             amazons3,
             bucket: None,
             state: BucketState::Unchecked,
-            update_bucket_state_calls: 0,
-            pass_or_fail_calls: 0,
         }
     }
 
-    pub fn check_bucket_auth_z(&mut self, spill_bucket: Option<&str>) -> Result<()> {
+    pub async fn check_bucket_auth_z(&mut self, spill_bucket: Option<&str>) -> Result<()> {
         let spill_bucket = match spill_bucket {
             None | Some("") => return Ok(()),
             Some(b) => b,
@@ -67,15 +64,14 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
             self.state = BucketState::Unchecked;
         }
         if self.state == BucketState::Unchecked {
-            self.update_bucket_state()?;
+            self.update_bucket_state().await?;
         }
         self.pass_or_fail()
     }
 
-    pub fn update_bucket_state(&mut self) -> Result<()> {
-        self.update_bucket_state_calls += 1;
+    pub async fn update_bucket_state(&mut self) -> Result<()> {
         let bucket = self.bucket.clone().unwrap_or_default();
-        let result = match self.amazons3.head_bucket(&bucket) {
+        let result = match self.amazons3.head_bucket(&bucket).await {
             Ok(()) => {
                 self.state = BucketState::Valid;
                 Ok(())
@@ -99,8 +95,7 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
         result
     }
 
-    pub fn pass_or_fail(&mut self) -> Result<()> {
-        self.pass_or_fail_calls += 1;
+    pub fn pass_or_fail(&self) -> Result<()> {
         match self.state {
             BucketState::Unchecked => Err(FederationError::internal("Bucket state should have been checked already.")),
             BucketState::Invalid => Err(FederationError::invalid_input(format!(
@@ -117,13 +112,5 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
 
     pub fn get_bucket(&self) -> Option<&str> {
         self.bucket.as_deref()
-    }
-
-    pub fn update_bucket_state_calls(&self) -> usize {
-        self.update_bucket_state_calls
-    }
-
-    pub fn pass_or_fail_calls(&self) -> usize {
-        self.pass_or_fail_calls
     }
 }

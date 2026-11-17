@@ -49,6 +49,7 @@ pub struct Marker {
     bound: Bound,
     null_value: bool,
     value: Value,
+    allocator_id: Option<String>,
 }
 
 pub(crate) fn type_hash(arrow_type: &ArrowType) -> i32 {
@@ -96,6 +97,7 @@ impl Marker {
             bound,
             null_value,
             value,
+            allocator_id: Some(block.get_allocator_id().to_string()),
         })
     }
 
@@ -105,6 +107,7 @@ impl Marker {
             bound,
             null_value,
             value,
+            allocator_id: None,
         }
     }
 
@@ -131,8 +134,12 @@ impl Marker {
         value_block_schema(&self.arrow_type)
     }
 
+    pub fn get_allocator_id(&self) -> Option<&str> {
+        self.allocator_id.as_deref()
+    }
+
     pub fn get_value_block(&self) -> Result<Block> {
-        let mut block = Block::new("marker", value_block_schema(&self.arrow_type));
+        let mut block = Block::new(self.allocator_id.as_deref().unwrap_or("marker"), value_block_schema(&self.arrow_type));
         if !self.null_value {
             if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
                 vector.set(0, &self.value)?;
@@ -167,6 +174,7 @@ impl Marker {
             bound,
             null_value: self.null_value,
             value: self.value.clone(),
+            allocator_id: self.allocator_id.clone(),
         }
     }
 
@@ -213,12 +221,14 @@ impl Marker {
         Marker::from_block_position(&block, 0, bound, false)
     }
 
-    fn create_null(arrow_type: &ArrowType, bound: Bound) -> Marker {
+    fn create_null(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, bound: Bound) -> Marker {
+        let block = allocator.create_block(value_block_schema(arrow_type));
         Marker {
             arrow_type: arrow_type.clone(),
             bound,
             null_value: true,
             value: Value::Null,
+            allocator_id: Some(block.get_allocator_id().to_string()),
         }
     }
 
@@ -229,12 +239,12 @@ impl Marker {
         Ok(())
     }
 
-    pub fn upper_unbounded(_allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
-        Marker::create_null(arrow_type, Bound::Below)
+    pub fn upper_unbounded(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
+        Marker::create_null(allocator, arrow_type, Bound::Below)
     }
 
-    pub fn lower_unbounded(_allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
-        Marker::create_null(arrow_type, Bound::Above)
+    pub fn lower_unbounded(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
+        Marker::create_null(allocator, arrow_type, Bound::Above)
     }
 
     pub fn above(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Marker> {
@@ -249,8 +259,8 @@ impl Marker {
         Marker::create_with_value(allocator, arrow_type, value, Bound::Exactly)
     }
 
-    pub fn null_marker(_allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
-        Marker::create_null(arrow_type, Bound::Exactly)
+    pub fn null_marker(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> Marker {
+        Marker::create_null(allocator, arrow_type, Bound::Exactly)
     }
 
     pub fn below(allocator: &dyn BlockAllocator, arrow_type: &ArrowType, value: impl Into<Value>) -> Result<Marker> {

@@ -1,0 +1,30 @@
+{
+  "@type" : "GetTableRequest",
+  "identity" : {
+    "arn" : "testArn",
+    "account" : "0123456789",
+    "principalTags" : {
+      "dept" : null,
+      "team" : "athena"
+    },
+    "iamGroups" : [ ],
+    "configOptions" : {
+      "stage" : "beta",
+      "region" : null
+    }
+  },
+  "queryId" : "test-query-id",
+  "catalogName" : "test-catalog",
+  "tableName" : {
+    "schemaName" : "test-schema",
+    "tableName" : "test-table",
+    "qualifiedTableName" : "test-schema.test-table"
+  },
+  "queryPassthroughArguments" : {
+    "schema" : null,
+    "query" : "SELECT 1"
+  },
+  "requestType" : "GET_TABLE",
+  "context" : null,
+  "queryPassthrough" : true
+}

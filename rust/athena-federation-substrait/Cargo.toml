@@ -5,4 +5,17 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-athena-federation-sdk = { path = "../athena-federation-sdk" }
+athena-federation-sdk = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+base64 = { workspace = true }
+bigdecimal = { workspace = true }
+num-bigint = { workspace = true }
+arrow-schema = { workspace = true }
+chrono = { workspace = true }
+indexmap = { workspace = true }
+tracing = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+protox = { workspace = true }

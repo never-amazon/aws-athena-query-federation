@@ -28,15 +28,27 @@ impl Rng {
     }
 
     pub fn string(&mut self, min_len: usize) -> String {
-        let len = self.between(min_len as i64, 8) as usize;
+        let len = self.between(min_len as i64, JQWIK_MAX_STRING_LENGTH as i64) as usize;
         (0..len)
-            .map(|_| {
-                if self.between(0, 4) == 0 {
-                    char::from_u32(self.between(0xA0, 0x2FFF) as u32).unwrap_or('x')
-                } else {
-                    char::from_u32(self.between(0x20, 0x7E) as u32).unwrap_or('x')
-                }
-            })
+            .map(|_| jqwik_char(self.between(0, JQWIK_CHAR_COUNT as i64 - 1) as u32))
             .collect()
     }
+}
+
+pub const JQWIK_MAX_STRING_LENGTH: usize = 255;
+
+const JQWIK_CHAR_RANGES: [(u32, u32); 3] = [(0x0000, 0xD7FF), (0xF900, 0xFDCF), (0xFDF0, 0xFFFD)];
+
+pub const JQWIK_CHAR_COUNT: u32 = (0xD7FF + 1) + (0xFDCF - 0xF900 + 1) + (0xFFFD - 0xFDF0 + 1);
+
+pub fn jqwik_char(index: u32) -> char {
+    let mut rest = index % JQWIK_CHAR_COUNT;
+    for (lo, hi) in JQWIK_CHAR_RANGES {
+        let size = hi - lo + 1;
+        if rest < size {
+            return char::from_u32(lo + rest).expect("jqwik char ranges exclude surrogates");
+        }
+        rest -= size;
+    }
+    unreachable!("index reduced modulo JQWIK_CHAR_COUNT")
 }

@@ -42,6 +42,15 @@ Rust test ids:
   unit tests in src/ (athena_federation_sdk). Example:
   arrow_type_comparator_test::test_compare_big_int.
 
+Ledger files:
+  Rows come from rust/parity/tests.tsv and every file given to --ledger.
+  --no-default-ledger drops tests.tsv. Each file has a header line
+  java_test<TAB>rust_test<TAB>status<TAB>note. The duplicate checks and the
+  missing_ledger_row check run across all the files together. When the only
+  ledger is tests.tsv, a ledger line is a plain line number. Otherwise it is
+  <file>:<line>, with the file path relative to rust/ when the file is
+  under rust/ and absolute otherwise.
+
 Output:
   Tab-separated lines on stdout.
   FINDING <kind> <module> <ledger line or -> <subject> <detail>
@@ -457,15 +466,31 @@ def fq_to_path(fq_class):
     return "/".join(parts) + ".java"
 
 
-def read_ledger():
+def ledger_files(extra, use_default):
+    paths = []
+    seen = set()
+    for p in ([LEDGER] if use_default else []) + list(extra):
+        real = os.path.realpath(p)
+        if real not in seen:
+            seen.add(real)
+            paths.append(p)
+    return paths
+
+
+def read_ledger(paths):
     rows = []
-    with open(LEDGER, encoding="utf-8") as fh:
-        lines = fh.read().splitlines()
-    for lineno, line in enumerate(lines, start=1):
-        if lineno == 1 or not line.strip():
-            continue
-        cols = line.split("\t")
-        rows.append((lineno, cols))
+    qualify = [os.path.realpath(p) for p in paths] != [os.path.realpath(LEDGER)]
+    for path in paths:
+        name = os.path.abspath(path)
+        if name.startswith(RUST_DIR + os.sep):
+            name = os.path.relpath(name, RUST_DIR)
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        for lineno, line in enumerate(lines, start=1):
+            if lineno == 1 or not line.strip():
+                continue
+            cols = line.split("\t")
+            rows.append((name + ":" + str(lineno) if qualify else str(lineno), cols))
     return rows
 
 
@@ -546,7 +571,7 @@ def cargo_results():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Check rust/parity/tests.tsv against the Java tests and the cargo test results.",
+        description="Check the parity ledger files against the Java tests and the cargo test results.",
         epilog=HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -555,8 +580,19 @@ def main():
                         help="limit Java tests to source paths under src/test/java, for example 'com/amazonaws/athena/connector/lambda/data/**'")
     parser.add_argument("--exclude", nargs="+", action="append", default=[], metavar="GLOB",
                         help="drop Java tests whose source path matches, for example '**/S3BlockSpillerTest.java'")
+    parser.add_argument("--ledger", nargs="+", action="append", default=[], metavar="FILE",
+                        help="read ledger rows from these files as well as rust/parity/tests.tsv, for example parity/ledger-u2.tsv")
+    parser.add_argument("--no-default-ledger", action="store_true",
+                        help="do not read rust/parity/tests.tsv; requires --ledger")
     parser.add_argument("--skip-cargo", action="store_true", help="do not run cargo; skip the Rust existence and result checks")
     args = parser.parse_args()
+    extra_ledgers = [f for group in args.ledger for f in group]
+    if args.no_default_ledger and not extra_ledgers:
+        parser.error("--no-default-ledger requires --ledger")
+    for f in extra_ledgers:
+        if not os.path.isfile(f):
+            parser.error("ledger file not found: " + f)
+    ledgers = ledger_files(extra_ledgers, not args.no_default_ledger)
 
     modules = [m.strip() for m in args.modules.split(",") if m.strip()]
     scopes = [glob_to_regex(g) for group in args.scope for g in group]
@@ -587,10 +623,10 @@ def main():
     findings = []
 
     def add(kind, module, line, subject, detail=""):
-        findings.append((kind, module, str(line) if line else "-", subject, detail))
+        findings.append((kind, module, line if line else "-", subject, detail))
 
     rows = []
-    for lineno, cols in read_ledger():
+    for lineno, cols in read_ledger(ledgers):
         if len(cols) != 4:
             if len(cols) < 4:
                 cols = cols + [""] * (4 - len(cols))
@@ -625,7 +661,7 @@ def main():
     for kind, groups in (("duplicate_java_test", by_java), ("duplicate_rust_test", by_rust)):
         for key, hits in groups.items():
             if len(hits) > 1:
-                add(kind, hits[0][1], hits[1][0], key, "lines " + ",".join(str(h[0]) for h in hits))
+                add(kind, hits[0][1], hits[1][0], key, "lines " + ",".join(h[0] for h in hits))
 
     covered = set(r[1] for r in rows)
     for key, module in scoped.items():

@@ -15,7 +15,7 @@ serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision
 base64 = "0.22"
 thiserror = "2"
 tracing = "0.1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", default-features = false }
 chrono = "0.4"
 chrono-tz = "0.10"
 bigdecimal = "0.4"
@@ -25,3 +25,29 @@ uuid = { version = "1", features = ["v4"] }
 regex = "1"
 indexmap = "2"
 proptest = "1"
+aes-gcm = "0.11"
+getrandom = "0.3"
+aws-config = "1"
+async-trait = "0.1"
+aws-credential-types = "1"
+aws-smithy-types = "1"
+aws-smithy-runtime-api = { version = "1", features = ["client"] }
+aws-sdk-s3 = "1"
+aws-sdk-kms = "1"
+aws-sdk-secretsmanager = "1"
+aws-sdk-athena = "1"
+aws-sdk-glue = "1"
+aws-sdk-sts = "1"
+aws-esdk = "1.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+athena-federation-sdk = { path = "athena-federation-sdk" }
+prost = { version = "0.14.6", features = ["no-recursion-limit"] }
+prost-types = "0.14.6"
+prost-build = "0.14.6"
+protox = "0.9.1"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -1,0 +1,70 @@
+use std::collections::HashMap;
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FederatedIdentity {
+    arn: Option<String>,
+    account: Option<String>,
+    principal_tags: HashMap<String, Option<String>>,
+    iam_groups: Vec<String>,
+    config_options: HashMap<String, Option<String>>,
+}
+
+impl FederatedIdentity {
+    pub fn new(
+        arn: impl Into<String>,
+        account: impl Into<String>,
+        principal_tags: HashMap<String, Option<String>>,
+        iam_groups: Vec<String>,
+        config_options: HashMap<String, Option<String>>,
+    ) -> FederatedIdentity {
+        FederatedIdentity::new_nullable(Some(arn.into()), Some(account.into()), principal_tags, iam_groups, config_options)
+    }
+
+    pub fn new_nullable(
+        arn: Option<String>,
+        account: Option<String>,
+        principal_tags: HashMap<String, Option<String>>,
+        iam_groups: Vec<String>,
+        config_options: HashMap<String, Option<String>>,
+    ) -> FederatedIdentity {
+        FederatedIdentity {
+            arn,
+            account,
+            principal_tags,
+            iam_groups,
+            config_options,
+        }
+    }
+
+    pub fn get_arn(&self) -> Option<&str> {
+        self.arn.as_deref()
+    }
+
+    pub fn get_account(&self) -> Option<&str> {
+        self.account.as_deref()
+    }
+
+    pub fn get_principal_tags(&self) -> &HashMap<String, Option<String>> {
+        &self.principal_tags
+    }
+
+    pub fn get_iam_groups(&self) -> &[String] {
+        &self.iam_groups
+    }
+
+    pub fn get_config_options(&self) -> &HashMap<String, Option<String>> {
+        &self.config_options
+    }
+}
+
+impl fmt::Display for FederatedIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "FederatedIdentity{{arn={}, account={}}}",
+            self.arn.as_deref().unwrap_or("null"),
+            self.account.as_deref().unwrap_or("null")
+        )
+    }
+}

@@ -12,7 +12,7 @@ serde_json.workspace = true
 base64.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 chrono.workspace = true
 chrono-tz.workspace = true
 bigdecimal.workspace = true
@@ -21,6 +21,22 @@ num-traits.workspace = true
 uuid.workspace = true
 regex.workspace = true
 indexmap.workspace = true
+aes-gcm.workspace = true
+getrandom.workspace = true
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-smithy-types.workspace = true
+aws-smithy-runtime-api.workspace = true
+async-trait.workspace = true
+aws-sdk-s3.workspace = true
+aws-sdk-kms.workspace = true
+aws-sdk-secretsmanager.workspace = true
+aws-sdk-athena.workspace = true
+aws-sdk-glue.workspace = true
+aws-sdk-sts.workspace = true
+aws-esdk.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }

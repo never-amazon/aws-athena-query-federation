@@ -1,0 +1,14 @@
+{
+  "@type" : "PingRequest",
+  "identity" : {
+    "id" : "UNKNOWN",
+    "principal" : "UNKNOWN",
+    "account" : "0123456789",
+    "arn" : "testArn",
+    "tags" : { },
+    "groups" : [ ],
+    "configOptions" : { }
+  },
+  "catalogName" : "test-catalog",
+  "queryId" : "test-query-id"
+}

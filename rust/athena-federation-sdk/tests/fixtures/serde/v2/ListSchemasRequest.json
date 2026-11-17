@@ -1,0 +1,14 @@
+{
+  "@type" : "ListSchemasRequest",
+  "identity" : {
+    "id" : "UNKNOWN",
+    "principal" : "UNKNOWN",
+    "account" : "0123456789",
+    "arn" : "testArn",
+    "tags" : { },
+    "groups" : [ ],
+    "configOptions" : { }
+  },
+  "queryId" : "test-query-id",
+  "catalogName" : "test-catalog"
+}

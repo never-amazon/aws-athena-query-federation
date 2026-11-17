@@ -1,21 +1,24 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use super::block::Block;
-use super::block_writer::BlockWriter;
+use super::block_writer::RowWriter;
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::spill::SpillLocation;
 use crate::exceptions::Result;
 
-pub trait BlockSpiller: BlockWriter {
-    fn spilled(&self) -> bool;
+#[async_trait]
+pub trait BlockSpiller: Send + Sync {
+    async fn write_rows(&self, row_writer: &mut (dyn RowWriter + Send)) -> Result<()>;
 
-    fn get_block(&self) -> Result<&Block>;
+    fn get_constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
 
-    fn get_spill_locations(&self) -> Vec<SpillLocation>;
+    async fn spilled(&self) -> Result<bool>;
 
-    fn close(&mut self);
+    async fn get_block(&self) -> Result<Block>;
 
-    fn get_spiller_constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
-        self.get_constraint_evaluator()
-    }
+    async fn get_spill_locations(&self) -> Result<Vec<SpillLocation>>;
+
+    async fn close(&self);
 }

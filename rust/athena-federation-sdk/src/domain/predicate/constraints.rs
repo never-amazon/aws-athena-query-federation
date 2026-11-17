@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::serde::java_hash::java_hash_map_order;
+
 use indexmap::IndexMap;
 
 use super::expression::FederationExpression;
@@ -16,7 +18,7 @@ pub struct Constraints {
     expression: Vec<FederationExpression>,
     order_by_clause: Vec<OrderByField>,
     limit: i64,
-    query_passthrough_arguments: HashMap<String, String>,
+    query_passthrough_arguments: HashMap<String, Option<String>>,
     query_plan: Option<QueryPlan>,
 }
 
@@ -32,7 +34,7 @@ impl Constraints {
         expression: Vec<FederationExpression>,
         order_by_clause: Vec<OrderByField>,
         limit: i64,
-        query_passthrough_arguments: HashMap<String, String>,
+        query_passthrough_arguments: HashMap<String, Option<String>>,
         query_plan: Option<QueryPlan>,
     ) -> Constraints {
         Constraints {
@@ -73,7 +75,7 @@ impl Constraints {
         !self.order_by_clause.is_empty()
     }
 
-    pub fn get_query_passthrough_arguments(&self) -> &HashMap<String, String> {
+    pub fn get_query_passthrough_arguments(&self) -> &HashMap<String, Option<String>> {
         &self.query_passthrough_arguments
     }
 
@@ -91,10 +93,9 @@ impl fmt::Display for Constraints {
         let summary: Vec<String> = self.summary.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
         let expression: Vec<String> = self.expression.iter().map(|e| e.to_string()).collect();
         let order_by: Vec<String> = self.order_by_clause.iter().map(|o| o.to_string()).collect();
-        let qpt: Vec<String> = self
-            .query_passthrough_arguments
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+        let qpt: Vec<String> = java_hash_map_order(self.query_passthrough_arguments.keys())
+            .into_iter()
+            .map(|k| format!("{}={}", k, self.query_passthrough_arguments.get(k).and_then(|v| v.as_deref()).unwrap_or("null")))
             .collect();
         write!(
             f,

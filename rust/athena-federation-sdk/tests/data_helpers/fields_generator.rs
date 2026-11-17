@@ -4,6 +4,8 @@ use arrow::datatypes::{DataType, Field, Fields, TimeUnit};
 use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
+use super::rng::{jqwik_char, JQWIK_CHAR_COUNT, JQWIK_MAX_STRING_LENGTH};
+
 pub const MAP_DATA_VECTOR_NAME: &str = "entries";
 pub const MAP_KEY_NAME: &str = "key";
 pub const MAP_VALUE_NAME: &str = "value";
@@ -105,8 +107,14 @@ impl FieldsGenerator {
         let next = depth + 1;
         let name_strategy: BoxedStrategy<String> = match name {
             Some(n) => Just(n.to_string()).boxed(),
-            None => ("[a-zA-Z][a-zA-Z0-9_]{0,5}", 0u32..1_000_000)
-                .prop_map(|(s, n)| format!("{}{}", s, n))
+            None => (
+                prop::collection::vec(0..JQWIK_CHAR_COUNT, 1..=JQWIK_MAX_STRING_LENGTH),
+                0u32..1_000_000,
+            )
+                .prop_map(|(chars, n)| {
+                    let s: String = chars.into_iter().map(jqwik_char).collect();
+                    format!("{}{}", s, n)
+                })
                 .boxed(),
         };
         let primitive = (name_strategy.clone(), primitive_field_type())

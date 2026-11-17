@@ -1,0 +1,3 @@
+col1=100;col2=VarChar;col3=9000000000;col4=1.5;col5=true;col6=18339;col7=12.34;col8=[1, 2, 3];
+col1=101;col2=VarChar1;col3=null;col4=null;col5=null;col6=10957;col7=null;col8=null;
+col1=-7;col2=été;col3=-1;col4=-0.25;col5=false;col6=-1;col7=-0.01;col8=[];

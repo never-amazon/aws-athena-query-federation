@@ -1,0 +1,24 @@
+{
+  "@type" : "GetTableRequest",
+  "identity" : {
+    "id" : "UNKNOWN",
+    "principal" : "UNKNOWN",
+    "account" : "0123456789",
+    "arn" : "testArn",
+    "tags" : {
+      "dept" : null,
+      "team" : "athena"
+    },
+    "groups" : [ ],
+    "configOptions" : {
+      "stage" : "beta",
+      "region" : null
+    }
+  },
+  "queryId" : "test-query-id",
+  "catalogName" : "test-catalog",
+  "tableName" : {
+    "schemaName" : "test-schema",
+    "tableName" : "test-table"
+  }
+}
