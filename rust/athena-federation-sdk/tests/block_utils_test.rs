@@ -283,6 +283,51 @@ fn set_value_rounds_double_into_decimal_from_its_decimal_form() {
     );
 }
 
+#[test]
+fn write_errors_render_array_values_by_element() {
+    let s = setup();
+    let schema = SchemaBuilder::new_builder()
+        .add_field_with_type("int", DataType::Int32)
+        .add_list_field("int_arr", DataType::Int32)
+        .build();
+    let mut block = s.allocator.create_block(Arc::new(schema));
+    let ints = |items: &[i32]| Value::List(items.iter().copied().map(Value::Int).collect());
+
+    let list_vector = block.get_field_vector_mut("int_arr").unwrap();
+    let nested = BlockUtils::set_complex_value(
+        list_vector,
+        0,
+        &DefaultFieldResolver,
+        &Value::List(vec![ints(&[1, 2]), ints(&[3, 4])]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        "Unable to write value for field $data$ using value [1, 2] with minor type INT",
+        nested.to_string()
+    );
+
+    let int_vector = block.get_field_vector_mut("int").unwrap();
+    let bytes = BlockUtils::set_value(int_vector, 0, &Value::Bytes(vec![0, 255, 127])).unwrap_err();
+    assert_eq!(
+        "Unable to set value for field int using value [0, -1, 127] of type INT",
+        bytes.to_string()
+    );
+
+    let deep = BlockUtils::set_value(
+        int_vector,
+        0,
+        &Value::List(vec![
+            ints(&[1]),
+            Value::List(vec![Value::Bytes(vec![2]), Value::Null]),
+        ]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        "Unable to set value for field int using value [[1], [[2], null]] of type INT",
+        deep.to_string()
+    );
+}
+
 fn complex_write_error(field: arrow::datatypes::Field, value: &Value) -> String {
     let s = setup();
     let schema = arrow::datatypes::Schema::new(vec![field]);

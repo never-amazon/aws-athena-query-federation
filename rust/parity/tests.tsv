@@ -33,6 +33,7 @@ com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#fieldToString	block_ut
 com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#isNullRow	block_utils_test::is_null_row	ported	
 com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#setValueConvertsOtherNumbersExactly	block_utils_test::set_value_converts_other_numbers_exactly	ported	
 com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#setValueRejectsLossyIntegerConversions	block_utils_test::set_value_rejects_lossy_integer_conversions	ported	
+com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#writeErrorsRenderArrayValuesByElement	block_utils_test::write_errors_render_array_values_by_element	ported	
 com.amazonaws.athena.connector.lambda.data.BlockUtilsTest#setValueRoundsDoubleIntoDecimalFromItsDecimalForm	block_utils_test::set_value_rounds_double_into_decimal_from_its_decimal_form	ported	
 com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtilTest#bigDecimalToLocalDateTest	date_time_formatter_util_test::big_decimal_to_local_date_test	ported	tests serialized with a mutex because the packing flag is global; JVM default zone taken as UTC
 com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtilTest#bigDecimalToLocalDateTimeTest	date_time_formatter_util_test::big_decimal_to_local_date_time_test	ported	tests serialized with a mutex because the packing flag is global; JVM default zone taken as UTC
