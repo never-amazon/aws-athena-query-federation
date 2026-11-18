@@ -239,8 +239,8 @@ public class VerifyProbe
             catch (Throwable e) {
                 out.append("REMAP\tERROR ").append(esc(String.valueOf(e.getMessage()))).append('\n');
             }
-            Files.writeString(Paths.get(args[1]), out.toString());
+            Files.write(Paths.get(args[1]), out.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
-        Files.writeString(Paths.get(args[1]), out.toString());
+        Files.write(Paths.get(args[1]), out.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

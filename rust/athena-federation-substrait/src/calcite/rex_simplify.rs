@@ -1780,22 +1780,36 @@ impl RexSimplify {
     }
 }
 
+fn truncate(s: &str, precision: Option<usize>) -> String {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    match precision {
+        Some(precision) if units.len() > precision => {
+            char::decode_utf16(units[..precision].iter().copied())
+                .map(|unit| unit.unwrap_or(LONE_SURROGATE_REPLACEMENT))
+                .collect()
+        }
+        _ => s.to_string(),
+    }
+}
+
+fn truncate_or_pad(s: &str, precision: Option<usize>) -> String {
+    let mut text = truncate(s, precision);
+    if let Some(precision) = precision {
+        let len = text.encode_utf16().count();
+        text.extend(std::iter::repeat_n(' ', precision.saturating_sub(len)));
+    }
+    text
+}
+
 fn fold_literal_cast(lit: &RexLiteral, target: &RelDataType) -> Option<RexNode> {
     let tn = target.sql_type_name();
     let value = match (&lit.value, tn) {
         (LiteralValue::Null, _) => LiteralValue::Null,
-        (LiteralValue::Char(s), SqlTypeName::Varchar) => LiteralValue::Char(s.clone()),
+        (LiteralValue::Char(s), SqlTypeName::Varchar) => {
+            LiteralValue::Char(truncate(s, usize::try_from(target.precision()).ok()))
+        }
         (LiteralValue::Char(s), SqlTypeName::Char) => {
-            let p = usize::try_from(target.precision()).ok();
-            let len = s.encode_utf16().count();
-            if p.is_some_and(|p| len > p) {
-                return None;
-            }
-            let mut padded = s.clone();
-            if let Some(p) = p {
-                padded.extend(std::iter::repeat_n(' ', p.saturating_sub(len)));
-            }
-            LiteralValue::Char(padded)
+            LiteralValue::Char(truncate_or_pad(s, usize::try_from(target.precision()).ok()))
         }
         (
             LiteralValue::Exact(d),
@@ -1871,6 +1885,8 @@ pub fn remove_nullability_cast(e: &RexNode) -> RexNode {
     }
 }
 
+const LONE_SURROGATE_REPLACEMENT: char = '?';
+
 #[cfg(test)]
 mod tests {
     use super::super::rel_data_type::RelDataTypeSystem;
@@ -1897,6 +1913,16 @@ mod tests {
             }) => Some(folded),
             other => panic!("unexpected fold {other:?}"),
         }
+    }
+
+    #[test]
+    fn char_cast_truncates_long_literals_by_utf16_length() {
+        assert_eq!(Some("a".to_string()), cast_char_literal("ab", 1));
+        assert_eq!(Some("hel".to_string()), cast_char_literal("hello", 3));
+        assert_eq!(Some("😀".to_string()), cast_char_literal("😀b", 2));
+        assert_eq!(Some("é".to_string()), cast_char_literal("é😀", 1));
+        assert_eq!(Some("?".to_string()), cast_char_literal("😀", 1));
+        assert_eq!(Some("a?".to_string()), cast_char_literal("a😀b", 2));
     }
 
     #[test]

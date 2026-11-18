@@ -167,3 +167,20 @@ std	SELECT varchar_col, 'UNICODE1' AS k FROM test_table	UNICODE1=>日'本😀
 std	SELECT varchar_col FROM test_table WHERE int_col > 1 ORDER BY varchar_col || 'UNICODE1'	UNICODE1=>日本語
 std	SELECT * FROM test_table WHERE char_col = 'UNICODE1'	UNICODE1=>😀
 std	SELECT * FROM test_table WHERE UPPER(varchar_col) = 'UNICODE1'	UNICODE1=>ab
+std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1))
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2))
+std	SELECT * FROM test_table WHERE varchar_col = CAST('a' AS CHAR(3))
+std	SELECT * FROM test_table WHERE char_col = CAST('xyz' AS CHAR(1))
+std	SELECT varchar_col FROM test_table WHERE int_col = 1 AND varchar_col <> CAST('hello' AS CHAR(3))
+std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1))	ab=>😀
+std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1))	ab=>a😀
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2))	abc=>a😀b
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2))	abc=>😀b
+std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1))	ab=>é😀
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(3))	abc=>é😀x
+std	SELECT * FROM test_table WHERE varchar_col = CAST('a' AS CHAR(3))	a=>😀
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(3))	abc=>😀😀
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2))
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2))	abc=>😀b
+std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2))	abc=>a😀b
+std	SELECT * FROM test_table WHERE varchar_col = CAST('a' AS VARCHAR(3))
