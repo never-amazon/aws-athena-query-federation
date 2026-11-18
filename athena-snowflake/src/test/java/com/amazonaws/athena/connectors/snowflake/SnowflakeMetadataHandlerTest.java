@@ -936,16 +936,13 @@ public class SnowflakeMetadataHandlerTest
             Block partitions = allocator.createBlock(partitionSchema);
             partitions.getFieldVector("col1").allocateNew();
             partitions.getFieldVector(SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME).allocateNew();
-            // Set serialized schema bytes instead of string
             byte[] serializedSchema = tableSchema.serializeAsMessage();
             BlockUtils.setValue(partitions.getFieldVector(SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME), 0, serializedSchema);
             partitions.setRowCount(1);
             
-            // Create handler with storage integration configuration
             Map<String, String> configOptions = new HashMap<>();
             configOptions.put("snowflake_storage_integration_name", "test\"integration");
             
-            // Mock S3 utilities
             software.amazon.awssdk.services.s3.S3Utilities mockS3Utilities = mock(software.amazon.awssdk.services.s3.S3Utilities.class);
             software.amazon.awssdk.services.s3.S3Uri mockS3Uri = mock(software.amazon.awssdk.services.s3.S3Uri.class);
             when(mockS3.utilities()).thenReturn(mockS3Utilities);
