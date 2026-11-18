@@ -343,6 +343,37 @@ async fn build_sql_binds_pre1582_timestamps_and_dates_as_java_time() {
     .await;
 }
 
+#[tokio::test]
+async fn build_split_sql_rejects_timestamps_outside_the_postgre_sql_range() {
+    let f = setup();
+    let schema = schema_with(&[("ts", DataType::Date64)]);
+    let timestamp = NaiveDate::from_ymd_opt(-5000, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let c = constraints(vec![(
+        "ts",
+        f.single(&DataType::Date64, Value::LocalDateTime(timestamp)),
+    )]);
+    let error = f
+        .build(
+            &table(),
+            &schema,
+            &c,
+            &split(PARTITION_SCHEMA, PARTITION_NAME),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999",
+        error.as_connector_exception().unwrap().message()
+    );
+    assert_eq!(
+        Some(FederationSourceErrorCode::InternalServiceException),
+        error.error_code()
+    );
+}
+
 async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static str) {
     f.connection.on_prepare(move |sql| {
         if sql == CHAR_COLUMNS_QUERY {

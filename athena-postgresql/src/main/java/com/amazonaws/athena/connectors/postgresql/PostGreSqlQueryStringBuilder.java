@@ -26,7 +26,6 @@ import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.google.common.base.Strings;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.sql.SqlDialect;
-import org.postgresql.jdbc.TimestampUtils;
 
 import java.sql.Connection;
 import java.sql.Date;
@@ -36,10 +35,11 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.chrono.IsoEra;
+import java.time.temporal.ChronoField;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.TimeZone;
 import java.util.stream.Collectors;
 
 /**
@@ -52,6 +52,10 @@ public class PostGreSqlQueryStringBuilder
 {
     private static final String BC_SUFFIX = " BC";
     private static final String UTC_OFFSET = "+00";
+    private static final int NANOS_PER_MICRO = 1000;
+    private static final LocalDateTime MIN_TIMESTAMP = LocalDateTime.of(-4713, 11, 24, 0, 0);
+    private static final LocalDateTime MAX_TIMESTAMP = LocalDateTime.of(294276, 12, 31, 23, 59, 59, 999_999_499);
+    static final String TIMESTAMP_OUT_OF_RANGE = "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999";
 
     public PostGreSqlQueryStringBuilder(final String quoteCharacters, final FederationExpressionParser federationExpressionParser)
     {
@@ -103,16 +107,26 @@ public class PostGreSqlQueryStringBuilder
         statement.setObject(index, utcTimestampText(timestamp), Types.OTHER);
     }
 
-    static String utcTimestampText(LocalDateTime timestamp)
+    static String utcTimestampText(LocalDateTime timestamp) throws SQLException
     {
-        String text = new TimestampUtils(false, () -> TimeZone.getTimeZone("UTC")).toString(timestamp);
-        if (text.endsWith("infinity")) {
-            return text;
+        if (timestamp.isAfter(MAX_TIMESTAMP)) {
+            throw new SQLException(TIMESTAMP_OUT_OF_RANGE);
         }
-        if (text.endsWith(BC_SUFFIX)) {
-            return text.substring(0, text.length() - BC_SUFFIX.length()) + UTC_OFFSET + BC_SUFFIX;
+        LocalDateTime rounded = timestamp.getNano() % NANOS_PER_MICRO >= NANOS_PER_MICRO / 2 ? timestamp.plusNanos(NANOS_PER_MICRO) : timestamp;
+        if (rounded.isBefore(MIN_TIMESTAMP)) {
+            throw new SQLException(TIMESTAMP_OUT_OF_RANGE);
         }
-        return text + UTC_OFFSET;
+        StringBuilder text = new StringBuilder(String.format("%04d-%02d-%02d %02d:%02d:%02d", rounded.get(ChronoField.YEAR_OF_ERA), rounded.getMonthValue(),
+                rounded.getDayOfMonth(), rounded.getHour(), rounded.getMinute(), rounded.getSecond()));
+        int micros = rounded.getNano() / NANOS_PER_MICRO;
+        if (micros > 0) {
+            text.append('.').append(String.format("%06d", micros).replaceFirst("0+$", ""));
+        }
+        text.append(UTC_OFFSET);
+        if (rounded.get(ChronoField.ERA) == IsoEra.BCE.getValue()) {
+            text.append(BC_SUFFIX);
+        }
+        return text.toString();
     }
 
     @Override

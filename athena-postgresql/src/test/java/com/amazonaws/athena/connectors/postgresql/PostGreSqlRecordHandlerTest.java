@@ -49,6 +49,7 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
+import software.amazon.awssdk.services.glue.model.FederationSourceErrorCode;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
@@ -783,7 +784,7 @@ public class PostGreSqlRecordHandlerTest extends TestBase
     }
 
     @Test
-    public void bindTimestampSendsUtcTextWithUnspecifiedType()
+    public void bindTimestampSendsUtcTextWithUnspecifiedType() throws SQLException
     {
         String[][] cases = {
             {"1000-01-01T12:00", "1000-01-01 12:00:00+00"},
@@ -791,11 +792,45 @@ public class PostGreSqlRecordHandlerTest extends TestBase
             {"-0043-03-15T12:00", "0044-03-15 12:00:00+00 BC"},
             {"0000-02-29T06:30:00.500", "0001-02-29 06:30:00.5+00 BC"},
             {"+10000-01-01T00:00", "10000-01-01 00:00:00+00"},
-            {"-292275055-05-16T16:47:04.192", "-infinity"},
+            {"-4712-01-01T00:00", "4713-01-01 00:00:00+00 BC"},
+            {"-4713-12-31T23:59:59", "4714-12-31 23:59:59+00 BC"},
+            {"-4713-11-24T00:00", "4714-11-24 00:00:00+00 BC"},
+            {"+294276-12-31T23:59:59.999999", "294276-12-31 23:59:59.999999+00"},
         };
         for (String[] c : cases) {
             Assert.assertEquals(c[0], c[1], PostGreSqlQueryStringBuilder.utcTimestampText(java.time.LocalDateTime.parse(c[0])));
         }
+    }
+
+    @Test
+    public void bindTimestampRejectsValuesOutsideThePostgreSqlRange()
+    {
+        String[] cases = {"-4713-11-23T23:59:59.999999", "-4714-11-24T00:00", "-5000-01-01T00:00", "-292275055-05-16T16:47:04.192",
+            "+294277-01-01T00:00", "+292278994-08-17T07:12:55.807"};
+        for (String c : cases) {
+            SQLException error = Assert.assertThrows(c, SQLException.class, () -> PostGreSqlQueryStringBuilder.utcTimestampText(java.time.LocalDateTime.parse(c)));
+            Assert.assertEquals(c, "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999", error.getMessage());
+        }
+    }
+
+    @Test
+    public void buildSplitSqlRejectsTimestampsOutsideThePostgreSqlRange()
+            throws SQLException
+    {
+        SchemaBuilder schemaBuilder = createTestSchemaBuilder();
+        schemaBuilder.addField(FieldBuilder.newBuilder("ts", Types.MinorType.DATEMILLI.getType()).build());
+        Constraints constraints = createConstraints(new ImmutableMap.Builder<String, ValueSet>()
+                .put("ts", getSingleValueSet(java.time.LocalDateTime.of(-5000, 1, 1, 0, 0)))
+                .build());
+        PreparedStatement preparedStatement = Mockito.mock(PreparedStatement.class);
+        Mockito.when(this.connection.prepareStatement(Mockito.anyString())).thenReturn(preparedStatement);
+
+        AthenaConnectorException error = Assert.assertThrows(AthenaConnectorException.class, () -> this.postGreSqlRecordHandler.buildSplitSql(this.connection, TEST_CATALOG,
+                new TableName(TEST_SCHEMA, TEST_TABLE), schemaBuilder.build(), constraints, createMockSplit(PARTITION_SCHEMA, PARTITION_NAME)));
+
+        Assert.assertEquals("Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999", error.getMessage());
+        Assert.assertEquals(FederationSourceErrorCode.INTERNAL_SERVICE_EXCEPTION.toString(), error.getErrorDetails().errorCode());
+        Mockito.verify(preparedStatement, Mockito.never()).setObject(Mockito.anyInt(), Mockito.any(), Mockito.anyInt());
     }
 
     @Test
