@@ -793,7 +793,7 @@ impl JdbcMetadataHandler for PostGreSqlMetadataHandler {
             Some("_float4") => DataType::Float32,
             Some("_float8") => DataType::Float64,
             Some("_date") => DataType::Date32,
-            Some("_timestamp") => DataType::Date64,
+            Some("_timestamp" | "_timestamptz") => DataType::Date64,
             Some("_numeric") => DataType::Decimal128(
                 u8::try_from(precision).unwrap_or(u8::MAX),
                 i8::try_from(scale).unwrap_or(i8::MAX),

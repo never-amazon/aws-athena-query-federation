@@ -1058,6 +1058,14 @@ public class PostGreSqlMetadataHandlerTest
     }
 
     @Test
+    public void testGetArrayArrowTypeFromTypeNameMapsTimestamptzLikeScalarTimestamptz() {
+        assertEquals(com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter.toArrowType(Types.TIMESTAMP, 0, 0, Collections.emptyMap()).get(),
+                postGreSqlMetadataHandler.getArrayArrowTypeFromTypeName("_timestamptz", 0, 0));
+        assertEquals(org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType(),
+                postGreSqlMetadataHandler.getArrayArrowTypeFromTypeName("_timestamptz", 0, 0));
+    }
+
+    @Test
     public void testGetPartitionSchema() {
         Schema partitionSchema = postGreSqlMetadataHandler.getPartitionSchema("testCatalog");
         assertEquals(2, partitionSchema.getFields().size());

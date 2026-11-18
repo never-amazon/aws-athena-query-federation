@@ -454,6 +454,7 @@ public final class CorpusGen
             {"mixed_schema_lower_table", "mixedschema", "lower_table"},
             {"unknown_table", "parity", "no_such_table"},
             {"unknown_schema", "no_such_schema", "all_types"},
+            {"calendar", "parity_cal", "calendar"},
         };
         for (String[] t : tables) {
             add("get_table", t[0], 1, "GetTable " + t[1] + "." + t[2],
@@ -1182,7 +1183,7 @@ public final class CorpusGen
         ArrowType dateDay = Types.MinorType.DATEDAY.getType();
         ArrowType dateMilli = Types.MinorType.DATEMILLI.getType();
         Schema schema = SchemaBuilder.newBuilder().addField("id", Types.MinorType.INT.getType()).addField("d", dateDay).addField("ts", dateMilli)
-                .addField("tstz", dateMilli).addListField("ts_arr", dateMilli).addListField("d_arr", dateDay).build();
+                .addField("tstz", dateMilli).addListField("ts_arr", dateMilli).addListField("d_arr", dateDay).addListField("tstz_arr", dateMilli).build();
         add("x_cal", "full", 6, "pre-1582, BC and cutover values in scalars and arrays", q -> read(q, calendar, schema, split(q, "*", "*"), constraints(Map.of())));
         String[][] exports = {
             {"export", "SELECT id, d, ts, tstz FROM parity_cal.calendar ORDER BY id"},
