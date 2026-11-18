@@ -68,3 +68,31 @@ pub(crate) fn java_sql_timestamp(timestamp: NaiveDateTime) -> NaiveDateTime {
         .and_then(|adjusted| adjusted.with_nanosecond(timestamp.nanosecond()))
         .unwrap_or(timestamp)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::julian_to_gregorian_millis;
+
+    const DRIVER_ADJUSTMENTS: [(i64, i64); 13] = [
+        (-693_306_259_200_000, -97_701_888),
+        (-595_451_837_166_927, -2_084_901_888),
+        (-219_951_934_200_000, -1_184_567_296),
+        (-172_642_924_800_000, -2_134_967_296),
+        (-172_642_924_800_001, -2_134_967_296),
+        (-93_692_592_000_001, 432_000_000),
+        (-93_692_592_000_000, 432_000_000),
+        (-93_687_494_400_000, 518_400_000),
+        (-62_135_596_800_000, -172_800_000),
+        (-14_826_672_000_001, 777_600_000),
+        (-14_826_672_000_000, 777_600_000),
+        (-12_220_156_800_001, 864_000_000),
+        (-12_220_156_800_000, 0),
+    ];
+
+    #[test]
+    fn julian_adjustment_matches_the_driver_in_every_time_zone() {
+        for (millis, adjustment) in DRIVER_ADJUSTMENTS {
+            assert_eq!(adjustment, julian_to_gregorian_millis(millis), "{millis}");
+        }
+    }
+}

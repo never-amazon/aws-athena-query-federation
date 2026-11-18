@@ -44,7 +44,6 @@ import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory;
 import com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter;
 import com.google.common.annotations.VisibleForTesting;
-import net.snowflake.client.internal.core.ResultUtil;
 import org.apache.arrow.dataset.file.FileFormat;
 import org.apache.arrow.dataset.file.FileSystemDatasetFactory;
 import org.apache.arrow.dataset.jni.NativeMemoryPool;
@@ -88,6 +87,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.TimeZone;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.JDBC_PROPERTIES;
@@ -105,6 +105,8 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private static final long MILLIS_PER_DAY = 86_400_000L;
     private static final long JULIAN_ADJUSTMENT_REACH_MILLIS = 25 * MILLIS_PER_DAY;
+    private static final long JULIAN_ADJUSTMENT_LIMIT_MILLIS = -12_220_156_800_000L;
+    private static final long UNIX_EPOCH_JULIAN_DAY = 2_440_588;
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
     /**
@@ -341,15 +343,16 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         if (adjusted >= GREGORIAN_CUTOVER_MILLIS) {
             return adjusted;
         }
+        TimeZone zone = TimeZone.getDefault();
         long result = adjusted;
         boolean found = false;
         for (long sample : new long[] {adjusted - JULIAN_ADJUSTMENT_REACH_MILLIS, adjusted, adjusted + JULIAN_ADJUSTMENT_REACH_MILLIS}) {
-            long adjustment = julianAdjustment(sample);
+            long adjustment = julianAdjustment(sample, zone);
             long millis = adjusted - adjustment;
             if (adjustment != 0) {
                 millis = Math.floorDiv(adjusted, 1000L) * 1000L - adjustment + Math.floorMod(Math.floorMod(adjusted, 1000L) + adjustment, 1000L);
             }
-            if (driverAdjusted(millis) == adjusted && (!found || millis < result)) {
+            if (driverAdjusted(millis, zone) == adjusted && (!found || millis < result)) {
                 result = millis;
                 found = true;
             }
@@ -357,9 +360,9 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         return result;
     }
 
-    private static long driverAdjusted(long millis)
+    private static long driverAdjusted(long millis, TimeZone zone)
     {
-        long adjustment = julianAdjustment(millis);
+        long adjustment = julianAdjustment(millis, zone);
         if (adjustment == 0) {
             return millis;
         }
@@ -368,7 +371,28 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
 
     static long julianAdjustment(long millis)
     {
-        return ResultUtil.msDiffJulianToGregorian(new java.util.Date(millis));
+        return julianAdjustment(millis, TimeZone.getDefault());
+    }
+
+    private static long julianAdjustment(long millis, TimeZone zone)
+    {
+        if (millis >= JULIAN_ADJUSTMENT_LIMIT_MILLIS) {
+            return 0;
+        }
+        long localMillis = millis + zone.getOffset(millis);
+        long c = Math.floorDiv(localMillis, MILLIS_PER_DAY) + UNIX_EPOCH_JULIAN_DAY + 32_082;
+        long d = Math.floorDiv(4 * c + 3, 1461);
+        long e = c - Math.floorDiv(1461 * d, 4);
+        long m = Math.floorDiv(5 * e + 2, 153);
+        long dayOfMonth = e - Math.floorDiv(153 * m + 2, 5) + 1;
+        long month = m + 3 - 12 * Math.floorDiv(m, 10);
+        long year = d - 4800 + Math.floorDiv(m, 10);
+        long eraYear = year > 0 ? year : 1 - year;
+        if (month == 1 || (month == 2 && dayOfMonth <= 28)) {
+            eraYear--;
+        }
+        int hundreds = (int) (eraYear / 100);
+        return (hundreds - hundreds / 4 - 2) * (int) MILLIS_PER_DAY;
     }
 
     @Override
