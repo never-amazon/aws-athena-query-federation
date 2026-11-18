@@ -627,6 +627,18 @@ public class SnowflakeQueryStringBuilderTest
     }
 
     @Test
+    public void testExpandSqlKeepsEraAndSignInDateAndTimestampLiterals()
+    {
+        String sql = "SELECT * FROM \"t\" WHERE \"d\" = ? AND \"e\" = ? AND \"ts\" = ?";
+        List<TypeAndValue> values = Arrays.asList(
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType(), -735_160L),
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType(), 2_932_897L),
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType(), -63_517_780_800_000L));
+        assertEquals("SELECT * FROM \"t\" WHERE \"d\" = DATE '-0043-03-15' AND \"e\" = DATE '+10000-01-01' AND \"ts\" = TIMESTAMP '-0043-03-15T12:00:00Z'",
+                queryBuilder.expandSql(sql, values));
+    }
+
+    @Test
     public void testExpandSqlEscapesBackslashAndQuote()
     {
         String sql = "SELECT * FROM \"t\" WHERE \"a\" = ? AND \"b\" = ? AND \"c\" = ?";

@@ -40,7 +40,6 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -165,7 +164,7 @@ public class SnowflakeQueryStringBuilder
                 switch (minorType) {
                     case DATEDAY:
                         long days = ((Number) typeAndValue.getValue()).longValue();
-                        sqlLiteral = "DATE " + singleQuote(LocalDate.ofEpochDay(days).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+                        sqlLiteral = "DATE " + singleQuote(LocalDate.ofEpochDay(days).toString());
                         break;
                     case DATEMILLI:
                         long millis = ((Number) typeAndValue.getValue()).longValue();

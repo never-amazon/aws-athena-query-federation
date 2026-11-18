@@ -593,6 +593,23 @@ fn varchar(value: &str) -> TypeAndValue {
 }
 
 #[test]
+fn test_expand_sql_keeps_era_and_sign_in_date_and_timestamp_literals() {
+    let sql = r#"SELECT * FROM "t" WHERE "d" = ? AND "e" = ? AND "ts" = ?"#;
+    let values = [
+        TypeAndValue::new(DataType::Date32, Value::Int(-735_160)).unwrap(),
+        TypeAndValue::new(DataType::Date32, Value::Int(2_932_897)).unwrap(),
+        TypeAndValue::new(DataType::Date64, Value::Long(-63_517_780_800_000)).unwrap(),
+    ];
+    assert_eq!(
+        Some(
+            r#"SELECT * FROM "t" WHERE "d" = DATE '-0043-03-15' AND "e" = DATE '+10000-01-01' AND "ts" = TIMESTAMP '-0043-03-15T12:00:00Z'"#
+                .to_string()
+        ),
+        query_builder().expand_sql(sql, &values).unwrap()
+    );
+}
+
+#[test]
 fn test_expand_sql_escapes_backslash_and_quote() {
     let sql = r#"SELECT * FROM "t" WHERE "a" = ? AND "b" = ? AND "c" = ?"#;
     let values = [varchar("x\\"), varchar("\\' OR 1=1 --"), varchar("it's")];
