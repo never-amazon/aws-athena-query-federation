@@ -193,7 +193,7 @@ impl SqlDialect {
         }
     }
 
-    pub fn get_cast_spec(&self, ty: &RelDataType) -> Option<SqlDataTypeSpec> {
+    pub fn cast_spec(&self, ty: &RelDataType) -> Option<SqlDataTypeSpec> {
         let tn = ty.sql_type_name();
         if self.product == DatabaseProduct::Postgresql {
             let alien = match tn {

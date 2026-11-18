@@ -80,7 +80,7 @@ fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
             write!(
                 out,
                 "\t{}|{}|{}|{}",
-                v.get_type(),
+                v.ty(),
                 simple,
                 esc(&v.value().to_string()),
                 v.column_name()
@@ -107,7 +107,7 @@ fn rust_rows(plan: &str) -> Vec<(String, String)> {
         }
     }
     let schema = match plan::table_schema(plan, &SqlDialect::ansi()) {
-        Ok(t) => esc(&t.get_full_type_string()),
+        Ok(t) => esc(&t.full_type_string()),
         Err(e) => error_text(&e),
     };
     rows.push(("SCHEMA".to_string(), schema));

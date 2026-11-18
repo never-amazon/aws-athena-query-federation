@@ -304,7 +304,7 @@ pub fn unparse(w: &mut SqlWriter<'_>, node: &SqlNode, left_prec: i32, right_prec
 }
 
 fn unparse_identifier(w: &mut SqlWriter<'_>, id: &SqlIdentifier) {
-    if let Some(simple) = id.get_simple() {
+    if let Some(simple) = id.as_simple() {
         let upper = simple.to_uppercase();
         if !simple.is_empty() && FUNCTION_ID_NAMES.contains(&upper.as_str()) {
             w.start_list(FrameType::Identifier, "", "");
@@ -386,7 +386,7 @@ fn dialect_unparse_call(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, r
         let rewritten = SqlCall {
             op: &operators::LENGTH,
             operands: call.operands.clone(),
-            quantifier: None,
+            distinct: false,
         };
         unparse_operator(w, &rewritten, left_prec, right_prec);
         return;
@@ -606,8 +606,8 @@ fn unparse_by_syntax(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, righ
         _ => {
             w.keyword(op.name);
             w.start_list(FrameType::FunCall, "(", ")");
-            if let Some(q) = &call.quantifier {
-                w.keyword(q);
+            if call.distinct {
+                w.keyword("DISTINCT");
             }
             if call.operands.is_empty() && op.syntax == SqlSyntax::FunctionStar {
                 w.sep("*");

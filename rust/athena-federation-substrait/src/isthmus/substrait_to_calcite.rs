@@ -53,8 +53,8 @@ fn expression_row_type(node: &RelNode) -> RelDataType {
             let mut b = RelDataTypeBuilder::new();
             for (i, f) in row_type.field_list().iter().enumerate() {
                 let ty = match group_set.get(i).and_then(|g| input_fields.get(*g)) {
-                    Some(source) => source.get_type().clone(),
-                    None => f.get_type().clone(),
+                    Some(source) => source.ty().clone(),
+                    None => f.ty().clone(),
                 };
                 b.add(f.name(), ty);
             }
@@ -158,15 +158,12 @@ impl SubstraitToCalcite {
             })?;
         let frame = &mut frames[position];
         let fields = frame.row_type.field_list();
-        let ty = fields
-            .get(index)
-            .map(|f| f.get_type().clone())
-            .ok_or_else(|| {
-                SubstraitError::IndexOutOfBounds(format!(
-                    "Index {index} out of bounds for length {}",
-                    fields.len()
-                ))
-            })?;
+        let ty = fields.get(index).map(|f| f.ty().clone()).ok_or_else(|| {
+            SubstraitError::IndexOutOfBounds(format!(
+                "Index {index} out of bounds for length {}",
+                fields.len()
+            ))
+        })?;
         let correl = if let Some(c) = frame.correl {
             c
         } else {
@@ -265,7 +262,7 @@ impl SubstraitToCalcite {
                     fields.len()
                 ))
             })?;
-            exprs.push(RexBuilder::make_input_ref(index, f.get_type().clone()));
+            exprs.push(RexBuilder::make_input_ref(index, f.ty().clone()));
         }
         Ok(self.rel_builder.project(node, &exprs))
     }
@@ -407,7 +404,7 @@ impl SubstraitToCalcite {
             .field_list()
             .iter()
             .enumerate()
-            .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))
+            .map(|(i, f)| RexBuilder::make_input_ref(i, f.ty().clone()))
             .collect();
         let ex = self.expressions();
         for e in &p.expressions {
@@ -653,7 +650,7 @@ impl SubstraitToCalcite {
             .field_list()
             .iter()
             .enumerate()
-            .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))
+            .map(|(i, f)| RexBuilder::make_input_ref(i, f.ty().clone()))
             .collect();
         exprs.extend(new_expressions);
         let projected = self

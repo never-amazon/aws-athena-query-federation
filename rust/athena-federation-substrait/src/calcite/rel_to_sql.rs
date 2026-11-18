@@ -111,14 +111,14 @@ fn adjusted_row_type(row_type: &RelDataType, node: &SqlNode) -> RelDataType {
             let mut b = RelDataTypeBuilder::new();
             for (item, field) in s.select_list.iter().zip(row_type.field_list().iter()) {
                 let name = item.alias().unwrap_or_else(|| field.name().to_string());
-                b.add(name, field.get_type().clone());
+                b.add(name, field.ty().clone());
             }
             b.build()
         }
         SqlNode::Call(c) if c.op.kind == SqlKind::As && c.operands.len() > 2 => {
             let mut b = RelDataTypeBuilder::new();
             for (op, field) in c.operands[2..].iter().zip(row_type.field_list().iter()) {
-                b.add(op.to_plain_string(), field.get_type().clone());
+                b.add(op.to_plain_string(), field.ty().clone());
             }
             b.build()
         }
@@ -424,7 +424,7 @@ fn strip_trivial_aliases(node: SqlNode) -> SqlNode {
                             .operands
                             .get(1)
                             .and_then(SqlNode::as_identifier)
-                            .and_then(SqlIdentifier::get_simple)
+                            .and_then(SqlIdentifier::as_simple)
                             .is_some_and(|n| n.starts_with("EXPR$"));
                         if generated {
                             *item = c.operands[0].clone();
@@ -463,30 +463,6 @@ fn wrap_select(dialect: &SqlDialect, node: SqlNode) -> SqlSelect {
 }
 
 impl Builder {
-    fn set_select(&mut self, list: Vec<SqlNode>) {
-        self.select.select_list = list;
-    }
-
-    fn set_where(&mut self, node: SqlNode) {
-        self.select.where_clause = Some(node);
-    }
-
-    fn set_group_by(&mut self, list: Vec<SqlNode>) {
-        self.select.group_by = Some(list);
-    }
-
-    fn set_order_by(&mut self, list: Vec<SqlNode>) {
-        self.select.order_by = Some(list);
-    }
-
-    fn set_fetch(&mut self, node: SqlNode) {
-        self.select.fetch = Some(node);
-    }
-
-    fn set_offset(&mut self, node: SqlNode) {
-        self.select.offset = Some(node);
-    }
-
     fn add_order_item(&self, list: &mut Vec<SqlNode>, field: &RelFieldCollation) -> Result<()> {
         list.push(self.context.collation_to_sql(field)?);
         Ok(())
@@ -606,7 +582,7 @@ impl Context {
         let node = self.base_order_field(ordinal)?;
         if let ContextKind::SelectList { items, .. } = &self.kind {
             if let SqlNode::Identifier(id) = &node {
-                if let Some(name) = id.get_simple() {
+                if let Some(name) = id.as_simple() {
                     for (i, item) in items.iter().enumerate() {
                         if i != ordinal {
                             if let Some(alias) = item.alias() {
@@ -732,7 +708,7 @@ impl Context {
                             let inner = &c.operands[0];
                             self.dialect.supports_implicit_type_coercion(
                                 &c.ty,
-                                inner.get_type(),
+                                inner.ty(),
                                 matches!(inner, RexNode::Literal(_)),
                             )
                         }
@@ -788,7 +764,7 @@ impl Context {
         }
         let mut nodes = self.to_sql_list(&call.operands)?;
         if matches!(call.op.kind, SqlKind::Cast | SqlKind::SafeCast) {
-            if let Some(spec) = self.dialect.get_cast_spec(&call.ty) {
+            if let Some(spec) = self.dialect.cast_spec(&call.ty) {
                 nodes.push(SqlNode::DataType(spec));
             }
         }
@@ -994,12 +970,11 @@ impl Context {
         } else {
             operands
         };
-        let quantifier = if distinct {
-            Some("DISTINCT".to_string())
-        } else {
-            None
-        };
-        let call = SqlNode::call_with_quantifier(op, quantifier, operands.clone());
+        let call = SqlNode::Call(SqlCall {
+            op,
+            operands: operands.clone(),
+            distinct,
+        });
         let call2 = if distinct && approximate && self.dialect.supports_approx_count_distinct() {
             SqlNode::call(&operators::APPROX_COUNT_DISTINCT, operands)
         } else if let Some(f) = filter_arg {
@@ -1054,12 +1029,11 @@ fn create_over_call(
             vec![node, SqlNode::Literal(SqlLiteral::exact("0"))],
         );
     }
-    let quantifier = if distinct {
-        Some("DISTINCT".to_string())
-    } else {
-        None
-    };
-    let agg = SqlNode::call_with_quantifier(op, quantifier, operands);
+    let agg = SqlNode::Call(SqlCall {
+        op,
+        operands,
+        distinct,
+    });
     SqlNode::call(&operators::OVER, vec![agg, window])
 }
 
@@ -1596,7 +1570,7 @@ impl RelToSqlConverter {
         let mut builder = self.builder(&x, rel);
         self.prepare_sub_queries(&mut builder.context, condition)?;
         let w = builder.context.to_sql(condition)?;
-        builder.set_where(w);
+        builder.select.where_clause = Some(w);
         Ok(self.builder_result(builder, rel))
     }
 
@@ -1622,9 +1596,9 @@ impl RelToSqlConverter {
                     let field_type = row_type
                         .field_list()
                         .get(select_list.len())
-                        .map(|f| f.get_type().clone());
+                        .map(|f| f.ty().clone());
                     if let Some(ft) = field_type {
-                        if let Some(spec) = self.dialect.get_cast_spec(&ft) {
+                        if let Some(spec) = self.dialect.cast_spec(&ft) {
                             sql =
                                 SqlNode::call(&operators::CAST, vec![sql, SqlNode::DataType(spec)]);
                         }
@@ -1640,9 +1614,9 @@ impl RelToSqlConverter {
                 && contains_agg_list(&builder.select.select_list)
                 && !contains_agg_list(&select_list)
             {
-                builder.set_group_by(Vec::new());
+                builder.select.group_by = Some(Vec::new());
             }
-            builder.set_select(select_list);
+            builder.select.select_list = select_list;
         }
         Ok(self.builder_result(builder, rel))
     }
@@ -1680,9 +1654,9 @@ impl RelToSqlConverter {
             }
             add_select(&mut select_list, node, row_type);
         }
-        builder.set_select(select_list);
+        builder.select.select_list = select_list;
         if !group_by_list.is_empty() || agg_calls.is_empty() {
-            builder.set_group_by(group_by_list);
+            builder.select.group_by = Some(group_by_list);
         }
         Ok(self.builder_result(builder, rel))
     }
@@ -1739,15 +1713,15 @@ impl RelToSqlConverter {
             builder.add_order_item(&mut order_by, c)?;
         }
         if !order_by.is_empty() {
-            builder.set_order_by(order_by);
+            builder.select.order_by = Some(order_by);
         }
         if let Some(f) = fetch {
             let n = builder.context.to_sql(f)?;
-            builder.set_fetch(n);
+            builder.select.fetch = Some(n);
         }
         if let Some(o) = offset {
             let n = builder.context.to_sql(o)?;
-            builder.set_offset(n);
+            builder.select.offset = Some(n);
         }
         Ok(self.builder_result(builder, rel))
     }

@@ -85,7 +85,7 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
             write!(
                 out,
                 "\t{}|{}|{}|{}",
-                v.get_type(),
+                v.ty(),
                 simple,
                 v.value(),
                 v.column_name()
@@ -99,7 +99,7 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
 
 fn schema_row(plan: &str) -> String {
     match plan::table_schema(plan, &SqlDialect::ansi()) {
-        Ok(t) => t.get_full_type_string(),
+        Ok(t) => t.full_type_string(),
         Err(e) => error_text(&e),
     }
 }

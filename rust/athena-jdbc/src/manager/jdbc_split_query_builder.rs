@@ -879,7 +879,7 @@ pub(crate) fn handle_data_types_for_prepared_statement(
     for (i, type_and_value) in accumulator.iter().enumerate() {
         let index = i + 1;
         let value = type_and_value.value();
-        match type_and_value.get_type() {
+        match type_and_value.ty() {
             SqlTypeName::Bigint => statement.set_long(index, substrait_long_value(value)?)?,
             SqlTypeName::Double => statement.set_double(index, substrait_double_value(value)?)?,
             SqlTypeName::Integer => statement.set_int(index, substrait_int_value(value)?)?,
@@ -949,7 +949,7 @@ pub(crate) fn handle_data_types_for_prepared_statement(
                 other => {
                     return Err(FederationError::not_supported(format!(
                         "Can't handle timestamp format: {}, value class: {}",
-                        type_and_value.get_type(),
+                        type_and_value.ty(),
                         other.java_class_name()
                     )))
                 }
@@ -987,7 +987,7 @@ fn bind_substrait_date(
             Err(_) => {
                 return Err(FederationError::not_supported(format!(
                     "Can't handle date format: {}, value type: {}, value: {}",
-                    type_and_value.get_type(),
+                    type_and_value.ty(),
                     other.java_class_name(),
                     other
                 )))

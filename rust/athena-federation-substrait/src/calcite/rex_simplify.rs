@@ -67,9 +67,9 @@ impl SargBuilder {
         self.null_as = self.null_as.or(null_as);
     }
 
-    fn get_type(&self) -> RelDataType {
+    fn ty(&self) -> RelDataType {
         match self.types.first() {
-            None => self.ref_node.get_type().clone(),
+            None => self.ref_node.ty().clone(),
             Some(first) => {
                 let nullable = self.types.iter().any(RelDataType::is_nullable);
                 let mut best = first.clone();
@@ -246,7 +246,7 @@ impl SargCollector {
             CollectedTerm::Sarg(i) => {
                 let b = &self.builders[*i];
                 let sarg = b.build(self.negate);
-                let ty = b.get_type();
+                let ty = b.ty();
                 if sarg.complexity() <= 1 && simple_sarg(&sarg) {
                     return sarg_ref(builder, &b.ref_node, &sarg, &ty, unknown_as);
                 }
@@ -808,10 +808,10 @@ impl RexSimplify {
 
     pub fn simplify_preserving_type(self, e: &RexNode) -> RexNode {
         let e2 = self.simplify(e, RexUnknownAs::Unknown);
-        if e2.get_type() == e.get_type() {
+        if e2.ty() == e.ty() {
             return e2;
         }
-        let e3 = RexBuilder::make_cast(e.get_type().clone(), e2, false);
+        let e3 = RexBuilder::make_cast(e.ty().clone(), e2, false);
         if &e3 == e {
             return e.clone();
         }
@@ -820,7 +820,7 @@ impl RexSimplify {
 
     pub fn simplify(self, e: &RexNode, unknown_as: RexUnknownAs) -> RexNode {
         if definitely_null(e) {
-            if e.get_type().sql_type_name() == SqlTypeName::Boolean {
+            if e.ty().sql_type_name() == SqlTypeName::Boolean {
                 if let Some(b) = unknown_as.to_boolean() {
                     return self.builder.make_bool_literal(b);
                 }
@@ -828,7 +828,7 @@ impl RexSimplify {
             if e.is_null_literal() {
                 return e.clone();
             }
-            return RexBuilder::make_null_literal(e.get_type());
+            return RexBuilder::make_null_literal(e.ty());
         }
         let RexNode::Call(call) = e else {
             return e.clone();
@@ -895,7 +895,7 @@ impl RexSimplify {
             return self.simplify_generic(e);
         }
         let keep = |other: &RexNode| -> RexNode {
-            if other.get_type() == &e.ty {
+            if other.ty() == &e.ty {
                 other.clone()
             } else {
                 RexBuilder::make_cast(e.ty.clone(), other.clone(), false)
@@ -973,11 +973,11 @@ impl RexSimplify {
                 }
             }
         }
-        if o0.get_type().sql_type_name() == SqlTypeName::Boolean {
+        if o0.ty().sql_type_name() == SqlTypeName::Boolean {
             let rebuilt = self.builder.make_call(e.op, vec![o0.clone(), o1.clone()]);
             if let Some(cmp) = comparison_of(&rebuilt) {
                 if let LiteralValue::Boolean(b) = cmp.literal.value {
-                    let nullable = cmp.ref_node.get_type().is_nullable();
+                    let nullable = cmp.ref_node.ty().is_nullable();
                     if b {
                         match cmp.kind {
                             SqlKind::GreaterThanOrEqual | SqlKind::Equals => return cmp.ref_node,
@@ -1100,7 +1100,7 @@ impl RexSimplify {
             if !terms2.iter().all(|t| terms.contains(t)) {
                 continue;
             }
-            if !nd.get_type().is_nullable() {
+            if !nd.ty().is_nullable() {
                 return self.builder.make_bool_literal(false);
             }
             not_satisfiable.push(nd.clone());
@@ -1108,7 +1108,7 @@ impl RexSimplify {
         if let Some(first) = not_satisfiable.first().cloned() {
             terms.retain(|t| !not_satisfiable.contains(t));
             not_terms.retain(|t| !not_satisfiable.contains(t));
-            terms.push(RexBuilder::make_null_literal(first.get_type()));
+            terms.push(RexBuilder::make_null_literal(first.ty()));
             for ns in &not_satisfiable {
                 let is_null = self
                     .builder
@@ -1386,7 +1386,7 @@ impl RexSimplify {
                 SqlKind::Not => {
                     let x = term.operands()[0].clone();
                     if terms.contains(&x) {
-                        if !x.get_type().is_nullable() {
+                        if !x.ty().is_nullable() {
                             return true_literal;
                         }
                         let is_not_null = self
@@ -1396,7 +1396,7 @@ impl RexSimplify {
                         if let (Some(p), RexNode::Call(c)) = (pos, &is_not_null) {
                             terms[p] = self.simplify_is(c, unknown_as);
                         }
-                        terms[i] = RexBuilder::make_null_literal(x.get_type());
+                        terms[i] = RexBuilder::make_null_literal(x.ty());
                         continue;
                     }
                 }
@@ -1538,7 +1538,7 @@ impl RexSimplify {
                 }
             }
             SqlKind::IsTrue => {
-                if !a.get_type().is_nullable() {
+                if !a.ty().is_nullable() {
                     return Some(self.simplify(a, unknown_as));
                 }
                 let s = self.simplify(a, RexUnknownAs::False);
@@ -1548,7 +1548,7 @@ impl RexSimplify {
                 return Some(self.builder.make_call(&operators::IS_TRUE, vec![s]));
             }
             SqlKind::IsNotFalse => {
-                if !a.get_type().is_nullable() {
+                if !a.ty().is_nullable() {
                     return Some(self.simplify(a, unknown_as));
                 }
                 let s = self.simplify(a, RexUnknownAs::True);
@@ -1557,7 +1557,7 @@ impl RexSimplify {
                 }
                 return Some(self.builder.make_call(&operators::IS_NOT_FALSE, vec![s]));
             }
-            SqlKind::IsFalse | SqlKind::IsNotTrue if !a.get_type().is_nullable() => {
+            SqlKind::IsFalse | SqlKind::IsNotTrue if !a.ty().is_nullable() => {
                 return Some(self.simplify(&rex_not(self.builder, a), unknown_as));
             }
             _ => {}
@@ -1579,7 +1579,7 @@ impl RexSimplify {
 
     fn simplify_is_not_null(self, a: &RexNode) -> Option<RexNode> {
         let a = self.simplify(a, RexUnknownAs::Unknown);
-        if !a.get_type().is_nullable() {
+        if !a.ty().is_nullable() {
             return Some(self.builder.make_bool_literal(true));
         }
         match &a {
@@ -1606,7 +1606,7 @@ impl RexSimplify {
 
     fn simplify_is_null(self, a: &RexNode) -> Option<RexNode> {
         let a = self.simplify(a, RexUnknownAs::Unknown);
-        if !a.get_type().is_nullable() {
+        if !a.ty().is_nullable() {
             return Some(self.builder.make_bool_literal(false));
         }
         match &a {
@@ -1665,9 +1665,8 @@ impl RexSimplify {
 
     fn simplify_cast(self, e: &RexCall) -> RexNode {
         let operand = self.simplify(&e.operands[0], RexUnknownAs::Unknown);
-        let same_or_narrows = e.ty == *operand.get_type()
-            || (e.ty.equals_sans_nullability(operand.get_type())
-                && !operand.get_type().is_nullable());
+        let same_or_narrows = e.ty == *operand.ty()
+            || (e.ty.equals_sans_nullability(operand.ty()) && !operand.ty().is_nullable());
         if same_or_narrows && e.ty.sql_type_name() != SqlTypeName::Decimal {
             return operand;
         }
@@ -1693,7 +1692,7 @@ impl RexSimplify {
             if operands.contains(&s) {
                 continue;
             }
-            let not_null = !s.get_type().is_nullable();
+            let not_null = !s.ty().is_nullable();
             operands.push(s);
             if not_null {
                 break;
@@ -1703,7 +1702,7 @@ impl RexSimplify {
             0 => RexBuilder::make_null_literal(&call.ty),
             1 => {
                 let only = operands.remove(0);
-                if only.get_type() == &call.ty {
+                if only.ty() == &call.ty {
                     only
                 } else {
                     RexBuilder::make_cast(call.ty.clone(), only, false)
@@ -1762,7 +1761,7 @@ impl RexSimplify {
             }
         }
         if merged.is_empty() {
-            if else_value.get_type() == &call.ty {
+            if else_value.ty() == &call.ty {
                 return else_value;
             }
             return RexBuilder::make_cast(call.ty.clone(), else_value, false);
@@ -1871,7 +1870,7 @@ pub fn remove_nullability_cast(e: &RexNode) -> RexNode {
     match e {
         RexNode::Call(c) if c.op.kind == SqlKind::Cast => {
             let inner = &c.operands[0];
-            if inner.get_type().equals_sans_nullability(&c.ty) {
+            if inner.ty().equals_sans_nullability(&c.ty) {
                 return inner.clone();
             }
             e.clone()

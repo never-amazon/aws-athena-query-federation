@@ -256,7 +256,7 @@ com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federa
 com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federation-substrait/src/plan.rs::table_columns	merged	the only method, getTableColumns, is plan::table_columns
 com.amazonaws.athena.connector.substrait.SubstraitRelUtils	athena-federation-substrait/src/lib.rs::plan	ported	
 com.amazonaws.athena.connector.substrait.SubstraitSqlUtils	athena-federation-substrait/src/lib.rs::plan	merged	the static methods are free functions in the plan module, beside the rel lookups
-com.amazonaws.athena.connector.substrait.SubstraitTypeAndValue	athena-federation-substrait/src/substrait_type_and_value.rs::SubstraitTypeAndValue	ported	
+com.amazonaws.athena.connector.substrait.SubstraitTypeAndValue	athena-federation-substrait/src/params.rs::SubstraitTypeAndValue	ported	
 com.amazonaws.athena.connector.substrait.model.ColumnPredicate	athena-federation-substrait/src/predicate.rs::ColumnPredicate	ported	
 com.amazonaws.athena.connector.substrait.model.LogicalExpression	athena-federation-substrait/src/predicate.rs::LogicalExpression	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitField	-	not_ported	plan::table_columns returns the column names directly, so no field tree is built

@@ -332,7 +332,7 @@ impl ExpressionConverter<'_> {
                     .row_type()
                     .field_list()
                     .first()
-                    .map(|f| f.get_type().with_nullability(true))
+                    .map(|f| f.ty().with_nullability(true))
                     .ok_or_else(|| SubstraitError::IllegalArgument("scalar sub-query must return one column".into()))?;
                 RexSubQuery {
                     kind: SubQueryKind::Scalar,
@@ -347,8 +347,8 @@ impl ExpressionConverter<'_> {
                     operands.push(self.convert(n, input)?);
                 }
                 let rel = rel_of(p.haystack.as_deref())?;
-                let nullable = operands.iter().any(|o| o.get_type().is_nullable())
-                    || rel.row_type().field_list().iter().any(|f| f.get_type().is_nullable());
+                let nullable = operands.iter().any(|o| o.ty().is_nullable())
+                    || rel.row_type().field_list().iter().any(|f| f.ty().is_nullable());
                 RexSubQuery {
                     kind: SubQueryKind::In,
                     operands,
@@ -383,10 +383,10 @@ impl ExpressionConverter<'_> {
     }
 
     fn make_in(&self, lhs: RexNode, options: Vec<RexNode>) -> RexNode {
-        let family = lhs.get_type().sql_type_name().family();
+        let family = lhs.ty().sql_type_name().family();
         let assignable = options
             .iter()
-            .all(|o| same_family(family, o.get_type().sql_type_name().family()));
+            .all(|o| same_family(family, o.ty().sql_type_name().family()));
         if assignable {
             let mut values = Vec::new();
             for o in &options {
@@ -416,8 +416,7 @@ impl ExpressionConverter<'_> {
                         .rex_builder
                         .make_call(&operators::EQUALS, vec![lhs, options[0].clone()]);
                 }
-                let types: Vec<RelDataType> =
-                    options.iter().map(|o| o.get_type().clone()).collect();
+                let types: Vec<RelDataType> = options.iter().map(|o| o.ty().clone()).collect();
                 let ty = least_restrictive(&types);
                 return self.rex_builder.make_search(lhs, sarg, ty);
             }
@@ -482,7 +481,7 @@ impl ExpressionConverter<'_> {
                 fields.len()
             ))
         })?;
-        Ok(RexBuilder::make_input_ref(index, f.get_type().clone()))
+        Ok(RexBuilder::make_input_ref(index, f.ty().clone()))
     }
 
     fn function_decl(&self, reference: u32) -> Result<&FunctionDecl> {
@@ -788,10 +787,9 @@ impl ExpressionConverter<'_> {
         for v in &list.values {
             args.push(self.literal(v)?);
         }
-        let component = args.first().map_or_else(
-            || self.not_null(SqlTypeName::Null),
-            |a| a.get_type().clone(),
-        );
+        let component = args
+            .first()
+            .map_or_else(|| self.not_null(SqlTypeName::Null), |a| a.ty().clone());
         let ty = RelDataType::array(least_restrictive_or(&args, component), false);
         Ok(RexBuilder::make_call_typed(
             ty,
@@ -842,7 +840,7 @@ fn least_restrictive_or(args: &[RexNode], fallback: RelDataType) -> RelDataType 
     if args.is_empty() {
         return fallback;
     }
-    let types: Vec<RelDataType> = args.iter().map(|a| a.get_type().clone()).collect();
+    let types: Vec<RelDataType> = args.iter().map(|a| a.ty().clone()).collect();
     least_restrictive(&types)
 }
 
@@ -910,11 +908,11 @@ pub(crate) fn case_type(args: &[RexNode]) -> RelDataType {
     let mut values: Vec<RelDataType> = Vec::new();
     let mut i = 1;
     while i < n {
-        values.push(args[i].get_type().clone());
+        values.push(args[i].ty().clone());
         i += 2;
     }
     if let Some(last) = args.last() {
-        values.push(last.get_type().clone());
+        values.push(last.ty().clone());
     }
     least_restrictive(&values)
 }

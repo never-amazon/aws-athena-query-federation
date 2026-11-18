@@ -27,7 +27,6 @@ pub mod literal;
 mod params;
 pub mod plan;
 pub mod predicate;
-mod substrait_type_and_value;
 
 pub use calcite::operators;
 pub use calcite::operators::{SqlKind, SqlOperator, SqlSyntax};
@@ -44,9 +43,6 @@ pub use calcite::sql_type_name::SqlTypeName;
 pub use calcite::values::{BitString, DateString, TimeString, TimestampString};
 pub use error::{Result, SubstraitError};
 pub use literal::LiteralValue;
-pub use params::parameterize;
+pub use params::{parameterize, SubstraitTypeAndValue, SubstraitValue};
 pub use plan::PLAN_PARSER_RECURSION_LIMIT;
 pub use predicate::{ColumnPredicate, LogicalExpression, SubstraitOperator};
-pub use substrait_type_and_value::{
-    SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue,
-};
