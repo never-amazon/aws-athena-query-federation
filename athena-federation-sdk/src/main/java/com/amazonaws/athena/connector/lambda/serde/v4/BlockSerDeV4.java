@@ -19,6 +19,7 @@
  */
 package com.amazonaws.athena.connector.lambda.serde.v4;
 
+import com.amazonaws.athena.connector.lambda.data.ArrowRecordBatchReader;
 import com.amazonaws.athena.connector.lambda.data.Block;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocator;
 import com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry;
@@ -31,7 +32,6 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.ipc.ReadChannel;
 import org.apache.arrow.vector.ipc.WriteChannel;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.arrow.vector.ipc.message.MessageSerializer;
@@ -39,7 +39,6 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import software.amazon.awssdk.services.glue.model.ErrorDetails;
 import software.amazon.awssdk.services.glue.model.FederationSourceErrorCode;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.channels.Channels;
@@ -162,8 +161,7 @@ public class BlockSerDeV4
             AtomicReference<ArrowRecordBatch> batch = new AtomicReference<>();
             try {
                 return allocator.registerBatch((BufferAllocator root) -> {
-                    batch.set((ArrowRecordBatch) MessageSerializer.deserializeMessageBatch(
-                            new ReadChannel(Channels.newChannel(new ByteArrayInputStream(in))), root));
+                    batch.set(ArrowRecordBatchReader.deserialize(in, root));
                     return batch.get();
                 });
             }

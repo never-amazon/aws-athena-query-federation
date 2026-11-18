@@ -16,6 +16,7 @@ com.amazonaws.athena.connector.lambda.ThrottlingInvoker	athena-federation-sdk/sr
 com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants	athena-federation-sdk/src/connection/environment_constants.rs::EnvironmentConstants	ported	
 com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties	athena-federation-sdk/src/connection/environment_properties.rs::EnvironmentProperties	ported	
 com.amazonaws.athena.connector.lambda.data.ArrowSchemaUtils	athena-federation-sdk/src/data/arrow_schema_utils.rs::ArrowSchemaUtils	ported	
+com.amazonaws.athena.connector.lambda.data.ArrowRecordBatchReader	athena-federation-sdk/src/data/record_batch_serde.rs::deserialize_record_batch_message	merged	The Java helper reads a record batch with an empty body; the Rust reader handles that case in ArrowRecordBatch::from_message
 com.amazonaws.athena.connector.lambda.data.ArrowTypeComparator	athena-federation-sdk/src/data/arrow_type_comparator.rs::ArrowTypeComparator	ported	
 com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption	athena-federation-sdk/src/data/record_batch_serde.rs::AthenaFederationIpcOption	ported	
 com.amazonaws.athena.connector.lambda.data.Block	athena-federation-sdk/src/data/block.rs::Block	ported	

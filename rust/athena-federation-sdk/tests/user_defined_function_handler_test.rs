@@ -133,6 +133,12 @@ fn test_date_milli(input: NaiveDateTime) -> NaiveDateTime {
 fn udf_methods() -> UdfMethods {
     with_complex_methods(UdfMethods::new(HANDLER_CLASS))
         .with_method(UdfMethod::new(
+            "test_zero_args",
+            vec![],
+            JavaType::Integer,
+            |_| Ok(Value::Int(42)),
+        ))
+        .with_method(UdfMethod::new(
             "test_scalar_udf",
             vec![JavaType::Integer, JavaType::Integer],
             JavaType::Integer,
@@ -791,6 +797,26 @@ async fn udf_handle_request() {
     ));
 }
 
+#[tokio::test]
+async fn zero_argument_udf_handle_request() {
+    let s = set_up();
+    let row_count = 3;
+    let udf_request =
+        create_udf_request(&s, row_count, ArgType::Integer, "test_zero_args", true, &[]);
+    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&s.allocator));
+    let request: FederationRequest = udf_request.into();
+    let input = object_mapper.write_value_as_bytes(&request).unwrap();
+    let output = s.handler.handle_request(&input, None).await.unwrap();
+    let FederationResponse::UserDefinedFunction(response) =
+        object_mapper.read_response(&output).unwrap()
+    else {
+        panic!("expected a UserDefinedFunctionResponse");
+    };
+    let block = response.records();
+    assert_eq!(row_count, block.row_count());
+    assert_eq!(vec![Value::Int(42); row_count], values_of(block));
+}
+
 #[test]
 fn test_method_not_found() {
     let s = set_up();
@@ -833,17 +859,3 @@ async fn udf_handler_runs_as_request_stream_handler() {
 }
 
 fn assert_runnable<H: RequestStreamHandler + 'static>(_handler: &H) {}
-
-#[tokio::test]
-async fn udf_without_arguments_fails_like_java() {
-    let Setup { handler, .. } = set_up();
-    let stream_handler = UserDefinedFunctionStreamHandler::new(handler);
-    let input = include_bytes!("fixtures/udf/zero_args.req.json");
-    let err = RequestStreamHandler::handle_request(&stream_handler, input, None)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        include_str!("fixtures/udf/zero_args.java.out"),
-        LambdaError::new(&err).to_report()
-    );
-}

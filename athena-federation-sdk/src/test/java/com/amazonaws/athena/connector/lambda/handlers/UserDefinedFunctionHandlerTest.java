@@ -599,6 +599,29 @@ public class UserDefinedFunctionHandlerTest
     }
 
     @Test
+    public void zeroArgumentUdfHandleRequest() throws Exception
+    {
+        int rowCount = 3;
+        UserDefinedFunctionRequest udfRequest = createUDFRequest(rowCount, Integer.class, "test_zero_args", true);
+
+        ByteArrayOutputStream requestOutStream = new ByteArrayOutputStream();
+        ObjectMapper objectMapper = VersionedObjectMapperFactory.create(allocator);
+        objectMapper.writeValue(requestOutStream, udfRequest);
+        ByteArrayOutputStream responseOutputStream = new ByteArrayOutputStream();
+
+        handler.handleRequest(new ByteArrayInputStream(requestOutStream.toByteArray()), responseOutputStream, mock(Context.class));
+
+        UserDefinedFunctionResponse response = (UserDefinedFunctionResponse) objectMapper.readValue(
+                responseOutputStream.toByteArray(),
+                FederationResponse.class);
+        Block records = response.getRecords();
+        assertEquals(rowCount, records.getRowCount());
+        for (int row = 0; row < rowCount; row++) {
+            assertEquals(42, records.getFieldVectors().get(0).getObject(row));
+        }
+    }
+
+    @Test
     public void testMethodNotFound()
     {
         int rowCount = 20;
@@ -830,6 +853,11 @@ public class UserDefinedFunctionHandlerTest
         public TestUserDefinedFunctionHandler()
         {
             super("test_type");
+        }
+
+        public Integer test_zero_args()
+        {
+            return 42;
         }
 
         public Integer test_scalar_udf(Integer col1, Integer col2)

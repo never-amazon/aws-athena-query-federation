@@ -12,9 +12,6 @@ use super::block_allocator::BlockAllocator;
 use crate::exceptions::{FederationError, Result};
 
 const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
-const NULL_BODY_SLICE_MESSAGE: &str =
-    "Cannot invoke \"org.apache.arrow.memory.ArrowBuf.slice(long, long)\" because \"body\" is null";
-const NULL_BODY_RELEASE_MESSAGE: &str = "Cannot invoke \"org.apache.arrow.memory.ArrowBuf.getReferenceManager()\" because \"body\" is null";
 
 pub struct AthenaFederationIpcOption;
 
@@ -58,14 +55,14 @@ impl ArrowRecordBatch {
         }
         let header = message.header_as_record_batch();
         if body.is_empty() {
-            let has_buffers = header
+            if let Some(message) = header
                 .and_then(|b| b.buffers())
-                .is_some_and(|buffers| !buffers.is_empty());
-            return Err(FederationError::null_pointer(if has_buffers {
-                NULL_BODY_SLICE_MESSAGE
-            } else {
-                NULL_BODY_RELEASE_MESSAGE
-            }));
+                .into_iter()
+                .flatten()
+                .find_map(|buffer| empty_body_slice_error(buffer.offset(), buffer.length()))
+            {
+                return Err(FederationError::IndexOutOfBounds(message));
+            }
         }
         let length = header.map_or(0, |b| usize::try_from(b.length()).unwrap_or_default());
         let version = message.version();
@@ -112,6 +109,15 @@ impl ArrowRecordBatch {
         arrow::ipc::writer::write_message(out, encoded, &options)?;
         Ok(())
     }
+}
+
+fn empty_body_slice_error(offset: i64, length: i64) -> Option<String> {
+    let position_error = |index: i64| match index {
+        0 => None,
+        i if i < 0 => Some(format!("index ({i}) must not be negative")),
+        i => Some(format!("index ({i}) must not be greater than size (0)")),
+    };
+    position_error(offset).or_else(|| position_error(length))
 }
 
 fn read_message(input: &mut dyn Read) -> Result<Option<(Vec<u8>, usize)>> {
