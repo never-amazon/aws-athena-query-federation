@@ -10,7 +10,6 @@ mod cross_account_credentials_provider;
 mod default_credentials;
 mod default_credentials_provider;
 mod http_client;
-mod initializable_credentials_provider;
 mod oauth_access_token_credentials;
 mod oauth_credentials_provider;
 mod static_credentials_provider;
@@ -25,7 +24,6 @@ pub use default_credentials_provider::DefaultCredentialsProvider;
 pub use http_client::{
     HttpClient, HttpClientError, HttpRequest, HttpRequestBuilder, HttpResponse, ReqwestHttpClient,
 };
-pub use initializable_credentials_provider::InitializableCredentialsProvider;
 pub use oauth_access_token_credentials::OAuthAccessTokenCredentials;
 pub use oauth_credentials_provider::{OAuthCredentialsProvider, OAuthFlow};
 pub use static_credentials_provider::StaticCredentialsProvider;

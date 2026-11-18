@@ -412,7 +412,7 @@ fn passes_through(error: &FederationError) -> bool {
 
 #[async_trait]
 impl CredentialsProvider for SnowflakeCredentialsProvider {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>> {
+    async fn get_credential(&self) -> Result<Credentials> {
         let credential_map = self.get_credential_map().await?;
         let credentials = DefaultCredentials::new_nullable(
             credential_map
@@ -422,7 +422,7 @@ impl CredentialsProvider for SnowflakeCredentialsProvider {
                 .get(SnowflakeConstants::PASSWORD)
                 .map(String::as_str),
         )?;
-        Ok(Box::new(credentials))
+        Ok(credentials.into())
     }
 
     async fn get_credential_map(&self) -> Result<HashMap<String, String>> {

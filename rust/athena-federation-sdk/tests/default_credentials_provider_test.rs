@@ -1,5 +1,6 @@
 use athena_federation_sdk::credentials::{
-    CredentialsProvider, DefaultCredentials, DefaultCredentialsProvider, StaticCredentialsProvider,
+    Credentials, CredentialsProvider, DefaultCredentials, DefaultCredentialsProvider,
+    StaticCredentialsProvider,
 };
 
 #[tokio::test]
@@ -8,10 +9,7 @@ async fn get_static_credential() {
     let credentials_provider: Box<dyn CredentialsProvider> =
         Box::new(StaticCredentialsProvider::new(expected_credential.clone()).unwrap());
     let actual = credentials_provider.get_credential().await.unwrap();
-    assert_eq!(
-        Some(&expected_credential),
-        actual.as_any().downcast_ref::<DefaultCredentials>()
-    );
+    assert_eq!(Credentials::UserPassword(expected_credential), actual);
 }
 
 #[tokio::test]
@@ -24,10 +22,7 @@ async fn get_rds_secrets_credential() {
         .unwrap(),
     );
     let actual = credentials_provider.get_credential().await.unwrap();
-    assert_eq!(
-        Some(&expected_credential),
-        actual.as_any().downcast_ref::<DefaultCredentials>()
-    );
+    assert_eq!(Credentials::UserPassword(expected_credential), actual);
 }
 
 #[test]

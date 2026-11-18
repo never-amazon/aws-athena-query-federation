@@ -82,9 +82,8 @@ fn oauth_secret() -> String {
     .unwrap()
 }
 
-fn test_oauth_provider(
-) -> Box<dyn athena_federation_sdk::credentials::InitializableCredentialsProvider> {
-    Box::new(OAuthCredentialsProvider::new(Box::new(TestOAuthProvider)))
+fn test_oauth_provider() -> Box<dyn OAuthFlow> {
+    Box::new(TestOAuthProvider)
 }
 
 #[tokio::test]
@@ -162,9 +161,7 @@ async fn test_create_credential_provider_when_invalid_oauth_class_throws_excepti
     let e = CredentialsProviderFactory::create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
-        Some(Box::new(OAuthCredentialsProvider::new(Box::new(
-            InvalidOAuthProvider,
-        )))),
+        Some(Box::new(InvalidOAuthProvider)),
     )
     .await
     .err()

@@ -80,8 +80,8 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 
 #[async_trait]
 impl CredentialsProvider for DefaultCredentialsProvider {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>> {
-        Ok(Box::new(self.default_credentials.clone()))
+    async fn get_credential(&self) -> Result<Credentials> {
+        Ok(self.default_credentials.clone().into())
     }
 
     fn as_any(&self) -> &dyn Any {

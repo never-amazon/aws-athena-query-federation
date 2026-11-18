@@ -184,7 +184,7 @@ impl MapCredentialsProvider {
 
 #[async_trait]
 impl CredentialsProvider for MapCredentialsProvider {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>> {
+    async fn get_credential(&self) -> Result<Credentials> {
         Err(FederationError::illegal_state(
             "the factory reads the credential map",
         ))

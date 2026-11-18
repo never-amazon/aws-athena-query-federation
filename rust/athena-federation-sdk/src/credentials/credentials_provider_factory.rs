@@ -5,8 +5,8 @@ use serde_json::Value as JsonValue;
 
 use super::credentials_provider::CredentialsProvider;
 use super::default_credentials_provider::DefaultCredentialsProvider;
-use super::initializable_credentials_provider::InitializableCredentialsProvider;
-use super::oauth_credentials_provider::OAuthCredentialsProvider;
+use super::http_client::ReqwestHttpClient;
+use super::oauth_credentials_provider::{OAuthCredentialsProvider, OAuthFlow};
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::security::{AwsRequestOverrideConfiguration, CachableSecretsManager};
 
@@ -26,12 +26,12 @@ impl CredentialsProviderFactory {
     pub async fn create_credential_provider(
         secret_name: Option<&str>,
         secrets_manager: &Arc<CachableSecretsManager>,
-        provider: Option<Box<dyn InitializableCredentialsProvider>>,
+        oauth_flow: Option<Box<dyn OAuthFlow>>,
     ) -> Result<Option<Box<dyn CredentialsProvider>>> {
         Self::create_credential_provider_with_request_override_configuration(
             secret_name,
             secrets_manager,
-            provider,
+            oauth_flow,
             None,
         )
         .await
@@ -40,7 +40,7 @@ impl CredentialsProviderFactory {
     pub async fn create_credential_provider_with_request_override_configuration(
         secret_name: Option<&str>,
         secrets_manager: &Arc<CachableSecretsManager>,
-        provider: Option<Box<dyn InitializableCredentialsProvider>>,
+        oauth_flow: Option<Box<dyn OAuthFlow>>,
         request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Option<Box<dyn CredentialsProvider>>> {
         let Some(secret_name) = secret_name.filter(|s| !s.trim().is_empty()) else {
@@ -59,34 +59,25 @@ impl CredentialsProviderFactory {
                 )
             })?;
 
-        if let Some(provider) = provider {
-            if let Ok(mut oauth_provider) =
-                provider.into_any().downcast::<OAuthCredentialsProvider>()
-            {
-                let oauth_result =
-                    oauth_provider
-                        .is_oauth_configured(&secret_map)
-                        .and_then(|configured| {
-                            if configured {
-                                oauth_provider.initialize(
-                                    secret_name,
-                                    secret_map.clone(),
-                                    secrets_manager.clone(),
-                                )?;
-                            }
-                            Ok(configured)
-                        });
-                match oauth_result {
-                    Ok(true) => return Ok(Some(oauth_provider)),
-                    Ok(false) => {}
-                    Err(e) => {
-                        let message = e.to_string();
-                        return Err(FederationError::connector_with_details(
-                            FederationSourceErrorCode::InternalServiceException,
-                            format!("Failed to create OAuth provider: {message}"),
-                            message,
-                        ));
-                    }
+        if let Some(flow) = oauth_flow {
+            match flow.is_oauth_configured(&secret_map) {
+                Ok(true) => {
+                    return Ok(Some(Box::new(OAuthCredentialsProvider::new(
+                        flow,
+                        secret_name,
+                        secret_map,
+                        Arc::clone(secrets_manager),
+                        Arc::new(ReqwestHttpClient::new()),
+                    ))))
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    let message = e.to_string();
+                    return Err(FederationError::connector_with_details(
+                        FederationSourceErrorCode::InternalServiceException,
+                        format!("Failed to create OAuth provider: {message}"),
+                        message,
+                    ));
                 }
             }
         }

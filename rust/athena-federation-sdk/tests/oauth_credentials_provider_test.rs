@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
     CredentialsConstants, CredentialsProvider, HttpClient, HttpClientError, HttpRequest,
-    HttpResponse, InitializableCredentialsProvider, OAuthCredentialsProvider, OAuthFlow,
+    HttpResponse, OAuthCredentialsProvider, OAuthFlow,
 };
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsService, AwsServiceError, CachableSecretsManager,
@@ -95,9 +95,8 @@ impl Setup {
             || secret_json.contains(CredentialsConstants::ACCESS_TOKEN)
         {
             let secret_map: HashMap<String, String> = serde_json::from_str(secret_json).unwrap();
-            self.credentials_provider
-                .initialize(TEST_SECRET_NAME, secret_map, self.secrets_manager.clone())
-                .unwrap();
+            self.credentials_provider =
+                oauth_provider(&self.mock_http_client, &self.secrets_manager, secret_map);
         }
     }
 
@@ -119,17 +118,25 @@ impl Setup {
     }
 }
 
+fn oauth_provider(
+    http_client: &Arc<MockHttpClient>,
+    secrets_manager: &Arc<CachableSecretsManager>,
+    secret_map: HashMap<String, String>,
+) -> OAuthCredentialsProvider {
+    OAuthCredentialsProvider::new(
+        Box::new(TestOAuthFlow),
+        TEST_SECRET_NAME,
+        secret_map,
+        Arc::clone(secrets_manager),
+        Arc::clone(http_client) as Arc<dyn HttpClient>,
+    )
+}
+
 fn set_up() -> Setup {
     let mock_secrets_client = Arc::new(MockSecretsClient::default());
     let mock_http_client = Arc::new(MockHttpClient::default());
     let secrets_manager = Arc::new(CachableSecretsManager::new(mock_secrets_client.clone()));
-    let mut credentials_provider = OAuthCredentialsProvider::with_http_client(
-        Box::new(TestOAuthFlow),
-        mock_http_client.clone(),
-    );
-    credentials_provider
-        .initialize(TEST_SECRET_NAME, HashMap::new(), secrets_manager.clone())
-        .unwrap();
+    let credentials_provider = oauth_provider(&mock_http_client, &secrets_manager, HashMap::new());
     Setup {
         mock_secrets_client,
         mock_http_client,

@@ -8,7 +8,7 @@ use crate::exceptions::Result;
 
 #[async_trait]
 pub trait CredentialsProvider: Send + Sync {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>>;
+    async fn get_credential(&self) -> Result<Credentials>;
 
     async fn get_credential_map(&self) -> Result<HashMap<String, String>> {
         Ok(self.get_credential().await?.properties())

@@ -1,7 +1,5 @@
-use std::any::Any;
 use std::collections::HashMap;
 
-use super::credentials::Credentials;
 use super::credentials_constants::CredentialsConstants;
 use crate::exceptions::{FederationError, Result};
 
@@ -25,17 +23,11 @@ impl OAuthAccessTokenCredentials {
     pub fn access_token(&self) -> &str {
         &self.access_token
     }
-}
 
-impl Credentials for OAuthAccessTokenCredentials {
-    fn properties(&self) -> HashMap<String, String> {
+    pub fn properties(&self) -> HashMap<String, String> {
         HashMap::from([(
             CredentialsConstants::ACCESS_TOKEN_PROPERTY.to_string(),
             self.access_token.clone(),
         )])
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

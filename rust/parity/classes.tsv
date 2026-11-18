@@ -6,7 +6,7 @@ com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-fed
 com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account_credentials_provider.rs::CrossAccountCredentialsProvider	ported	
 com.amazonaws.athena.connector.credentials.DefaultCredentials	athena-federation-sdk/src/credentials/default_credentials.rs::DefaultCredentials	ported	
 com.amazonaws.athena.connector.credentials.DefaultCredentialsProvider	athena-federation-sdk/src/credentials/default_credentials_provider.rs::DefaultCredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/initializable_credentials_provider.rs::InitializableCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	merged	OAuthCredentialsProvider::new takes the secret name, secret map and clients in one step, so there is no separate initialize phase
 com.amazonaws.athena.connector.credentials.OAuthAccessTokenCredentials	athena-federation-sdk/src/credentials/oauth_access_token_credentials.rs::OAuthAccessTokenCredentials	ported	
 com.amazonaws.athena.connector.credentials.OAuthCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	ported	
 com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-federation-sdk/src/credentials/static_credentials_provider.rs::StaticCredentialsProvider	ported	
