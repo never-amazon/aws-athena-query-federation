@@ -117,6 +117,7 @@ public class SnowflakeQueryStringBuilder
             return null;
         }
         
+        List<String> sqlLiterals = new ArrayList<>();
         for (TypeAndValue typeAndValue : accumulator) {
             String sqlLiteral;
             
@@ -160,9 +161,40 @@ public class SnowflakeQueryStringBuilder
                 }
             }
             
-            sql = sql.replaceFirst("\\?", sqlLiteral);
+            sqlLiterals.add(sqlLiteral);
         }
-        return sql;
+        return replacePlaceholders(sql, sqlLiterals);
+    }
+
+    private static String replacePlaceholders(String sql, List<String> sqlLiterals)
+    {
+        StringBuilder expanded = new StringBuilder(sql.length());
+        int next = 0;
+        char openQuote = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (openQuote != 0) {
+                if (c == '\\' && openQuote == '\'' && i + 1 < sql.length()) {
+                    expanded.append(c).append(sql.charAt(++i));
+                    continue;
+                }
+                if (c == openQuote) {
+                    openQuote = 0;
+                }
+                expanded.append(c);
+            }
+            else if (c == '\'' || c == '"') {
+                openQuote = c;
+                expanded.append(c);
+            }
+            else if (c == '?' && next < sqlLiterals.size()) {
+                expanded.append(sqlLiterals.get(next++));
+            }
+            else {
+                expanded.append(c);
+            }
+        }
+        return expanded.toString();
     }
 
     protected String quote(String name)
@@ -173,7 +205,7 @@ public class SnowflakeQueryStringBuilder
 
     protected String singleQuote(String name)
     {
-        name = name.replace(SINGLE_QUOTE_CHAR, SINGLE_QUOTE_CHAR + SINGLE_QUOTE_CHAR);
+        name = name.replace("\\", "\\\\").replace(SINGLE_QUOTE_CHAR, SINGLE_QUOTE_CHAR + SINGLE_QUOTE_CHAR);
         return SINGLE_QUOTE_CHAR + name + SINGLE_QUOTE_CHAR;
     }
 

@@ -525,16 +525,16 @@ impl SnowflakeMetadataHandler {
                 "{sf_s3_export_path_prefix}/{query_id}/{}/",
                 uuid::Uuid::new_v4()
             );
-            let snowflake_export_query = SnowflakeConstants::COPY_INTO_QUERY_TEMPLATE
-                .replacen("%s", &s3_path, 1)
-                .replacen("%s", &snowflake_export_sql, 1)
-                .replacen(
-                    "%s",
+            let snowflake_export_query = fill_template(
+                SnowflakeConstants::COPY_INTO_QUERY_TEMPLATE,
+                &[
+                    &s3_path,
+                    &snowflake_export_sql,
                     &self
                         .snowflake_query_string_builder
                         .quote(&sf_integration_name),
-                    1,
-                );
+                ],
+            );
             tracing::info!(
                 "Snowflake Copy Statement: {} for queryId: {}",
                 snowflake_export_query,
@@ -823,6 +823,16 @@ pub fn partition_values(total_record_count: i64, primary_key: Option<&str>) -> V
         offset += partition_record_count;
     }
     values
+}
+
+fn fill_template(template: &str, args: &[&str]) -> String {
+    let mut parts = template.split("%s");
+    let mut filled = parts.next().unwrap_or_default().to_string();
+    for (arg, part) in args.iter().zip(parts) {
+        filled.push_str(arg);
+        filled.push_str(part);
+    }
+    filled
 }
 
 fn java_split_count(text: &str, separator: &str) -> usize {

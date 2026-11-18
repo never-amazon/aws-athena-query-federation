@@ -78,17 +78,15 @@ impl SnowflakeQueryStringBuilder {
         if sql.is_empty() {
             return Ok(None);
         }
-        let mut sql = sql.to_string();
-        for type_and_value in accumulator {
-            let literal = sql_literal(type_and_value)?;
-            sql = java_replace_first_placeholder(&sql, &literal)?;
-        }
-        Ok(Some(sql))
+        let literals = accumulator
+            .iter()
+            .map(sql_literal)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Some(replace_placeholders(sql, &literals)))
     }
 
     pub fn single_quote(&self, name: &str) -> String {
-        let quote = SnowflakeConstants::SINGLE_QUOTE_CHAR;
-        format!("{quote}{}{quote}", name.replace(quote, "''"))
+        single_quote(name)
     }
 
     pub fn append_order_by_limit_offset(
@@ -193,7 +191,7 @@ fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
     if value.is_null() {
         return Ok("NULL".to_string());
     }
-    let quote = |text: &str| format!("'{}'", text.replace('\'', "''"));
+    let quote = single_quote;
     let literal = match MinorType::get_minor_type_for_arrow_type(type_and_value.get_type()) {
         MinorType::DATEDAY => {
             let days = number_long(value)?;
@@ -242,53 +240,45 @@ fn sql_timestamp_text(timestamp: &NaiveDateTime) -> String {
     format!("{}.{fraction}", timestamp.format("%Y-%m-%d %H:%M:%S"))
 }
 
-fn java_replace_first_placeholder(sql: &str, replacement: &str) -> Result<String> {
-    let Some(position) = sql.find('?') else {
-        return Ok(sql.to_string());
-    };
-    let mut expanded = String::with_capacity(replacement.len());
-    let mut chars = replacement.chars().peekable();
+fn single_quote(text: &str) -> String {
+    let quote = SnowflakeConstants::SINGLE_QUOTE_CHAR;
+    format!(
+        "{quote}{}{quote}",
+        text.replace('\\', "\\\\").replace(quote, "''")
+    )
+}
+
+fn replace_placeholders(sql: &str, literals: &[String]) -> String {
+    let mut expanded = String::with_capacity(sql.len());
+    let mut literals = literals.iter();
+    let mut open_quote = None;
+    let mut chars = sql.chars();
     while let Some(c) = chars.next() {
-        match c {
-            '\\' => {
-                let escaped = chars.next().ok_or_else(|| {
-                    FederationError::illegal_argument("character to be escaped is missing")
-                })?;
-                expanded.push(escaped);
+        match open_quote {
+            Some('\'') if c == '\\' => {
+                expanded.push(c);
+                if let Some(escaped) = chars.next() {
+                    expanded.push(escaped);
+                }
             }
-            '$' => match chars.next() {
-                None => {
-                    return Err(FederationError::illegal_argument(
-                        "Illegal group reference: group index is missing",
-                    ))
+            Some(quote) => {
+                if c == quote {
+                    open_quote = None;
                 }
-                Some('{') => {
-                    let name: String = chars.by_ref().take_while(|c| *c != '}').collect();
-                    return Err(FederationError::illegal_argument(format!(
-                        "No group with name {{{name}}}"
-                    )));
-                }
-                Some('0') => {
-                    while chars.next_if_eq(&'0').is_some() {}
-                    expanded.push('?');
-                }
-                Some(digit) if digit.is_ascii_digit() => {
-                    return Err(FederationError::IndexOutOfBounds(format!(
-                        "No group {digit}"
-                    )));
-                }
-                Some(_) => {
-                    return Err(FederationError::illegal_argument("Illegal group reference"));
-                }
+                expanded.push(c);
+            }
+            None if c == '\'' || c == '"' => {
+                open_quote = Some(c);
+                expanded.push(c);
+            }
+            None if c == '?' => match literals.next() {
+                Some(literal) => expanded.push_str(literal),
+                None => expanded.push(c),
             },
-            other => expanded.push(other),
+            None => expanded.push(c),
         }
     }
-    Ok(format!(
-        "{}{expanded}{}",
-        &sql[..position],
-        &sql[position + 1..]
-    ))
+    expanded
 }
 
 impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {

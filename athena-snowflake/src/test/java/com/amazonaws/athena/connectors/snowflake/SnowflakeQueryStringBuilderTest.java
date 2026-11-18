@@ -31,7 +31,9 @@ import com.amazonaws.athena.connector.lambda.domain.predicate.Range;
 import com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet;
 import com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet;
 import com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation;
+import com.amazonaws.athena.connectors.jdbc.manager.TypeAndValue;
 import org.apache.arrow.vector.types.Types;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.Before;
 import org.junit.Test;
@@ -617,5 +619,37 @@ public class SnowflakeQueryStringBuilderTest
         org.apache.calcite.sql.SqlDialect dialect = queryBuilder.getSqlDialect(false);
         assertNotNull(dialect);
         assertTrue(dialect instanceof SnowflakeDialect);
+    }
+
+    private static TypeAndValue varchar(String value)
+    {
+        return new TypeAndValue(new ArrowType.Utf8(), value);
+    }
+
+    @Test
+    public void testExpandSqlEscapesBackslashAndQuote()
+    {
+        String sql = "SELECT * FROM \"t\" WHERE \"a\" = ? AND \"b\" = ? AND \"c\" = ?";
+        List<TypeAndValue> values = Arrays.asList(varchar("x\\"), varchar("\\' OR 1=1 --"), varchar("it's"));
+        assertEquals("SELECT * FROM \"t\" WHERE \"a\" = 'x\\\\' AND \"b\" = '\\\\'' OR 1=1 --' AND \"c\" = 'it''s'",
+                queryBuilder.expandSql(sql, values));
+    }
+
+    @Test
+    public void testExpandSqlKeepsDollarAndBackslashInValuesLiteral()
+    {
+        String sql = "SELECT * FROM \"t\" WHERE \"a\" = ? AND \"b\" = ?";
+        List<TypeAndValue> values = Arrays.asList(varchar("$1"), varchar("a\\$0b"));
+        assertEquals("SELECT * FROM \"t\" WHERE \"a\" = '$1' AND \"b\" = 'a\\\\$0b'",
+                queryBuilder.expandSql(sql, values));
+    }
+
+    @Test
+    public void testExpandSqlKeepsQuestionMarksInsideLiteralsAndIdentifiers()
+    {
+        String sql = "SELECT \"q?\" FROM \"t\" WHERE \"a\" = ? AND \"b\" = '?' AND \"c\" = ?";
+        List<TypeAndValue> values = Arrays.asList(varchar("a?b"), varchar("c"));
+        assertEquals("SELECT \"q?\" FROM \"t\" WHERE \"a\" = 'a?b' AND \"b\" = '?' AND \"c\" = 'c'",
+                queryBuilder.expandSql(sql, values));
     }
 }
