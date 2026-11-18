@@ -37,10 +37,18 @@ fn java_timestamp(text: &str) -> Option<SqlValue> {
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
-    Some(match millis_to_naive(millis, parsed.nanos) {
-        Some(ts) => rendered(SqlValue::Timestamp(ts), text.to_string()),
-        None => SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION),
-    })
+    Some(
+        match (millis_to_naive(millis, parsed.nanos), parsed.epoch_millis()) {
+            (Some(ts), Some(epoch_millis)) => {
+                SqlValue::rendered_with_epoch_millis(SqlValue::Timestamp(ts), text, epoch_millis)
+                    .with_exception_class(PSQL_EXCEPTION)
+            }
+            (Some(ts), None) => rendered(SqlValue::Timestamp(ts), text.to_string()),
+            (None, _) => {
+                SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION)
+            }
+        },
+    )
 }
 
 fn java_date_millis(text: &str) -> Option<i64> {
@@ -601,6 +609,50 @@ mod tests {
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn get_timestamp_millis_reads_pre1582_timestamps_as_proleptic_millis() {
+        let epoch = |decoder: Decoder, text: &str| {
+            decoder
+                .decode(Some(text.as_bytes()))
+                .to_epoch_millis()
+                .unwrap()
+                .unwrap()
+        };
+        let cases = [
+            ("1000-01-01 12:00:00", -30_610_180_800_000),
+            ("0044-03-15 12:00:00 BC", -63_517_780_800_000),
+            ("1582-10-04 23:59:59.999", -12_220_156_800_001),
+            ("1582-10-15 00:00:00", -12_219_292_800_000),
+            ("2020-06-01 12:00:00.123456+05:30", 1_590_993_000_123),
+            ("infinity", 9_223_372_036_825_200_000),
+            ("-infinity", -9_223_372_036_832_400_000),
+        ];
+        for decoder in [Decoder::Timestamp, Decoder::TimestampTz] {
+            for (text, millis) in cases {
+                assert_eq!(millis, epoch(decoder.clone(), text), "{decoder:?} {text}");
+            }
+        }
+        assert_eq!(
+            -62_167_219_200_000,
+            epoch(Decoder::TimestampTz, "0001-01-01 00:00:00+00 BC")
+        );
+        assert_eq!(
+            -2_208_971_038_000,
+            epoch(Decoder::TimestampTz, "1900-01-01 00:00:00-04:56:02")
+        );
+        assert_eq!(
+            253_402_300_800_000,
+            epoch(Decoder::Timestamp, "10000-01-01 00:00:00")
+        );
+        assert_eq!(
+            Some(-30_609_748_800_000),
+            Decoder::Timestamp
+                .decode(Some(b"1000-01-01 12:00:00"))
+                .to_timestamp_millis()
+                .unwrap()
+        );
     }
 
     #[test]

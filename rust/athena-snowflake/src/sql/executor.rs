@@ -234,7 +234,11 @@ fn timestamp_value(timestamp: NaiveDateTime) -> SqlValue {
         return SqlValue::Timestamp(timestamp);
     }
     let text = SqlValue::Timestamp(timestamp).to_string();
-    SqlValue::rendered(SqlValue::Timestamp(adjusted), text)
+    SqlValue::rendered_with_epoch_millis(
+        SqlValue::Timestamp(adjusted),
+        text,
+        timestamp.and_utc().timestamp_millis(),
+    )
 }
 
 fn timestamp_tz_value(timestamp: DateTime<FixedOffset>) -> SqlValue {
@@ -244,7 +248,11 @@ fn timestamp_tz_value(timestamp: DateTime<FixedOffset>) -> SqlValue {
     }
     let text = SqlValue::TimestampTz(timestamp).to_string();
     let adjusted = adjusted.and_utc().with_timezone(timestamp.offset());
-    SqlValue::rendered(SqlValue::TimestampTz(adjusted), text)
+    SqlValue::rendered_with_epoch_millis(
+        SqlValue::TimestampTz(adjusted),
+        text,
+        timestamp.timestamp_millis(),
+    )
 }
 
 fn parse_real(raw: &str) -> Option<f64> {
@@ -558,6 +566,55 @@ mod tests {
             )
             .unwrap();
             assert_eq!(expected, millis(&ltz), "LTZ {raw}");
+        }
+    }
+
+    #[test]
+    fn get_timestamp_millis_undoes_the_driver_julian_adjustment() {
+        for (raw, java_millis) in JAVA_TIMESTAMP_MILLIS {
+            let timestamp = snowflake_timestamp(raw);
+            let expected = timestamp.and_utc().timestamp_millis();
+            let ntz = decode_cell(
+                &column(SnowflakeColumnType::TimestampNtz { scale: 9 }),
+                RawCell::TimestampNtz(timestamp),
+            )
+            .unwrap();
+            assert_eq!(Some(expected), ntz.to_epoch_millis().unwrap(), "NTZ {raw}");
+            assert_eq!(java_millis, millis(&ntz), "NTZ {raw}");
+            let ltz = decode_cell(
+                &column(SnowflakeColumnType::TimestampLtz { scale: 9 }),
+                RawCell::TimestampLtz(timestamp.and_utc()),
+            )
+            .unwrap();
+            assert_eq!(Some(expected), ltz.to_epoch_millis().unwrap(), "LTZ {raw}");
+            let offset = FixedOffset::east_opt(-8 * 3600).unwrap();
+            let tz = decode_cell(
+                &column(SnowflakeColumnType::TimestampTz { scale: 9 }),
+                RawCell::TimestampTz(timestamp.and_utc().with_timezone(&offset)),
+            )
+            .unwrap();
+            assert_eq!(Some(expected), tz.to_epoch_millis().unwrap(), "TZ {raw}");
+        }
+    }
+
+    #[test]
+    fn undo_julian_adjustment_restores_days_from_year_one_to_the_cutover() {
+        let start = snowflake_timestamp("-62135553600.000000000");
+        let end = snowflake_timestamp("-12220156800.000000000");
+        let step = chrono::TimeDelta::days(5) + chrono::TimeDelta::hours(1);
+        let mut timestamp = start;
+        while timestamp < end {
+            let value = decode_cell(
+                &column(SnowflakeColumnType::TimestampNtz { scale: 9 }),
+                RawCell::TimestampNtz(timestamp),
+            )
+            .unwrap();
+            assert_eq!(
+                Some(timestamp.and_utc().timestamp_millis()),
+                value.to_epoch_millis().unwrap(),
+                "{timestamp}"
+            );
+            timestamp += step;
         }
     }
 

@@ -310,7 +310,7 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
                 row.get_date(index)?
                     .map(|date| epoch_day(date) * MILLIS_PER_DAY)
             } else {
-                row.get_object(index)?.to_timestamp_millis()?
+                row.get_object(index)?.to_epoch_millis()?
             };
             if let Some(millis) = value {
                 dst.value = millis;

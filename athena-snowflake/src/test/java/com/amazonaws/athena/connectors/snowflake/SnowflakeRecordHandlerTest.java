@@ -1116,6 +1116,35 @@ public class SnowflakeRecordHandlerTest
         return keys;
     }
 
+    @Test
+    public void getTimestampMillisUndoesTheDriverJulianAdjustment() throws Exception
+    {
+        String[] instants = {"1000-01-01T12:00:00Z", "-0043-03-15T12:00:00Z", "0001-01-01T00:00:00Z", "1500-03-01T00:00:00Z",
+                "1500-02-28T23:59:59.999Z", "1582-10-04T23:59:59.999Z", "1582-10-15T00:00:00Z", "1969-12-31T23:59:59.999Z",
+                "2020-06-01T12:00:00.123Z"};
+        for (String instant : instants) {
+            long millis = java.time.Instant.parse(instant).toEpochMilli();
+            java.sql.Timestamp driverTimestamp = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis));
+            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
+            Mockito.when(resultSet.getTimestamp("ts")).thenReturn(driverTimestamp);
+            assertEquals(instant, millis, handler.getTimestampMillis(resultSet, "ts"));
+        }
+        assertEquals(-30_609_748_800_000L, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(
+                new java.sql.Timestamp(java.time.Instant.parse("1000-01-01T12:00:00Z").toEpochMilli())).getTime());
+    }
+
+    @Test
+    public void undoJulianAdjustmentRestoresDaysFromYearOneToTheCutover()
+    {
+        long step = 5 * 86_400_000L + 3_600_000L;
+        long start = java.time.Instant.parse("0001-01-01T12:00:00Z").toEpochMilli();
+        long end = java.time.Instant.parse("1582-10-05T00:00:00Z").toEpochMilli();
+        for (long millis = start; millis < end; millis += step) {
+            long adjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis)).getTime();
+            assertEquals(java.time.Instant.ofEpochMilli(millis).toString(), millis, SnowflakeRecordHandler.undoJulianAdjustment(adjusted));
+        }
+    }
+
     private void fail(String message) {
         org.junit.Assert.fail(message);
     }

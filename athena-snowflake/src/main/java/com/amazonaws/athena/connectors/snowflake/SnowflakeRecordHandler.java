@@ -44,6 +44,7 @@ import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory;
 import com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter;
 import com.google.common.annotations.VisibleForTesting;
+import net.snowflake.client.internal.core.ResultUtil;
 import org.apache.arrow.dataset.file.FileFormat;
 import org.apache.arrow.dataset.file.FileSystemDatasetFactory;
 import org.apache.arrow.dataset.jni.NativeMemoryPool;
@@ -80,6 +81,7 @@ import software.amazon.awssdk.utils.Validate;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -99,6 +101,9 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private static final int EXPORT_READ_BATCH_SIZE_BYTE = 32768;
     private static final int FETCH_SIZE = 1000;
     private static final int DECIMAL128_BIT_WIDTH = 128;
+    private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
+    private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final long MAX_JULIAN_ADJUSTMENT_DAYS = 64;
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
     /**
@@ -321,6 +326,35 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
             throw new AthenaConnectorException(e.getMessage(), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INTERNAL_SERVICE_EXCEPTION.toString()).build());
         }
         return preparedStatement;
+    }
+
+    @Override
+    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    {
+        return undoJulianAdjustment(resultSet.getTimestamp(fieldName).getTime());
+    }
+
+    @VisibleForTesting
+    static long undoJulianAdjustment(long adjusted)
+    {
+        if (adjusted >= GREGORIAN_CUTOVER_MILLIS) {
+            return adjusted;
+        }
+        long result = adjusted;
+        boolean found = false;
+        for (long day = -MAX_JULIAN_ADJUSTMENT_DAYS; day <= MAX_JULIAN_ADJUSTMENT_DAYS; day++) {
+            long millis = adjusted - julianAdjustment(adjusted + day * MILLIS_PER_DAY);
+            if (millis + julianAdjustment(millis) == adjusted && (!found || millis < result)) {
+                result = millis;
+                found = true;
+            }
+        }
+        return result;
+    }
+
+    private static long julianAdjustment(long millis)
+    {
+        return ResultUtil.msDiffJulianToGregorian(new java.util.Date(millis));
     }
 
     @Override
