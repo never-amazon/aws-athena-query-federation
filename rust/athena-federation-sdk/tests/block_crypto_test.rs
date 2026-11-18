@@ -5,12 +5,11 @@ use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
 };
 use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
+    BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
 };
 
 struct Setup {
     allocator: Arc<BlockAllocatorImpl>,
-    crypto: AesGcmBlockCrypto,
     key: EncryptionKey,
 }
 
@@ -24,7 +23,6 @@ async fn setup() -> Setup {
     let key_factory = LocalKeyFactory::new();
     Setup {
         allocator: Arc::new(BlockAllocatorImpl::new()),
-        crypto: AesGcmBlockCrypto::new(Arc::new(BlockAllocatorImpl::new())),
         key: key_factory.create().await.unwrap(),
     }
 }
@@ -54,10 +52,11 @@ async fn test() {
     set(&mut expected, "col2", 1, "VarChar1");
     expected.set_row_count(2);
 
-    let cypher = s.crypto.encrypt(Some(&s.key), &expected).unwrap();
-    let actual = s
-        .crypto
-        .decrypt_with_schema(Some(&s.key), &cypher, schema)
+    let cypher = BlockCrypto::AesGcm(s.key.clone())
+        .encrypt(&expected)
+        .unwrap();
+    let actual = BlockCrypto::AesGcm(s.key.clone())
+        .decrypt_with_schema(s.allocator.as_ref(), &cypher, schema)
         .unwrap();
     assert_eq!(expected, actual);
 }
@@ -66,12 +65,14 @@ async fn test() {
 async fn encrypt_raw_bytes_round_trip() {
     let s = setup().await;
     let plain = "hello spill".as_bytes();
-    let encrypted = s.crypto.encrypt_with_bytes(Some(&s.key), plain).unwrap();
+    let encrypted = BlockCrypto::AesGcm(s.key.clone())
+        .encrypt_with_bytes(plain)
+        .unwrap();
     assert_eq!(plain.len() + 16, encrypted.len());
     assert_eq!(
         plain,
-        s.crypto
-            .decrypt(Some(&s.key), &encrypted)
+        BlockCrypto::AesGcm(s.key.clone())
+            .decrypt(&encrypted)
             .unwrap()
             .as_slice()
     );
@@ -79,12 +80,10 @@ async fn encrypt_raw_bytes_round_trip() {
 
 #[tokio::test]
 async fn decrypt_with_invalid_bytes() {
-    let s = setup().await;
     let key = LocalKeyFactory::new().create().await.unwrap();
     let invalid_bytes = [0u8; 16];
-    let ex = s
-        .crypto
-        .decrypt(Some(&key), &invalid_bytes)
+    let ex = BlockCrypto::AesGcm(key)
+        .decrypt(&invalid_bytes)
         .expect_err("Expected AthenaConnectorException was not thrown");
     assert!(ex.as_connector_exception().is_some());
     assert!(ex
@@ -95,11 +94,9 @@ async fn decrypt_with_invalid_bytes() {
 
 #[tokio::test]
 async fn make_cipher_with_invalid_nonce() {
-    let s = setup().await;
     let invalid_key = EncryptionKey::new(vec![0u8; 32], vec![0u8; 5]);
-    let ex = s
-        .crypto
-        .decrypt(Some(&invalid_key), &[0u8; 16])
+    let ex = BlockCrypto::AesGcm(invalid_key)
+        .decrypt(&[0u8; 16])
         .expect_err("Expected AthenaConnectorException due to invalid nonce");
     assert!(ex.as_connector_exception().is_some());
     assert!(ex.to_string().contains("Expected 12 nonce bytes"));
@@ -107,11 +104,9 @@ async fn make_cipher_with_invalid_nonce() {
 
 #[tokio::test]
 async fn make_cipher_with_empty_key() {
-    let s = setup().await;
     let invalid_key = EncryptionKey::new(Vec::new(), vec![0u8; 12]);
-    let ex = s
-        .crypto
-        .decrypt(Some(&invalid_key), &[0u8; 16])
+    let ex = BlockCrypto::AesGcm(invalid_key)
+        .decrypt(&[0u8; 16])
         .expect_err("Expected AthenaConnectorException due to empty key");
     assert!(ex.as_connector_exception().is_some());
     assert!(ex.to_string().contains("Invalid key"));

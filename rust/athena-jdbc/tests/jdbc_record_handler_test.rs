@@ -21,8 +21,8 @@ use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler, R
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, BlockCrypto, CachableSecretsManager, EncryptionKey, EncryptionKeyFactory,
-    FederatedIdentity, KmsEncryptionProvider, LocalKeyFactory,
+    BlockCrypto, CachableSecretsManager, EncryptionKey, EncryptionKeyFactory, FederatedIdentity,
+    KmsEncryptionProvider, LocalKeyFactory,
 };
 use athena_federation_sdk::serde::schema_from_bytes;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -1039,8 +1039,8 @@ fn object(fakes: &Fakes, key: &str) -> Option<Vec<u8>> {
         .cloned()
 }
 
-fn crypto() -> AesGcmBlockCrypto {
-    AesGcmBlockCrypto::new(Arc::new(BlockAllocatorImpl::new()))
+fn crypto(key: &EncryptionKey) -> BlockCrypto {
+    BlockCrypto::AesGcm(key.clone())
 }
 
 #[tokio::test]
@@ -1084,12 +1084,12 @@ async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() 
     assert!(object(&run.fakes, &format!("{spill_key}.0")).is_some());
     let sidecar = object(&run.fakes, &format!("{spill_key}.schema")).unwrap();
 
-    let crypto = crypto();
-    let schema = schema_from_bytes(&crypto.decrypt(Some(&key), &sidecar).unwrap()).unwrap();
+    let crypto = crypto(&key);
+    let schema = schema_from_bytes(&crypto.decrypt(&sidecar).unwrap()).unwrap();
     assert_eq!(2, schema.fields().len());
     let block = crypto
         .decrypt_with_schema(
-            Some(&key),
+            &BlockAllocatorImpl::new(),
             &object(&run.fakes, &format!("{spill_key}.0")).unwrap(),
             Arc::new(schema),
         )
@@ -1135,9 +1135,9 @@ async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
     .await;
 
     let data_location = run.response.remote_blocks()[0].as_s3().unwrap();
-    let block = crypto()
+    let block = crypto(&key)
         .decrypt_with_schema(
-            Some(&key),
+            &BlockAllocatorImpl::new(),
             &object(&run.fakes, data_location.key()).unwrap(),
             Arc::new(run.response.schema().clone()),
         )
@@ -1199,9 +1199,9 @@ async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
     )
     .await;
     let data_location = run.response.remote_blocks()[0].as_s3().unwrap();
-    let block = crypto()
+    let block = crypto(&key)
         .decrypt_with_schema(
-            Some(&key),
+            &BlockAllocatorImpl::new(),
             &object(&run.fakes, data_location.key()).unwrap(),
             Arc::new(run.response.schema().clone()),
         )
@@ -1242,14 +1242,14 @@ async fn test_do_read_records_direct_query_returns_every_block_with_async_spill(
     let spill_key = export_spill_location().key().to_string();
     let expected_keys: std::collections::HashSet<String> =
         (0..row_count).map(|i| format!("{spill_key}.{i}")).collect();
-    let crypto = crypto();
+    let crypto = crypto(&key);
     let mut returned_keys = std::collections::HashSet::new();
     let mut returned_rows = 0;
     for location in run.response.remote_blocks() {
         let location_key = location.as_s3().unwrap().key().to_string();
         returned_rows += crypto
             .decrypt_with_schema(
-                Some(&key),
+                &BlockAllocatorImpl::new(),
                 &object(&run.fakes, &location_key).unwrap(),
                 Arc::new(run.response.schema().clone()),
             )

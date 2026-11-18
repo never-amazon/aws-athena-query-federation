@@ -301,7 +301,6 @@ impl SnowflakeRecordHandler {
                 spill_location,
                 split.encryption_key(),
                 &derived_schema,
-                allocator,
             )
             .await?;
             for batch in reader {

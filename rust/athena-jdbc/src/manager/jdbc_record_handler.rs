@@ -22,9 +22,7 @@ use athena_federation_sdk::handlers::{default_do_read_records, RecordHandler, Re
 use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
-use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey};
 use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
@@ -382,17 +380,9 @@ pub trait JdbcRecordHandler: RecordHandler {
         spill_location: &S3SpillLocation,
         encryption_key: Option<&EncryptionKey>,
         derived_schema: &Schema,
-        allocator: &Arc<dyn BlockAllocator>,
     ) -> Result<()> {
-        let block_crypto: Box<dyn BlockCrypto> = if encryption_key.is_some() {
-            Box::new(AesGcmBlockCrypto::new(Arc::clone(allocator)))
-        } else {
-            Box::new(NoOpBlockCrypto::new(Arc::clone(allocator)))
-        };
-        let schema_bytes = block_crypto.encrypt_with_bytes(
-            encryption_key,
-            &schema_to_bytes(derived_schema, IpcFormat::ArrowDefault)?,
-        )?;
+        let schema_bytes = BlockCrypto::for_key(encryption_key.cloned())
+            .encrypt_with_bytes(&schema_to_bytes(derived_schema, IpcFormat::ArrowDefault)?)?;
         let key = format!("{}{SCHEMA_SUFFIX}", spill_location.key());
         let length = i64::try_from(schema_bytes.len())
             .map_err(|e| FederationError::IllegalArgument(e.to_string()))?;
@@ -548,7 +538,6 @@ async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Si
                 spill_location,
                 request.split().encryption_key(),
                 &derived_schema,
-                allocator,
             )
             .await?;
 

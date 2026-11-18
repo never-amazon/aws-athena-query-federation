@@ -7,9 +7,7 @@ use super::block_allocator::BlockAllocator;
 use super::s3_client::{GetObjectRequest, S3Client};
 use crate::domain::spill::S3SpillLocation;
 use crate::exceptions::{FederationError, Result};
-use crate::security::{
-    run_blocking, AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
-};
+use crate::security::{run_blocking, BlockCrypto, EncryptionKey};
 
 pub(crate) fn require_present<T>(value: Option<T>, name: &str) -> Result<T> {
     value.ok_or_else(|| FederationError::null_pointer(format!("{name} was null")))
@@ -28,14 +26,6 @@ impl S3BlockSpillReader {
         S3BlockSpillReader {
             amazon_s3,
             allocator,
-        }
-    }
-
-    fn block_crypto(&self, key: Option<&EncryptionKey>) -> Box<dyn BlockCrypto> {
-        if key.is_some() {
-            Box::new(AesGcmBlockCrypto::new(self.allocator.clone()))
-        } else {
-            Box::new(NoOpBlockCrypto::new(self.allocator.clone()))
         }
     }
 
@@ -62,11 +52,12 @@ impl S3BlockSpillReader {
         let schema = schema.into();
         let bytes = self.get_object(spill_location).await?;
         let schema = require_present(schema, "schema")?;
-        let block_crypto = self.block_crypto(key);
-        let key = key.cloned();
-        let block =
-            run_blocking(move || block_crypto.decrypt_with_schema(key.as_ref(), &bytes, schema))
-                .await?;
+        let block_crypto = BlockCrypto::for_key(key.cloned());
+        let allocator = Arc::clone(&self.allocator);
+        let block = run_blocking(move || {
+            block_crypto.decrypt_with_schema(allocator.as_ref(), &bytes, schema)
+        })
+        .await?;
         tracing::debug!("read: Completed decrypting block of size.");
         Ok(block)
     }
@@ -78,8 +69,7 @@ impl S3BlockSpillReader {
     ) -> Result<Vec<u8>> {
         let spill_location = require_present(spill_location.into(), "spillLocation")?;
         let bytes = self.get_object(spill_location).await?;
-        let block_crypto = self.block_crypto(key);
-        let key = key.cloned();
-        run_blocking(move || block_crypto.decrypt(key.as_ref(), &bytes)).await
+        let block_crypto = BlockCrypto::for_key(key.cloned());
+        run_blocking(move || block_crypto.decrypt(&bytes)).await
     }
 }

@@ -155,7 +155,7 @@ com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federati
 com.amazonaws.athena.connector.lambda.request.PingRequest	athena-federation-sdk/src/request/ping_request.rs::PingRequest	ported	
 com.amazonaws.athena.connector.lambda.request.PingResponse	athena-federation-sdk/src/request/ping_response.rs::PingResponse	ported	
 com.amazonaws.athena.connector.lambda.resolver.CaseResolver	athena-federation-sdk/src/resolver/case_resolver.rs::CaseResolver	ported	
-com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/aes_gcm_block_crypto.rs::AesGcmBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	merged	the BlockCrypto::AesGcm variant, which holds the key it encrypts with
 com.amazonaws.athena.connector.lambda.security.BlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	ported	
 com.amazonaws.athena.connector.lambda.security.CachableSecretsManager	athena-federation-sdk/src/security/cachable_secrets_manager.rs::CachableSecretsManager	ported	
 com.amazonaws.athena.connector.lambda.security.EncryptionKey	athena-federation-sdk/src/security/encryption_key.rs::EncryptionKey	ported	
@@ -165,7 +165,7 @@ com.amazonaws.athena.connector.lambda.security.FederatedIdentity	athena-federati
 com.amazonaws.athena.connector.lambda.security.KmsEncryptionProvider	athena-federation-sdk/src/security/kms_encryption_provider.rs::KmsEncryptionProvider	ported	
 com.amazonaws.athena.connector.lambda.security.KmsKeyFactory	athena-federation-sdk/src/security/kms_key_factory.rs::KmsKeyFactory	ported	
 com.amazonaws.athena.connector.lambda.security.LocalKeyFactory	athena-federation-sdk/src/security/local_key_factory.rs::LocalKeyFactory	ported	
-com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto	athena-federation-sdk/src/security/no_op_block_crypto.rs::NoOpBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	merged	the BlockCrypto::NoOp variant, chosen when there is no key
 com.amazonaws.athena.connector.lambda.serde.BaseDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.BaseSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.BlockDeserializer	athena-federation-sdk/src/serde/mod.rs::block_deserializer	ported	Jackson deserializer class becomes a module of functions
