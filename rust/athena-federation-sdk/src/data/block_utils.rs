@@ -944,32 +944,6 @@ impl BlockUtils {
         Ok(())
     }
 
-    pub fn get_java_type(minor_type: MinorType) -> Result<&'static str> {
-        Ok(match minor_type {
-            MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => "java.time.ZonedDateTime",
-            MinorType::DATEMILLI => "java.time.LocalDateTime",
-            MinorType::TINYINT | MinorType::UINT1 => "java.lang.Byte",
-            MinorType::SMALLINT => "java.lang.Short",
-            MinorType::UINT2 => "java.lang.Character",
-            MinorType::DATEDAY => "java.time.LocalDate",
-            MinorType::INT | MinorType::UINT4 => "java.lang.Integer",
-            MinorType::UINT8 | MinorType::BIGINT => "java.lang.Long",
-            MinorType::DECIMAL => "java.math.BigDecimal",
-            MinorType::FLOAT4 => "java.lang.Float",
-            MinorType::FLOAT8 => "java.lang.Double",
-            MinorType::VARCHAR => "java.lang.String",
-            MinorType::VARBINARY => "[B",
-            MinorType::BIT => "java.lang.Boolean",
-            MinorType::LIST => "java.util.List",
-            MinorType::STRUCT => "java.util.Map",
-            other => {
-                return Err(FederationError::invalid_input(format!(
-                    "Unknown type {other}"
-                )))
-            }
-        })
-    }
-
     pub fn float_to_java_string(value: f32) -> String {
         float_to_string(value)
     }

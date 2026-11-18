@@ -1,14 +1,12 @@
 mod common_field_writer;
 
-use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 
-use athena_federation_sdk::data::writers::extractors::IntExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, IntFieldWriter};
-use athena_federation_sdk::data::writers::holders::NullableIntHolder;
+use athena_federation_sdk::data::writers::extractors::Extractor;
+use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, ScalarFieldWriter};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
 
@@ -26,14 +24,12 @@ struct Fixture {
     projector: Arc<MockConstraintProjector>,
 }
 
-fn configure_extractor(value: i32, is_set: i32, calls: &CallCounter) -> Arc<dyn IntExtractor> {
+fn configure_extractor(value: i32, is_set: i32, calls: &CallCounter) -> Extractor<()> {
     let counter = calls.0.clone();
-    Arc::new(move |_ctx: &dyn Any, holder: &mut NullableIntHolder| {
+    Extractor::Int(Arc::new(move |_ctx: &()| {
         counter.fetch_add(1, Ordering::SeqCst);
-        holder.is_set = is_set;
-        holder.value = value;
-        Ok(())
-    })
+        Ok((is_set > 0).then_some(value))
+    }))
 }
 
 fn set_up() -> Fixture {
@@ -44,13 +40,13 @@ fn set_up() -> Fixture {
     }
 }
 
-fn writer(fx: &Fixture, value: i32, is_set: i32, with_constraint: bool) -> IntFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
-        Some(fx.projector.clone())
+fn writer(fx: &Fixture, value: i32, is_set: i32, with_constraint: bool) -> ScalarFieldWriter<()> {
+    let constraint: Option<ConstraintProjector> = if with_constraint {
+        Some(fx.projector.as_projector())
     } else {
         None
     };
-    IntFieldWriter::new(
+    ScalarFieldWriter::new(
         configure_extractor(value, is_set, &fx.extractor_calls),
         constraint,
     )

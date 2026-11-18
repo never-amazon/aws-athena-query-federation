@@ -50,10 +50,7 @@ impl ConstraintEvaluator {
         Ok(true)
     }
 
-    pub fn make_constraint_projector(
-        &self,
-        field_name: &str,
-    ) -> Option<Arc<dyn ConstraintProjector>> {
+    pub fn make_constraint_projector(&self, field_name: &str) -> Option<ConstraintProjector> {
         let constraint = self.constraints.summary().get(field_name)?;
         self.type_map.get(field_name)?;
         let constraint = constraint.clone();
@@ -96,8 +93,8 @@ mod tests {
         assert!(!block.offer_value("col1", 0, 11).unwrap());
         assert!(block.offer_value("unkown_col", 0, 10).unwrap());
         let projector = evaluator.make_constraint_projector("col1").unwrap();
-        assert!(projector.apply(&Value::Int(10)).unwrap());
-        assert!(!projector.apply(&Value::Int(11)).unwrap());
+        assert!(projector(&Value::Int(10)).unwrap());
+        assert!(!projector(&Value::Int(11)).unwrap());
         assert!(evaluator.make_constraint_projector("col2").is_none());
     }
 }

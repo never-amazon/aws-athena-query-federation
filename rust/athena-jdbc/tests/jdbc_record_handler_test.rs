@@ -8,11 +8,6 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::local_date_time_of_epoch_milli_utc;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::writers::extractors::Extractor;
-use athena_federation_sdk::data::writers::holders::{
-    NullableBigIntHolder, NullableBitHolder, NullableDateDayHolder, NullableDateMilliHolder,
-    NullableFloat4Holder, NullableFloat8Holder, NullableIntHolder, NullableSmallIntHolder,
-    NullableTinyIntHolder, NullableVarBinaryHolder, NullableVarCharHolder,
-};
 use athena_federation_sdk::data::{
     BlockAllocator, BlockAllocatorImpl, BlockSpiller, DateTimeFormatterUtil, FieldBuilder,
     S3BlockSpiller, SchemaBuilder, Value,
@@ -373,9 +368,8 @@ async fn make_extractor() {
     let Extractor::Float8(float8) = actual_float8 else {
         panic!("expected a float8 extractor");
     };
-    let mut dollar_value = NullableFloat8Holder::default();
-    float8.extract(&context, &mut dollar_value).unwrap();
-    assert!((dollar_value.value - 1000.5).abs() < f64::EPSILON);
+    let dollar_value = float8(&context).unwrap().unwrap();
+    assert!((dollar_value - 1000.5).abs() < f64::EPSILON);
 }
 
 fn extractor_metadata() -> ResultSetMetaData {
@@ -396,18 +390,18 @@ fn extractor_metadata() -> ResultSetMetaData {
 }
 
 struct Extractors {
-    int: Extractor,
-    varchar: Extractor,
-    varchar_test: Extractor,
-    bit: Extractor,
-    tiny_int: Extractor,
-    small_int: Extractor,
-    varbinary: Extractor,
-    big_int: Extractor,
-    float4: Extractor,
-    float8: Extractor,
-    date_day: Extractor,
-    date_milli: Extractor,
+    int: Extractor<Row>,
+    varchar: Extractor<Row>,
+    varchar_test: Extractor<Row>,
+    bit: Extractor<Row>,
+    tiny_int: Extractor<Row>,
+    small_int: Extractor<Row>,
+    varbinary: Extractor<Row>,
+    big_int: Extractor<Row>,
+    float4: Extractor<Row>,
+    float8: Extractor<Row>,
+    date_day: Extractor<Row>,
+    date_milli: Extractor<Row>,
 }
 
 fn all_extractors(handler: &TestJdbcRecordHandler, metadata: &ResultSetMetaData) -> Extractors {
@@ -433,99 +427,77 @@ fn all_extractors(handler: &TestJdbcRecordHandler, metadata: &ResultSetMetaData)
     }
 }
 
-fn int_holder(e: &Extractor, context: &Row) -> NullableIntHolder {
+fn int_value(e: &Extractor<Row>, context: &Row) -> Option<i32> {
     let Extractor::Int(e) = e else { panic!("int") };
-    let mut h = NullableIntHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn varchar_holder(e: &Extractor, context: &Row) -> NullableVarCharHolder {
+fn varchar_value(e: &Extractor<Row>, context: &Row) -> Option<String> {
     let Extractor::VarChar(e) = e else {
         panic!("varchar")
     };
-    let mut h = NullableVarCharHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn bit_holder(e: &Extractor, context: &Row) -> NullableBitHolder {
+fn bit_value(e: &Extractor<Row>, context: &Row) -> Option<i32> {
     let Extractor::Bit(e) = e else { panic!("bit") };
-    let mut h = NullableBitHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn tiny_int_holder(e: &Extractor, context: &Row) -> NullableTinyIntHolder {
+fn tiny_int_value(e: &Extractor<Row>, context: &Row) -> Option<i8> {
     let Extractor::TinyInt(e) = e else {
         panic!("tinyint")
     };
-    let mut h = NullableTinyIntHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn small_int_holder(e: &Extractor, context: &Row) -> NullableSmallIntHolder {
+fn small_int_value(e: &Extractor<Row>, context: &Row) -> Option<i16> {
     let Extractor::SmallInt(e) = e else {
         panic!("smallint")
     };
-    let mut h = NullableSmallIntHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn varbinary_holder(e: &Extractor, context: &Row) -> NullableVarBinaryHolder {
+fn varbinary_value(e: &Extractor<Row>, context: &Row) -> Option<Vec<u8>> {
     let Extractor::VarBinary(e) = e else {
         panic!("varbinary")
     };
-    let mut h = NullableVarBinaryHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn big_int_holder(e: &Extractor, context: &Row) -> NullableBigIntHolder {
+fn big_int_value(e: &Extractor<Row>, context: &Row) -> Option<i64> {
     let Extractor::BigInt(e) = e else {
         panic!("bigint")
     };
-    let mut h = NullableBigIntHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn float4_holder(e: &Extractor, context: &Row) -> NullableFloat4Holder {
+fn float4_value(e: &Extractor<Row>, context: &Row) -> Option<f32> {
     let Extractor::Float4(e) = e else {
         panic!("float4")
     };
-    let mut h = NullableFloat4Holder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn float8_holder(e: &Extractor, context: &Row) -> NullableFloat8Holder {
+fn float8_value(e: &Extractor<Row>, context: &Row) -> Option<f64> {
     let Extractor::Float8(e) = e else {
         panic!("float8")
     };
-    let mut h = NullableFloat8Holder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn date_day_holder(e: &Extractor, context: &Row) -> NullableDateDayHolder {
+fn date_day_value(e: &Extractor<Row>, context: &Row) -> Option<i32> {
     let Extractor::DateDay(e) = e else {
         panic!("dateday")
     };
-    let mut h = NullableDateDayHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
-fn date_milli_holder(e: &Extractor, context: &Row) -> NullableDateMilliHolder {
+fn date_milli_value(e: &Extractor<Row>, context: &Row) -> Option<i64> {
     let Extractor::DateMilli(e) = e else {
         panic!("datemilli")
     };
-    let mut h = NullableDateMilliHolder::default();
-    e.extract(context, &mut h).unwrap();
-    h
+    e(context).unwrap()
 }
 
 #[tokio::test]
@@ -554,31 +526,27 @@ async fn test_make_extractor_without_null_values() {
     );
     let e = all_extractors(&s.handler, &metadata);
 
-    let h = int_holder(&e.int, &context);
-    assert_eq!((10, 1), (h.value, h.is_set));
-    let h = varchar_holder(&e.varchar, &context);
-    assert_eq!(("test".to_string(), 1), (h.value, h.is_set));
-    let h = varchar_holder(&e.varchar_test, &context);
-    assert_eq!(("test value".to_string(), 1), (h.value, h.is_set));
-    let h = bit_holder(&e.bit, &context);
-    assert_eq!((1, 1), (h.value, h.is_set));
-    let h = tiny_int_holder(&e.tiny_int, &context);
-    assert_eq!((100, 1), (h.value, h.is_set));
-    let h = small_int_holder(&e.small_int, &context);
-    assert_eq!((1234, 1), (h.value, h.is_set));
-    let h = varbinary_holder(&e.varbinary, &context);
-    assert_eq!((bytes, 1), (h.value, h.is_set));
-    let h = big_int_holder(&e.big_int, &context);
-    assert_eq!((10000, 1), (h.value, h.is_set));
-    let h = float4_holder(&e.float4, &context);
-    assert!((h.value - 123.0).abs() < f32::EPSILON);
-    assert_eq!(1, h.is_set);
-    let h = date_day_holder(&e.date_day, &context);
-    assert_eq!(1, h.is_set);
-    assert_eq!(20200, h.value);
-    let h = date_milli_holder(&e.date_milli, &context);
-    assert_eq!(1, h.is_set);
-    assert_eq!(time.and_utc().timestamp_millis(), h.value);
+    assert_eq!(Some(10), int_value(&e.int, &context));
+    assert_eq!(
+        Some("test".to_string()),
+        varchar_value(&e.varchar, &context)
+    );
+    assert_eq!(
+        Some("test value".to_string()),
+        varchar_value(&e.varchar_test, &context)
+    );
+    assert_eq!(Some(1), bit_value(&e.bit, &context));
+    assert_eq!(Some(100), tiny_int_value(&e.tiny_int, &context));
+    assert_eq!(Some(1234), small_int_value(&e.small_int, &context));
+    assert_eq!(Some(bytes), varbinary_value(&e.varbinary, &context));
+    assert_eq!(Some(10000), big_int_value(&e.big_int, &context));
+    let float4 = float4_value(&e.float4, &context).unwrap();
+    assert!((float4 - 123.0).abs() < f32::EPSILON);
+    assert_eq!(Some(20200), date_day_value(&e.date_day, &context));
+    assert_eq!(
+        Some(time.and_utc().timestamp_millis()),
+        date_milli_value(&e.date_milli, &context)
+    );
 }
 
 #[tokio::test]
@@ -596,9 +564,12 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
     for (year, month, day) in [(1000, 1, 1), (1582, 10, 4), (1, 1, 1), (2025, 4, 22)] {
         let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
         let context = row(metadata.clone(), vec![SqlValue::Date(date)]);
-        let h = date_milli_holder(&extractor, &context);
         let epoch_day = date.signed_duration_since(NaiveDate::default()).num_days();
-        assert_eq!((epoch_day * 86_400_000, 1), (h.value, h.is_set), "{date}");
+        assert_eq!(
+            Some(epoch_day * 86_400_000),
+            date_milli_value(&extractor, &context),
+            "{date}"
+        );
     }
 }
 
@@ -628,10 +599,16 @@ async fn make_extractor_reads_dates_from_year_ten_thousand() {
                 label.clone(),
             )],
         );
-        let h = date_day_holder(&day_extractor, &context);
-        assert_eq!((i64::from(h.value), 1), (expected, h.is_set), "{label}");
-        let h = date_milli_holder(&milli_extractor, &context);
-        assert_eq!((expected * 86_400_000, 1), (h.value, h.is_set), "{label}");
+        assert_eq!(
+            Some(expected),
+            date_day_value(&day_extractor, &context).map(i64::from),
+            "{label}"
+        );
+        assert_eq!(
+            Some(expected * 86_400_000),
+            date_milli_value(&milli_extractor, &context),
+            "{label}"
+        );
     }
 }
 
@@ -643,10 +620,7 @@ fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<S
     let context = row(metadata, vec![SqlValue::Array(values)]);
     let mut block = BlockAllocatorImpl::new().create_block(Arc::clone(&schema));
     let vector = block.get_field_vector_mut("values").unwrap();
-    let mut writer = handler
-        .make_factory(schema.field(0))
-        .create(vector, None, None)
-        .unwrap();
+    let mut writer = handler.make_factory(schema.field(0))(vector, None, None).unwrap();
     writer.write(vector, &context, 0).unwrap();
     block.set_row_count(1);
     block.get_field_vector("values").unwrap().get_object(0)
@@ -742,7 +716,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
     let expected_days = Value::List(
         dates()
             .into_iter()
-            .map(|date| Value::Int(date_day_holder(&day_extractor, &scalar(date)).value))
+            .map(|date| Value::Int(date_day_value(&day_extractor, &scalar(date)).unwrap()))
             .collect(),
     );
     assert_eq!(
@@ -754,7 +728,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
             .into_iter()
             .map(|date| {
                 Value::LocalDateTime(local_date_time_of_epoch_milli_utc(
-                    date_milli_holder(&milli_extractor, &scalar(date)).value,
+                    date_milli_value(&milli_extractor, &scalar(date)).unwrap(),
                 ))
             })
             .collect(),
@@ -866,35 +840,18 @@ async fn test_make_extractor_with_null_values() {
     let context = row(metadata.clone(), vec![SqlValue::Null; 12]);
     let e = all_extractors(&s.handler, &metadata);
 
-    let h = int_holder(&e.int, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = varchar_holder(&e.varchar, &context);
-    assert_eq!(0, h.is_set);
-    assert!(h.value.is_empty());
-    let h = varchar_holder(&e.varchar_test, &context);
-    assert_eq!(0, h.is_set);
-    assert!(h.value.is_empty());
-    let h = bit_holder(&e.bit, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = tiny_int_holder(&e.tiny_int, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = small_int_holder(&e.small_int, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = varbinary_holder(&e.varbinary, &context);
-    assert_eq!(0, h.is_set);
-    assert!(h.value.is_empty());
-    let h = big_int_holder(&e.big_int, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = float4_holder(&e.float4, &context);
-    assert_eq!(0, h.is_set);
-    assert!(h.value.abs() < f32::EPSILON);
-    let h = float8_holder(&e.float8, &context);
-    assert_eq!(0, h.is_set);
-    assert!(h.value.abs() < f64::EPSILON);
-    let h = date_day_holder(&e.date_day, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
-    let h = date_milli_holder(&e.date_milli, &context);
-    assert_eq!((0, 0), (h.is_set, h.value));
+    assert_eq!(None, int_value(&e.int, &context));
+    assert_eq!(None, varchar_value(&e.varchar, &context));
+    assert_eq!(None, varchar_value(&e.varchar_test, &context));
+    assert_eq!(None, bit_value(&e.bit, &context));
+    assert_eq!(None, tiny_int_value(&e.tiny_int, &context));
+    assert_eq!(None, small_int_value(&e.small_int, &context));
+    assert_eq!(None, varbinary_value(&e.varbinary, &context));
+    assert_eq!(None, big_int_value(&e.big_int, &context));
+    assert_eq!(None, float4_value(&e.float4, &context));
+    assert_eq!(None, float8_value(&e.float8, &context));
+    assert_eq!(None, date_day_value(&e.date_day, &context));
+    assert_eq!(None, date_milli_value(&e.date_milli, &context));
 }
 
 #[tokio::test]
@@ -970,9 +927,8 @@ async fn test_make_extractor_float8_with_sql_exception() {
         )
         .unwrap();
     let context = row(metadata, vec![SqlValue::String("$25,000.50".to_string())]);
-    let h = float8_holder(&extractor, &context);
-    assert_eq!(1, h.is_set);
-    assert!((h.value - 25000.50).abs() < 0.01);
+    let value = float8_value(&extractor, &context).unwrap();
+    assert!((value - 25000.50).abs() < 0.01);
 }
 
 #[tokio::test]
@@ -987,9 +943,10 @@ async fn test_make_extractor_with_partition_values() {
             &partition_map(),
         )
         .unwrap();
-    let h = varchar_holder(&extractor, &row(metadata, Vec::new()));
-    assert_eq!(1, h.is_set);
-    assert_eq!(TEST_PARTITION_VALUE, h.value);
+    assert_eq!(
+        Some(TEST_PARTITION_VALUE.to_string()),
+        varchar_value(&extractor, &row(metadata, Vec::new()))
+    );
 }
 
 #[tokio::test]

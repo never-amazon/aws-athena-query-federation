@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
@@ -10,11 +9,6 @@ use super::metadata_handler::java_class_of_request;
 use crate::data::projectors::{ArrowValueProjector, ProjectorUtils};
 use crate::data::writers::extractors::Extractor;
 use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
-use crate::data::writers::holders::{
-    NullableBigIntHolder, NullableBitHolder, NullableDateDayHolder, NullableDateMilliHolder,
-    NullableDecimalHolder, NullableFloat4Holder, NullableFloat8Holder, NullableIntHolder,
-    NullableSmallIntHolder, NullableTinyIntHolder, NullableVarBinaryHolder, NullableVarCharHolder,
-};
 use crate::data::writers::GeneratedRowWriter;
 use crate::data::{
     local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, Block, BlockAllocator,
@@ -51,25 +45,27 @@ pub enum JavaType {
     Map,
 }
 
-impl JavaType {
-    pub fn for_minor_type(minor_type: MinorType) -> Result<JavaType> {
-        Ok(match BlockUtils::get_java_type(minor_type)? {
-            "java.lang.Byte" => JavaType::Byte,
-            "java.lang.Short" => JavaType::Short,
-            "java.lang.Character" => JavaType::Character,
-            "java.lang.Integer" => JavaType::Integer,
-            "java.lang.Long" => JavaType::Long,
-            "java.lang.Float" => JavaType::Float,
-            "java.lang.Double" => JavaType::Double,
-            "java.math.BigDecimal" => JavaType::BigDecimal,
-            "java.lang.String" => JavaType::String,
-            "[B" => JavaType::ByteArray,
-            "java.lang.Boolean" => JavaType::Boolean,
-            "java.time.LocalDate" => JavaType::LocalDate,
-            "java.time.LocalDateTime" => JavaType::LocalDateTime,
-            "java.time.ZonedDateTime" => JavaType::ZonedDateTime,
-            "java.util.List" => JavaType::List,
-            "java.util.Map" => JavaType::Map,
+impl TryFrom<MinorType> for JavaType {
+    type Error = FederationError;
+
+    fn try_from(minor_type: MinorType) -> Result<JavaType> {
+        Ok(match minor_type {
+            MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => JavaType::ZonedDateTime,
+            MinorType::DATEMILLI => JavaType::LocalDateTime,
+            MinorType::TINYINT | MinorType::UINT1 => JavaType::Byte,
+            MinorType::SMALLINT => JavaType::Short,
+            MinorType::UINT2 => JavaType::Character,
+            MinorType::DATEDAY => JavaType::LocalDate,
+            MinorType::INT | MinorType::UINT4 => JavaType::Integer,
+            MinorType::UINT8 | MinorType::BIGINT => JavaType::Long,
+            MinorType::DECIMAL => JavaType::BigDecimal,
+            MinorType::FLOAT4 => JavaType::Float,
+            MinorType::FLOAT8 => JavaType::Double,
+            MinorType::VARCHAR => JavaType::String,
+            MinorType::VARBINARY => JavaType::ByteArray,
+            MinorType::BIT => JavaType::Boolean,
+            MinorType::LIST => JavaType::List,
+            MinorType::STRUCT => JavaType::Map,
             other => {
                 return Err(FederationError::invalid_input(format!(
                     "Unknown type {other}"
@@ -77,7 +73,9 @@ impl JavaType {
             }
         })
     }
+}
 
+impl JavaType {
     pub fn class_name(&self) -> &'static str {
         match self {
             JavaType::Byte => "java.lang.Byte",
@@ -382,7 +380,7 @@ fn extract_java_types(schema: &Schema) -> Result<Vec<JavaType>> {
     schema
         .fields()
         .iter()
-        .map(|f| JavaType::for_minor_type(MinorType::get_minor_type_for_arrow_type(f.data_type())))
+        .map(|f| JavaType::try_from(MinorType::get_minor_type_for_arrow_type(f.data_type())))
         .collect()
 }
 
@@ -417,12 +415,6 @@ fn extract_scalar_function_method<'a>(
     Ok(udf_method)
 }
 
-fn result_of(context: &dyn Any) -> Result<&Value> {
-    context
-        .downcast_ref::<Value>()
-        .ok_or_else(|| FederationError::ClassCast("context is not a UDF result".into()))
-}
-
 fn class_cast(value: &Value, target: &str) -> FederationError {
     FederationError::class_cast(value.java_class_name(), target)
 }
@@ -430,7 +422,7 @@ fn class_cast(value: &Value, target: &str) -> FederationError {
 fn create_output_row_writer(
     field_name: &str,
     arrow_type: &crate::data::ArrowType,
-) -> Result<GeneratedRowWriter> {
+) -> Result<GeneratedRowWriter<Value>> {
     let builder = GeneratedRowWriter::new_builder();
     let minor_type = MinorType::get_minor_type_for_arrow_type(arrow_type);
     Ok(match make_extractor(minor_type) {
@@ -441,72 +433,68 @@ fn create_output_row_writer(
 }
 
 macro_rules! extractor {
-    ($ctor:ident, $holder:ty, |$value:ident| $convert:expr) => {{
-        Extractor::$ctor(move |context: &dyn Any, dst: &mut $holder| {
-            match result_of(context)? {
-                Value::Null => dst.is_set = 0,
-                $value => {
-                    dst.is_set = 1;
-                    dst.value = $convert;
-                }
-            }
-            Ok(())
-        })
+    ($variant:ident, |$value:ident| $convert:expr) => {{
+        Extractor::$variant(Arc::new(move |result: &Value| {
+            Ok(match result {
+                Value::Null => None,
+                $value => Some($convert),
+            })
+        }))
     }};
 }
 
-fn make_extractor(minor_type: MinorType) -> Option<Extractor> {
+fn make_extractor(minor_type: MinorType) -> Option<Extractor<Value>> {
     Some(match minor_type {
-        MinorType::INT => extractor!(int, NullableIntHolder, |v| match v {
+        MinorType::INT => extractor!(Int, |v| match v {
             Value::Int(i) => *i,
             other => return Err(class_cast(other, "java.lang.Integer")),
         }),
         MinorType::DATEMILLI => {
-            extractor!(date_milli, NullableDateMilliHolder, |v| match v {
+            extractor!(DateMilli, |v| match v {
                 Value::LocalDateTime(dt) => local_date_time_to_epoch_milli_utc(dt),
                 other => return Err(class_cast(other, "java.time.LocalDateTime")),
             })
         }
-        MinorType::DATEDAY => extractor!(date_day, NullableDateDayHolder, |v| match v {
+        MinorType::DATEDAY => extractor!(DateDay, |v| match v {
             Value::LocalDate(d) => i32::try_from(local_date_to_epoch_day(d)).unwrap_or(i32::MIN),
             other => return Err(class_cast(other, "java.time.LocalDate")),
         }),
-        MinorType::TINYINT => extractor!(tiny_int, NullableTinyIntHolder, |v| match v {
+        MinorType::TINYINT => extractor!(TinyInt, |v| match v {
             Value::Byte(b) => *b,
             other => return Err(class_cast(other, "java.lang.Byte")),
         }),
         MinorType::SMALLINT => {
-            extractor!(small_int, NullableSmallIntHolder, |v| match v {
+            extractor!(SmallInt, |v| match v {
                 Value::Short(s) => *s,
                 other => return Err(class_cast(other, "java.lang.Short")),
             })
         }
-        MinorType::FLOAT4 => extractor!(float4, NullableFloat4Holder, |v| match v {
+        MinorType::FLOAT4 => extractor!(Float4, |v| match v {
             Value::Float(f) => *f,
             other => return Err(class_cast(other, "java.lang.Float")),
         }),
-        MinorType::FLOAT8 => extractor!(float8, NullableFloat8Holder, |v| match v {
+        MinorType::FLOAT8 => extractor!(Float8, |v| match v {
             Value::Double(d) => *d,
             other => return Err(class_cast(other, "java.lang.Double")),
         }),
-        MinorType::DECIMAL => extractor!(decimal, NullableDecimalHolder, |v| match v {
+        MinorType::DECIMAL => extractor!(Decimal, |v| match v {
             Value::Decimal(d) => d.clone(),
             other => return Err(class_cast(other, "java.math.BigDecimal")),
         }),
-        MinorType::BIT => extractor!(bit, NullableBitHolder, |v| match v {
+        MinorType::BIT => extractor!(Bit, |v| match v {
             Value::Boolean(b) => i32::from(*b),
             other => return Err(class_cast(other, "java.lang.Boolean")),
         }),
-        MinorType::BIGINT => extractor!(big_int, NullableBigIntHolder, |v| match v {
+        MinorType::BIGINT => extractor!(BigInt, |v| match v {
             Value::Long(l) => *l,
             other => return Err(class_cast(other, "java.lang.Long")),
         }),
-        MinorType::VARCHAR => extractor!(var_char, NullableVarCharHolder, |v| match v {
+        MinorType::VARCHAR => extractor!(VarChar, |v| match v {
             Value::String(s) => s.clone(),
             other => return Err(class_cast(other, "java.lang.String")),
         }),
         MinorType::VARBINARY => {
-            extractor!(var_binary, NullableVarBinaryHolder, |v| match v {
+            extractor!(VarBinary, |v| match v {
                 Value::Bytes(b) => b.clone(),
                 other => return Err(class_cast(other, "[B")),
             })
@@ -517,35 +505,23 @@ fn make_extractor(minor_type: MinorType) -> Option<Extractor> {
 
 struct ComplexValueWriter;
 
-impl FieldWriter for ComplexValueWriter {
-    fn write(
-        &mut self,
-        vector: &mut FieldVector,
-        context: &dyn Any,
-        row_num: usize,
-    ) -> Result<bool> {
-        let value = result_of(context)?;
+impl FieldWriter<Value> for ComplexValueWriter {
+    fn write(&mut self, vector: &mut FieldVector, value: &Value, row_num: usize) -> Result<bool> {
         BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, value)?;
         Ok(true)
     }
 }
 
-struct ComplexValueWriterFactory;
-
-impl FieldWriterFactory for ComplexValueWriterFactory {
-    fn create(
-        &self,
-        _vector: &FieldVector,
-        _extractor: Option<&Extractor>,
-        _constraint: Option<Arc<dyn ConstraintProjector>>,
-    ) -> Result<Box<dyn FieldWriter>> {
-        Ok(Box::new(ComplexValueWriter))
-    }
-}
-
-fn make_factory(minor_type: MinorType) -> Result<Arc<dyn FieldWriterFactory>> {
+fn make_factory(minor_type: MinorType) -> Result<FieldWriterFactory<Value>> {
     match minor_type {
-        MinorType::LIST | MinorType::STRUCT => Ok(Arc::new(ComplexValueWriterFactory)),
+        MinorType::LIST | MinorType::STRUCT => Ok(Arc::new(
+            |_: &FieldVector,
+             _: Option<&Extractor<Value>>,
+             _: Option<ConstraintProjector>|
+             -> Result<Box<dyn FieldWriter<Value>>> {
+                Ok(Box::new(ComplexValueWriter))
+            },
+        )),
         other => Err(FederationError::invalid_input(format!(
             "Unsupported type {other}"
         ))),

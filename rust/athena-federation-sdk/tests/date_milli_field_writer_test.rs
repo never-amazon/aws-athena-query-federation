@@ -1,14 +1,12 @@
 mod common_field_writer;
 
-use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, TimeUnit};
 
-use athena_federation_sdk::data::writers::extractors::DateMilliExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{DateMilliFieldWriter, FieldWriter};
-use athena_federation_sdk::data::writers::holders::NullableDateMilliHolder;
+use athena_federation_sdk::data::writers::extractors::Extractor;
+use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, ScalarFieldWriter};
 use athena_federation_sdk::data::{BlockAllocatorImpl, FieldVector, Value};
 use athena_federation_sdk::domain::predicate::{ConstraintProjector, Range, SortedRangeSet};
 
@@ -26,20 +24,12 @@ struct Fixture {
     projector: Arc<MockConstraintProjector>,
 }
 
-fn configure_extractor(
-    value: i64,
-    is_set: i32,
-    calls: &CallCounter,
-) -> Arc<dyn DateMilliExtractor> {
+fn configure_extractor(value: i64, is_set: i32, calls: &CallCounter) -> Extractor<()> {
     let counter = calls.0.clone();
-    Arc::new(
-        move |_ctx: &dyn Any, holder: &mut NullableDateMilliHolder| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            holder.is_set = is_set;
-            holder.value = value;
-            Ok(())
-        },
-    )
+    Extractor::DateMilli(Arc::new(move |_ctx: &()| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Ok((is_set > 0).then_some(value))
+    }))
 }
 
 fn set_up() -> Fixture {
@@ -50,13 +40,13 @@ fn set_up() -> Fixture {
     }
 }
 
-fn writer(fx: &Fixture, value: i64, is_set: i32, with_constraint: bool) -> DateMilliFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
-        Some(fx.projector.clone())
+fn writer(fx: &Fixture, value: i64, is_set: i32, with_constraint: bool) -> ScalarFieldWriter<()> {
+    let constraint: Option<ConstraintProjector> = if with_constraint {
+        Some(fx.projector.as_projector())
     } else {
         None
     };
-    DateMilliFieldWriter::new(
+    ScalarFieldWriter::new(
         configure_extractor(value, is_set, &fx.extractor_calls),
         constraint,
     )
@@ -149,7 +139,7 @@ fn write_with_non_zero_value_marked_null_should_mark_as_null() {
 const NEGATIVE_INFINITY_MILLIS: i64 = -9_223_372_036_832_400_000;
 const POSITIVE_INFINITY_MILLIS: i64 = 9_223_372_036_825_200_000;
 
-fn range_projector(range: Range) -> Arc<dyn ConstraintProjector> {
+fn range_projector(range: Range) -> ConstraintProjector {
     let set = SortedRangeSet::of_ranges(range, Vec::new()).unwrap();
     Arc::new(move |v: &Value| set.contains_value(v))
 }
@@ -185,7 +175,7 @@ fn write_with_out_of_range_millis_applies_range_constraints_like_java() {
         ] {
             let mut vector = new_vector("testVector", DataType::Date64);
             let calls = CallCounter::new();
-            let mut w = DateMilliFieldWriter::new(
+            let mut w = ScalarFieldWriter::new(
                 configure_extractor(millis, 1, &calls),
                 Some(range_projector(range.clone())),
             );

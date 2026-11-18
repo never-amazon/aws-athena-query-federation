@@ -46,36 +46,36 @@ com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-fede
 com.amazonaws.athena.connector.lambda.data.projectors.SimpleArrowValueProjector	athena-federation-sdk/src/data/projectors/simple_arrow_value_projector.rs::SimpleArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.StructArrowValueProjector	athena-federation-sdk/src/data/projectors/struct_arrow_value_projector.rs::StructArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter	athena-federation-sdk/src/data/writers/generated_row_writer.rs::GeneratedRowWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BigIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BitExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateDayExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateMilliExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DecimalExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DecimalExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::BigInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Bit variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::DateDay variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::DateMilli variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DecimalExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Decimal variant; its closure returns Option instead of filling a holder
 com.amazonaws.athena.connector.lambda.data.writers.extractors.Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.Float4Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float4Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.Float8Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float8Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.IntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::IntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.SmallIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::SmallIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.TinyIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::TinyIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.VarBinaryExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarBinaryExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarCharExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BigIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/big_int_field_writer.rs::BigIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BitFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/bit_field_writer.rs::BitFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateDayFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_day_field_writer.rs::DateDayFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateMilliFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_milli_field_writer.rs::DateMilliFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DecimalFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/decimal_field_writer.rs::DecimalFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float4Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Float4 variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float8Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Float8 variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.IntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Int variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.SmallIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::SmallInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.TinyIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::TinyInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarBinaryExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::VarBinary variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::VarChar variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BigIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BitFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateDayFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateMilliFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DecimalFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
 com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriter	ported	
 com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriterFactory	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriterFactory	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float4FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float4_field_writer.rs::Float4FieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float8FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float8_field_writer.rs::Float8FieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.IntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/int_field_writer.rs::IntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.SmallIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/small_int_field_writer.rs::SmallIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.TinyIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/tiny_int_field_writer.rs::TinyIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarBinaryFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_binary_field_writer.rs::VarBinaryFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarCharFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_char_field_writer.rs::VarCharFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableDecimalHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableDecimalHolder	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarBinaryHolder	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarCharHolder	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float4FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float8FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.IntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.SmallIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.TinyIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarBinaryFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarCharFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableDecimalHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
 com.amazonaws.athena.connector.lambda.domain.Split	athena-federation-sdk/src/domain/split.rs::Split	ported	
 com.amazonaws.athena.connector.lambda.domain.TableName	athena-federation-sdk/src/domain/table_name.rs::TableName	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.AllOrNoneValueSet	athena-federation-sdk/src/domain/predicate/all_or_none_value_set.rs::AllOrNoneValueSet	ported	

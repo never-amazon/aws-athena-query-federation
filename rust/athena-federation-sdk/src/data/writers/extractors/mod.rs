@@ -1,187 +1,67 @@
-use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
-use super::holders::{
-    NullableBigIntHolder, NullableBitHolder, NullableDateDayHolder, NullableDateMilliHolder,
-    NullableDecimalHolder, NullableFloat4Holder, NullableFloat8Holder, NullableIntHolder,
-    NullableSmallIntHolder, NullableTinyIntHolder, NullableVarBinaryHolder, NullableVarCharHolder,
-};
+use arrow::datatypes::DataType;
+use bigdecimal::{BigDecimal, RoundingMode};
+
+use crate::data::java_time::local_date_time_of_epoch_milli_utc;
+use crate::data::types::{decimal_precision_scale, MinorType};
+use crate::data::value::Value;
 use crate::exceptions::Result;
 
-pub trait BigIntExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableBigIntHolder) -> Result<()>;
+pub type Extract<C, T> = Arc<dyn Fn(&C) -> Result<Option<T>> + Send + Sync>;
+
+pub enum Extractor<C> {
+    BigInt(Extract<C, i64>),
+    Bit(Extract<C, i32>),
+    DateDay(Extract<C, i32>),
+    DateMilli(Extract<C, i64>),
+    Decimal(Extract<C, BigDecimal>),
+    Float4(Extract<C, f32>),
+    Float8(Extract<C, f64>),
+    Int(Extract<C, i32>),
+    SmallInt(Extract<C, i16>),
+    TinyInt(Extract<C, i8>),
+    VarBinary(Extract<C, Vec<u8>>),
+    VarChar(Extract<C, String>),
 }
 
-impl<F> BigIntExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableBigIntHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableBigIntHolder) -> Result<()> {
-        self(context, dst)
+impl<C> Extractor<C> {
+    pub fn null(minor_type: MinorType) -> Option<Extractor<C>> {
+        Some(match minor_type {
+            MinorType::BIGINT => Extractor::BigInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::BIT => Extractor::Bit(Arc::new(|_: &C| Ok(None))),
+            MinorType::DATEDAY => Extractor::DateDay(Arc::new(|_: &C| Ok(None))),
+            MinorType::DATEMILLI => Extractor::DateMilli(Arc::new(|_: &C| Ok(None))),
+            MinorType::DECIMAL => Extractor::Decimal(Arc::new(|_: &C| Ok(None))),
+            MinorType::FLOAT4 => Extractor::Float4(Arc::new(|_: &C| Ok(None))),
+            MinorType::FLOAT8 => Extractor::Float8(Arc::new(|_: &C| Ok(None))),
+            MinorType::INT => Extractor::Int(Arc::new(|_: &C| Ok(None))),
+            MinorType::SMALLINT => Extractor::SmallInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::TINYINT => Extractor::TinyInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::VARBINARY => Extractor::VarBinary(Arc::new(|_: &C| Ok(None))),
+            MinorType::VARCHAR => Extractor::VarChar(Arc::new(|_: &C| Ok(None))),
+            _ => return None,
+        })
     }
-}
 
-pub trait BitExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableBitHolder) -> Result<()>;
-}
-
-impl<F> BitExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableBitHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableBitHolder) -> Result<()> {
-        self(context, dst)
+    pub fn minor_type(&self) -> MinorType {
+        match self {
+            Extractor::BigInt(_) => MinorType::BIGINT,
+            Extractor::Bit(_) => MinorType::BIT,
+            Extractor::DateDay(_) => MinorType::DATEDAY,
+            Extractor::DateMilli(_) => MinorType::DATEMILLI,
+            Extractor::Decimal(_) => MinorType::DECIMAL,
+            Extractor::Float4(_) => MinorType::FLOAT4,
+            Extractor::Float8(_) => MinorType::FLOAT8,
+            Extractor::Int(_) => MinorType::INT,
+            Extractor::SmallInt(_) => MinorType::SMALLINT,
+            Extractor::TinyInt(_) => MinorType::TINYINT,
+            Extractor::VarBinary(_) => MinorType::VARBINARY,
+            Extractor::VarChar(_) => MinorType::VARCHAR,
+        }
     }
-}
 
-pub trait DateDayExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDateDayHolder) -> Result<()>;
-}
-
-impl<F> DateDayExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableDateDayHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDateDayHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait DateMilliExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDateMilliHolder) -> Result<()>;
-}
-
-impl<F> DateMilliExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableDateMilliHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDateMilliHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait DecimalExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDecimalHolder) -> Result<()>;
-}
-
-impl<F> DecimalExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableDecimalHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableDecimalHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait Float4Extractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableFloat4Holder) -> Result<()>;
-}
-
-impl<F> Float4Extractor for F
-where
-    F: Fn(&dyn Any, &mut NullableFloat4Holder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableFloat4Holder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait Float8Extractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableFloat8Holder) -> Result<()>;
-}
-
-impl<F> Float8Extractor for F
-where
-    F: Fn(&dyn Any, &mut NullableFloat8Holder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableFloat8Holder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait IntExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableIntHolder) -> Result<()>;
-}
-
-impl<F> IntExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableIntHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableIntHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait SmallIntExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableSmallIntHolder) -> Result<()>;
-}
-
-impl<F> SmallIntExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableSmallIntHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableSmallIntHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait TinyIntExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableTinyIntHolder) -> Result<()>;
-}
-
-impl<F> TinyIntExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableTinyIntHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableTinyIntHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait VarBinaryExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableVarBinaryHolder) -> Result<()>;
-}
-
-impl<F> VarBinaryExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableVarBinaryHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableVarBinaryHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-pub trait VarCharExtractor: Send + Sync {
-    fn extract(&self, context: &dyn Any, dst: &mut NullableVarCharHolder) -> Result<()>;
-}
-
-impl<F> VarCharExtractor for F
-where
-    F: Fn(&dyn Any, &mut NullableVarCharHolder) -> Result<()> + Send + Sync,
-{
-    fn extract(&self, context: &dyn Any, dst: &mut NullableVarCharHolder) -> Result<()> {
-        self(context, dst)
-    }
-}
-
-#[derive(Clone)]
-pub enum Extractor {
-    BigInt(Arc<dyn BigIntExtractor>),
-    Bit(Arc<dyn BitExtractor>),
-    DateDay(Arc<dyn DateDayExtractor>),
-    DateMilli(Arc<dyn DateMilliExtractor>),
-    Decimal(Arc<dyn DecimalExtractor>),
-    Float4(Arc<dyn Float4Extractor>),
-    Float8(Arc<dyn Float8Extractor>),
-    Int(Arc<dyn IntExtractor>),
-    SmallInt(Arc<dyn SmallIntExtractor>),
-    TinyInt(Arc<dyn TinyIntExtractor>),
-    VarBinary(Arc<dyn VarBinaryExtractor>),
-    VarChar(Arc<dyn VarCharExtractor>),
-}
-
-impl Extractor {
     pub fn type_name(&self) -> &'static str {
         match self {
             Extractor::BigInt(_) => "BigIntExtractor",
@@ -199,92 +79,61 @@ impl Extractor {
         }
     }
 
-    pub fn big_int<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableBigIntHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::BigInt(Arc::new(f))
-    }
-
-    pub fn bit<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableBitHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::Bit(Arc::new(f))
-    }
-
-    pub fn date_day<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableDateDayHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::DateDay(Arc::new(f))
-    }
-
-    pub fn date_milli<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableDateMilliHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::DateMilli(Arc::new(f))
-    }
-
-    pub fn decimal<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableDecimalHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::Decimal(Arc::new(f))
-    }
-
-    pub fn float4<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableFloat4Holder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::Float4(Arc::new(f))
-    }
-
-    pub fn float8<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableFloat8Holder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::Float8(Arc::new(f))
-    }
-
-    pub fn int<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableIntHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::Int(Arc::new(f))
-    }
-
-    pub fn small_int<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableSmallIntHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::SmallInt(Arc::new(f))
-    }
-
-    pub fn tiny_int<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableTinyIntHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::TinyInt(Arc::new(f))
-    }
-
-    pub fn var_binary<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableVarBinaryHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::VarBinary(Arc::new(f))
-    }
-
-    pub fn var_char<F>(f: F) -> Extractor
-    where
-        F: Fn(&dyn Any, &mut NullableVarCharHolder) -> Result<()> + Send + Sync + 'static,
-    {
-        Extractor::VarChar(Arc::new(f))
+    pub fn extract_values(
+        &self,
+        context: &C,
+        vector_type: &DataType,
+    ) -> Result<Option<(Value, Value)>> {
+        Ok(match self {
+            Extractor::BigInt(f) => f(context)?.map(|v| (Value::Long(v), Value::Long(v))),
+            Extractor::Bit(f) => f(context)?.map(|v| (Value::Int(v), Value::Boolean(v > 0))),
+            Extractor::DateDay(f) => f(context)?.map(|v| (Value::Int(v), Value::Int(v))),
+            Extractor::DateMilli(f) => f(context)?.map(|v| {
+                (
+                    Value::Long(v),
+                    Value::LocalDateTime(local_date_time_of_epoch_milli_utc(v)),
+                )
+            }),
+            Extractor::Decimal(f) => f(context)?.map(|v| {
+                let (_, scale) = decimal_precision_scale(vector_type).unwrap_or((38, 0));
+                let scaled = v.with_scale_round(i64::from(scale), RoundingMode::HalfUp);
+                (Value::Decimal(scaled), Value::Decimal(v))
+            }),
+            Extractor::Float4(f) => f(context)?.map(|v| (Value::Float(v), Value::Float(v))),
+            Extractor::Float8(f) => f(context)?.map(|v| (Value::Double(v), Value::Double(v))),
+            Extractor::Int(f) => f(context)?.map(|v| (Value::Int(v), Value::Int(v))),
+            Extractor::SmallInt(f) => f(context)?.map(|v| (Value::Short(v), Value::Short(v))),
+            Extractor::TinyInt(f) => f(context)?.map(|v| (Value::Byte(v), Value::Byte(v))),
+            Extractor::VarBinary(f) => {
+                f(context)?.map(|v| (Value::Bytes(v.clone()), Value::Bytes(v)))
+            }
+            Extractor::VarChar(f) => {
+                f(context)?.map(|v| (Value::String(v.clone()), Value::String(v)))
+            }
+        })
     }
 }
 
-impl fmt::Debug for Extractor {
+impl<C> Clone for Extractor<C> {
+    fn clone(&self) -> Self {
+        match self {
+            Extractor::BigInt(f) => Extractor::BigInt(Arc::clone(f)),
+            Extractor::Bit(f) => Extractor::Bit(Arc::clone(f)),
+            Extractor::DateDay(f) => Extractor::DateDay(Arc::clone(f)),
+            Extractor::DateMilli(f) => Extractor::DateMilli(Arc::clone(f)),
+            Extractor::Decimal(f) => Extractor::Decimal(Arc::clone(f)),
+            Extractor::Float4(f) => Extractor::Float4(Arc::clone(f)),
+            Extractor::Float8(f) => Extractor::Float8(Arc::clone(f)),
+            Extractor::Int(f) => Extractor::Int(Arc::clone(f)),
+            Extractor::SmallInt(f) => Extractor::SmallInt(Arc::clone(f)),
+            Extractor::TinyInt(f) => Extractor::TinyInt(Arc::clone(f)),
+            Extractor::VarBinary(f) => Extractor::VarBinary(Arc::clone(f)),
+            Extractor::VarChar(f) => Extractor::VarChar(Arc::clone(f)),
+        }
+    }
+}
+
+impl<C> fmt::Debug for Extractor<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.type_name())
     }
