@@ -55,6 +55,7 @@ import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTI
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_OFFSET_MARKER;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.PARTITION_PRIMARY_MARKER;
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.SINGLE_QUOTE_CHAR;
+import static java.lang.Math.toIntExact;
 
 /**
  * Extends {@link JdbcSplitQueryBuilder} and implements MySql specific SQL clauses for split.
@@ -97,7 +98,7 @@ public class SnowflakeQueryStringBuilder
 
     private static Calendar fixedOffsetCalendar(long offsetMillis)
     {
-        return Calendar.getInstance(new SimpleTimeZone(Math.toIntExact(offsetMillis), "UTC"));
+        return Calendar.getInstance(new SimpleTimeZone(toIntExact(offsetMillis), "UTC"));
     }
 
     @Override
