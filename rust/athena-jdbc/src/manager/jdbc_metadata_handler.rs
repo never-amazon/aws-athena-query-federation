@@ -18,7 +18,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::request::FederatedIdentity;
 use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
-use athena_federation_sdk::util::{PaginationHelper, UNLIMITED_PAGE_SIZE_VALUE};
+use athena_federation_sdk::util::{manual_pagination, UNLIMITED_PAGE_SIZE_VALUE};
 use athena_federation_sdk::{FederationError, Result};
 
 use super::jdbc_arrow_type_converter::JdbcArrowTypeConverter;
@@ -155,7 +155,7 @@ pub trait JdbcMetadataHandler: MetadataHandler {
         let page_size = list_tables_request.page_size();
         let start_token = list_tables_request.next_token();
         let all_tables = self.list_tables(connection, &adjusted_schema_name).await?;
-        let (catalog_name, tables, next_token) = PaginationHelper::manual_pagination(
+        let (catalog_name, tables, next_token) = manual_pagination(
             &all_tables,
             start_token,
             page_size,

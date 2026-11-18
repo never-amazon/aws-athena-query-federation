@@ -13,7 +13,7 @@ com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-fede
 com.amazonaws.athena.connector.lambda.CollectionsUtils	athena-federation-sdk/src/metadata/mod.rs::collections_equals	merged	the only method, equals, is the crate-private collections_equals used by the response PartialEq impls
 com.amazonaws.athena.connector.lambda.QueryStatusChecker	athena-federation-sdk/src/query_status_checker.rs::QueryStatusChecker	ported	
 com.amazonaws.athena.connector.lambda.ThrottlingInvoker	athena-federation-sdk/src/throttling_invoker.rs::ThrottlingInvoker	ported	
-com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants	athena-federation-sdk/src/connection/environment_constants.rs::EnvironmentConstants	ported	
+com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants	athena-federation-sdk/src/connection/mod.rs::environment_constants	ported	the constant holder class becomes a module of constants
 com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties	athena-federation-sdk/src/connection/environment_properties.rs::EnvironmentProperties	ported	
 com.amazonaws.athena.connector.lambda.data.ArrowSchemaUtils	athena-federation-sdk/src/data/arrow_schema_utils.rs::ArrowSchemaUtils	ported	
 com.amazonaws.athena.connector.lambda.data.ArrowRecordBatchReader	athena-federation-sdk/src/data/record_batch_serde.rs::deserialize_record_batch_message	merged	The Java helper reads a record batch with an empty body; the Rust reader handles that case in ArrowRecordBatch::from_message
@@ -131,7 +131,7 @@ com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation
 com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/metadata_request_type.rs::MetadataRequestType	ported	
 com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::MetadataResponse	ported	
 com.amazonaws.athena.connector.lambda.metadata.glue.DefaultGlueType	athena-federation-sdk/src/metadata/glue/default_glue_type.rs::DefaultGlueType	ported	
-com.amazonaws.athena.connector.lambda.metadata.glue.GlueFieldLexer	athena-federation-sdk/src/metadata/glue/glue_field_lexer.rs::GlueFieldLexer	ported	
+com.amazonaws.athena.connector.lambda.metadata.glue.GlueFieldLexer	athena-federation-sdk/src/metadata/glue/glue_field_lexer.rs::lex	merged	the static-method class becomes the lex and lex_with_mapper functions
 com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser	athena-federation-sdk/src/metadata/glue/glue_type_parser.rs::GlueTypeParser	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.DataSourceOptimizations	athena-federation-sdk/src/metadata/optimizations/data_source_optimizations.rs::DataSourceOptimizations	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.OptimizationSubType	athena-federation-sdk/src/metadata/optimizations/optimization_sub_type.rs::OptimizationSubType	ported	
@@ -265,7 +265,7 @@ com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federati
 com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	athena-federation-substrait/src/model/substrait_rel_model.rs::SubstraitRelModel	ported	
 com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	athena-federation-substrait/src/util/limit_and_sort_helper.rs::LimitAndSortHelper	ported	
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
-com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::PaginationHelper	ported	
+com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::manual_pagination	merged	the static-method class becomes free functions in the pagination_helper module
 com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::JdbcEnvironmentProperties	ported	
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcCompositeHandler	athena-jdbc/src/multiplexing_jdbc_composite_handler.rs::MultiplexingJdbcCompositeHandler	ported	
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcMetadataHandler	athena-jdbc/src/multiplexing_jdbc_metadata_handler.rs::MultiplexingJdbcMetadataHandler	ported	

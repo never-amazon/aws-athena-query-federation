@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::connection::{
-    EnvironmentConstants, EnvironmentProperties, GlueConnectionClient,
+    environment_constants, EnvironmentProperties, GlueConnectionClient,
 };
 use athena_federation_sdk::data::{Block, BlockSpiller, RowWriter};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
@@ -224,7 +224,7 @@ async fn environment_properties_message_uses_java_to_string() {
     let failure = case("glue_entity_not_found");
     let props = EnvironmentProperties::new()
         .with_env_map(HashMap::from([(
-            EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
+            environment_constants::DEFAULT_GLUE_CONNECTION.to_string(),
             "my-glue-conn".to_string(),
         )]))
         .with_glue_client(Arc::new(FailingGlue {

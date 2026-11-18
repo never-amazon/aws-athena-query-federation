@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
-use athena_federation_sdk::connection::{EnvironmentConstants, EnvironmentProperties};
+use athena_federation_sdk::connection::{environment_constants, EnvironmentProperties};
 use athena_federation_sdk::Result;
 
 fn java_get<'a>(properties: &'a HashMap<String, String>, key: &str) -> &'a str {
@@ -25,19 +25,22 @@ pub trait JdbcEnvironmentProperties: Send + Sync {
         let connection_string = format!(
             "{}{}:{}{}{}",
             self.get_connection_string_prefix(&connection_properties),
-            java_get(&connection_properties, EnvironmentConstants::HOST),
-            java_get(&connection_properties, EnvironmentConstants::PORT),
+            java_get(&connection_properties, environment_constants::HOST),
+            java_get(&connection_properties, environment_constants::PORT),
             self.get_database(&connection_properties),
             self.get_jdbc_parameters(&connection_properties)
         );
-        HashMap::from([(EnvironmentConstants::DEFAULT.to_string(), connection_string)])
+        HashMap::from([(
+            environment_constants::DEFAULT.to_string(),
+            connection_string,
+        )])
     }
 
     fn get_database(&self, connection_properties: &HashMap<String, String>) -> String {
         format!(
             "{}{}",
             self.get_database_separator(),
-            java_get(connection_properties, EnvironmentConstants::DATABASE)
+            java_get(connection_properties, environment_constants::DATABASE)
         )
     }
 
@@ -46,11 +49,11 @@ pub trait JdbcEnvironmentProperties: Send + Sync {
             "{}{}",
             self.get_jdbc_parameters_separator(),
             connection_properties
-                .get(EnvironmentConstants::JDBC_PARAMS)
+                .get(environment_constants::JDBC_PARAMS)
                 .map_or("", String::as_str)
         );
-        if let Some(secret_name) = connection_properties.get(EnvironmentConstants::SECRET_NAME) {
-            if connection_properties.contains_key(EnvironmentConstants::JDBC_PARAMS) {
+        if let Some(secret_name) = connection_properties.get(environment_constants::SECRET_NAME) {
+            if connection_properties.contains_key(environment_constants::JDBC_PARAMS) {
                 params.push_str(&self.get_delimiter());
             }
             params.push_str("${");

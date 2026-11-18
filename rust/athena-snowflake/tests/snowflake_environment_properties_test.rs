@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_jdbc::JdbcEnvironmentProperties;
 use athena_snowflake::{SnowflakeConstants, SnowflakeEnvironmentProperties};
 
@@ -15,13 +15,13 @@ const SNOWFLAKE_JDBC_SNOWFLAKE: &str = "snowflake://jdbc:snowflake://";
 const DB: &str = "db";
 const DEFAULT_SCHEMA: &str = "schema";
 
-const WAREHOUSE: &str = EnvironmentConstants::WAREHOUSE;
-const DATABASE: &str = EnvironmentConstants::DATABASE;
-const SCHEMA: &str = EnvironmentConstants::SCHEMA;
-const HOST: &str = EnvironmentConstants::HOST;
-const PORT: &str = EnvironmentConstants::PORT;
-const DEFAULT: &str = EnvironmentConstants::DEFAULT;
-const GLUE: &str = EnvironmentConstants::DEFAULT_GLUE_CONNECTION;
+const WAREHOUSE: &str = environment_constants::WAREHOUSE;
+const DATABASE: &str = environment_constants::DATABASE;
+const SCHEMA: &str = environment_constants::SCHEMA;
+const HOST: &str = environment_constants::HOST;
+const PORT: &str = environment_constants::PORT;
+const DEFAULT: &str = environment_constants::DEFAULT;
+const GLUE: &str = environment_constants::DEFAULT_GLUE_CONNECTION;
 const USER: &str = SnowflakeConstants::USER;
 
 fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {

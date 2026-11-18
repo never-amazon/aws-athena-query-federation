@@ -5,7 +5,7 @@ use aws_config::timeout::TimeoutConfig;
 use aws_config::BehaviorVersion;
 use aws_sdk_glue::types::Connection;
 
-use super::environment_constants::EnvironmentConstants;
+use super::environment_constants;
 use crate::security::{AwsService, AwsServiceError};
 
 #[async_trait]
@@ -31,7 +31,7 @@ impl GlueConnectionClient for aws_sdk_glue::Client {
 pub(crate) async fn default_glue_client(endpoint: Option<&str>) -> aws_sdk_glue::Client {
     let timeouts = TimeoutConfig::builder()
         .connect_timeout(Duration::from_millis(
-            EnvironmentConstants::CONNECT_TIMEOUT as u64,
+            environment_constants::CONNECT_TIMEOUT as u64,
         ))
         .build();
     let sdk_config = aws_config::defaults(BehaviorVersion::latest())

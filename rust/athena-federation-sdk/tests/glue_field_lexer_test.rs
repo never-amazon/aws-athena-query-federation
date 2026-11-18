@@ -1,10 +1,10 @@
 use arrow::datatypes::Field;
 use athena_federation_sdk::data::{arrow_type_to_string, get_children, minor_type_of, MinorType};
-use athena_federation_sdk::metadata::glue::GlueFieldLexer;
+use athena_federation_sdk::metadata::glue;
 use athena_federation_sdk::FederationError;
 
 fn lex(name: &str, input: &str) -> Field {
-    GlueFieldLexer::lex(name, input).unwrap().unwrap()
+    glue::lex(name, input).unwrap().unwrap()
 }
 
 fn minor(field: &Field) -> MinorType {
@@ -271,7 +271,7 @@ fn assert_unsupported_decimal_width(err: &FederationError) {
 
 #[test]
 fn lex_map_test() {
-    if GlueFieldLexer::MAP_DISABLED {
+    if glue::MAP_DISABLED {
         return;
     }
     let field = lex("SomeMap", "map<array<int>, map<string, string>>");
@@ -292,13 +292,13 @@ fn lex_map_test() {
 
 #[test]
 fn lex_treats_first_character_as_escaped_like_java() {
-    assert_eq!(None, GlueFieldLexer::lex("col", "<int>").unwrap());
+    assert_eq!(None, glue::lex("col", "<int>").unwrap());
 }
 
 #[test]
 fn lex_map_without_value_type_reports_java_null_pointer() {
     for input in ["map<string>", "map<int,unknowntype>"] {
-        let err = GlueFieldLexer::lex("col", input).unwrap_err();
+        let err = glue::lex("col", input).unwrap_err();
         assert_eq!("java.lang.NullPointerException", err.java_class_name());
         assert_eq!(
             "Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getField(com.google.flatbuffers.FlatBufferBuilder)\" because the return value of \"java.util.List.get(int)\" is null",
@@ -317,7 +317,7 @@ fn lex_decimal_rejects_types_arrow_cannot_read() {
         "decimal(10,2,64)",
         "decimal(300,2,8)",
     ] {
-        assert_unsupported_decimal_width(&GlueFieldLexer::lex("col", input).unwrap_err());
+        assert_unsupported_decimal_width(&glue::lex("col", input).unwrap_err());
     }
     for (input, bit_width, max_precision) in [
         ("decimal(0,0)", 128, 38),
@@ -326,7 +326,7 @@ fn lex_decimal_rejects_types_arrow_cannot_read() {
         ("decimal(10,200)", 128, 38),
         ("decimal(77,2,256)", 256, 76),
     ] {
-        let err = GlueFieldLexer::lex("col", input).unwrap_err();
+        let err = glue::lex("col", input).unwrap_err();
         assert_eq!("java.lang.IllegalArgumentException", err.java_class_name());
         assert_eq!(
             format!(

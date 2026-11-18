@@ -20,7 +20,7 @@ use crate::domain::table_name::TableName;
 use crate::exceptions::{
     AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
 };
-use crate::metadata::glue::{GlueClient, GlueFieldLexer};
+use crate::metadata::glue::{self, GlueClient};
 use crate::metadata::{
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse, MetadataRequest, UNLIMITED_PAGE_SIZE_VALUE,
@@ -257,7 +257,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     fn convert_field(&self, name: &str, glue_type: Option<&str>) -> Result<Option<Field>> {
         let lexed = match glue_type {
-            Some(glue_type) => GlueFieldLexer::lex(name, glue_type),
+            Some(glue_type) => glue::lex(name, glue_type),
             None => Err(FederationError::null_pointer(
                 "Cannot invoke \"String.length()\" because \"this.input\" is null",
             )),

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use athena_federation_sdk::connection::{EnvironmentConstants, EnvironmentProperties};
+use athena_federation_sdk::connection::{environment_constants, EnvironmentProperties};
 use athena_jdbc::JdbcEnvironmentProperties;
 
 const TEST_HOST: &str = "test.host.com";
@@ -34,15 +34,15 @@ fn base_connection_string() -> String {
 fn setup() -> (HashMap<String, String>, TestEnvironmentProperties) {
     let connection_properties = HashMap::from([
         (
-            EnvironmentConstants::HOST.to_string(),
+            environment_constants::HOST.to_string(),
             TEST_HOST.to_string(),
         ),
         (
-            EnvironmentConstants::PORT.to_string(),
+            environment_constants::PORT.to_string(),
             TEST_PORT.to_string(),
         ),
         (
-            EnvironmentConstants::DATABASE.to_string(),
+            environment_constants::DATABASE.to_string(),
             TEST_DATABASE.to_string(),
         ),
     ]);
@@ -53,7 +53,7 @@ fn setup() -> (HashMap<String, String>, TestEnvironmentProperties) {
 }
 
 fn default_of(result: &HashMap<String, String>) -> &str {
-    result.get(EnvironmentConstants::DEFAULT).unwrap()
+    result.get(environment_constants::DEFAULT).unwrap()
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn test_connection_properties_with_no_params() {
 fn test_connection_properties_with_only_secret() {
     let (mut connection_properties, properties) = setup();
     connection_properties.insert(
-        EnvironmentConstants::SECRET_NAME.to_string(),
+        environment_constants::SECRET_NAME.to_string(),
         TEST_SECRET.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -85,7 +85,7 @@ fn test_connection_properties_with_only_jdbc_params() {
     let (mut connection_properties, properties) = setup();
     let ssl_param = "ssl=true";
     connection_properties.insert(
-        EnvironmentConstants::JDBC_PARAMS.to_string(),
+        environment_constants::JDBC_PARAMS.to_string(),
         ssl_param.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -99,11 +99,11 @@ fn test_connection_properties_with_only_jdbc_params() {
 fn test_connection_properties_with_database_and_params_and_secret() {
     let (mut connection_properties, properties) = setup();
     connection_properties.insert(
-        EnvironmentConstants::JDBC_PARAMS.to_string(),
+        environment_constants::JDBC_PARAMS.to_string(),
         TEST_ENCRYPT_PARAM.to_string(),
     );
     connection_properties.insert(
-        EnvironmentConstants::SECRET_NAME.to_string(),
+        environment_constants::SECRET_NAME.to_string(),
         TEST_SECRET.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -123,15 +123,15 @@ fn test_special_characters_in_connection_params() {
     let special_db = "test/db#1";
     let special_params = "param1=value1&param2=value2#hash;param3=value3";
     connection_properties.insert(
-        EnvironmentConstants::HOST.to_string(),
+        environment_constants::HOST.to_string(),
         special_host.to_string(),
     );
     connection_properties.insert(
-        EnvironmentConstants::DATABASE.to_string(),
+        environment_constants::DATABASE.to_string(),
         special_db.to_string(),
     );
     connection_properties.insert(
-        EnvironmentConstants::JDBC_PARAMS.to_string(),
+        environment_constants::JDBC_PARAMS.to_string(),
         special_params.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -148,7 +148,7 @@ fn test_multiple_jdbc_parameters() {
     let (mut connection_properties, properties) = setup();
     let params = "ssl=true&connectTimeout=10000&socketTimeout=5000&autoReconnect=true&useUnicode=true&characterEncoding=UTF-8";
     connection_properties.insert(
-        EnvironmentConstants::JDBC_PARAMS.to_string(),
+        environment_constants::JDBC_PARAMS.to_string(),
         params.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -163,7 +163,7 @@ fn test_complex_database_path() {
     let (mut connection_properties, properties) = setup();
     let complex_db = "main/schema1/table2";
     connection_properties.insert(
-        EnvironmentConstants::DATABASE.to_string(),
+        environment_constants::DATABASE.to_string(),
         complex_db.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);
@@ -178,7 +178,7 @@ fn test_secret_with_special_characters() {
     let (mut connection_properties, properties) = setup();
     let special_secret = "secret/name#1";
     connection_properties.insert(
-        EnvironmentConstants::SECRET_NAME.to_string(),
+        environment_constants::SECRET_NAME.to_string(),
         special_secret.to_string(),
     );
     let result = properties.connection_properties_to_environment(connection_properties);

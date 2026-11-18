@@ -10,7 +10,7 @@ use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::{ConfigOptions, FederationRequestHandler};
-use crate::connection::EnvironmentConstants;
+use crate::connection::environment_constants;
 use crate::data::types::java_field_to_string;
 use crate::data::{
     BlockAllocator, BlockAllocatorImpl, BlockUtils, BlockWriter, S3Client, S3HeadBucketClient,
@@ -594,7 +594,7 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                 let identity = require_identity(req.identity())?;
                 let options: &ConfigOptions = identity.config_options();
                 if options
-                    .get(EnvironmentConstants::FAS_TOKEN)
+                    .get(environment_constants::FAS_TOKEN)
                     .is_some_and(Option::is_some)
                 {
                     let override_config = self

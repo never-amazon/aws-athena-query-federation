@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::{DefaultCredentials, StaticCredentialsProvider};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_jdbc::connection::{
@@ -131,7 +131,7 @@ fn pooled_factory(
 
 fn fas_options() -> HashMap<String, String> {
     HashMap::from([(
-        EnvironmentConstants::FAS_TOKEN.to_string(),
+        environment_constants::FAS_TOKEN.to_string(),
         "someToken".to_string(),
     )])
 }

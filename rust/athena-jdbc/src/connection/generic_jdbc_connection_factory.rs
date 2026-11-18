@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::{FederationError, Result};
@@ -88,7 +88,7 @@ impl GenericJdbcConnectionFactory {
         driver: Arc<dyn JdbcDriver>,
     ) -> Result<GenericJdbcConnectionFactory> {
         let use_direct_connection =
-            config_options.is_some_and(|o| o.contains_key(EnvironmentConstants::FAS_TOKEN));
+            config_options.is_some_and(|o| o.contains_key(environment_constants::FAS_TOKEN));
         if use_direct_connection {
             tracing::info!("Glue managed connection detected, using direct JDBC connections");
             if driver.driver_class_name() != database_connection_info.driver_class_name() {

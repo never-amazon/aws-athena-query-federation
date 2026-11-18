@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{ArrowType, Block, BlockAllocator, BlockWriter, SchemaBuilder};
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::Split;
@@ -83,7 +83,7 @@ fn java_string(value: Option<String>) -> String {
 fn catalog_casing_filter(identity: Option<&FederatedIdentity>) -> Option<String> {
     let value = identity?
         .config_options()
-        .get(EnvironmentConstants::CATALOG_CASING_FILTER)?;
+        .get(environment_constants::CATALOG_CASING_FILTER)?;
     tracing::info!("Catalog Casing Filter found: {:?}", value);
     Some(java_string(value.clone()))
 }
@@ -439,7 +439,7 @@ impl PostGreSqlMetadataHandler {
                 partition,
             );
         if let Some(filter) = catalog_casing_filter(request.identity()) {
-            builder = builder.add(EnvironmentConstants::CATALOG_CASING_FILTER, filter);
+            builder = builder.add(environment_constants::CATALOG_CASING_FILTER, filter);
         }
         Ok(builder.build())
     }

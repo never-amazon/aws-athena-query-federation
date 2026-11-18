@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use athena_federation_sdk::connection::{EnvironmentConstants, EnvironmentProperties};
+use athena_federation_sdk::connection::{environment_constants, EnvironmentProperties};
 use athena_jdbc::JdbcEnvironmentProperties;
 
 use crate::snowflake_constants::java_trim;
@@ -36,15 +36,15 @@ impl SnowflakeEnvironmentProperties {
     ) -> HashMap<String, String> {
         tracing::debug!("getSnowFlakeParameter, Loading connection properties");
         let mut parameters = base_property.clone();
-        if !connection_properties.contains_key(EnvironmentConstants::DEFAULT_GLUE_CONNECTION) {
+        if !connection_properties.contains_key(environment_constants::DEFAULT_GLUE_CONNECTION) {
             return parameters;
         }
-        if !connection_properties.contains_key(EnvironmentConstants::SCHEMA) {
+        if !connection_properties.contains_key(environment_constants::SCHEMA) {
             tracing::debug!("No schema specified in connection string");
         }
         copy_usable(
             connection_properties
-                .get(EnvironmentConstants::WAREHOUSE)
+                .get(environment_constants::WAREHOUSE)
                 .map(String::as_str),
             WAREHOUSE_PROPERTY_KEY,
             "warehouse",
@@ -52,7 +52,7 @@ impl SnowflakeEnvironmentProperties {
         );
         copy_usable(
             connection_properties
-                .get(EnvironmentConstants::DATABASE)
+                .get(environment_constants::DATABASE)
                 .map(String::as_str),
             DB_PROPERTY_KEY,
             "database",
@@ -60,7 +60,7 @@ impl SnowflakeEnvironmentProperties {
         );
         copy_usable(
             connection_properties
-                .get(EnvironmentConstants::SCHEMA)
+                .get(environment_constants::SCHEMA)
                 .map(String::as_str),
             SCHEMA_PROPERTY_KEY,
             "schema",
@@ -120,9 +120,9 @@ impl JdbcEnvironmentProperties for SnowflakeEnvironmentProperties {
     ) -> HashMap<String, String> {
         let mut environment = HashMap::new();
         for key in [
-            EnvironmentConstants::WAREHOUSE,
-            EnvironmentConstants::DATABASE,
-            EnvironmentConstants::SCHEMA,
+            environment_constants::WAREHOUSE,
+            environment_constants::DATABASE,
+            environment_constants::SCHEMA,
         ] {
             if let Some(value) = connection_properties.get(key) {
                 environment.insert(key.to_string(), value.clone());
@@ -131,10 +131,10 @@ impl JdbcEnvironmentProperties for SnowflakeEnvironmentProperties {
         let mut connection_string = self.get_connection_string_prefix(&connection_properties);
         connection_string.push_str(
             connection_properties
-                .get(EnvironmentConstants::HOST)
+                .get(environment_constants::HOST)
                 .map_or("null", String::as_str),
         );
-        if let Some(raw_port) = connection_properties.get(EnvironmentConstants::PORT) {
+        if let Some(raw_port) = connection_properties.get(environment_constants::PORT) {
             let port_value = java_trim(raw_port);
             if is_valid_port(port_value) {
                 connection_string.push(':');
@@ -151,7 +151,10 @@ impl JdbcEnvironmentProperties for SnowflakeEnvironmentProperties {
             connection_string.push_str(SNOWFLAKE_JDBC_PARAMETER_PREFIX);
             connection_string.push_str(&jdbc_parameters);
         }
-        environment.insert(EnvironmentConstants::DEFAULT.to_string(), connection_string);
+        environment.insert(
+            environment_constants::DEFAULT.to_string(),
+            connection_string,
+        );
         environment
     }
 

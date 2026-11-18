@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     ArrowType, Block, BlockAllocator, BlockWriter, FieldBuilder, SchemaBuilder, SupportedTypes,
@@ -30,7 +30,9 @@ use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, CachableSecretsManager, KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
-use athena_federation_sdk::util::{PaginationHelper, UNLIMITED_PAGE_SIZE_VALUE};
+use athena_federation_sdk::util::{
+    calculate_next_token, validate_and_parse_pagination_arguments, UNLIMITED_PAGE_SIZE_VALUE,
+};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
@@ -485,11 +487,11 @@ impl SnowflakeMetadataHandler {
             );
             if let Some(filter) = identity_option(
                 request.identity(),
-                EnvironmentConstants::CATALOG_CASING_FILTER,
+                environment_constants::CATALOG_CASING_FILTER,
             ) {
                 tracing::info!("Catalog Casing Filter found: {:?}", filter);
                 builder = builder.add(
-                    EnvironmentConstants::CATALOG_CASING_FILTER,
+                    environment_constants::CATALOG_CASING_FILTER,
                     filter.clone().unwrap_or_else(|| "null".to_string()),
                 );
             }
@@ -1011,9 +1013,9 @@ impl MetadataHandler for SnowflakeMetadataHandler {
         let mut table_name = request.table_name().clone();
         let uppercase_only = identity_option(
             request.identity(),
-            EnvironmentConstants::CATALOG_CASING_FILTER,
+            environment_constants::CATALOG_CASING_FILTER,
         )
-        .is_some_and(|value| value.as_deref() == Some(EnvironmentConstants::UPPERCASE_ONLY));
+        .is_some_and(|value| value.as_deref() == Some(environment_constants::UPPERCASE_ONLY));
         if uppercase_only {
             table_name = TableName::new(
                 table_name.schema_name().to_uppercase(),
@@ -1118,10 +1120,8 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
     ) -> Result<ListTablesResponse> {
         tracing::debug!("Starting listPaginatedTables for Snowflake.");
         let mut page_size = list_tables_request.page_size();
-        let token = PaginationHelper::validate_and_parse_pagination_arguments(
-            list_tables_request.next_token(),
-            page_size,
-        )?;
+        let token =
+            validate_and_parse_pagination_arguments(list_tables_request.next_token(), page_size)?;
         if page_size == UNLIMITED_PAGE_SIZE_VALUE {
             page_size = i32::MAX;
         }
@@ -1142,8 +1142,7 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
         let paginated_tables = self
             .get_paginated_tables(connection, &adjusted_schema_name, token, page_size)
             .await?;
-        let next_token =
-            PaginationHelper::calculate_next_token(token, page_size, &paginated_tables);
+        let next_token = calculate_next_token(token, page_size, &paginated_tables);
         tracing::info!(
             "{} tables returned. Next token is {:?}",
             paginated_tables.len(),
