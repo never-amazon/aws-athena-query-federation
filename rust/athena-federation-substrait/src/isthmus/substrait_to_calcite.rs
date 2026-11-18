@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use super::expression_converter::{sort_direction, ExpressionConverter};
-use super::function_mappings::FunctionDecl;
+use super::function_mappings::function_name;
 use super::type_converter::{is_nullable, named_struct_to_calcite, to_calcite};
 use crate::calcite::rel::{AggregateCall, JoinType, RelFieldCollation, RelNode, SetOpKind};
 use crate::calcite::rel_builder::{RelBuilder, SortKey};
@@ -34,7 +34,7 @@ pub(crate) struct SubstraitToCalcite {
     system: RelDataTypeSystem,
     rex_builder: RexBuilder,
     rel_builder: RelBuilder,
-    functions: HashMap<u32, FunctionDecl>,
+    functions: HashMap<u32, String>,
     outer: RefCell<Vec<OuterFrame>>,
     used_correl: RefCell<Vec<usize>>,
     next_correl: Cell<usize>,
@@ -113,7 +113,7 @@ impl SubstraitToCalcite {
         let mut functions = HashMap::new();
         for ext in &plan.extensions {
             if let Some(MappingType::ExtensionFunction(f)) = &ext.mapping_type {
-                functions.insert(f.function_anchor, FunctionDecl::from_key(&f.name));
+                functions.insert(f.function_anchor, function_name(&f.name).to_string());
             }
         }
         SubstraitToCalcite {
@@ -686,7 +686,7 @@ impl SubstraitToCalcite {
         if !op.aggregate {
             return Err(SubstraitError::IllegalArgument(format!(
                 "Unable to convert non-aggregate operator: {} for substrait aggregate function {}",
-                op.name, decl.name
+                op.name, decl
             )));
         }
         let distinct = AggregationInvocation::try_from(f.invocation)

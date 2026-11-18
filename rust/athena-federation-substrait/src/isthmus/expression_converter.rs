@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use bigdecimal::BigDecimal;
 
-use super::function_mappings::{
-    aggregate_operator, scalar_operator, window_operator, FunctionDecl,
-};
+use super::function_mappings::{aggregate_operator, scalar_operator, window_operator};
 use super::type_converter::{to_calcite, type_string};
 use crate::calcite::operators::{self, SqlOperator};
 use crate::calcite::rel::RelNode;
@@ -34,7 +32,7 @@ use crate::proto::{Expression, FunctionArgument, SortField, Type};
 pub(crate) struct ExpressionConverter<'a> {
     pub(crate) system: RelDataTypeSystem,
     pub(crate) rex_builder: RexBuilder,
-    pub(crate) functions: &'a HashMap<u32, FunctionDecl>,
+    pub(crate) functions: &'a HashMap<u32, String>,
     pub(crate) rels: &'a super::SubstraitToCalcite,
 }
 
@@ -484,23 +482,26 @@ impl ExpressionConverter<'_> {
         Ok(RexBuilder::make_input_ref(index, f.ty().clone()))
     }
 
-    fn function_decl(&self, reference: u32) -> Result<&FunctionDecl> {
-        self.functions.get(&reference).ok_or_else(|| {
+    fn function_decl(&self, reference: u32) -> Result<&str> {
+        self.functions.get(&reference).map(String::as_str).ok_or_else(|| {
             SubstraitError::IllegalArgument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.".into())
         })
     }
 
     fn arguments(
         &self,
-        decl: &FunctionDecl,
+        decl: &str,
         args: &[FunctionArgument],
         input: &RelDataType,
-        extra_enum: Option<String>,
+        trim: Option<TrimFlag>,
     ) -> Result<Vec<RexNode>> {
         let mut out = Vec::new();
         let mut index = 0usize;
-        if let Some(flag) = extra_enum {
-            out.push(self.enum_arg(decl, 0, &flag)?);
+        if let Some(flag) = trim {
+            out.push(Self::symbol(
+                self.not_null(SqlTypeName::Symbol),
+                Symbol::Trim(flag),
+            ));
             index = 1;
         }
         for a in args {
@@ -519,7 +520,11 @@ impl ExpressionConverter<'_> {
         Ok(out)
     }
 
-    fn enum_arg(&self, decl: &FunctionDecl, index: usize, value: &str) -> Result<RexNode> {
+    fn symbol(ty: RelDataType, symbol: Symbol) -> RexNode {
+        Self::lit(LiteralValue::Symbol(symbol), ty)
+    }
+
+    fn enum_arg(&self, decl: &str, index: usize, value: &str) -> Result<RexNode> {
         let not_handled = || {
             SubstraitError::Unsupported(format!(
                 "EnumArg(value={value}) not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
@@ -528,15 +533,12 @@ impl ExpressionConverter<'_> {
         if index != 0 {
             return Err(not_handled());
         }
-        let symbol = match decl.name.as_str() {
+        let symbol = match decl {
             "extract" => Symbol::TimeUnit(time_unit(value)?),
             "trim" | "ltrim" | "rtrim" => Symbol::Trim(trim_flag(value)?),
             _ => return Err(not_handled()),
         };
-        Ok(Self::lit(
-            LiteralValue::Symbol(symbol),
-            self.not_null(SqlTypeName::Symbol),
-        ))
+        Ok(Self::symbol(self.not_null(SqlTypeName::Symbol), symbol))
     }
 
     fn scalar_function(&self, f: &ScalarFunction, input: &RelDataType) -> Result<RexNode> {
@@ -546,20 +548,20 @@ impl ExpressionConverter<'_> {
             .as_ref()
             .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
-        let op = scalar_operator(&decl.name, type_string(output)).ok_or_else(|| {
+        let op = scalar_operator(decl, output.kind.as_ref()).ok_or_else(|| {
             SubstraitError::IllegalArgument(format!(
                 "Unable to convert scalar function {}({}).",
-                decl.name,
+                decl,
                 Self::describe_args(&f.arguments)
             ))
         })?;
-        let extra = match decl.name.as_str() {
-            "trim" => Some("BOTH".to_string()),
-            "ltrim" => Some("LEADING".to_string()),
-            "rtrim" => Some("TRAILING".to_string()),
+        let trim = match decl {
+            "trim" => Some(TrimFlag::Both),
+            "ltrim" => Some(TrimFlag::Leading),
+            "rtrim" => Some(TrimFlag::Trailing),
             _ => None,
         };
-        let args = self.arguments(decl, &f.arguments, input, extra)?;
+        let args = self.arguments(decl, &f.arguments, input, trim)?;
         Ok(RexBuilder::make_call_typed(return_type, op, args))
     }
 
@@ -576,10 +578,10 @@ impl ExpressionConverter<'_> {
 
     fn window_function(&self, w: &WindowFunction, input: &RelDataType) -> Result<RexNode> {
         let decl = self.function_decl(w.function_reference)?;
-        let op = window_operator(&decl.name).ok_or_else(|| {
+        let op = window_operator(decl).ok_or_else(|| {
             SubstraitError::IllegalArgument(format!(
                 "Unable to convert window function {}({}).",
-                decl.name,
+                decl,
                 Self::describe_args(&w.arguments)
             ))
         })?;
@@ -665,20 +667,17 @@ impl ExpressionConverter<'_> {
     pub(crate) fn aggregate_operator_for(
         &self,
         reference: u32,
-    ) -> Result<(&FunctionDecl, &'static SqlOperator)> {
+    ) -> Result<(&str, &'static SqlOperator)> {
         let decl = self.function_decl(reference)?;
-        let op = aggregate_operator(&decl.name).ok_or_else(|| {
-            SubstraitError::IllegalArgument(format!(
-                "Unable to find binding for call {}",
-                decl.name
-            ))
+        let op = aggregate_operator(decl).ok_or_else(|| {
+            SubstraitError::IllegalArgument(format!("Unable to find binding for call {decl}"))
         })?;
         Ok((decl, op))
     }
 
     pub(crate) fn convert_arguments(
         &self,
-        decl: &FunctionDecl,
+        decl: &str,
         args: &[FunctionArgument],
         input: &RelDataType,
     ) -> Result<Vec<RexNode>> {

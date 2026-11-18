@@ -1,48 +1,31 @@
 use crate::calcite::operators::{self, SqlOperator};
+use crate::proto::r#type::Kind;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FunctionDecl {
-    pub(crate) name: String,
-    pub(crate) key: String,
+pub(crate) fn function_name(key: &str) -> &str {
+    key.split_once(':').map_or(key, |(name, _)| name)
 }
 
-impl FunctionDecl {
-    pub(crate) fn from_key(key: &str) -> FunctionDecl {
-        let name = match key.find(':') {
-            Some(i) => &key[..i],
-            None => key,
-        };
-        FunctionDecl {
-            name: name.to_string(),
-            key: key.to_string(),
-        }
-    }
+fn is_numeric(output: Option<&Kind>) -> bool {
+    matches!(
+        output,
+        Some(
+            Kind::I8(_)
+                | Kind::I16(_)
+                | Kind::I32(_)
+                | Kind::I64(_)
+                | Kind::Fp32(_)
+                | Kind::Fp64(_)
+                | Kind::Decimal(_)
+        )
+    )
 }
 
-const NUMERIC_OUTPUTS: [&str; 7] = ["i8", "i16", "i32", "i64", "fp32", "fp64", "dec"];
-const DATETIME_PLUS_OUTPUTS: [&str; 3] = ["date", "time", "timestamp"];
-const MINUS_DATE_OUTPUTS: [&str; 3] = ["date", "timestamp_tz", "timestamp"];
-
-pub(crate) fn scalar_operator(name: &str, output_type: &str) -> Option<&'static SqlOperator> {
+pub(crate) fn scalar_operator(name: &str, output: Option<&Kind>) -> Option<&'static SqlOperator> {
     let op: &'static SqlOperator = match name {
-        "add" => {
-            if NUMERIC_OUTPUTS.contains(&output_type) {
-                &operators::PLUS
-            } else if DATETIME_PLUS_OUTPUTS.contains(&output_type) {
-                &operators::DATETIME_PLUS
-            } else {
-                return None;
-            }
-        }
-        "subtract" => {
-            if NUMERIC_OUTPUTS.contains(&output_type) {
-                &operators::MINUS
-            } else if MINUS_DATE_OUTPUTS.contains(&output_type) {
-                &operators::MINUS_DATE
-            } else {
-                return None;
-            }
-        }
+        "add" if is_numeric(output) => &operators::PLUS,
+        "add" if matches!(output, Some(Kind::Date(_) | Kind::Time(_))) => &operators::DATETIME_PLUS,
+        "subtract" if is_numeric(output) => &operators::MINUS,
+        "subtract" if matches!(output, Some(Kind::Date(_))) => &operators::MINUS_DATE,
         "negate" => &operators::UNARY_MINUS,
         "multiply" => &operators::MULTIPLY,
         "divide" => &operators::DIVIDE,
@@ -122,4 +105,52 @@ pub(crate) fn window_operator(name: &str) -> Option<&'static SqlOperator> {
         other => return aggregate_operator(other),
     };
     Some(op)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scalar_operator;
+    use crate::calcite::operators;
+    use crate::proto::r#type::{self, Kind};
+
+    #[test]
+    fn add_and_subtract_resolve_on_the_output_type_like_isthmus() {
+        let date = Kind::Date(r#type::Date::default());
+        let time = Kind::Time(r#type::Time::default());
+        let i32_kind = Kind::I32(r#type::I32::default());
+        #[allow(
+            deprecated,
+            reason = "builds the deprecated Substrait timestamp kinds that plans can still carry"
+        )]
+        let timestamps = [
+            Kind::Timestamp(r#type::Timestamp::default()),
+            Kind::TimestampTz(r#type::TimestampTz::default()),
+            Kind::PrecisionTimestamp(r#type::PrecisionTimestamp::default()),
+        ];
+        assert_eq!(
+            Some(&operators::PLUS),
+            scalar_operator("add", Some(&i32_kind))
+        );
+        assert_eq!(
+            Some(&operators::DATETIME_PLUS),
+            scalar_operator("add", Some(&date))
+        );
+        assert_eq!(
+            Some(&operators::DATETIME_PLUS),
+            scalar_operator("add", Some(&time))
+        );
+        assert_eq!(
+            Some(&operators::MINUS),
+            scalar_operator("subtract", Some(&i32_kind))
+        );
+        assert_eq!(
+            Some(&operators::MINUS_DATE),
+            scalar_operator("subtract", Some(&date))
+        );
+        assert_eq!(None, scalar_operator("subtract", Some(&time)));
+        for ts in &timestamps {
+            assert_eq!(None, scalar_operator("add", Some(ts)));
+            assert_eq!(None, scalar_operator("subtract", Some(ts)));
+        }
+    }
 }
