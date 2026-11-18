@@ -22,7 +22,13 @@ package com.amazonaws.athena.connector.substrait;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import io.substrait.extension.SimpleExtension;
+import io.substrait.isthmus.SubstraitRelNodeConverter;
 import io.substrait.isthmus.SubstraitToCalcite;
+import io.substrait.isthmus.TypeConverter;
+import io.substrait.isthmus.expression.AggregateFunctionConverter;
+import io.substrait.isthmus.expression.ExpressionRexConverter;
+import io.substrait.isthmus.expression.ScalarFunctionConverter;
+import io.substrait.isthmus.expression.WindowFunctionConverter;
 import io.substrait.plan.ProtoPlanConverter;
 import io.substrait.proto.Expression;
 import io.substrait.proto.Plan;
@@ -45,14 +51,18 @@ import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.util.SqlShuttle;
+import org.apache.calcite.tools.RelBuilder;
+import org.apache.calcite.util.TimestampString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Utility class for converting Substrait plans to SQL and extracting schema information.
@@ -138,7 +148,7 @@ public final class SubstraitSqlUtils
             final ProtoPlanConverter protoPlanConverter = new ProtoPlanConverter();
             final io.substrait.plan.Plan substraitPlan = protoPlanConverter.from((Plan) foldAstralCharCasts(protoPlan));
 
-            final SubstraitToCalcite substraitToCalcite = new SubstraitToCalcite(
+            final SubstraitToCalcite substraitToCalcite = new DateTimeLiteralSubstraitToCalcite(
                     SimpleExtension.loadDefaults(),
                     new Utf8TypeFactory(sqlDialect.getTypeSystem())
             );
@@ -293,6 +303,96 @@ public final class SubstraitSqlUtils
         return Expression.newBuilder()
                 .setLiteral(Expression.Literal.newBuilder().setString(folded.toString()).setNullable(literal.getNullable()))
                 .build();
+    }
+
+    private static final class DateTimeLiteralSubstraitToCalcite extends SubstraitToCalcite
+    {
+        DateTimeLiteralSubstraitToCalcite(final SimpleExtension.ExtensionCollection extensions, final RelDataTypeFactory typeFactory)
+        {
+            super(extensions, typeFactory);
+        }
+
+        @Override
+        protected SubstraitRelNodeConverter createSubstraitRelNodeConverter(final RelBuilder relBuilder)
+        {
+            final ScalarFunctionConverter scalarFunctionConverter = new ScalarFunctionConverter(extensions.scalarFunctions(), typeFactory);
+            final WindowFunctionConverter windowFunctionConverter = new WindowFunctionConverter(extensions.windowFunctions(), typeFactory);
+            return new SubstraitRelNodeConverter(typeFactory, relBuilder, scalarFunctionConverter,
+                    new AggregateFunctionConverter(extensions.aggregateFunctions(), typeFactory), windowFunctionConverter, typeConverter,
+                    new DateTimeLiteralRexConverter(typeFactory, scalarFunctionConverter, windowFunctionConverter, typeConverter));
+        }
+    }
+
+    private static final class DateTimeLiteralRexConverter extends ExpressionRexConverter
+    {
+        DateTimeLiteralRexConverter(final RelDataTypeFactory typeFactory, final ScalarFunctionConverter scalarFunctionConverter,
+                final WindowFunctionConverter windowFunctionConverter, final TypeConverter typeConverter)
+        {
+            super(typeFactory, scalarFunctionConverter, windowFunctionConverter, typeConverter);
+        }
+
+        @Override
+        public RexNode visit(final io.substrait.expression.Expression.DateLiteral expr, final SubstraitRelNodeConverter.Context context)
+        {
+            checkYear("Date literal ", LocalDate.ofEpochDay(expr.value()));
+            return super.visit(expr, context);
+        }
+
+        @Override
+        public RexNode visit(final io.substrait.expression.Expression.TimestampLiteral expr, final SubstraitRelNodeConverter.Context context)
+        {
+            return rexBuilder.makeLiteral(timestampString(expr.value(), 6), typeConverter.toCalcite(typeFactory, expr.getType()));
+        }
+
+        @Override
+        public RexNode visit(final io.substrait.expression.Expression.TimestampTZLiteral expr, final SubstraitRelNodeConverter.Context context)
+        {
+            return rexBuilder.makeLiteral(timestampString(expr.value(), 6), typeConverter.toCalcite(typeFactory, expr.getType()));
+        }
+
+        @Override
+        public RexNode visit(final io.substrait.expression.Expression.PrecisionTimestampLiteral expr, final SubstraitRelNodeConverter.Context context)
+        {
+            return rexBuilder.makeLiteral(timestampString(expr.value(), expr.precision()), typeConverter.toCalcite(typeFactory, expr.getType()));
+        }
+
+        @Override
+        public RexNode visit(final io.substrait.expression.Expression.PrecisionTimestampTZLiteral expr, final SubstraitRelNodeConverter.Context context)
+        {
+            return rexBuilder.makeLiteral(timestampString(expr.value(), expr.precision()), typeConverter.toCalcite(typeFactory, expr.getType()));
+        }
+
+        private static TimestampString timestampString(final long value, final int precision)
+        {
+            final long unitsPerSecond;
+            switch (precision) {
+                case 0:
+                    checkYear("Timestamp literal on ", LocalDate.ofEpochDay(Math.floorDiv(value, 86_400L)));
+                    return TimestampString.fromMillisSinceEpoch(TimeUnit.SECONDS.toMillis(value));
+                case 3:
+                    unitsPerSecond = 1_000L;
+                    break;
+                case 6:
+                    unitsPerSecond = 1_000_000L;
+                    break;
+                case 9:
+                    unitsPerSecond = 1_000_000_000L;
+                    break;
+                default:
+                    throw new UnsupportedOperationException(String.format("Cannot handle PrecisionTimestamp with precision %d.", precision));
+            }
+            final long seconds = Math.floorDiv(value, unitsPerSecond);
+            final int nanos = (int) (Math.floorMod(value, unitsPerSecond) * (1_000_000_000L / unitsPerSecond));
+            checkYear("Timestamp literal on ", LocalDate.ofEpochDay(Math.floorDiv(seconds, 86_400L)));
+            return TimestampString.fromMillisSinceEpoch(seconds * 1000L).withNanos(nanos);
+        }
+
+        private static void checkYear(final String kind, final LocalDate date)
+        {
+            if (date.getYear() < 1 || date.getYear() > 9999) {
+                throw new IllegalArgumentException(kind + date + " is outside the years 0001 to 9999");
+            }
+        }
     }
 
     private static final class Utf8TypeFactory extends SqlTypeFactoryImpl

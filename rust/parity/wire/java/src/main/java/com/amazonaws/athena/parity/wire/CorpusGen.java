@@ -896,7 +896,20 @@ public final class CorpusGen
                         Pair.of("text_col", nullable(factory, factory.createSqlType(SqlTypeName.VARCHAR))),
                         Pair.of("varchar_col", nullable(factory, factory.createSqlType(SqlTypeName.VARCHAR))),
                         Pair.of("bool_col", nullable(factory, factory.createSqlType(SqlTypeName.BOOLEAN))),
-                        Pair.of("date_col", nullable(factory, factory.createSqlType(SqlTypeName.DATE)))));
+                        Pair.of("date_col", nullable(factory, factory.createSqlType(SqlTypeName.DATE))),
+                        Pair.of("ts_col", nullable(factory, factory.createSqlType(SqlTypeName.TIMESTAMP, 3)))));
+            }
+        };
+        Table calendar = new AbstractTable()
+        {
+            @Override
+            public RelDataType getRowType(RelDataTypeFactory factory)
+            {
+                return factory.createStructType(Arrays.asList(
+                        Pair.of("id", factory.createTypeWithNullability(factory.createSqlType(SqlTypeName.INTEGER), false)),
+                        Pair.of("d", nullable(factory, factory.createSqlType(SqlTypeName.DATE))),
+                        Pair.of("ts", nullable(factory, factory.createSqlType(SqlTypeName.TIMESTAMP, 3))),
+                        Pair.of("tstz", nullable(factory, factory.createSqlType(SqlTypeName.TIMESTAMP, 3)))));
             }
         };
         Table sales = new AbstractTable()
@@ -920,8 +933,17 @@ public final class CorpusGen
                 return Map.of("all_types", table, "unicode_text", table, "sales", sales);
             }
         };
+        AbstractSchema calendarSchema = new AbstractSchema()
+        {
+            @Override
+            protected Map<String, Table> getTableMap()
+            {
+                return Map.of("calendar", calendar);
+            }
+        };
         CalciteSchema root = CalciteSchema.createRootSchema(false);
         root.add("parity", schema);
+        root.add("parity_cal", calendarSchema);
         CalciteCatalogReader catalog = new CalciteCatalogReader(root, List.of("parity"),
                 new SqlTypeFactoryImpl(AnsiSqlDialect.DEFAULT.getTypeSystem()),
                 CalciteConnectionConfig.DEFAULT.set(CalciteConnectionProperty.CASE_SENSITIVE, Boolean.FALSE.toString()));
@@ -933,6 +955,41 @@ public final class CorpusGen
     {
         io.substrait.proto.Plan plan = io.substrait.proto.Plan.parseFrom(Base64.getDecoder().decode(substraitPlan(sql)));
         return Base64.getEncoder().encodeToString(replaceString(plan, from, to).toByteArray());
+    }
+
+    static String substraitPlanWithNumbers(String sql, Map<Number, Number> replacements) throws Exception
+    {
+        com.google.protobuf.Message plan = io.substrait.proto.Plan.parseFrom(Base64.getDecoder().decode(substraitPlan(sql)));
+        for (Map.Entry<Number, Number> replacement : replacements.entrySet()) {
+            plan = replaceNumber(plan, replacement.getKey(), replacement.getValue());
+        }
+        return Base64.getEncoder().encodeToString(plan.toByteArray());
+    }
+
+    private static com.google.protobuf.Message replaceNumber(com.google.protobuf.Message message, Number from, Number to)
+    {
+        com.google.protobuf.Message.Builder builder = message.toBuilder();
+        for (Map.Entry<com.google.protobuf.Descriptors.FieldDescriptor, Object> entry : message.getAllFields().entrySet()) {
+            com.google.protobuf.Descriptors.FieldDescriptor field = entry.getKey();
+            if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                if (field.isRepeated()) {
+                    List<?> values = (List<?>) entry.getValue();
+                    for (int i = 0; i < values.size(); i++) {
+                        builder.setRepeatedField(field, i, replaceNumber((com.google.protobuf.Message) values.get(i), from, to));
+                    }
+                }
+                else {
+                    builder.setField(field, replaceNumber((com.google.protobuf.Message) entry.getValue(), from, to));
+                }
+            }
+            else if (!field.isRepeated() && field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.INT && from.equals(entry.getValue())) {
+                builder.setField(field, to.intValue());
+            }
+            else if (!field.isRepeated() && field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.LONG && from.equals(entry.getValue())) {
+                builder.setField(field, to.longValue());
+            }
+        }
+        return builder.build();
     }
 
     private static com.google.protobuf.Message replaceString(com.google.protobuf.Message message, String from, String to)
@@ -1119,7 +1176,7 @@ public final class CorpusGen
     }
 
 
-    private void defineCalendar()
+    private void defineCalendar() throws Exception
     {
         TableName calendar = new TableName("parity_cal", "calendar");
         ArrowType dateDay = Types.MinorType.DATEDAY.getType();
@@ -1153,6 +1210,33 @@ public final class CorpusGen
                     Range.equal(allocator, dateDay, (int) LocalDate.of(0, 2, 29).toEpochDay()))},
             {"d_lt_cutover", "d", dateDay, List.of(Range.lessThan(allocator, dateDay, (int) LocalDate.of(1582, 10, 15).toEpochDay()))},
         };
+        long bcMicros = LocalDateTime.of(-43, 3, 15, 12, 0).toEpochSecond(java.time.ZoneOffset.UTC) * 1_000_000L;
+        long leapMicros = LocalDateTime.of(0, 2, 29, 6, 30).toEpochSecond(java.time.ZoneOffset.UTC) * 1_000_000L + 500_000L;
+        long placeholderMicros = LocalDateTime.of(1999, 1, 1, 0, 0).toEpochSecond(java.time.ZoneOffset.UTC) * 1_000_000L;
+        long placeholderMicros2 = LocalDateTime.of(1999, 1, 2, 0, 0).toEpochSecond(java.time.ZoneOffset.UTC) * 1_000_000L;
+        int placeholderDay = (int) LocalDate.of(1999, 1, 1).toEpochDay();
+        int placeholderDay2 = (int) LocalDate.of(1999, 1, 2).toEpochDay();
+        Object[][] calendarPlans = {
+            {"ts_lt", "SELECT id, ts FROM parity_cal.calendar WHERE ts < TIMESTAMP '1000-01-01 12:00:00.001'", Map.of()},
+            {"ts_eq", "SELECT id, ts FROM parity_cal.calendar WHERE ts = TIMESTAMP '1000-01-01 12:00:00'", Map.of()},
+            {"ts_bc_eq", "SELECT id, ts FROM parity_cal.calendar WHERE ts = TIMESTAMP '1999-01-01 00:00:00'", Map.of(placeholderMicros, bcMicros)},
+            {"ts_bc_range", "SELECT id, ts FROM parity_cal.calendar WHERE ts >= TIMESTAMP '1999-01-01 00:00:00' AND ts <= TIMESTAMP '1999-01-02 00:00:00'",
+                    Map.of(placeholderMicros, bcMicros, placeholderMicros2, leapMicros)},
+            {"ts_cutover_range", "SELECT id, ts FROM parity_cal.calendar WHERE ts BETWEEN TIMESTAMP '1582-10-04 00:00:00' AND TIMESTAMP '1582-10-15 00:00:00'", Map.of()},
+            {"tstz_eq", "SELECT id, tstz FROM parity_cal.calendar WHERE tstz = TIMESTAMP '1000-01-01 12:00:00'", Map.of()},
+            {"tstz_bc_fraction_eq", "SELECT id, tstz FROM parity_cal.calendar WHERE tstz = TIMESTAMP '1999-01-01 00:00:00'", Map.of(placeholderMicros, leapMicros)},
+            {"d_eq", "SELECT id, d FROM parity_cal.calendar WHERE d = DATE '1000-01-01'", Map.of()},
+            {"d_bc_in", "SELECT id, d FROM parity_cal.calendar WHERE d IN (DATE '1999-01-01', DATE '1999-01-02')",
+                    Map.of(placeholderDay, (int) LocalDate.of(-43, 3, 15).toEpochDay(), placeholderDay2, (int) LocalDate.of(0, 2, 29).toEpochDay())},
+            {"d_lt_cutover", "SELECT id, d FROM parity_cal.calendar WHERE d < DATE '1582-10-15'", Map.of()},
+        };
+        for (Object[] calendarPlan : calendarPlans) {
+            String sql = (String) calendarPlan[1];
+            @SuppressWarnings("unchecked")
+            String plan = substraitPlanWithNumbers(sql, (Map<Number, Number>) calendarPlan[2]);
+            String[] cols = sql.substring(7, sql.indexOf(" FROM")).split(", ");
+            add("x_cal", "plan_" + calendarPlan[0], 6, sql + " " + calendarPlan[2], q -> read(q, calendar, Schemas.project(schema, cols), split(q, "*", "*"), planConstraints(plan)));
+        }
         for (Object[] filter : filters) {
             String column = (String) filter[1];
             @SuppressWarnings("unchecked")
