@@ -143,9 +143,37 @@ impl From<ErrorKind> for JavaExceptionKind {
     }
 }
 
+#[derive(Debug)]
+struct CausedSubstraitError {
+    error: SubstraitError,
+    cause: FederationError,
+}
+
+impl fmt::Display for CausedSubstraitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.error, f)
+    }
+}
+
+impl Error for CausedSubstraitError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.cause)
+    }
+}
+
 impl From<SubstraitError> for FederationError {
     fn from(error: SubstraitError) -> Self {
-        FederationError::wrapped(error.kind.into(), error)
+        let kind = error.kind.into();
+        match error.cause.clone() {
+            Some(cause) => FederationError::wrapped(
+                kind,
+                CausedSubstraitError {
+                    error,
+                    cause: FederationError::from(*cause),
+                },
+            ),
+            None => FederationError::wrapped(kind, error),
+        }
     }
 }
 
@@ -165,8 +193,15 @@ mod tests {
             panic!("expected a wrapped error, got {federation:?}");
         };
         assert_eq!(*kind, JavaExceptionKind::Runtime);
-        assert_eq!(source.downcast_ref::<SubstraitError>(), Some(&error));
-        let inner = federation.source().and_then(|s| s.source());
+        assert_eq!(source.to_string(), error.to_string());
+        let inner = federation
+            .source()
+            .and_then(|s| s.source())
+            .and_then(|s| s.downcast_ref::<FederationError>());
         assert_eq!(inner.map(ToString::to_string), Some(cause.to_string()));
+        assert_eq!(
+            inner.map(FederationError::java_class_name).as_deref(),
+            Some("java.lang.IllegalArgumentException")
+        );
     }
 }
