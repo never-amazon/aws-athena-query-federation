@@ -20,8 +20,8 @@ use super::java_time::{
 };
 use super::schema_builder::SchemaBuilder;
 use super::types::{
-    arrow_type_to_string, decimal_precision_scale, get_children, minor_type_of, timestamp_timezone,
-    ArrowType, MinorType,
+    arrow_type_to_string, decimal_precision_scale, get_children, java_field_to_string,
+    minor_type_of, timestamp_timezone, with_children, ArrowType, MinorType,
 };
 use super::value::Value;
 use super::vector::{FieldReader, FieldVector};
@@ -177,6 +177,28 @@ fn number_float_value(value: &Value) -> Result<f32> {
 
 fn set_scale_half_up(value: &BigDecimal, scale: i8) -> BigDecimal {
     value.with_scale_round(i64::from(scale), RoundingMode::HalfUp)
+}
+
+fn java_vector_field(field: &Field) -> Field {
+    let data_vector_name = match field.data_type() {
+        DataType::Map(..) => Some(MAP_DATA_VECTOR_NAME),
+        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(..) => {
+            Some(LIST_DATA_VECTOR_NAME)
+        }
+        _ => None,
+    };
+    let children = get_children(field)
+        .iter()
+        .map(|child| {
+            let child = java_vector_field(child);
+            Arc::new(match data_vector_name {
+                Some(name) => child.with_name(name),
+                None => child,
+            })
+        })
+        .collect();
+    let data_type = with_children(field.data_type(), children);
+    field.clone().with_data_type(data_type)
 }
 
 impl BlockUtils {
@@ -634,7 +656,10 @@ impl BlockUtils {
     }
 
     fn invalid_map_schema(field: &Field) -> FederationError {
-        FederationError::invalid_input(format!("Invalid Arrow Map schema: {field:?}"))
+        FederationError::invalid_input(format!(
+            "Invalid Arrow Map schema: {}",
+            java_field_to_string(&java_vector_field(field))
+        ))
     }
 
     pub fn write_map(
@@ -653,9 +678,7 @@ impl BlockUtils {
             return Err(BlockUtils::invalid_map_schema(field));
         }
         let kv_field = children[0].clone();
-        if kv_field.name() != MAP_DATA_VECTOR_NAME
-            || !matches!(kv_field.data_type(), DataType::Struct(_))
-        {
+        if !matches!(kv_field.data_type(), DataType::Struct(_)) {
             return Err(BlockUtils::invalid_map_schema(field));
         }
         let kv_children = get_children(&kv_field);
