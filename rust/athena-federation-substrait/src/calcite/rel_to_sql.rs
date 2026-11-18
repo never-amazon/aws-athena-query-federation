@@ -32,11 +32,60 @@ pub enum Clause {
     Offset,
 }
 
+impl Clause {
+    const ALL: [Clause; 9] = [
+        Clause::From,
+        Clause::Where,
+        Clause::GroupBy,
+        Clause::Having,
+        Clause::Select,
+        Clause::SetOp,
+        Clause::OrderBy,
+        Clause::Fetch,
+        Clause::Offset,
+    ];
+
+    fn bit(self) -> u16 {
+        1 << self as u16
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Clauses(u16);
+
+impl Clauses {
+    fn of(list: &[Clause]) -> Clauses {
+        Clauses(list.iter().fold(0, |bits, c| bits | c.bit()))
+    }
+
+    fn contains(self, clause: Clause) -> bool {
+        self.0 & clause.bit() != 0
+    }
+
+    fn union(self, other: Clauses) -> Clauses {
+        Clauses(self.0 | other.0)
+    }
+
+    fn iter(self) -> impl Iterator<Item = Clause> {
+        Clause::ALL.into_iter().filter(move |c| self.contains(*c))
+    }
+
+    fn max(self) -> Option<Clause> {
+        self.iter().last()
+    }
+}
+
+impl From<Clause> for Clauses {
+    fn from(clause: Clause) -> Clauses {
+        Clauses(clause.bit())
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Frame {
     anon: bool,
     ignore_clauses: bool,
-    expected_clauses: Vec<Clause>,
+    expected_clauses: Clauses,
 }
 
 type Aliases = Vec<(String, RelDataType)>;
@@ -44,13 +93,13 @@ type Aliases = Vec<(String, RelDataType)>;
 #[derive(Debug, Clone)]
 pub struct SqlResult {
     node: SqlNode,
-    clauses: Vec<Clause>,
+    clauses: Clauses,
     needed_alias: Option<String>,
     needed_type: Option<RelDataType>,
     aliases: Aliases,
     anon: bool,
     ignore_clauses: bool,
-    expected_clauses: Vec<Clause>,
+    expected_clauses: Clauses,
 }
 
 #[derive(Debug, Clone)]
@@ -68,18 +117,12 @@ pub struct Context {
 }
 
 pub struct Builder {
-    clauses: Vec<Clause>,
+    clauses: Clauses,
     select: SqlSelect,
     context: Context,
     anon: bool,
     aliases: Option<Aliases>,
     need_new: bool,
-}
-
-fn sorted_unique(mut v: Vec<Clause>) -> Vec<Clause> {
-    v.sort();
-    v.dedup();
-    v
 }
 
 fn uniquify_expr(name: &str, used: &mut HashSet<String>) -> String {
@@ -317,13 +360,13 @@ impl SqlResult {
         }
     }
 
-    fn need_new_sub_query(&self, rel: &RelNode, dialect: &SqlDialect, expected: &[Clause]) -> bool {
-        let clauses = &self.clauses;
-        let Some(max_clause) = clauses.iter().max().copied() else {
+    fn need_new_sub_query(&self, rel: &RelNode, dialect: &SqlDialect, expected: Clauses) -> bool {
+        let clauses = self.clauses;
+        let Some(max_clause) = clauses.max() else {
             return false;
         };
-        for c in expected {
-            if max_clause > *c || (max_clause == *c && *c != Clause::Select) {
+        for c in expected.iter() {
+            if max_clause > c || (max_clause == c && c != Clause::Select) {
                 return true;
             }
         }
@@ -333,7 +376,7 @@ impl SqlResult {
             return true;
         }
         if let RelNode::Project { exprs, input, .. } = rel {
-            if clauses.contains(&Clause::OrderBy) && has_sort_by_ordinal(node) {
+            if clauses.contains(Clause::OrderBy) && has_sort_by_ordinal(node) {
                 return true;
             }
             if let RelNode::Aggregate {
@@ -358,9 +401,9 @@ impl SqlResult {
             ..
         } = rel
         {
-            if clauses.contains(&Clause::OrderBy)
-                || clauses.contains(&Clause::Fetch)
-                || clauses.contains(&Clause::Offset)
+            if clauses.contains(Clause::OrderBy)
+                || clauses.contains(Clause::Fetch)
+                || clauses.contains(Clause::Offset)
             {
                 return true;
             }
@@ -370,7 +413,7 @@ impl SqlResult {
             if !dialect.supports_nested_aggregations() && (has_nested_agg || has_nested_windowed) {
                 return true;
             }
-            if clauses.contains(&Clause::GroupBy) {
+            if clauses.contains(Clause::GroupBy) {
                 return !has_nested_agg || !group_set.is_empty();
             }
         }
@@ -1136,7 +1179,7 @@ impl RelToSqlConverter {
 
     pub fn visit_root(&mut self, rel: &RelNode) -> Result<SqlResult> {
         let anon = self.is_anon();
-        self.visit_input(rel, anon, false, Vec::new())
+        self.visit_input(rel, anon, false, Clauses::default())
     }
 
     fn visit_input(
@@ -1144,19 +1187,19 @@ impl RelToSqlConverter {
         rel: &RelNode,
         anon: bool,
         ignore_clauses: bool,
-        expected: Vec<Clause>,
+        expected: Clauses,
     ) -> Result<SqlResult> {
         self.stack.push(Frame {
             anon,
             ignore_clauses,
-            expected_clauses: sorted_unique(expected),
+            expected_clauses: expected,
         });
         let r = self.dispatch(rel);
         self.stack.pop();
         r
     }
 
-    fn visit_input_clauses(&mut self, rel: &RelNode, expected: Vec<Clause>) -> Result<SqlResult> {
+    fn visit_input_clauses(&mut self, rel: &RelNode, expected: Clauses) -> Result<SqlResult> {
         let anon = self.is_anon();
         self.visit_input(rel, anon, false, expected)
     }
@@ -1164,14 +1207,14 @@ impl RelToSqlConverter {
     fn make_result(
         &self,
         node: SqlNode,
-        clauses: Vec<Clause>,
+        clauses: Clauses,
         needed_alias: Option<String>,
         needed_type: Option<RelDataType>,
         aliases: Aliases,
     ) -> SqlResult {
         let (ignore_clauses, expected_clauses) = match self.stack.last() {
-            Some(f) => (f.ignore_clauses, f.expected_clauses.clone()),
-            None => (false, Vec::new()),
+            Some(f) => (f.ignore_clauses, f.expected_clauses),
+            None => (false, Clauses::default()),
         };
         SqlResult {
             node,
@@ -1188,7 +1231,7 @@ impl RelToSqlConverter {
     fn result(
         &mut self,
         node: SqlNode,
-        clauses: Vec<Clause>,
+        clauses: Clauses,
         rel_row_type: &RelDataType,
         aliases: Option<Aliases>,
     ) -> SqlResult {
@@ -1212,19 +1255,19 @@ impl RelToSqlConverter {
     }
 
     fn builder(&self, x: &SqlResult, rel: &RelNode) -> Builder {
-        let expected = x.expected_clauses.clone();
-        let clauses2: Vec<Clause> = if x.ignore_clauses {
-            Vec::new()
+        let expected = x.expected_clauses;
+        let clauses2 = if x.ignore_clauses {
+            Clauses::default()
         } else {
-            expected.clone()
+            expected
         };
-        let need_new = x.need_new_sub_query(rel, &self.dialect, &clauses2);
-        let (select, mut clause_list) = if need_new {
-            (x.sub_select(&self.dialect), Vec::new())
+        let need_new = x.need_new_sub_query(rel, &self.dialect, clauses2);
+        let (select, clause_list) = if need_new {
+            (x.sub_select(&self.dialect), Clauses::default())
         } else {
-            (x.to_select(&self.dialect), x.clauses.clone())
+            (x.to_select(&self.dialect), x.clauses)
         };
-        clause_list.extend(expected.iter().copied());
+        let clause_list = clause_list.union(expected);
         let mut new_aliases: Option<Aliases> = None;
         let context = if is_singleton_star(&select.select_list) {
             let qualified = x.aliases.len() > 1;
@@ -1290,7 +1333,7 @@ impl RelToSqlConverter {
                 row_type,
             } => {
                 let node = SqlNode::Identifier(SqlIdentifier::new(qualified_name.clone()));
-                Ok(self.result(node, vec![Clause::From], row_type, None))
+                Ok(self.result(node, Clause::From.into(), row_type, None))
             }
             RelNode::Values { row_type, tuples } => self.visit_values(row_type, tuples),
             RelNode::Filter {
@@ -1369,7 +1412,7 @@ impl RelToSqlConverter {
                 ..SqlSelect::default()
             }));
         }
-        Ok(self.result(query, vec![Clause::Select], row_type, None))
+        Ok(self.result(query, Clause::Select.into(), row_type, None))
     }
 
     fn parse_correl_table(&mut self, variables_set: &[usize], x: &SqlResult) {
@@ -1414,11 +1457,11 @@ impl RelToSqlConverter {
     ) -> Result<SqlResult> {
         let anon = self.is_anon();
         let left_result = self
-            .visit_input(left, anon, false, Vec::new())?
+            .visit_input(left, anon, false, Clauses::default())?
             .reset_alias();
         let anon = self.is_anon();
         let right_result = self
-            .visit_input(right, anon, false, Vec::new())?
+            .visit_input(right, anon, false, Clauses::default())?
             .reset_alias();
         let mut aliases = left_result.aliases.clone();
         aliases.extend(right_result.aliases.iter().cloned());
@@ -1459,7 +1502,7 @@ impl RelToSqlConverter {
         let mut operands = vec![left_result.to_from(), right_result.to_from()];
         operands.extend(sql_condition);
         let join = SqlNode::call(op, operands);
-        Ok(self.make_result(join, vec![Clause::From], None, None, aliases))
+        Ok(self.make_result(join, Clause::From.into(), None, None, aliases))
     }
 
     fn visit_set_op(
@@ -1480,7 +1523,7 @@ impl RelToSqlConverter {
         let mut node: Option<SqlNode> = None;
         for input in inputs {
             let anon = self.is_anon();
-            let result = self.visit_input(input, anon, false, Vec::new())?;
+            let result = self.visit_input(input, anon, false, Clauses::default())?;
             let select = SqlNode::Select(Box::new(result.to_select(&self.dialect)));
             node = Some(match node {
                 None => select,
@@ -1491,7 +1534,7 @@ impl RelToSqlConverter {
             SubstraitError::IllegalState("set op must have at least one input".into())
         })?;
         let row_type = rel.row_type().clone();
-        Ok(self.result(node, vec![Clause::SetOp], &row_type, None))
+        Ok(self.result(node, Clause::SetOp.into(), &row_type, None))
     }
 
     fn visit_filter(
@@ -1507,7 +1550,7 @@ impl RelToSqlConverter {
         {
             let ignore = agg_input.is_project();
             let anon = self.is_anon();
-            let x = self.visit_input(input, anon, ignore, vec![Clause::Having])?;
+            let x = self.visit_input(input, anon, ignore, Clause::Having.into())?;
             self.parse_correl_table(variables_set, &x);
             let mut builder = self.builder(&x, rel);
             self.prepare_sub_queries(&mut builder.context, condition)?;
@@ -1523,7 +1566,7 @@ impl RelToSqlConverter {
             }
             return Ok(self.builder_result(builder, rel));
         }
-        let mut x = self.visit_input_clauses(input, vec![Clause::Where])?;
+        let mut x = self.visit_input_clauses(input, Clause::Where.into())?;
         if matches!(
             condition.kind(),
             SqlKind::Not | SqlKind::Exists | SqlKind::In
@@ -1546,9 +1589,9 @@ impl RelToSqlConverter {
         row_type: &RelDataType,
     ) -> Result<SqlResult> {
         let x = if input.is_sort() {
-            self.visit_input_clauses(input, Vec::new())?
+            self.visit_input_clauses(input, Clauses::default())?
         } else {
-            self.visit_input_clauses(input, vec![Clause::Select])?
+            self.visit_input_clauses(input, Clause::Select.into())?
         };
         let mut builder = self.builder(&x, rel);
         if !is_star(exprs, input.row_type(), row_type) {
@@ -1596,7 +1639,7 @@ impl RelToSqlConverter {
     ) -> Result<SqlResult> {
         let ignore = input.is_project();
         let anon = self.is_anon();
-        let x = self.visit_input(input, anon, ignore, vec![Clause::GroupBy])?;
+        let x = self.visit_input(input, anon, ignore, Clause::GroupBy.into())?;
         let mut builder = self.builder(&x, rel);
         let mut select_list = Vec::new();
         let mut group_keys = Vec::new();
@@ -1661,8 +1704,10 @@ impl RelToSqlConverter {
         offset: Option<&RexNode>,
         fetch: Option<&RexNode>,
     ) -> Result<SqlResult> {
-        let x =
-            self.visit_input_clauses(input, vec![Clause::OrderBy, Clause::Offset, Clause::Fetch])?;
+        let x = self.visit_input_clauses(
+            input,
+            Clauses::of(&[Clause::OrderBy, Clause::Offset, Clause::Fetch]),
+        )?;
         let mut builder = self.builder(&x, rel);
         if self.stack.len() != 1 && is_singleton_star(&builder.select.select_list) {
             let mut list = Vec::new();
