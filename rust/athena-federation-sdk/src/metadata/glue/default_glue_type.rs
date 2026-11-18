@@ -11,6 +11,8 @@ const NON_COMPARABLE_SET: [&str; 1] = ["TIMESTAMPMILLITZ"];
 const DEFAULT_DECIMAL_PRECISION: u8 = 38;
 const DEFAULT_DECIMAL_SCALE: i8 = 18;
 const DEFAULT_DECIMAL_BIT_WIDTH: i32 = 128;
+const DECIMAL_128_MAX_PRECISION: i32 = 38;
+const DECIMAL_256_MAX_PRECISION: i32 = 76;
 
 static DECIMAL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^decimal([(](([0-9]+,?){2,3})[)])?$").expect("valid decimal pattern")
@@ -97,24 +99,25 @@ fn decimal_arrow_type(id: &str) -> Result<Option<ArrowType>> {
         [precision, scale, bit_width] => (*precision, *scale, *bit_width),
         _ => return Ok(None),
     };
-    let constructor: fn(u8, i8) -> DataType = match bit_width {
-        32 => DataType::Decimal32,
-        64 => DataType::Decimal64,
-        128 => DataType::Decimal128,
-        256 => DataType::Decimal256,
+    let (constructor, max_precision): (fn(u8, i8) -> DataType, i32) = match bit_width {
+        128 => (DataType::Decimal128, DECIMAL_128_MAX_PRECISION),
+        256 => (DataType::Decimal256, DECIMAL_256_MAX_PRECISION),
         _ => {
             return Err(FederationError::IllegalArgument(
                 "Library only supports 128-bit and 256-bit decimal values".into(),
             ))
         }
     };
-    let unsupported = || {
-        FederationError::invalid_input(format!(
-            "Unsupported decimal type {id}: arrow-rs supports precision up to 255 and scale up to 127"
+    let invalid = || {
+        FederationError::IllegalArgument(format!(
+            "Invalid decimal type {id}: a {bit_width}-bit decimal needs a precision from 1 to {max_precision} and a scale no larger than the precision"
         ))
     };
-    let precision = u8::try_from(precision).map_err(|_| unsupported())?;
-    let scale = i8::try_from(scale).map_err(|_| unsupported())?;
+    if !(1..=max_precision).contains(&precision) || scale > precision {
+        return Err(invalid());
+    }
+    let precision = u8::try_from(precision).map_err(|_| invalid())?;
+    let scale = i8::try_from(scale).map_err(|_| invalid())?;
     Ok(Some(constructor(precision, scale)))
 }
 

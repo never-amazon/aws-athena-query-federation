@@ -228,13 +228,11 @@ fn basic_lex_decimal_test() {
         "testField1: Decimal(13, 7, 128)",
         java_field_to_string(&field1)
     );
-    let field2 = lex("testField2", "DECIMAL(13,7,32)");
+    let field2 = lex("testField2", "DECIMAL(13,7,256)");
     assert_eq!(
-        "testField2: Decimal(13, 7, 32)",
+        "testField2: Decimal(13, 7, 256)",
         java_field_to_string(&field2)
     );
-    let err = GlueFieldLexer::lex("testField2", "DECIMAL(13,7,8)").unwrap_err();
-    assert_unsupported_decimal_width(&err);
     let field3 = lex("testField3", "DECIMAL");
     assert_eq!(
         "testField3: Decimal(38, 18, 128)",
@@ -247,22 +245,20 @@ fn lex_extra_inner_closing_fields_decimals_test() {
     let input = concat!(
         "struct<",
         "somearrfield0:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>,",
-        "mapinner0:struct<numberset_deep:set<decimal(23,3,32)>>,",
+        "mapinner0:struct<numberset_deep:set<decimal(23,3,256)>>,",
         "somearrfield1:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>,",
-        "mapinner1:struct<numberset_deep:set<decimal(23,3,64)>>,",
+        "mapinner1:struct<numberset_deep:set<decimal(23,3,128)>>,",
         "somearrfield2:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>,",
         "mapinner2:struct<numberset_deep:set<decimal(23,3,256)>>>"
     );
     let field = lex("testAsdf2", input);
     let expected_field_to_string = concat!(
         "testAsdf2: ",
-        "Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 32)>>, ",
-        "somearrfield1: List<somearrfield1: List<somearrfield1: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner1: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>, ",
+        "Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>, ",
+        "somearrfield1: List<somearrfield1: List<somearrfield1: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner1: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 128)>>, ",
         "somearrfield2: List<somearrfield2: List<somearrfield2: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner2: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>>"
     );
     assert_eq!(expected_field_to_string, java_field_to_string(&field));
-    let java_widths = "struct<mapinner0:struct<numberset_deep:set<decimal(23,3,8)>>>";
-    assert_unsupported_decimal_width(&GlueFieldLexer::lex("testAsdf2", java_widths).unwrap_err());
 }
 
 fn assert_unsupported_decimal_width(err: &FederationError) {
@@ -285,16 +281,13 @@ fn lex_map_test() {
     let inner_struct = concat!(
         "struct<",
         "somearrfield0:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>,",
-        "mapinner0:struct<numberset_deep:set<decimal(23,3,64)>>",
+        "mapinner0:struct<numberset_deep:set<decimal(23,3,256)>>",
         ">"
     );
     let input2 = format!("map<{inner_struct}, map<string, {inner_struct}>>");
     let field2 = lex("SomeMap2", &input2);
-    let expected_field_to_string2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 64)>>>> not null>> not null>";
+    let expected_field_to_string2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>>> not null>> not null>";
     assert_eq!(expected_field_to_string2, java_field_to_string(&field2));
-
-    let java_input2 = input2.replace("decimal(23,3,64)", "decimal(23,3,8)");
-    assert_unsupported_decimal_width(&GlueFieldLexer::lex("SomeMap2", &java_input2).unwrap_err());
 }
 
 #[test]
@@ -316,21 +309,38 @@ fn lex_map_without_value_type_reports_java_null_pointer() {
 }
 
 #[test]
-fn lex_decimal_widths_java_accepts_and_arrow_rs_cannot_hold() {
-    for input in ["decimal(10,2,3)", "decimal(10,2,8)", "decimal(300,2,8)"] {
+fn lex_decimal_rejects_types_arrow_cannot_read() {
+    for input in [
+        "decimal(10,2,3)",
+        "decimal(10,2,8)",
+        "decimal(10,2,32)",
+        "decimal(10,2,64)",
+        "decimal(300,2,8)",
+    ] {
         assert_unsupported_decimal_width(&GlueFieldLexer::lex("col", input).unwrap_err());
     }
-    for input in ["decimal(300,2)", "decimal(10,200)"] {
+    for (input, bit_width, max_precision) in [
+        ("decimal(0,0)", 128, 38),
+        ("decimal(39,2)", 128, 38),
+        ("decimal(300,2)", 128, 38),
+        ("decimal(10,200)", 128, 38),
+        ("decimal(77,2,256)", 256, 76),
+    ] {
         let err = GlueFieldLexer::lex("col", input).unwrap_err();
+        assert_eq!("java.lang.IllegalArgumentException", err.java_class_name());
         assert_eq!(
             format!(
-                "Unsupported decimal type {input}: arrow-rs supports precision up to 255 and scale up to 127"
+                "Invalid decimal type {input}: a {bit_width}-bit decimal needs a precision from 1 to {max_precision} and a scale no larger than the precision"
             ),
             err.to_string()
         );
     }
     assert_eq!(
-        "col: Decimal(255, 127, 128)",
-        java_field_to_string(&lex("col", "decimal(255,127)"))
+        "col: Decimal(38, 38, 128)",
+        java_field_to_string(&lex("col", "decimal(38,38)"))
+    );
+    assert_eq!(
+        "col: Decimal(76, 0, 256)",
+        java_field_to_string(&lex("col", "decimal(76,0,256)"))
     );
 }

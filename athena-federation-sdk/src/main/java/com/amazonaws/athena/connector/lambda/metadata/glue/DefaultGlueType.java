@@ -63,6 +63,11 @@ public class DefaultGlueType
                 org.apache.arrow.vector.types.TimeUnit.MILLISECOND, ZoneId.systemDefault().getId()))
         .build();
 
+    private static final int DECIMAL_128_BIT_WIDTH = 128;
+    private static final int DECIMAL_256_BIT_WIDTH = 256;
+    private static final int DECIMAL_128_MAX_PRECISION = 38;
+    private static final int DECIMAL_256_MAX_PRECISION = 76;
+
     // decimal match examples:
     // decimal
     // decimal(1,2)
@@ -88,10 +93,10 @@ public class DefaultGlueType
             int[] params = Arrays.stream(decimalMatcher.group(2).split(","))
                     .mapToInt(Integer::parseInt).toArray();
             if (params.length == 2) {
-                return new ArrowType.Decimal(params[0], params[1]);
+                return checkedDecimal(in, params[0], params[1], DECIMAL_128_BIT_WIDTH);
             }
             // else this must be 3 because of the regex
-            return new ArrowType.Decimal(params[0], params[1], params[2]);
+            return checkedDecimal(in, params[0], params[1], params[2]);
         }
         catch (java.lang.NullPointerException e) {
             // This is the case where it is only "decimal" with no parameters
@@ -102,6 +107,20 @@ public class DefaultGlueType
             // 3 for some reason...
             return new ArrowType.Decimal(38, 18);
         }
+    }
+
+    private static ArrowType checkedDecimal(String in, int precision, int scale, int bitWidth)
+    {
+        if (bitWidth != DECIMAL_128_BIT_WIDTH && bitWidth != DECIMAL_256_BIT_WIDTH) {
+            throw new IllegalArgumentException("Library only supports 128-bit and 256-bit decimal values");
+        }
+        int maxPrecision = bitWidth == DECIMAL_128_BIT_WIDTH ? DECIMAL_128_MAX_PRECISION : DECIMAL_256_MAX_PRECISION;
+        if (precision < 1 || precision > maxPrecision || scale > precision) {
+            throw new IllegalArgumentException(String.format(
+                    "Invalid decimal type %s: a %d-bit decimal needs a precision from 1 to %d and a scale no larger than the precision",
+                    in, bitWidth, maxPrecision));
+        }
+        return new ArrowType.Decimal(precision, scale, bitWidth);
     }
 
     public static ArrowType fromId(String id)
