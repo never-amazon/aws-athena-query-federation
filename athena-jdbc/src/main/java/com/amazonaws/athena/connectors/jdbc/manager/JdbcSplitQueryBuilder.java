@@ -65,6 +65,8 @@ import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -245,11 +247,11 @@ public abstract class JdbcSplitQueryBuilder
                     int offset = aDefault.getOffset(utcMillis);
                     utcMillis -= offset;
 
-                    statement.setDate(i + 1, new Date(utcMillis));
+                    bindDate(statement, i + 1, utcDate(((Number) typeAndValue.getValue()).longValue()), new Date(utcMillis));
                     break;
                 case DATEMILLI:
                     LocalDateTime timestamp = ((LocalDateTime) typeAndValue.getValue());
-                    statement.setTimestamp(i + 1, new Timestamp(timestamp.toInstant(ZoneOffset.UTC).toEpochMilli()));
+                    bindTimestamp(statement, i + 1, timestamp, new Timestamp(timestamp.toInstant(ZoneOffset.UTC).toEpochMilli()));
                     break;
                 case VARCHAR:
                     statement.setString(i + 1, String.valueOf(typeAndValue.getValue()));
@@ -568,6 +570,21 @@ public abstract class JdbcSplitQueryBuilder
         }
     }
 
+    private static LocalDate utcDate(long epochDay)
+    {
+        return LocalDate.ofInstant(Instant.ofEpochMilli(TimeUnit.DAYS.toMillis(epochDay)), ZoneOffset.UTC);
+    }
+
+    protected void bindDate(PreparedStatement statement, int index, LocalDate date, Date driverDate) throws SQLException
+    {
+        statement.setDate(index, driverDate);
+    }
+
+    protected void bindTimestamp(PreparedStatement statement, int index, LocalDateTime timestamp, Timestamp driverTimestamp) throws SQLException
+    {
+        statement.setTimestamp(index, driverTimestamp);
+    }
+
     private PreparedStatement handleDataTypesForPreparedStatement(PreparedStatement statement,
             List<SubstraitTypeAndValue> accumulator) throws SQLException
     {
@@ -613,14 +630,15 @@ public abstract class JdbcSplitQueryBuilder
                         long utcMillis = numericValue * 24L * 60L * 60L * 1000L; // days → ms
                         int offsetVal = TimeZone.getDefault().getOffset(utcMillis);
                         utcMillis -= offsetVal;
-                        statement.setDate(i + 1, new Date(utcMillis));
+                        bindDate(statement, i + 1, utcDate(numericValue), new Date(utcMillis));
                     }
                     else if (typeAndValue.getValue() instanceof DateString) {
-                        statement.setDate(i + 1, Date.valueOf(typeAndValue.getValue().toString()));
+                        Date date = Date.valueOf(typeAndValue.getValue().toString());
+                        bindDate(statement, i + 1, date.toLocalDate(), date);
                     }
                     else if (typeAndValue.getValue() instanceof TimestampString) {
-                        statement.setTimestamp(i + 1,
-                                Timestamp.valueOf(typeAndValue.getValue().toString()));
+                        Timestamp timestamp = Timestamp.valueOf(typeAndValue.getValue().toString());
+                        bindTimestamp(statement, i + 1, timestamp.toLocalDateTime(), timestamp);
                     }
                     else if (typeAndValue.getValue() instanceof Date) {
                         statement.setDate(i + 1, (Date) typeAndValue.getValue());
@@ -631,8 +649,8 @@ public abstract class JdbcSplitQueryBuilder
                     else {
                         // Try to parse as string as a fallback
                         try {
-                            String dateStr = typeAndValue.getValue().toString();
-                            statement.setDate(i + 1, Date.valueOf(dateStr));
+                            Date date = Date.valueOf(typeAndValue.getValue().toString());
+                            bindDate(statement, i + 1, date.toLocalDate(), date);
                         }
                         catch (Exception e) {
                             throw new AthenaConnectorException(
@@ -649,12 +667,12 @@ public abstract class JdbcSplitQueryBuilder
                     break;
                 case TIMESTAMP:
                     if (typeAndValue.getValue() instanceof TimestampString) {
-                        statement.setTimestamp(i + 1,
-                                Timestamp.valueOf(typeAndValue.getValue().toString()));
+                        Timestamp timestamp = Timestamp.valueOf(typeAndValue.getValue().toString());
+                        bindTimestamp(statement, i + 1, timestamp.toLocalDateTime(), timestamp);
                     }
                     else if (typeAndValue.getValue() instanceof Number) {
                         long millis = ((Number) typeAndValue.getValue()).longValue();
-                        statement.setTimestamp(i + 1, new Timestamp(millis));
+                        bindTimestamp(statement, i + 1, LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneOffset.UTC), new Timestamp(millis));
                     }
                     else {
                         throw new AthenaConnectorException(

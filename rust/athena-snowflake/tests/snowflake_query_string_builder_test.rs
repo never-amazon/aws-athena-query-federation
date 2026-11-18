@@ -624,3 +624,63 @@ fn test_expand_sql_keeps_question_marks_inside_literals_and_identifiers() {
         query_builder().expand_sql(sql, &values).unwrap()
     );
 }
+
+#[tokio::test]
+async fn bind_timestamp_and_date_send_exact_epoch_values_through_the_driver() {
+    let allocator = BlockAllocatorImpl::new();
+    let connection = FakeConnection::new();
+    let schema = Schema::new(vec![
+        Field::new("ts", DataType::Date64, true),
+        Field::new("d", DataType::Date32, true),
+    ]);
+    let timestamp = chrono::NaiveDate::from_ymd_opt(1582, 9, 29)
+        .unwrap()
+        .and_hms_milli_opt(6, 2, 56, 643)
+        .unwrap();
+    let date = chrono::NaiveDate::from_ymd_opt(-43, 3, 15).unwrap();
+    let epoch_day = date
+        .signed_duration_since(chrono::NaiveDate::default())
+        .num_days();
+    let summary = IndexMap::from([
+        (
+            "ts".to_string(),
+            ValueSet::from(
+                SortedRangeSet::copy_of(
+                    &DataType::Date64,
+                    [Range::equal(
+                        &allocator,
+                        &DataType::Date64,
+                        Value::LocalDateTime(timestamp),
+                    )
+                    .unwrap()],
+                    false,
+                )
+                .unwrap(),
+            ),
+        ),
+        (
+            "d".to_string(),
+            ValueSet::from(
+                SortedRangeSet::copy_of(
+                    &DataType::Date32,
+                    [Range::equal(
+                        &allocator,
+                        &DataType::Date32,
+                        i32::try_from(epoch_day).unwrap(),
+                    )
+                    .unwrap()],
+                    false,
+                )
+                .unwrap(),
+            ),
+        ),
+    ]);
+    let constraints = constraints(summary, Vec::new(), -1);
+
+    let statement = build(&connection, &schema, &constraints, &empty_split()).await;
+
+    assert_eq!(
+        statement.parameters(),
+        &[SqlValue::Timestamp(timestamp), SqlValue::Date(date)]
+    );
+}

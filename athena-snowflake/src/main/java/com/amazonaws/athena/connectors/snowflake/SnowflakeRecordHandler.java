@@ -353,7 +353,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         return result;
     }
 
-    private static long julianAdjustment(long millis)
+    static long julianAdjustment(long millis)
     {
         return ResultUtil.msDiffJulianToGregorian(new java.util.Date(millis));
     }

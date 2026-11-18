@@ -33,14 +33,21 @@ import org.apache.calcite.sql.SqlDialect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Date;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TimeZone;
+import java.util.function.LongUnaryOperator;
 import java.util.stream.Collectors;
 
 import static com.amazonaws.athena.connectors.snowflake.SnowflakeConstants.BLOCK_PARTITION_COLUMN_NAME;
@@ -59,10 +66,54 @@ public class SnowflakeQueryStringBuilder
         extends JdbcSplitQueryBuilder
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeQueryStringBuilder.class);
+    private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final long MAX_JULIAN_ADJUSTMENT_DAYS = 64;
 
     public SnowflakeQueryStringBuilder(final String quoteCharacters, final FederationExpressionParser federationExpressionParser)
     {
         super(quoteCharacters, federationExpressionParser);
+    }
+
+    @Override
+    protected void bindDate(PreparedStatement statement, int index, LocalDate date, Date driverDate) throws SQLException
+    {
+        statement.setDate(index, new Date(driverDateMillis(date.toEpochDay() * MILLIS_PER_DAY)));
+    }
+
+    @Override
+    protected void bindTimestamp(PreparedStatement statement, int index, LocalDateTime timestamp, Timestamp driverTimestamp) throws SQLException
+    {
+        statement.setTimestamp(index, driverTimestamp(timestamp));
+    }
+
+    @VisibleForTesting
+    static long driverDateMillis(long epochMillis)
+    {
+        return solveDriverMillis(epochMillis, epochMillis - TimeZone.getDefault().getOffset(epochMillis),
+                millis -> millis + TimeZone.getDefault().getOffset(millis) - SnowflakeRecordHandler.julianAdjustment(millis));
+    }
+
+    @VisibleForTesting
+    static Timestamp driverTimestamp(LocalDateTime value)
+    {
+        long seconds = value.toEpochSecond(ZoneOffset.UTC);
+        long millisOfSecond = value.getNano() / 1_000_000;
+        long bound = (seconds < 0 && millisOfSecond > 0 ? seconds - 1 : seconds) * 1000 + millisOfSecond;
+        Timestamp timestamp = new Timestamp(solveDriverMillis(bound, bound, millis -> millis - SnowflakeRecordHandler.julianAdjustment(millis)));
+        timestamp.setNanos(value.getNano());
+        return timestamp;
+    }
+
+    private static long solveDriverMillis(long target, long start, LongUnaryOperator driverBinding)
+    {
+        for (long day = 0; day <= MAX_JULIAN_ADJUSTMENT_DAYS; day++) {
+            for (long candidate : new long[] {start + day * MILLIS_PER_DAY, start - day * MILLIS_PER_DAY}) {
+                if (driverBinding.applyAsLong(candidate) == target) {
+                    return candidate;
+                }
+            }
+        }
+        return start;
     }
 
     @Override

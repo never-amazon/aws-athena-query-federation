@@ -4,6 +4,7 @@ use std::str::FromStr;
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
 use athena_jdbc::sql::SqlValue;
 use bigdecimal::BigDecimal;
+use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
     java_sql_date_local_date, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
@@ -413,6 +414,15 @@ fn hex_bytes(bytes: &[u8]) -> String {
     out
 }
 
+fn java_time_text(date: NaiveDate, time: &str) -> String {
+    let (year, era) = if date.year() > 0 {
+        (date.year(), "")
+    } else {
+        (1 - date.year(), " BC")
+    };
+    format!("{year:04}-{:02}-{:02}{time}{era}", date.month(), date.day())
+}
+
 pub(crate) fn encode_parameter(
     value: &SqlValue,
     string_unspecified: bool,
@@ -435,9 +445,15 @@ pub(crate) fn encode_parameter(
             Some(s.clone()),
         ),
         SqlValue::Bytes(b) => (oid::BYTEA, Some(hex_bytes(b))),
-        SqlValue::Date(d) => (0, Some(format!("{} +00", d.format("%Y-%m-%d")))),
+        SqlValue::Date(d) => (oid::DATE, Some(java_time_text(*d, ""))),
         SqlValue::Time(t) => (0, Some(t.format("%H:%M:%S%.f").to_string())),
-        SqlValue::Timestamp(ts) => (0, Some(format!("{}+00", ts.format(TIMESTAMP_FORMAT)))),
+        SqlValue::Timestamp(ts) => (
+            oid::TIMESTAMP,
+            Some(java_time_text(
+                ts.date(),
+                &ts.format(" %H:%M:%S%.f").to_string(),
+            )),
+        ),
         SqlValue::TimestampTz(ts) => (
             0,
             Some(format!("{}+00", ts.naive_utc().format(TIMESTAMP_FORMAT))),
@@ -560,13 +576,43 @@ mod tests {
                 &SqlValue::Date(NaiveDate::from_ymd_opt(2020, 1, 2).unwrap()),
                 false
             ),
-            (0, Some("2020-01-02 +00".to_string()))
+            (oid::DATE, Some("2020-01-02".to_string()))
         );
         assert_eq!(
             encode_parameter(&SqlValue::Boolean(true), false),
             (oid::BOOL, Some("TRUE".to_string()))
         );
         assert_eq!(Types::ARRAY, cache().sql_type(1007));
+    }
+
+    #[test]
+    fn date_and_timestamp_parameters_bind_like_pgjdbc_set_object() {
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(
+            encode_parameter(&SqlValue::Date(date(-43, 3, 15)), false),
+            (oid::DATE, Some("0044-03-15 BC".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(&SqlValue::Date(date(0, 2, 29)), false),
+            (oid::DATE, Some("0001-02-29 BC".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(
+                &SqlValue::Timestamp(date(1000, 1, 1).and_hms_opt(12, 0, 0).unwrap()),
+                false
+            ),
+            (oid::TIMESTAMP, Some("1000-01-01 12:00:00".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(
+                &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
+                false
+            ),
+            (
+                oid::TIMESTAMP,
+                Some("0044-03-15 12:00:00.500 BC".to_string())
+            )
+        );
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {

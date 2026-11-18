@@ -28,8 +28,12 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.sql.SqlDialect;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -79,6 +83,18 @@ public class PostGreSqlQueryStringBuilder
                 .filter(Objects::nonNull)
                 .collect(Collectors.joining(", "));
         return prepareStatementWithSql(jdbcConnection, catalog, schema, table, tableSchema, constraints, split, columnNames);
+    }
+
+    @Override
+    protected void bindDate(PreparedStatement statement, int index, LocalDate date, Date driverDate) throws SQLException
+    {
+        statement.setObject(index, date);
+    }
+
+    @Override
+    protected void bindTimestamp(PreparedStatement statement, int index, LocalDateTime timestamp, Timestamp driverTimestamp) throws SQLException
+    {
+        statement.setObject(index, timestamp);
     }
 
     @Override

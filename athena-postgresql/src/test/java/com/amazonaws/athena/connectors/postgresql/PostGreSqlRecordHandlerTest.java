@@ -246,10 +246,9 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         //month – 0 to 11
         //day – 1 to 31
         //Start date = 1992-1-1
-        Date expectedDate = Date.valueOf("2020-01-05");
         Assert.assertEquals(expectedPreparedStatement, preparedStatement);
         Mockito.verify(preparedStatement, Mockito.times(1))
-                .setDate(1, expectedDate);
+                .setObject(1, java.time.LocalDate.of(2020, 1, 5));
 
         logger.info("buildSplitSqlForDateTest - exit");
     }
@@ -684,8 +683,8 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Assert.assertEquals(expectedPreparedStatement, preparedStatement);
 
         // Verify complex parameter setting
-        Mockito.verify(preparedStatement, Mockito.times(1)).setDate(1, Date.valueOf("2022-12-31"));
-        Mockito.verify(preparedStatement, Mockito.times(1)).setDate(2, Date.valueOf("2023-12-30"));
+        Mockito.verify(preparedStatement, Mockito.times(1)).setObject(1, java.time.LocalDate.of(2022, 12, 31));
+        Mockito.verify(preparedStatement, Mockito.times(1)).setObject(2, java.time.LocalDate.of(2023, 12, 30));
         Mockito.verify(preparedStatement, Mockito.times(1)).setString(3, "A");
         Mockito.verify(preparedStatement, Mockito.times(1)).setString(4, "B");
         Mockito.verify(preparedStatement, Mockito.times(1)).setString(5, "Premium");
@@ -693,6 +692,31 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Mockito.verify(preparedStatement, Mockito.times(1)).setBigDecimal(7, BigDecimal.valueOf(100.0));
 
         logger.info("testComplexExpressionWithRangeAndInPredicates - exit");
+    }
+
+    @Test
+    public void buildSqlBindsPre1582TimestampsAndDatesAsJavaTime()
+            throws SQLException
+    {
+        SchemaBuilder schemaBuilder = createTestSchemaBuilder();
+        schemaBuilder.addField(FieldBuilder.newBuilder("ts", Types.MinorType.DATEMILLI.getType()).build());
+        schemaBuilder.addField(FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build());
+        java.time.LocalDateTime timestamp = java.time.LocalDateTime.of(1000, 1, 1, 12, 0);
+        java.time.LocalDate date = java.time.LocalDate.of(-43, 3, 15);
+        Constraints constraints = createConstraints(new ImmutableMap.Builder<String, ValueSet>()
+                .put("ts", getSingleValueSet(timestamp))
+                .put("d", getSingleValueSet(date.toEpochDay()))
+                .build());
+        PreparedStatement preparedStatement = Mockito.mock(PreparedStatement.class);
+        Mockito.when(this.connection.prepareStatement(Mockito.anyString())).thenReturn(preparedStatement);
+
+        this.postGreSqlRecordHandler.buildSplitSql(this.connection, TEST_CATALOG, new TableName(TEST_SCHEMA, TEST_TABLE), schemaBuilder.build(),
+                constraints, createMockSplit(PARTITION_SCHEMA, PARTITION_NAME));
+
+        Mockito.verify(preparedStatement).setObject(1, timestamp);
+        Mockito.verify(preparedStatement).setObject(2, date);
+        Mockito.verify(preparedStatement, Mockito.never()).setTimestamp(Mockito.anyInt(), Mockito.any(java.sql.Timestamp.class));
+        Mockito.verify(preparedStatement, Mockito.never()).setDate(Mockito.anyInt(), Mockito.any(Date.class));
     }
 
     @Test
