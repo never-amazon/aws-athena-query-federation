@@ -438,7 +438,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
             // Build S3 path and COPY INTO query
             String s3Path = String.format("%s/%s/%s/", sfS3ExportPathPrefix, queryId, UUID.randomUUID().toString());
             String snowflakeExportQuery = String.format(COPY_INTO_QUERY_TEMPLATE,
-                    s3Path, snowflakeExportSQL, snowflakeQueryStringBuilder.quote(sfIntegrationName));
+                    snowflakeQueryStringBuilder.singleQuote(s3Path), snowflakeExportSQL, snowflakeQueryStringBuilder.quote(sfIntegrationName));
             LOGGER.info("Snowflake Copy Statement: {} for queryId: {}", snowflakeExportQuery, queryId);
 
             // Get the SQL statement which was created in getPartitions
@@ -654,7 +654,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
     {
         LOGGER.debug("getPrimaryKey tableName: " + tableName);
         List<String> primaryKeys = new ArrayList<String>();
-        try (PreparedStatement preparedStatement = connection.prepareStatement(SHOW_PRIMARY_KEYS_QUERY + "\"" + tableName.getSchemaName() + "\".\"" + tableName.getTableName() + "\"");
+        try (PreparedStatement preparedStatement = connection.prepareStatement(SHOW_PRIMARY_KEYS_QUERY + quotedTableName(tableName));
              ResultSet rs = preparedStatement.executeQuery()) {
             while (rs.next()) {
                 // Concatenate multiple primary keys if they exist
@@ -662,11 +662,16 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
             }
         }
 
-        String primaryKeyString = primaryKeys.stream().map(s -> "\"" + s + "\"").collect(Collectors.joining(","));
+        String primaryKeyString = primaryKeys.stream().map(s -> snowflakeQueryStringBuilder.quote(String.valueOf(s))).collect(Collectors.joining(","));
         if (!Strings.isNullOrEmpty(primaryKeyString) && hasUniquePrimaryKey(tableName, primaryKeyString, connection)) {
             return Optional.of(primaryKeyString);
         }
         return Optional.empty();
+    }
+
+    private String quotedTableName(TableName tableName)
+    {
+        return snowflakeQueryStringBuilder.quote(tableName.getSchemaName()) + "." + snowflakeQueryStringBuilder.quote(tableName.getTableName());
     }
 
     /**
@@ -675,7 +680,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
      */
     private boolean hasUniquePrimaryKey(TableName tableName, String primaryKey, Connection connection)
     {
-        try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT " + primaryKey +  ", count(*) as COUNTS FROM " + "\"" + tableName.getSchemaName() + "\".\"" + tableName.getTableName() + "\"" + " GROUP BY " + primaryKey + " ORDER BY COUNTS DESC LIMIT 1")) {
+        try (PreparedStatement preparedStatement = connection.prepareStatement("SELECT " + primaryKey + ", count(*) as COUNTS FROM " + quotedTableName(tableName) + " GROUP BY " + primaryKey + " ORDER BY COUNTS DESC LIMIT 1")) {
             preparedStatement.setQueryTimeout(UNIQUENESS_CHECK_TIMEOUT_SECONDS);
             try (ResultSet rs = preparedStatement.executeQuery()) {
                 if (rs.next()) {
@@ -731,7 +736,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
     @VisibleForTesting
     Optional<Map<String, String>> getStorageIntegrationProperties(Connection connection, String integrationName) throws SQLException
     {
-        String checkIntegrationQuery = String.format(DESCRIBE_STORAGE_INTEGRATION_TEMPLATE, integrationName.toUpperCase());
+        String checkIntegrationQuery = String.format(DESCRIBE_STORAGE_INTEGRATION_TEMPLATE, snowflakeQueryStringBuilder.quote(integrationName.toUpperCase()));
         Map<String, String> storageIntegrationRow = new HashMap<>();
         try (Statement stmt = connection.createStatement();
              ResultSet resultSet = stmt.executeQuery(checkIntegrationQuery)) {

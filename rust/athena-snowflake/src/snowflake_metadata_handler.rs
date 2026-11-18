@@ -295,7 +295,12 @@ impl SnowflakeMetadataHandler {
         integration_name: &str,
     ) -> Result<Option<HashMap<String, String>>> {
         let check_integration_query = SnowflakeConstants::DESCRIBE_STORAGE_INTEGRATION_TEMPLATE
-            .replace("%s", &integration_name.to_uppercase());
+            .replace(
+                "%s",
+                &self
+                    .snowflake_query_string_builder
+                    .quote(&integration_name.to_uppercase()),
+            );
         let described: std::result::Result<HashMap<String, String>, SqlException> = async {
             let mut result_set = connection
                 .execute_query_with_sql(&check_integration_query)
@@ -528,7 +533,7 @@ impl SnowflakeMetadataHandler {
             let snowflake_export_query = fill_template(
                 SnowflakeConstants::COPY_INTO_QUERY_TEMPLATE,
                 &[
-                    &s3_path,
+                    &self.snowflake_query_string_builder.single_quote(&s3_path),
                     &snowflake_export_sql,
                     &self
                         .snowflake_query_string_builder
@@ -658,10 +663,9 @@ impl SnowflakeMetadataHandler {
     ) -> Result<Option<String>> {
         tracing::debug!("getPrimaryKey tableName: {}", table_name);
         let sql = format!(
-            "{}\"{}\".\"{}\"",
+            "{}{}",
             SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY,
-            table_name.schema_name(),
-            table_name.table_name()
+            self.quoted_table_name(table_name)
         );
         let statement = connection.prepare_statement(&sql).await?;
         let mut result_set = connection.execute_query(&statement).await?;
@@ -670,7 +674,7 @@ impl SnowflakeMetadataHandler {
             let key = result_set
                 .get_string(PRIMARY_KEY_COLUMN_NAME)?
                 .unwrap_or_else(|| "null".to_string());
-            primary_keys.push(format!("\"{key}\""));
+            primary_keys.push(self.snowflake_query_string_builder.quote(&key));
         }
         let primary_key_string = primary_keys.join(",");
         if !primary_key_string.is_empty()
@@ -683,6 +687,16 @@ impl SnowflakeMetadataHandler {
         Ok(None)
     }
 
+    fn quoted_table_name(&self, table_name: &TableName) -> String {
+        format!(
+            "{}.{}",
+            self.snowflake_query_string_builder
+                .quote(table_name.schema_name()),
+            self.snowflake_query_string_builder
+                .quote(table_name.table_name())
+        )
+    }
+
     async fn has_unique_primary_key(
         &self,
         table_name: &TableName,
@@ -690,9 +704,8 @@ impl SnowflakeMetadataHandler {
         connection: &dyn JdbcConnection,
     ) -> bool {
         let sql = format!(
-            "SELECT {primary_key}, count(*) as COUNTS FROM \"{}\".\"{}\" GROUP BY {primary_key} ORDER BY COUNTS DESC LIMIT 1",
-            table_name.schema_name(),
-            table_name.table_name()
+            "SELECT {primary_key}, count(*) as COUNTS FROM {} GROUP BY {primary_key} ORDER BY COUNTS DESC LIMIT 1",
+            self.quoted_table_name(table_name)
         );
         let checked: std::result::Result<bool, SqlException> = async {
             let mut statement = connection.prepare_statement(&sql).await?;

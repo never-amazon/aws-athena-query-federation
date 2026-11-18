@@ -130,7 +130,7 @@ public final class SnowflakeConstants
             "AND table_schema= ?\n" +
             "AND TABLE_NAME = ? ";
     public static final String SHOW_PRIMARY_KEYS_QUERY = "SHOW PRIMARY KEYS IN ";
-    public static final String COPY_INTO_QUERY_TEMPLATE = "COPY INTO '%s' FROM (%s) STORAGE_INTEGRATION = %s " +
+    public static final String COPY_INTO_QUERY_TEMPLATE = "COPY INTO %s FROM (%s) STORAGE_INTEGRATION = %s " +
             "HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800";
     public static final String LIST_PAGINATED_TABLES_QUERY =
             "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" " +
