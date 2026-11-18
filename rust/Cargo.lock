@@ -484,6 +484,7 @@ dependencies = [
 name = "athena-snowflake"
 version = "0.1.0"
 dependencies = [
+ "aes 0.8.4",
  "arrow",
  "async-trait",
  "athena-federation-sdk",

@@ -1870,3 +1870,40 @@ pub fn remove_nullability_cast(e: &RexNode) -> RexNode {
         _ => e.clone(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::rel_data_type::RelDataTypeSystem;
+    use super::*;
+
+    fn cast_char_literal(text: &str, precision: i32) -> Option<String> {
+        let literal = RexLiteral {
+            value: LiteralValue::Char(text.to_string()),
+            ty: RelDataType::create_sql_type_with_precision(
+                RelDataTypeSystem::Default,
+                SqlTypeName::Char,
+                1,
+            ),
+        };
+        let target = RelDataType::create_sql_type_with_precision(
+            RelDataTypeSystem::Default,
+            SqlTypeName::Char,
+            precision,
+        );
+        match fold_literal_cast(&literal, &target)? {
+            RexNode::Literal(RexLiteral {
+                value: LiteralValue::Char(folded),
+                ..
+            }) => Some(folded),
+            other => panic!("unexpected fold {other:?}"),
+        }
+    }
+
+    #[test]
+    fn char_cast_pads_astral_literals_by_utf16_length() {
+        assert_eq!(Some("😀".to_string()), cast_char_literal("😀", 2));
+        assert_eq!(Some("😀 ".to_string()), cast_char_literal("😀", 3));
+        assert_eq!(Some("😀  ".to_string()), cast_char_literal("😀", 4));
+        assert_eq!(Some("a😀 ".to_string()), cast_char_literal("a😀", 4));
+    }
+}

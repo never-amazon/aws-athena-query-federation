@@ -6,6 +6,7 @@ use bigdecimal::BigDecimal;
 use chrono::{NaiveDate, NaiveDateTime};
 use num_bigint::BigInt;
 
+use athena_federation_sdk::data::DefaultFieldResolver;
 use athena_federation_sdk::data::*;
 use athena_federation_sdk::data::{decimal, timestamp_tz};
 use athena_federation_sdk::FederationError;
@@ -280,4 +281,85 @@ fn set_value_rounds_double_into_decimal_from_its_decimal_form() {
         Value::Decimal(BigDecimal::from_str("2.68").unwrap()),
         block.get_field_vector("decimal").unwrap().get_object(0)
     );
+}
+
+fn complex_write_error(field: arrow::datatypes::Field, value: &Value) -> String {
+    let s = setup();
+    let schema = arrow::datatypes::Schema::new(vec![field]);
+    let mut block = s.allocator.create_block(Arc::new(schema));
+    let vector = block.get_field_vector_mut("c").unwrap();
+    BlockUtils::set_complex_value(vector, 0, &DefaultFieldResolver, value)
+        .unwrap_err()
+        .to_string()
+}
+
+fn nested(name: &str, data_type: DataType) -> arrow::datatypes::Field {
+    arrow::datatypes::Field::new(name, data_type, true)
+}
+
+fn list_of(child: arrow::datatypes::Field) -> DataType {
+    DataType::List(Arc::new(child))
+}
+
+fn struct_of(children: Vec<arrow::datatypes::Field>) -> DataType {
+    DataType::Struct(children.into())
+}
+
+#[test]
+fn write_errors_name_list_children_like_java_list_vectors() {
+    let bad_int = || Value::String("x".to_string());
+    let cases = [
+        (
+            nested("c", list_of(nested("", DataType::Int32))),
+            Value::List(vec![Value::List(vec![Value::Int(1), Value::Int(2)])]),
+            "Unable to write value for field $data$ using value [1, 2] with minor type INT",
+        ),
+        (
+            nested("c", list_of(nested("item", DataType::Int32))),
+            Value::List(vec![Value::List(vec![Value::Int(1), Value::Int(2)])]),
+            "Unable to write value for field $data$ using value [1, 2] with minor type INT",
+        ),
+        (
+            nested(
+                "c",
+                list_of(nested("inner", list_of(nested("leaf", DataType::Int32)))),
+            ),
+            Value::List(vec![Value::List(vec![bad_int()])]),
+            "Unable to write value for field $data$ using value x with minor type INT",
+        ),
+        (
+            nested("c", struct_of(vec![nested("a", DataType::Int32)])),
+            Value::Map(vec![(Value::String("a".to_string()), bad_int())]),
+            "Unable to write value for field a using value x with minor type INT",
+        ),
+        (
+            nested(
+                "c",
+                list_of(nested(
+                    "elem",
+                    struct_of(vec![nested("a", DataType::Int32)]),
+                )),
+            ),
+            Value::List(vec![Value::Map(vec![(
+                Value::String("a".to_string()),
+                bad_int(),
+            )])]),
+            "Unable to write value for field a using value x with minor type INT",
+        ),
+        (
+            nested(
+                "c",
+                struct_of(vec![nested("l", list_of(nested("item", DataType::Int32)))]),
+            ),
+            Value::Map(vec![(
+                Value::String("l".to_string()),
+                Value::List(vec![bad_int()]),
+            )]),
+            "Unable to write value for field $data$ using value x with minor type INT",
+        ),
+    ];
+    for (field, value, expected) in cases {
+        let label = format!("{field:?}");
+        assert_eq!(expected, complex_write_error(field, &value), "{label}");
+    }
 }

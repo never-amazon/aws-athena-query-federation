@@ -14,6 +14,7 @@ use regex::Regex;
 use rsa::pkcs8::DecodePrivateKey;
 
 use super::pbe::{PbeScheme, PrivateKeyError};
+use super::pbes2::{self, PBES2_OID};
 use crate::snowflake_constants::{is_blank, java_trim, SnowflakeConstants};
 use crate::utils::SnowflakeAuthType;
 
@@ -200,6 +201,9 @@ fn parse_pem_object(
             };
             let plaintext = match PbeScheme::from_oid(algorithm.oid) {
                 Some(scheme) => scheme.decrypt(algorithm.parameters, passphrase, ciphertext)?,
+                None if algorithm.oid == PBES2_OID => {
+                    pbes2::decrypt(algorithm.parameters, passphrase, ciphertext)?
+                }
                 None => EncryptedPrivateKeyInfo::try_from(der.as_slice())?
                     .decrypt(passphrase.as_bytes())?
                     .as_bytes()

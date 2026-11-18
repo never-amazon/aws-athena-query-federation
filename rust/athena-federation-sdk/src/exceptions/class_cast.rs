@@ -1,7 +1,7 @@
 const BOOTSTRAP: &str = "bootstrap";
 const PLATFORM: &str = "platform";
 
-const JDK_PACKAGES: [(&str, &str, &str); 41] = [
+const JDK_PACKAGES: [(&str, &str, &str); 47] = [
     ("java.lang", "java.base", BOOTSTRAP),
     ("java.lang.instrument", "java.instrument", BOOTSTRAP),
     ("java.lang.management", "java.management", BOOTSTRAP),
@@ -47,6 +47,12 @@ const JDK_PACKAGES: [(&str, &str, &str); 41] = [
     ("javax.annotation.processing", "java.compiler", PLATFORM),
     ("javax.xml", "java.xml", BOOTSTRAP),
     ("javax.xml.crypto", "java.xml.crypto", PLATFORM),
+    ("org.w3c.dom", "java.xml", BOOTSTRAP),
+    ("org.w3c.dom.css", "jdk.xml.dom", PLATFORM),
+    ("org.w3c.dom.html", "jdk.xml.dom", PLATFORM),
+    ("org.w3c.dom.stylesheets", "jdk.xml.dom", PLATFORM),
+    ("org.w3c.dom.xpath", "jdk.xml.dom", PLATFORM),
+    ("org.xml.sax", "java.xml", BOOTSTRAP),
 ];
 
 fn package_matches(package: &str, prefix: &str) -> bool {
@@ -146,6 +152,22 @@ mod tests {
         assert_eq!(
             class_cast_message("java.util.logging.Level", "java.util.logging.Logger"),
             "class java.util.logging.Level cannot be cast to class java.util.logging.Logger (java.util.logging.Level and java.util.logging.Logger are in module java.logging of loader 'bootstrap')"
+        );
+    }
+
+    #[test]
+    fn names_the_java_xml_module_for_dom_and_sax_classes() {
+        assert_eq!(
+            class_cast_message("org.xml.sax.InputSource", "java.lang.Integer"),
+            "class org.xml.sax.InputSource cannot be cast to class java.lang.Integer (org.xml.sax.InputSource is in module java.xml of loader 'bootstrap'; java.lang.Integer is in module java.base of loader 'bootstrap')"
+        );
+        assert_eq!(
+            class_cast_message("org.xml.sax.helpers.AttributesImpl", "org.w3c.dom.Node"),
+            "class org.xml.sax.helpers.AttributesImpl cannot be cast to class org.w3c.dom.Node (org.xml.sax.helpers.AttributesImpl and org.w3c.dom.Node are in module java.xml of loader 'bootstrap')"
+        );
+        assert_eq!(
+            class_cast_message("org.w3c.dom.css.CSSRule", "org.w3c.dom.ls.LSInput"),
+            "class org.w3c.dom.css.CSSRule cannot be cast to class org.w3c.dom.ls.LSInput (org.w3c.dom.css.CSSRule is in module jdk.xml.dom of loader 'platform'; org.w3c.dom.ls.LSInput is in module java.xml of loader 'bootstrap')"
         );
     }
 
