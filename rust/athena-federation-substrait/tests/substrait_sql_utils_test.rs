@@ -337,3 +337,40 @@ fn test_sql_conversion_non_latin1_string_literals() {
     )
     .ends_with("WHERE UPPER(`varchar_col`) = 'ab'"));
 }
+
+fn where_clause(sql: &str) -> &str {
+    &sql[sql.find("WHERE").expect("where clause")..]
+}
+
+#[test]
+fn test_sql_conversion_char_casts_count_code_points() {
+    let cases = [
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2)) [patched abc => a\u{1F600}b]",
+            "WHERE `varchar_col` = 'a\u{1F600}'",
+        ),
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2)) [patched abc => \u{1F600}b]",
+            "WHERE `varchar_col` = '\u{1F600}b'",
+        ),
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2)) [patched abc => a\u{1F600}b]",
+            "WHERE `varchar_col` = 'a\u{1F600}'",
+        ),
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1)) [patched ab => \u{1F600}]",
+            "WHERE `varchar_col` = '\u{1F600}'",
+        ),
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('a' AS CHAR(3)) [patched a => \u{1F600}]",
+            "WHERE `varchar_col` = '\u{1F600}  '",
+        ),
+        (
+            "SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2))",
+            "WHERE `varchar_col` = 'ab'",
+        ),
+    ];
+    for (query, expected) in cases {
+        assert_eq!(expected, where_clause(&sql(query)), "{query}");
+    }
+}

@@ -19,12 +19,16 @@
  */
 package com.amazonaws.athena.connector.substrait;
 
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.Message;
 import io.substrait.extension.SimpleExtension;
 import io.substrait.isthmus.SubstraitToCalcite;
 import io.substrait.plan.ProtoPlanConverter;
+import io.substrait.proto.Expression;
 import io.substrait.proto.Plan;
 import io.substrait.proto.ReadRel;
 import io.substrait.proto.Rel;
+import io.substrait.proto.Type;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.Project;
@@ -132,7 +136,7 @@ public final class SubstraitSqlUtils
     {
         try {
             final ProtoPlanConverter protoPlanConverter = new ProtoPlanConverter();
-            final io.substrait.plan.Plan substraitPlan = protoPlanConverter.from(protoPlan);
+            final io.substrait.plan.Plan substraitPlan = protoPlanConverter.from((Plan) foldAstralCharCasts(protoPlan));
 
             final SubstraitToCalcite substraitToCalcite = new SubstraitToCalcite(
                     SimpleExtension.loadDefaults(),
@@ -232,6 +236,63 @@ public final class SubstraitSqlUtils
                 entry.setValue(renameMapping.get(intermediate));
             }
         }
+    }
+
+    private static Message foldAstralCharCasts(final Message message)
+    {
+        Message.Builder builder = message.toBuilder();
+        for (Map.Entry<Descriptors.FieldDescriptor, Object> entry : message.getAllFields().entrySet()) {
+            Descriptors.FieldDescriptor field = entry.getKey();
+            if (field.getJavaType() != Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                continue;
+            }
+            if (field.isRepeated()) {
+                List<?> values = (List<?>) entry.getValue();
+                for (int i = 0; i < values.size(); i++) {
+                    builder.setRepeatedField(field, i, foldAstralCharCasts((Message) values.get(i)));
+                }
+            }
+            else {
+                builder.setField(field, foldAstralCharCasts((Message) entry.getValue()));
+            }
+        }
+        Message rewritten = builder.build();
+        return rewritten instanceof Expression ? foldAstralCharCast((Expression) rewritten) : rewritten;
+    }
+
+    private static Expression foldAstralCharCast(final Expression expression)
+    {
+        if (!expression.hasCast() || !expression.getCast().getInput().hasLiteral()) {
+            return expression;
+        }
+        Type type = expression.getCast().getType();
+        Expression.Literal literal = expression.getCast().getInput().getLiteral();
+        String value;
+        switch (literal.getLiteralTypeCase()) {
+            case STRING:
+                value = literal.getString();
+                break;
+            case FIXED_CHAR:
+                value = literal.getFixedChar();
+                break;
+            case VAR_CHAR:
+                value = literal.getVarChar().getValue();
+                break;
+            default:
+                return expression;
+        }
+        if (value.codePointCount(0, value.length()) == value.length() || !(type.hasVarchar() || type.hasFixedChar())) {
+            return expression;
+        }
+        int length = type.hasVarchar() ? type.getVarchar().getLength() : type.getFixedChar().getLength();
+        int codePoints = value.codePointCount(0, value.length());
+        StringBuilder folded = new StringBuilder(value.substring(0, value.offsetByCodePoints(0, Math.min(length, codePoints))));
+        if (type.hasFixedChar()) {
+            folded.append(" ".repeat(Math.max(0, length - codePoints)));
+        }
+        return Expression.newBuilder()
+                .setLiteral(Expression.Literal.newBuilder().setString(folded.toString()).setNullable(literal.getNullable()))
+                .build();
     }
 
     private static final class Utf8TypeFactory extends SqlTypeFactoryImpl

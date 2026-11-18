@@ -426,6 +426,20 @@ public class SubstraitSqlUtilsTest {
                 .endsWith("WHERE UPPER(`varchar_col`) = 'ab'"));
     }
 
+    @Test
+    void testSqlConversion_CharCastsCountCodePoints() throws SqlParseException {
+        Assertions.assertEquals("WHERE `varchar_col` = 'a\uD83D\uDE00'", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS VARCHAR(2))", "a\uD83D\uDE00b")));
+        Assertions.assertEquals("WHERE `varchar_col` = '\uD83D\uDE00b'", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS VARCHAR(2))", "\uD83D\uDE00b")));
+        Assertions.assertEquals("WHERE `varchar_col` = 'a\uD83D\uDE00'", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS CHAR(2))", "a\uD83D\uDE00b")));
+        Assertions.assertEquals("WHERE `varchar_col` = '\uD83D\uDE00'", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS CHAR(1))", "\uD83D\uDE00")));
+        Assertions.assertEquals("WHERE `varchar_col` = '\uD83D\uDE00  '", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS CHAR(3))", "\uD83D\uDE00")));
+        Assertions.assertEquals("WHERE `varchar_col` = 'ab'", whereClause(patchedSql("SELECT * FROM test_table WHERE varchar_col = CAST('UNICODE1' AS VARCHAR(2))", "abc")));
+    }
+
+    private static String whereClause(String sql) {
+        return sql.substring(sql.indexOf("WHERE"));
+    }
+
     private static String patchedSql(String query, String value) throws SqlParseException {
         return SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(encodedPlanWith(query, value), EncodedSubstraitPlanStringGenerator.DIALECT)
                 .toSqlString(EncodedSubstraitPlanStringGenerator.DIALECT).getSql();

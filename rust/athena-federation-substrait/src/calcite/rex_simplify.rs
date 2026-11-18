@@ -1781,21 +1781,16 @@ impl RexSimplify {
 }
 
 fn truncate(s: &str, precision: Option<usize>) -> String {
-    let units: Vec<u16> = s.encode_utf16().collect();
     match precision {
-        Some(precision) if units.len() > precision => {
-            char::decode_utf16(units[..precision].iter().copied())
-                .map(|unit| unit.unwrap_or(LONE_SURROGATE_REPLACEMENT))
-                .collect()
-        }
-        _ => s.to_string(),
+        Some(precision) => s.chars().take(precision).collect(),
+        None => s.to_string(),
     }
 }
 
 fn truncate_or_pad(s: &str, precision: Option<usize>) -> String {
     let mut text = truncate(s, precision);
     if let Some(precision) = precision {
-        let len = text.encode_utf16().count();
+        let len = text.chars().count();
         text.extend(std::iter::repeat_n(' ', precision.saturating_sub(len)));
     }
     text
@@ -1885,8 +1880,6 @@ pub fn remove_nullability_cast(e: &RexNode) -> RexNode {
     }
 }
 
-const LONE_SURROGATE_REPLACEMENT: char = '?';
-
 #[cfg(test)]
 mod tests {
     use super::super::rel_data_type::RelDataTypeSystem;
@@ -1916,20 +1909,40 @@ mod tests {
     }
 
     #[test]
-    fn char_cast_truncates_long_literals_by_utf16_length() {
+    fn char_cast_truncates_long_literals_by_code_points() {
         assert_eq!(Some("a".to_string()), cast_char_literal("ab", 1));
         assert_eq!(Some("hel".to_string()), cast_char_literal("hello", 3));
-        assert_eq!(Some("😀".to_string()), cast_char_literal("😀b", 2));
-        assert_eq!(Some("é".to_string()), cast_char_literal("é😀", 1));
-        assert_eq!(Some("?".to_string()), cast_char_literal("😀", 1));
-        assert_eq!(Some("a?".to_string()), cast_char_literal("a😀b", 2));
+        assert_eq!(
+            Some("\u{1F600}b".to_string()),
+            cast_char_literal("\u{1F600}b", 2)
+        );
+        assert_eq!(
+            Some("\u{e9}".to_string()),
+            cast_char_literal("\u{e9}\u{1F600}", 1)
+        );
+        assert_eq!(
+            Some("\u{1F600}".to_string()),
+            cast_char_literal("\u{1F600}x", 1)
+        );
+        assert_eq!(
+            Some("a\u{1F600}".to_string()),
+            cast_char_literal("a\u{1F600}b", 2)
+        );
     }
 
     #[test]
-    fn char_cast_pads_astral_literals_by_utf16_length() {
-        assert_eq!(Some("😀".to_string()), cast_char_literal("😀", 2));
-        assert_eq!(Some("😀 ".to_string()), cast_char_literal("😀", 3));
-        assert_eq!(Some("😀  ".to_string()), cast_char_literal("😀", 4));
-        assert_eq!(Some("a😀 ".to_string()), cast_char_literal("a😀", 4));
+    fn char_cast_pads_astral_literals_by_code_points() {
+        assert_eq!(
+            Some("\u{1F600} ".to_string()),
+            cast_char_literal("\u{1F600}", 2)
+        );
+        assert_eq!(
+            Some("\u{1F600}  ".to_string()),
+            cast_char_literal("\u{1F600}", 3)
+        );
+        assert_eq!(
+            Some("a\u{1F600}  ".to_string()),
+            cast_char_literal("a\u{1F600}", 4)
+        );
     }
 }
