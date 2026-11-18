@@ -766,6 +766,50 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
 }
 
 #[tokio::test]
+async fn make_factory_reads_array_timestamps_under_date_day_by_calendar_date() {
+    let s = set_up();
+    let timestamp = |label: NaiveDateTime, java: NaiveDateTime| {
+        SqlValue::java_timestamp(
+            SqlValue::Timestamp(java),
+            label.to_string(),
+            label.and_utc().timestamp_millis(),
+            epoch_day(label.date()),
+        )
+    };
+    let at = |y, m, d, h, mi, sec, ms| {
+        NaiveDate::from_ymd_opt(y, m, d)
+            .unwrap()
+            .and_hms_milli_opt(h, mi, sec, ms)
+            .unwrap()
+    };
+    let elements = vec![
+        timestamp(at(1000, 1, 1, 12, 0, 0, 0), at(1000, 1, 6, 12, 0, 0, 0)),
+        timestamp(
+            at(1582, 10, 4, 23, 59, 59, 999),
+            at(1582, 10, 14, 23, 59, 59, 999),
+        ),
+        SqlValue::Null,
+        SqlValue::java_date_millis(9_223_372_036_825_200_000, 106_751_991_166, "infinity"),
+        SqlValue::java_date_millis(-9_223_372_036_832_400_000, -106_749_799_148, "-infinity"),
+        timestamp(at(2020, 6, 1, 12, 0, 0, 123), at(2020, 6, 1, 12, 0, 0, 123)),
+    ];
+    let day = |y, m, d| {
+        Value::Int(i32::try_from(epoch_day(NaiveDate::from_ymd_opt(y, m, d).unwrap())).unwrap())
+    };
+    assert_eq!(
+        Value::List(vec![
+            day(1000, 1, 1),
+            day(1582, 10, 4),
+            Value::Null,
+            Value::Int(i32::MAX),
+            Value::Int(i32::MIN),
+            day(2020, 6, 1),
+        ]),
+        write_array(&s.handler, DataType::Date32, elements)
+    );
+}
+
+#[tokio::test]
 async fn make_factory_reads_array_timestamps_through_get_timestamp_millis() {
     let s = set_up();
     let timestamps = [

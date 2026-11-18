@@ -34,20 +34,23 @@ fn infinity_millis(text: &str) -> Option<i64> {
 
 fn java_timestamp(text: &str) -> Option<SqlValue> {
     if let Some(millis) = infinity_millis(text) {
-        return Some(SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION));
+        return Some(
+            SqlValue::java_date_millis(millis, java_sql_date_epoch_day(millis), text)
+                .with_exception_class(PSQL_EXCEPTION),
+        );
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
+    let epoch_day = java_sql_date_epoch_day(millis);
     Some(
         match (millis_to_naive(millis, parsed.nanos), parsed.epoch_millis()) {
             (Some(ts), Some(epoch_millis)) => {
-                SqlValue::rendered_with_epoch_millis(SqlValue::Timestamp(ts), text, epoch_millis)
+                SqlValue::java_timestamp(SqlValue::Timestamp(ts), text, epoch_millis, epoch_day)
                     .with_exception_class(PSQL_EXCEPTION)
             }
             (Some(ts), None) => rendered(SqlValue::Timestamp(ts), text.to_string()),
-            (None, _) => {
-                SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION)
-            }
+            (None, _) => SqlValue::java_date_millis(millis, epoch_day, text)
+                .with_exception_class(PSQL_EXCEPTION),
         },
     )
 }
@@ -636,6 +639,39 @@ mod tests {
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn timestamps_decode_with_the_java_sql_date_calendar_day() {
+        let day = |decoder: Decoder, text: &str| epoch_day(&decoder.decode(Some(text.as_bytes())));
+        let expected = |y, m, d| {
+            NaiveDate::from_ymd_opt(y, m, d)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days()
+        };
+        assert_eq!(
+            day(Decoder::Timestamp, "1000-01-01 12:00:00"),
+            expected(1000, 1, 1)
+        );
+        assert_eq!(
+            day(Decoder::Timestamp, "0044-03-15 12:00:00 BC"),
+            expected(-43, 3, 15)
+        );
+        assert_eq!(
+            day(Decoder::Timestamp, "1582-10-04 23:59:59.999"),
+            expected(1582, 10, 4)
+        );
+        assert_eq!(
+            day(Decoder::TimestampTz, "2020-06-01 03:00:00+05:30"),
+            expected(2020, 5, 31)
+        );
+        assert_eq!(
+            day(Decoder::TimestampTz, "1582-10-15 03:00:00+05:30"),
+            expected(1582, 10, 4)
+        );
+        assert_eq!(day(Decoder::Timestamp, "infinity"), 106_751_991_166);
+        assert_eq!(day(Decoder::TimestampTz, "-infinity"), -106_749_799_148);
     }
 
     #[test]

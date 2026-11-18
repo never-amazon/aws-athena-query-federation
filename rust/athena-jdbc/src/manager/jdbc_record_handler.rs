@@ -348,13 +348,14 @@ fn calendar_value(value: &SqlValue, minor_type: MinorType) -> Result<Value> {
                 return Ok(Value::Long(millis));
             }
         }
-        (SqlValue::Date(_), MinorType::DATEDAY | MinorType::DATEMILLI) => {
+        (_, MinorType::DATEDAY) if value.is_date_time() => {
             if let Some(day) = value.to_epoch_day()? {
-                return Ok(if minor_type == MinorType::DATEDAY {
-                    Value::Int(date_day(day))
-                } else {
-                    Value::Long(day.saturating_mul(MILLIS_PER_DAY))
-                });
+                return Ok(Value::Int(date_day(day)));
+            }
+        }
+        (SqlValue::Date(_), MinorType::DATEMILLI) => {
+            if let Some(day) = value.to_epoch_day()? {
+                return Ok(Value::Long(day.saturating_mul(MILLIS_PER_DAY)));
             }
         }
         _ => {}

@@ -433,6 +433,9 @@ public abstract class JdbcRecordHandler
         if (value instanceof Timestamp && (type == Types.MinorType.DATEMILLI || type == Types.MinorType.TIMESTAMPMILLITZ)) {
             return getTimestampMillis(resultSet, column, (Timestamp) value);
         }
+        if (value instanceof Timestamp && type == Types.MinorType.DATEDAY) {
+            return toDateDay(toLocalDate(new java.sql.Date(((Timestamp) value).getTime())));
+        }
         if (value instanceof java.sql.Date) {
             LocalDate date = toLocalDate((java.sql.Date) value);
             if (type == Types.MinorType.DATEDAY) {

@@ -115,6 +115,7 @@ import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -520,6 +521,27 @@ public class JdbcRecordHandlerTest
                 block.setRowCount(1);
                 Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
             }
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsArrayTimestampsUnderDateDayByCalendarDate() throws Exception {
+        Timestamp[] timestamps = {Timestamp.valueOf("1000-01-01 12:00:00"), Timestamp.valueOf("1582-10-04 23:59:59.999"), new Timestamp(9223372036825200000L),
+                new Timestamp(-9223372036832400000L), Timestamp.valueOf("2020-06-01 12:00:00.123")};
+        Schema schema = SchemaBuilder.newBuilder().addListField("ts_arr", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build();
+        ResultSet elements = Mockito.mock(ResultSet.class);
+        when(elements.next()).thenReturn(true, true, true, true, true, true, false);
+        when(elements.getObject(2)).thenReturn(timestamps[0], timestamps[1], null, timestamps[2], timestamps[3], timestamps[4]);
+        java.sql.Array array = Mockito.mock(java.sql.Array.class);
+        when(array.getResultSet()).thenReturn(elements);
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        when(resultSet.getArray("ts_arr")).thenReturn(array);
+        List<Object> expected = Arrays.asList((int) LocalDate.of(1000, 1, 1).toEpochDay(), (int) LocalDate.of(1582, 10, 4).toEpochDay(), null,
+                Integer.MAX_VALUE, Integer.MIN_VALUE, (int) LocalDate.of(2020, 6, 1).toEpochDay());
+        try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+            this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("ts_arr"), null, null).write(resultSet, 0);
+            block.setRowCount(1);
+            Assert.assertEquals(expected, block.getFieldVector("ts_arr").getObject(0));
         }
     }
 

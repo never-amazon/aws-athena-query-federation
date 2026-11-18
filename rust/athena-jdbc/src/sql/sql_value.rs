@@ -16,8 +16,9 @@ const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderedKind {
     Typed,
-    JavaDateMillis(i64),
+    JavaDateMillis { millis: i64, epoch_day: i64 },
     JavaSqlDate { millis: i64, epoch_day: i64 },
+    JavaTimestamp { epoch_millis: i64, epoch_day: i64 },
     EpochMillis(i64),
     InvalidElement(&'static str),
     InvalidDateTime,
@@ -152,13 +153,30 @@ impl SqlValue {
         }
     }
 
-    pub fn java_date_millis(millis: i64, text: impl Into<String>) -> SqlValue {
+    pub fn java_timestamp(
+        value: SqlValue,
+        text: impl Into<String>,
+        epoch_millis: i64,
+        epoch_day: i64,
+    ) -> SqlValue {
+        SqlValue::Rendered {
+            value: Box::new(value),
+            text: text.into(),
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::JavaTimestamp {
+                epoch_millis,
+                epoch_day,
+            },
+        }
+    }
+
+    pub fn java_date_millis(millis: i64, epoch_day: i64, text: impl Into<String>) -> SqlValue {
         let text = text.into();
         SqlValue::Rendered {
             value: Box::new(SqlValue::String(text.clone())),
             text,
             exception_class: SQL_EXCEPTION_CLASS,
-            kind: RenderedKind::JavaDateMillis(millis),
+            kind: RenderedKind::JavaDateMillis { millis, epoch_day },
         }
     }
 
@@ -219,7 +237,8 @@ impl SqlValue {
             return Err(error);
         }
         if let SqlValue::Rendered {
-            kind: RenderedKind::JavaDateMillis(millis) | RenderedKind::JavaSqlDate { millis, .. },
+            kind:
+                RenderedKind::JavaDateMillis { millis, .. } | RenderedKind::JavaSqlDate { millis, .. },
             ..
         } = self
         {
@@ -232,7 +251,12 @@ impl SqlValue {
 
     pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlException> {
         if let SqlValue::Rendered {
-            kind: RenderedKind::EpochMillis(millis),
+            kind:
+                RenderedKind::EpochMillis(millis)
+                | RenderedKind::JavaTimestamp {
+                    epoch_millis: millis,
+                    ..
+                },
             ..
         } = self
         {
@@ -407,16 +431,34 @@ impl SqlValue {
         }
     }
 
+    pub fn is_date_time(&self) -> bool {
+        match self {
+            SqlValue::Rendered {
+                kind: RenderedKind::JavaDateMillis { .. },
+                ..
+            } => true,
+            SqlValue::Rendered { value, .. } => value.is_date_time(),
+            other => matches!(
+                other,
+                SqlValue::Date(_) | SqlValue::Timestamp(_) | SqlValue::TimestampTz(_)
+            ),
+        }
+    }
+
     pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlException> {
-        let date = self.to_date()?;
         if let SqlValue::Rendered {
-            kind: RenderedKind::JavaSqlDate { epoch_day, .. },
+            kind:
+                RenderedKind::JavaSqlDate { epoch_day, .. }
+                | RenderedKind::JavaTimestamp { epoch_day, .. }
+                | RenderedKind::JavaDateMillis { epoch_day, .. },
             ..
         } = self
         {
-            return Ok(date.map(|_| *epoch_day));
+            return Ok(Some(*epoch_day));
         }
-        Ok(date.map(|date| i64::from(date.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH))
+        Ok(self
+            .to_date()?
+            .map(|date| i64::from(date.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH))
     }
 
     pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlException> {
@@ -500,7 +542,8 @@ impl SqlValue {
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
             SqlValue::Rendered {
                 kind:
-                    RenderedKind::JavaDateMillis(millis) | RenderedKind::JavaSqlDate { millis, .. },
+                    RenderedKind::JavaDateMillis { millis, .. }
+                    | RenderedKind::JavaSqlDate { millis, .. },
                 ..
             } => Value::Date(*millis),
             SqlValue::Rendered { value, text, .. } => match value.as_ref() {

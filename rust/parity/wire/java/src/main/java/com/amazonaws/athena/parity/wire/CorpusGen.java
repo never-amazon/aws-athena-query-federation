@@ -1185,6 +1185,9 @@ public final class CorpusGen
         Schema schema = SchemaBuilder.newBuilder().addField("id", Types.MinorType.INT.getType()).addField("d", dateDay).addField("ts", dateMilli)
                 .addField("tstz", dateMilli).addListField("ts_arr", dateMilli).addListField("d_arr", dateDay).addListField("tstz_arr", dateMilli).build();
         add("x_cal", "full", 6, "pre-1582, BC and cutover values in scalars and arrays", q -> read(q, calendar, schema, split(q, "*", "*"), constraints(Map.of())));
+        Schema dateDaySchema = SchemaBuilder.newBuilder().addField("id", Types.MinorType.INT.getType()).addField("ts", dateDay).addField("tstz", dateDay)
+                .addListField("ts_arr", dateDay).addListField("tstz_arr", dateDay).build();
+        add("x_cal", "timestamps_as_dateday", 6, "timestamp scalars and arrays read through DATEDAY fields", q -> read(q, calendar, dateDaySchema, split(q, "*", "*"), constraints(Map.of())));
         String[][] exports = {
             {"export", "SELECT id, d, ts, tstz FROM parity_cal.calendar ORDER BY id"},
             {"export_duplicate_labels", "SELECT a.ts, b.ts, a.d, b.d FROM parity_cal.calendar a JOIN parity_cal.calendar b ON b.id = a.id + 1 ORDER BY a.id"},
