@@ -257,11 +257,11 @@ com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federati
 com.amazonaws.athena.connector.substrait.SubstraitRelUtils	athena-federation-substrait/src/lib.rs::plan	ported	
 com.amazonaws.athena.connector.substrait.SubstraitSqlUtils	athena-federation-substrait/src/lib.rs::plan	merged	the static methods are free functions in the plan module, beside the rel lookups
 com.amazonaws.athena.connector.substrait.SubstraitTypeAndValue	athena-federation-substrait/src/substrait_type_and_value.rs::SubstraitTypeAndValue	ported	
-com.amazonaws.athena.connector.substrait.model.ColumnPredicate	athena-federation-substrait/src/model/column_predicate.rs::ColumnPredicate	ported	
-com.amazonaws.athena.connector.substrait.model.LogicalExpression	athena-federation-substrait/src/model/logical_expression.rs::LogicalExpression	ported	
+com.amazonaws.athena.connector.substrait.model.ColumnPredicate	athena-federation-substrait/src/predicate.rs::ColumnPredicate	ported	
+com.amazonaws.athena.connector.substrait.model.LogicalExpression	athena-federation-substrait/src/predicate.rs::LogicalExpression	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitField	-	not_ported	plan::table_columns returns the column names directly, so no field tree is built
 com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-federation-substrait/src/predicate.rs::function_names	ported	
-com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/model/substrait_operator.rs::SubstraitOperator	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/predicate.rs::SubstraitOperator	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	-	not_ported	the only reader, plan::table_columns, takes the ReadRel directly
 com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no Rust connector reads the limit or sort from the plan through this helper
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	

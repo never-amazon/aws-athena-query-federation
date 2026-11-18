@@ -17,7 +17,7 @@ use athena_federation_substrait::proto::{Expression, FunctionArgument};
 use athena_federation_substrait::LiteralValue;
 use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::SubstraitOperator;
-use athena_federation_substrait::{ColumnPredicate, PredicateValue};
+use athena_federation_substrait::{ColumnPredicate, LogicalExpression};
 
 fn column_names() -> Vec<String> {
     ["id", "name", "age", "active"]
@@ -127,19 +127,33 @@ fn create_logical_expression(function_ref: u32, left: Expression, right: Express
     scalar(function_ref, vec![left, right])
 }
 
-fn int_value(v: i32) -> PredicateValue {
-    PredicateValue::Literal(LiteralValue::Int(v))
+fn int_value(v: i32) -> LiteralValue {
+    LiteralValue::Int(v)
 }
 
-fn string_value(v: &str) -> PredicateValue {
-    PredicateValue::Literal(LiteralValue::String(v.to_string()))
+fn string_value(v: &str) -> LiteralValue {
+    LiteralValue::String(v.to_string())
 }
 
 fn list_len(p: &ColumnPredicate) -> usize {
-    match p.value() {
-        Some(PredicateValue::Predicates(v)) => v.len(),
-        Some(PredicateValue::Values(v)) => v.len(),
-        other => panic!("expected a list value, got {other:?}"),
+    match p {
+        ColumnPredicate::Group { children, .. } => children.len(),
+        ColumnPredicate::Values { values, .. } => values.len(),
+        other @ ColumnPredicate::Column { .. } => panic!("expected a list value, got {other:?}"),
+    }
+}
+
+fn leaf(e: &LogicalExpression) -> &ColumnPredicate {
+    match e {
+        LogicalExpression::Leaf(p) => p,
+        other @ LogicalExpression::Node { .. } => panic!("expected a leaf, got {other:?}"),
+    }
+}
+
+fn children(e: &LogicalExpression) -> &[LogicalExpression] {
+    match e {
+        LogicalExpression::Node { children, .. } => children,
+        other @ LogicalExpression::Leaf(_) => panic!("expected a node, got {other:?}"),
     }
 }
 
@@ -217,10 +231,7 @@ fn test_parse_column_predicates_with_boolean_literal() {
     assert_eq!(1, result.len());
     assert_eq!(Some("active"), result[0].column());
     assert_eq!(SubstraitOperator::Equal, result[0].operator());
-    assert_eq!(
-        Some(&PredicateValue::Literal(LiteralValue::Boolean(true))),
-        result[0].value()
-    );
+    assert_eq!(Some(&LiteralValue::Boolean(true)), result[0].value());
     assert_eq!(Some(&DataType::Boolean), result[0].arrow_type());
 }
 
@@ -304,10 +315,7 @@ fn test_not_and_operator_nand() {
     assert_eq!(1, result.len());
     assert!(result[0].column().is_none());
     assert_eq!(SubstraitOperator::Nand, result[0].operator());
-    assert!(matches!(
-        result[0].value(),
-        Some(PredicateValue::Predicates(_))
-    ));
+    assert!(matches!(result[0], ColumnPredicate::Group { .. }));
     assert_eq!(2, list_len(&result[0]));
 }
 
@@ -328,10 +336,7 @@ fn test_not_or_operator_nor() {
     assert_eq!(1, result.len());
     assert!(result[0].column().is_none());
     assert_eq!(SubstraitOperator::Nor, result[0].operator());
-    assert!(matches!(
-        result[0].value(),
-        Some(PredicateValue::Predicates(_))
-    ));
+    assert!(matches!(result[0], ColumnPredicate::Group { .. }));
     assert_eq!(2, list_len(&result[0]));
 }
 
@@ -365,14 +370,14 @@ fn test_not_in_pattern() {
 fn test_parse_logical_expression_with_single_predicate() {
     let extensions = vec![create_extension_declaration(1, "equal:any_any")];
     let expression = create_binary_expression(1, 0, 123);
-    let result = predicate::logical_expression(&extensions, Some(&expression), &column_names())
+    let result = predicate::logical_expression(&extensions, &expression, &column_names())
         .unwrap()
         .unwrap();
-    assert!(result.is_leaf());
+    assert!(matches!(result, LogicalExpression::Leaf(_)));
     assert_eq!(SubstraitOperator::Equal, result.operator());
-    let leaf = result.leaf_predicate().unwrap();
-    assert_eq!(Some("id"), leaf.column());
-    assert_eq!(Some(&int_value(123)), leaf.value());
+    let predicate = leaf(&result);
+    assert_eq!(Some("id"), predicate.column());
+    assert_eq!(Some(&int_value(123)), predicate.value());
 }
 
 #[test]
@@ -386,29 +391,23 @@ fn test_parse_logical_expression_with_and_operator() {
         create_binary_expression(1, 0, 123),
         create_binary_expression_with_string(1, 1, "test"),
     );
-    let result = predicate::logical_expression(&extensions, Some(&and_expression), &column_names())
+    let result = predicate::logical_expression(&extensions, &and_expression, &column_names())
         .unwrap()
         .unwrap();
-    assert!(!result.is_leaf());
+    assert!(matches!(result, LogicalExpression::Node { .. }));
     assert_eq!(SubstraitOperator::And, result.operator());
-    let children = result.children().unwrap();
+    let children = children(&result);
     assert_eq!(2, children.len());
     let left = &children[0];
-    assert!(left.is_leaf());
+    assert!(matches!(left, LogicalExpression::Leaf(_)));
     assert_eq!(SubstraitOperator::Equal, left.operator());
-    assert_eq!(Some("id"), left.leaf_predicate().unwrap().column());
-    assert_eq!(
-        Some(&int_value(123)),
-        left.leaf_predicate().unwrap().value()
-    );
+    assert_eq!(Some("id"), leaf(left).column());
+    assert_eq!(Some(&int_value(123)), leaf(left).value());
     let right = &children[1];
-    assert!(right.is_leaf());
+    assert!(matches!(right, LogicalExpression::Leaf(_)));
     assert_eq!(SubstraitOperator::Equal, right.operator());
-    assert_eq!(Some("name"), right.leaf_predicate().unwrap().column());
-    assert_eq!(
-        Some(&string_value("test")),
-        right.leaf_predicate().unwrap().value()
-    );
+    assert_eq!(Some("name"), leaf(right).column());
+    assert_eq!(Some(&string_value("test")), leaf(right).value());
 }
 
 #[test]
@@ -422,33 +421,34 @@ fn test_parse_logical_expression_with_or_operator() {
         create_binary_expression(1, 0, 123),
         create_binary_expression_with_string(1, 1, "test"),
     );
-    let result = predicate::logical_expression(&extensions, Some(&or_expression), &column_names())
+    let result = predicate::logical_expression(&extensions, &or_expression, &column_names())
         .unwrap()
         .unwrap();
-    assert!(!result.is_leaf());
+    assert!(matches!(result, LogicalExpression::Node { .. }));
     assert_eq!(SubstraitOperator::Or, result.operator());
-    let children = result.children().unwrap();
+    let children = children(&result);
     assert_eq!(2, children.len());
     assert!(result.has_complex_logic());
-    assert!(children[0].is_leaf());
-    assert!(children[1].is_leaf());
+    assert!(matches!(children[0], LogicalExpression::Leaf(_)));
+    assert!(matches!(children[1], LogicalExpression::Leaf(_)));
 }
 
 #[test]
 fn test_parse_logical_expression_with_unary_predicate() {
     let extensions = vec![create_extension_declaration(1, "is_null:any")];
     let expression = create_unary_expression(1, 0);
-    let result = predicate::logical_expression(&extensions, Some(&expression), &column_names())
+    let result = predicate::logical_expression(&extensions, &expression, &column_names())
         .unwrap()
         .unwrap();
-    assert!(result.is_leaf());
+    assert!(matches!(result, LogicalExpression::Leaf(_)));
     assert_eq!(SubstraitOperator::IsNull, result.operator());
-    assert_eq!(Some("id"), result.leaf_predicate().unwrap().column());
+    assert_eq!(Some("id"), leaf(&result).column());
 }
 
 #[test]
 fn test_parse_logical_expression_with_null_expression() {
-    let result = predicate::logical_expression(&[], None, &column_names()).unwrap();
+    let result =
+        predicate::logical_expression(&[], &Expression::default(), &column_names()).unwrap();
     assert!(result.is_none());
 }
 
@@ -457,7 +457,7 @@ fn test_parse_logical_expression_complex_logic_detection() {
     let equal_ext = create_extension_declaration(1, "equal:any_any");
     let extensions = vec![equal_ext.clone()];
     let expression = create_binary_expression(1, 0, 123);
-    let leaf = predicate::logical_expression(&extensions, Some(&expression), &column_names())
+    let leaf = predicate::logical_expression(&extensions, &expression, &column_names())
         .unwrap()
         .unwrap();
     assert!(!leaf.has_complex_logic());
@@ -467,10 +467,9 @@ fn test_parse_logical_expression_complex_logic_detection() {
         create_binary_expression(1, 0, 123),
         create_binary_expression_with_string(1, 1, "test"),
     );
-    let or_result =
-        predicate::logical_expression(&extensions, Some(&or_expression), &column_names())
-            .unwrap()
-            .unwrap();
+    let or_result = predicate::logical_expression(&extensions, &or_expression, &column_names())
+        .unwrap()
+        .unwrap();
     assert!(or_result.has_complex_logic());
 }
 
@@ -481,14 +480,11 @@ fn test_parse_logical_expression_with_not_operator() {
         create_extension_declaration(2, "equal:any_any"),
     ];
     let not_expression = create_not_expression(1, create_binary_expression(2, 0, 123));
-    let result = predicate::logical_expression(&extensions, Some(&not_expression), &column_names())
+    let result = predicate::logical_expression(&extensions, &not_expression, &column_names())
         .unwrap()
         .unwrap();
-    assert!(result.is_leaf());
+    assert!(matches!(result, LogicalExpression::Leaf(_)));
     assert_eq!(SubstraitOperator::NotEqual, result.operator());
-    assert_eq!(Some("id"), result.leaf_predicate().unwrap().column());
-    assert_eq!(
-        Some(&int_value(123)),
-        result.leaf_predicate().unwrap().value()
-    );
+    assert_eq!(Some("id"), leaf(&result).column());
+    assert_eq!(Some(&int_value(123)), leaf(&result).value());
 }

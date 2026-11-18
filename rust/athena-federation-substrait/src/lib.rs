@@ -24,7 +24,6 @@ mod error;
 mod isthmus;
 mod java_cast;
 pub mod literal;
-mod model;
 mod params;
 pub mod plan;
 pub mod predicate;
@@ -45,11 +44,9 @@ pub use calcite::sql_type_name::SqlTypeName;
 pub use calcite::values::{BitString, DateString, TimeString, TimestampString};
 pub use error::{Result, SubstraitError};
 pub use literal::LiteralValue;
-pub use model::column_predicate::{ColumnPredicate, PredicateValue};
-pub use model::logical_expression::LogicalExpression;
-pub use model::substrait_operator::SubstraitOperator;
 pub use params::parameterize;
 pub use plan::PLAN_PARSER_RECURSION_LIMIT;
+pub use predicate::{ColumnPredicate, LogicalExpression, SubstraitOperator};
 pub use substrait_type_and_value::{
     SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue,
 };

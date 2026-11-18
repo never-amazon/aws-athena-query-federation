@@ -100,9 +100,10 @@ fn remap_of(common: Option<&RelCommon>) -> Option<Vec<i32>> {
     }
 }
 
-fn input_of(input: Option<&Rel>) -> &Rel {
-    static DEFAULT: Rel = Rel { rel_type: None };
-    input.unwrap_or(&DEFAULT)
+fn input_of(input: Option<&Rel>) -> Result<&Rel> {
+    input.ok_or_else(|| {
+        SubstraitError::Unsupported("Unsupported RelTypeCase of RELTYPE_NOT_SET".into())
+    })
 }
 
 impl SubstraitToCalcite {
@@ -194,7 +195,7 @@ impl SubstraitToCalcite {
                 Some(crate::proto::plan_rel::RelType::Root(r)) => r.input.as_ref(),
                 _ => None,
             };
-            roots.push(converter.convert(input_of(input))?);
+            roots.push(converter.convert(input_of(input)?)?);
         }
         roots.into_iter().next().ok_or_else(|| {
             SubstraitError::IndexOutOfBounds("Index 0 out of bounds for length 0".into())
@@ -211,8 +212,8 @@ impl SubstraitToCalcite {
             Some(RelType::Project(p)) => self.project(p),
             Some(RelType::Join(j)) => self.join(j),
             Some(RelType::Cross(c)) => {
-                let left = self.convert(input_of(c.left.as_deref()))?;
-                let right = self.convert(input_of(c.right.as_deref()))?;
+                let left = self.convert(input_of(c.left.as_deref())?)?;
+                let right = self.convert(input_of(c.right.as_deref())?)?;
                 let condition = self.rex_builder.make_bool_literal(true);
                 let node = self
                     .rel_builder
@@ -316,7 +317,7 @@ impl SubstraitToCalcite {
     }
 
     fn filter(&self, f: &FilterRel) -> Result<RelNode> {
-        let input = self.convert(input_of(f.input.as_deref()))?;
+        let input = self.convert(input_of(f.input.as_deref())?)?;
         let condition = f.condition.as_deref().ok_or_else(|| {
             SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
         })?;
@@ -332,8 +333,8 @@ impl SubstraitToCalcite {
     }
 
     fn join(&self, j: &JoinRel) -> Result<RelNode> {
-        let left = self.convert(input_of(j.left.as_deref()))?;
-        let right = self.convert(input_of(j.right.as_deref()))?;
+        let left = self.convert(input_of(j.left.as_deref())?)?;
+        let right = self.convert(input_of(j.right.as_deref())?)?;
         let join_type = match ProtoJoinType::try_from(j.r#type) {
             Ok(ProtoJoinType::Inner) => JoinType::Inner,
             Ok(ProtoJoinType::Outer) => JoinType::Full,
@@ -399,7 +400,7 @@ impl SubstraitToCalcite {
     }
 
     fn project(&self, p: &ProjectRel) -> Result<RelNode> {
-        let child = self.convert(input_of(p.input.as_deref()))?;
+        let child = self.convert(input_of(p.input.as_deref())?)?;
         let row_type = expression_row_type(&child);
         let mut exprs: Vec<RexNode> = child
             .row_type()
@@ -423,7 +424,7 @@ impl SubstraitToCalcite {
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
     fn fetch(&self, f: &FetchRel) -> Result<RelNode> {
-        let child = self.convert(input_of(f.input.as_deref()))?;
+        let child = self.convert(input_of(f.input.as_deref())?)?;
         let offset = match &f.offset_mode {
             Some(OffsetMode::Offset(o)) => *o,
             _ => 0,
@@ -451,7 +452,7 @@ impl SubstraitToCalcite {
     }
 
     fn sort(&self, s: &SortRel) -> Result<RelNode> {
-        let child = self.convert(input_of(s.input.as_deref()))?;
+        let child = self.convert(input_of(s.input.as_deref())?)?;
         let ex = self.expressions();
         let mut keys = Vec::with_capacity(s.sorts.len());
         for field in &s.sorts {
@@ -528,7 +529,7 @@ impl SubstraitToCalcite {
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
     fn aggregate(&self, a: &AggregateRel) -> Result<RelNode> {
-        let child = self.convert(input_of(a.input.as_deref()))?;
+        let child = self.convert(input_of(a.input.as_deref())?)?;
         let groupings: Vec<Vec<Expression>> = a
             .groupings
             .iter()
