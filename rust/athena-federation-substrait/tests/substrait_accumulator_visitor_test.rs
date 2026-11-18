@@ -1,5 +1,4 @@
 use athena_federation_substrait::SqlTypeName;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::{operators, SqlKind, SqlOperator};
 use athena_federation_substrait::{plan, SqlDialect};
@@ -55,11 +54,7 @@ fn call(op: &'static SqlOperator, operands: Vec<SqlNode>) -> SqlNode {
 }
 
 fn run(schema: &RelDataType, node: &SqlNode) -> (SqlNode, Vec<SubstraitTypeAndValue>) {
-    let mut accumulator = Vec::new();
-    let result = SubstraitAccumulatorVisitor::new(&mut accumulator, schema)
-        .visit(node)
-        .expect("visit");
-    (result, accumulator)
+    athena_federation_substrait::parameterize(node.clone(), schema).expect("visit")
 }
 
 fn operand(node: &SqlNode, i: usize) -> &SqlNode {
@@ -126,13 +121,11 @@ fn test_accumulator_nls_string_value() {
 #[test]
 fn test_accumulator_field_not_found_throws() {
     let s = schema();
-    let mut accumulator = Vec::new();
-    let err = SubstraitAccumulatorVisitor::new(&mut accumulator, &s)
-        .visit(&call(
-            &operators::EQUALS,
-            vec![id("no_such_col"), chars("x")],
-        ))
-        .expect_err("missing field");
+    let err = athena_federation_substrait::parameterize(
+        call(&operators::EQUALS, vec![id("no_such_col"), chars("x")]),
+        &s,
+    )
+    .expect_err("missing field");
     assert!(matches!(err, SubstraitError::IllegalArgument(_)));
     assert!(err.to_string().contains("field no_such_col not found"));
     assert_eq!(
@@ -144,13 +137,14 @@ fn test_accumulator_field_not_found_throws() {
 #[test]
 fn test_accumulator_null_value_throws() {
     let null_schema = struct_type(&[("null_col", SqlTypeName::Null)]);
-    let mut accumulator = Vec::new();
-    let err = SubstraitAccumulatorVisitor::new(&mut accumulator, &null_schema)
-        .visit(&call(
+    let err = athena_federation_substrait::parameterize(
+        call(
             &operators::EQUALS,
             vec![id("null_col"), SqlNode::literal(SqlLiteral::null())],
-        ))
-        .expect_err("null value");
+        ),
+        &null_schema,
+    )
+    .expect_err("null value");
     assert!(matches!(err, SubstraitError::NullPointer(_)));
     assert!(err.to_string().contains("value is null"));
 }
@@ -457,10 +451,8 @@ fn scalar_subquery_binds_each_literal_once() {
     let dialect = SqlDialect::ansi();
     let node = plan::to_sql_node(plan, &dialect).unwrap();
     let schema = plan::table_schema(plan, &dialect).unwrap();
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .unwrap();
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).unwrap();
     let sql = rewritten.to_sql_string(&dialect);
     assert!(sql.ends_with("WHERE `bool_col` = ?))))"), "{sql}");
     assert!(!sql.contains("(`bool_col` = ?) = ?"), "{sql}");
@@ -488,10 +480,8 @@ fn parameterize(plan: &str) -> (String, Vec<SubstraitTypeAndValue>) {
     let dialect = SqlDialect::ansi();
     let node = plan::to_sql_node(plan, &dialect).unwrap();
     let schema = plan::table_schema(plan, &dialect).unwrap();
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .unwrap();
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).unwrap();
     (rewritten.to_sql_string(&dialect), accumulator)
 }
 

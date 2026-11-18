@@ -1,6 +1,6 @@
+use athena_federation_substrait::parameterize;
 use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitValue;
 use base64::Engine;
 use std::error::Error;
@@ -343,11 +343,8 @@ fn test_sql_conversion_non_latin1_string_literals() {
     assert!(s.ends_with("WHERE `varchar_col` = '日本語'"), "{s}");
 
     let schema = plan::table_schema(&equality, &d).expect("schema");
-    let mut accumulator = Vec::new();
-    let parameterized = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .expect("visit")
-        .to_sql_string(&d);
+    let (parameterized, accumulator) = parameterize(node, &schema).expect("visit");
+    let parameterized = parameterized.to_sql_string(&d);
     assert!(
         parameterized.ends_with("WHERE `varchar_col` = ?"),
         "{parameterized}"

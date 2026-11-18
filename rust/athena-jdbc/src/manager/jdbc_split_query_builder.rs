@@ -11,7 +11,7 @@ use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::{
-    plan, SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName, SubstraitAccumulatorVisitor,
+    parameterize, plan, SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName,
     SubstraitTypeAndValue, SubstraitValue,
 };
 
@@ -406,9 +406,7 @@ fn build_calcite_sql(
         ));
     }
     let table_schema = plan::table_schema(base64_encoded_plan, sql_dialect)?;
-    let mut accumulator = Vec::new();
-    let mut parameterized_node =
-        SubstraitAccumulatorVisitor::new(&mut accumulator, &table_schema).visit(&sql_node)?;
+    let (mut parameterized_node, accumulator) = parameterize(sql_node, &table_schema)?;
     tracing::debug!(
         "CalciteSql parameterized sql with dialect {:?}: {}",
         sql_dialect,

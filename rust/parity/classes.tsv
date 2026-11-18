@@ -250,7 +250,7 @@ com.amazonaws.athena.connector.lambda.serde.v6.QueryPlanSerDe	athena-federation-
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-federation-sdk/src/udf/user_defined_function_request.rs::UserDefinedFunctionRequest	ported	
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf/user_defined_function_response.rs::UserDefinedFunctionResponse	ported	
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType	athena-federation-sdk/src/udf/user_defined_function_type.rs::UserDefinedFunctionType	ported	
-com.amazonaws.athena.connector.substrait.SubstraitAccumulatorVisitor	athena-federation-substrait/src/substrait_accumulator_visitor.rs::SubstraitAccumulatorVisitor	ported	
+com.amazonaws.athena.connector.substrait.SubstraitAccumulatorVisitor	athena-federation-substrait/src/params.rs::parameterize	merged	the SqlShuttle subclass becomes parameterize, which rewrites the tree in place and returns the bound values
 com.amazonaws.athena.connector.substrait.SubstraitFunctionParser	athena-federation-substrait/src/lib.rs::predicate	ported	
 com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federation-substrait/src/lib.rs::literal	ported	
 com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federation-substrait/src/plan.rs::table_columns	merged	the only method, getTableColumns, is plan::table_columns

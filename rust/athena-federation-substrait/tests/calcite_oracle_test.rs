@@ -1,6 +1,5 @@
 use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
 
 struct Case {
     query: String,
@@ -111,10 +110,8 @@ fn calcite_reference_sql_matches() {
 fn parameterize(plan: &str, d: &SqlDialect) -> Result<(String, String), String> {
     let node = plan::to_sql_node(plan, d).map_err(|e| format!("{e:?}"))?;
     let schema = plan::table_schema(plan, d).map_err(|e| format!("{e:?}"))?;
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .map_err(|e| format!("{e:?}"))?;
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).map_err(|e| format!("{e:?}"))?;
     let values: Vec<String> = accumulator.iter().map(ToString::to_string).collect();
     Ok((
         rewritten.to_sql_string(d),

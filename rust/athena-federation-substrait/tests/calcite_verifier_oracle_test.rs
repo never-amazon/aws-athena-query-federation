@@ -1,7 +1,7 @@
+use athena_federation_substrait::parameterize;
 use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SqlNode;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use std::fmt::Write;
 
 const DIALECTS: [&str; 5] = [
@@ -72,8 +72,7 @@ fn error_text(e: &athena_federation_substrait::SubstraitError) -> String {
 fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
     let run = || -> athena_federation_substrait::Result<String> {
         let schema = plan::table_schema(plan, d)?;
-        let mut accumulator = Vec::new();
-        let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema).visit(node)?;
+        let (rewritten, accumulator) = parameterize(node.clone(), &schema)?;
         let mut out = esc(&rewritten.to_sql_string(d));
         for v in &accumulator {
             let class = v.value().java_class_name();
