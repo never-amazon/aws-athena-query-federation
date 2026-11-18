@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::athena_exception_filter::ATHENA_EXCEPTION_FILTER;
+use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::FederationRequestHandler;
@@ -17,7 +17,7 @@ use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsR
 use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
 use crate::security::{AwsServiceError, CachableSecretsManager, KmsEncryptionProvider};
 use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
-use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
+use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 
 const MAX_BLOCK_SIZE_BYTES: &str = "MAX_BLOCK_SIZE_BYTES";
 const NUM_SPILL_THREADS: i32 = 2;
@@ -38,11 +38,11 @@ impl RecordHandlerBase {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<RecordHandlerBase> {
-        let athena_invoker = ThrottlingInvoker::new_default_builder(
-            Arc::new(ATHENA_EXCEPTION_FILTER),
-            &config_options,
-        )?
-        .build()?;
+        let athena_invoker = ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&config_options)?,
+            is_athena_throttle,
+            None,
+        )?;
         Ok(RecordHandlerBase {
             config_options,
             amazon_s3: clients.s3,

@@ -20,6 +20,6 @@ pub mod util;
 pub use exceptions::federation_error::{FederationError, Result};
 pub use query_status_checker::{AthenaClient, QueryStatusChecker};
 pub use throttling_invoker::{
-    ExceptionFilter, State, ThrottlingInvoker, ThrottlingInvokerBuilder, THROTTLE_DECREASE_FACTOR,
-    THROTTLE_INCREASE_MS, THROTTLE_INITIAL_DELAY_MS, THROTTLE_MAX_DELAY_MS,
+    State, ThrottleConfig, ThrottlingInvoker, THROTTLE_DECREASE_FACTOR, THROTTLE_INCREASE_MS,
+    THROTTLE_INITIAL_DELAY_MS, THROTTLE_MAX_DELAY_MS,
 };

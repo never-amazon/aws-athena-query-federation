@@ -106,7 +106,7 @@ com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation	athena-federati
 com.amazonaws.athena.connector.lambda.domain.spill.SpillLocationVerifier	athena-federation-sdk/src/domain/spill/spill_location_verifier.rs::SpillLocationVerifier	ported	
 com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException	athena-federation-sdk/src/exceptions/athena_connector_exception.rs::AthenaConnectorException	ported	
 com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException	athena-federation-sdk/src/exceptions/federation_throttle_exception.rs::FederationThrottleException	ported	
-com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::AthenaExceptionFilter	ported	
+com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::is_athena_throttle	merged	the single-method filter class becomes a predicate function
 com.amazonaws.athena.connector.lambda.handlers.CompositeHandler	athena-federation-sdk/src/handlers/composite_handler.rs::CompositeHandler	ported	
 com.amazonaws.athena.connector.lambda.handlers.FederationCapabilities	athena-federation-sdk/src/handlers/federation_capabilities.rs::CAPABILITIES	merged	constant holder class; its one constant is CAPABILITIES
 com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-federation-sdk/src/handlers/federation_request_handler.rs::FederationRequestHandler	ported	

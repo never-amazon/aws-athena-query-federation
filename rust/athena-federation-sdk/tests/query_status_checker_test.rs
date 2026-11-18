@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_federation_sdk::security::AwsServiceError;
-use athena_federation_sdk::{AthenaClient, ExceptionFilter, QueryStatusChecker, ThrottlingInvoker};
+use athena_federation_sdk::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 use aws_credential_types::Credentials;
 
 type Response = Result<Option<String>, AwsServiceError>;
@@ -49,13 +49,13 @@ impl AthenaClient for MockAthena {
 }
 
 fn athena_invoker() -> Arc<ThrottlingInvoker<AwsServiceError>> {
-    let athena_exception_filter: Arc<dyn ExceptionFilter<AwsServiceError>> =
-        Arc::new(|ex: &AwsServiceError| ex.is_error_code("TooManyRequestsException"));
     Arc::new(
-        ThrottlingInvoker::new_default_builder(athena_exception_filter, &HashMap::new())
-            .unwrap()
-            .build()
-            .unwrap(),
+        ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&HashMap::new()).unwrap(),
+            |ex: &AwsServiceError| ex.is_error_code("TooManyRequestsException"),
+            None,
+        )
+        .unwrap(),
     )
 }
 

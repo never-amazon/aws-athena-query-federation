@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use tokio::sync::Mutex;
 
-use super::athena_exception_filter::ATHENA_EXCEPTION_FILTER;
+use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::{ConfigOptions, FederationRequestHandler};
@@ -34,7 +34,7 @@ use crate::security::{
     EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider, KmsKeyFactory, LocalKeyFactory,
 };
 use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
-use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
+use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 
 pub const PARTITION_ID_COL: &str = "partitionId";
 const DISABLE_ENCRYPTION: &str = "true";
@@ -125,11 +125,11 @@ impl MetadataHandlerBaseBuilder {
         let encryption_key_factory = self
             .encryption_key_factory
             .unwrap_or_else(|| default_encryption_key_factory(&config_options, &self.clients));
-        let athena_invoker = ThrottlingInvoker::new_default_builder(
-            Arc::new(ATHENA_EXCEPTION_FILTER),
-            &config_options,
-        )?
-        .build()?;
+        let athena_invoker = ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&config_options)?,
+            is_athena_throttle,
+            None,
+        )?;
         Ok(MetadataHandlerBase {
             secrets_manager: CachableSecretsManager::new(self.clients.secrets_manager),
             athena: self.clients.athena,

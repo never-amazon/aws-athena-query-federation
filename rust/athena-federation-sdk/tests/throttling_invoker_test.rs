@@ -11,12 +11,12 @@ use athena_federation_sdk::{
     FederationError,
 };
 use athena_federation_sdk::{
-    ExceptionFilter, State, ThrottlingInvoker, THROTTLE_DECREASE_FACTOR, THROTTLE_INCREASE_MS,
+    State, ThrottleConfig, ThrottlingInvoker, THROTTLE_DECREASE_FACTOR, THROTTLE_INCREASE_MS,
     THROTTLE_INITIAL_DELAY_MS, THROTTLE_MAX_DELAY_MS,
 };
 
-fn throttle_filter() -> Arc<dyn ExceptionFilter<FederationError>> {
-    Arc::new(|ex: &FederationError| matches!(ex, FederationError::Throttle(_)))
+fn throttle_filter(ex: &FederationError) -> bool {
+    matches!(ex, FederationError::Throttle(_))
 }
 
 fn throttling_error() -> FederationError {
@@ -58,14 +58,17 @@ impl BlockSpiller for MockSpiller {
 
 #[tokio::test]
 async fn invoke_no_throttle() {
-    let invoker = ThrottlingInvoker::builder()
-        .with_decrease(0.5)
-        .with_increase(10)
-        .with_initial_delay_ms(10)
-        .with_max_delay_ms(2_000)
-        .with_filter(throttle_filter())
-        .build()
-        .unwrap();
+    let invoker = ThrottlingInvoker::new(
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 2_000,
+            decrease: 0.5,
+            increase_ms: 10,
+        },
+        throttle_filter,
+        None,
+    )
+    .unwrap();
 
     for _ in 0..100 {
         let result = invoker
@@ -80,14 +83,17 @@ async fn invoke_no_throttle() {
 
 #[tokio::test]
 async fn invoke_with_throttle() {
-    let invoker = ThrottlingInvoker::builder()
-        .with_decrease(0.8)
-        .with_increase(1)
-        .with_initial_delay_ms(10)
-        .with_max_delay_ms(200)
-        .with_filter(throttle_filter())
-        .build()
-        .unwrap();
+    let invoker = ThrottlingInvoker::new(
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 200,
+            decrease: 0.8,
+            increase_ms: 1,
+        },
+        throttle_filter,
+        None,
+    )
+    .unwrap();
 
     for i in 0..5i64 {
         let count = Arc::new(AtomicI64::new(0));
@@ -120,14 +126,17 @@ async fn invoke_with_throttle() {
 
 #[tokio::test]
 async fn invoke_with_throttle_timeout() {
-    let invoker = ThrottlingInvoker::builder()
-        .with_decrease(0.5)
-        .with_increase(10)
-        .with_initial_delay_ms(10)
-        .with_max_delay_ms(500)
-        .with_filter(throttle_filter())
-        .build()
-        .unwrap();
+    let invoker = ThrottlingInvoker::new(
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 500,
+            decrease: 0.5,
+            increase_ms: 10,
+        },
+        throttle_filter,
+        None,
+    )
+    .unwrap();
 
     let ex = invoker
         .invoke_with_timeout_millis(
@@ -142,15 +151,17 @@ async fn invoke_with_throttle_timeout() {
 #[tokio::test]
 async fn invoke_with_throttle_no_spill() {
     let spiller: Arc<dyn BlockSpiller> = Arc::new(MockSpiller);
-    let invoker = ThrottlingInvoker::builder()
-        .with_decrease(0.5)
-        .with_increase(10)
-        .with_initial_delay_ms(10)
-        .with_max_delay_ms(500)
-        .with_filter(Arc::new(|ex: &FederationError| ex.is_runtime_exception()))
-        .with_spiller(spiller)
-        .build()
-        .unwrap();
+    let invoker = ThrottlingInvoker::new(
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 500,
+            decrease: 0.5,
+            increase_ms: 10,
+        },
+        |ex: &FederationError| ex.is_runtime_exception(),
+        Some(spiller),
+    )
+    .unwrap();
 
     let ex = invoker
         .invoke_with_timeout_millis(
@@ -179,11 +190,15 @@ fn test_default_builder_from_config() {
         (THROTTLE_DECREASE_FACTOR.to_string(), "0.1".to_string()),
         (THROTTLE_INCREASE_MS.to_string(), "500".to_string()),
     ]);
-    let builder =
-        ThrottlingInvoker::new_default_builder(throttle_filter(), &config_option).unwrap();
-    let invoker = builder.build().unwrap();
-    assert_eq!(0.1f64.to_bits(), invoker.decrease().to_bits());
-    assert_eq!(500, invoker.increase());
-    assert_eq!(100, invoker.default_initial_delay_ms());
-    assert_eq!(10000, invoker.max_delay_ms());
+    let invoker: ThrottlingInvoker = ThrottlingInvoker::new(
+        ThrottleConfig::from_config_options(&config_option).unwrap(),
+        throttle_filter,
+        None,
+    )
+    .unwrap();
+    let config = invoker.config();
+    assert_eq!(0.1f64.to_bits(), config.decrease.to_bits());
+    assert_eq!(500, config.increase_ms);
+    assert_eq!(100, config.initial_delay_ms);
+    assert_eq!(10000, config.max_delay_ms);
 }

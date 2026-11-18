@@ -13,8 +13,8 @@ use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsService, AwsServiceError, EncryptionKeyFactory, KmsClient,
     KmsKeyFactory,
 };
-use athena_federation_sdk::ThrottlingInvoker;
 use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
+use athena_federation_sdk::{ThrottleConfig, ThrottlingInvoker};
 use aws_sdk_glue::types::Connection;
 use aws_sdk_kms::types::DataKeySpec;
 use serde_json::Value as Json;
@@ -147,17 +147,17 @@ impl BlockSpiller for NotSpilled {
 #[tokio::test]
 async fn throttling_invoker_message_uses_java_to_string() {
     let throttle = error_from_case(&case("athena_unmodeled_throttling"));
-    let invoker: ThrottlingInvoker<AwsServiceError> = ThrottlingInvoker::builder()
-        .with_decrease(0.5)
-        .with_increase(10)
-        .with_initial_delay_ms(10)
-        .with_max_delay_ms(2_000)
-        .with_filter(Arc::new(|ex: &AwsServiceError| {
-            ex.is_service_exception_of(AwsService::Athena)
-        }))
-        .with_spiller(Arc::new(NotSpilled))
-        .build()
-        .unwrap();
+    let invoker: ThrottlingInvoker<AwsServiceError> = ThrottlingInvoker::new(
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 2_000,
+            decrease: 0.5,
+            increase_ms: 10,
+        },
+        |ex: &AwsServiceError| ex.is_service_exception_of(AwsService::Athena),
+        Some(Arc::new(NotSpilled)),
+    )
+    .unwrap();
     let ex = invoker
         .invoke_with_timeout_millis(
             || async { Err::<i32, AwsServiceError>(throttle.clone()) },
