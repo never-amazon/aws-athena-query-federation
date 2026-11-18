@@ -703,6 +703,53 @@ mod tests {
         value.to_epoch_day().unwrap().unwrap()
     }
 
+    #[test]
+    fn timestamptz_dateday_uses_the_default_zone() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "driver::codec::tests::timestamptz_dateday_in_los_angeles",
+                "--ignored",
+            ])
+            .env("TZ", "America/Los_Angeles")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout}");
+        assert!(stdout.contains("test result: ok. 1 passed"), "{stdout}");
+    }
+
+    #[test]
+    #[ignore = "timestamptz_dateday_uses_the_default_zone runs it with TZ=America/Los_Angeles"]
+    fn timestamptz_dateday_in_los_angeles() {
+        assert_eq!(Ok("America/Los_Angeles"), std::env::var("TZ").as_deref());
+        let day = |y, m, d| {
+            NaiveDate::from_ymd_opt(y, m, d)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days()
+        };
+        let cases = [
+            ("2020-06-01 03:00:00+00", day(2020, 5, 31), day(2020, 6, 1)),
+            ("2020-06-01 08:00:00+00", day(2020, 6, 1), day(2020, 6, 1)),
+            ("2100-07-01 07:30:00+00", day(2100, 7, 1), day(2100, 7, 1)),
+            ("2100-01-01 07:30:00+00", day(2099, 12, 31), day(2100, 1, 1)),
+        ];
+        for (text, zoned, unzoned) in cases {
+            assert_eq!(
+                zoned,
+                epoch_day(&Decoder::TimestampTz.decode(Some(text.as_bytes()))),
+                "{text}"
+            );
+            let local = text.trim_end_matches("+00");
+            assert_eq!(
+                unzoned,
+                epoch_day(&Decoder::Timestamp.decode(Some(local.as_bytes()))),
+                "{text}"
+            );
+        }
+    }
+
     fn millis(value: &SqlValue) -> i64 {
         value.to_timestamp_millis().unwrap().unwrap()
     }
