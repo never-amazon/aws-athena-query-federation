@@ -713,10 +713,89 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         this.postGreSqlRecordHandler.buildSplitSql(this.connection, TEST_CATALOG, new TableName(TEST_SCHEMA, TEST_TABLE), schemaBuilder.build(),
                 constraints, createMockSplit(PARTITION_SCHEMA, PARTITION_NAME));
 
-        Mockito.verify(preparedStatement).setObject(1, timestamp);
+        Mockito.verify(preparedStatement).setObject(1, "1000-01-01 12:00:00+00", java.sql.Types.OTHER);
         Mockito.verify(preparedStatement).setObject(2, date);
         Mockito.verify(preparedStatement, Mockito.never()).setTimestamp(Mockito.anyInt(), Mockito.any(java.sql.Timestamp.class));
         Mockito.verify(preparedStatement, Mockito.never()).setDate(Mockito.anyInt(), Mockito.any(Date.class));
+    }
+
+    @Test
+    public void makeExtractorReadsTimestampsAsProlepticDates() throws Exception
+    {
+        class ExtractorHandler extends PostGreSqlRecordHandler
+        {
+            ExtractorHandler()
+            {
+                super(new DatabaseConnectionConfig("testCatalog", POSTGRES_NAME, "postgres://jdbc:postgresql://hostname/user=A&password=B"),
+                        amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
+            }
+
+            int dateDay(java.sql.ResultSet resultSet) throws Exception
+            {
+                org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
+                ((com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
+                        FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, Collections.emptyMap()))
+                        .extract(null, holder);
+                return holder.value;
+            }
+        }
+        ExtractorHandler handler = new ExtractorHandler();
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : new String[] {"UTC", "Asia/Kolkata", "America/Los_Angeles"}) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                Object[][] cases = {
+                    {"timestamp", java.time.LocalDateTime.of(1582, 10, 10, 12, 0), java.time.LocalDate.of(1582, 10, 10)},
+                    {"timestamp", java.time.LocalDateTime.of(1000, 1, 1, 23, 0), java.time.LocalDate.of(1000, 1, 1)},
+                    {"timestamp", java.time.LocalDateTime.of(2020, 6, 1, 23, 0), java.time.LocalDate.of(2020, 6, 1)},
+                    {"timestamptz", java.time.LocalDateTime.of(1582, 10, 10, 12, 0), java.time.LocalDate.of(1582, 10, 10)},
+                    {"timestamptz", java.time.LocalDateTime.of(1582, 10, 4, 23, 59, 59, 999_000_000),
+                            "Asia/Kolkata".equals(zone) ? java.time.LocalDate.of(1582, 10, 5) : java.time.LocalDate.of(1582, 10, 4)},
+                    {"timestamptz", java.time.LocalDateTime.of(2020, 6, 1, 20, 0),
+                            "Asia/Kolkata".equals(zone) ? java.time.LocalDate.of(2020, 6, 2) : java.time.LocalDate.of(2020, 6, 1)},
+                };
+                for (Object[] c : cases) {
+                    boolean zoned = "timestamptz".equals(c[0]);
+                    java.time.LocalDateTime value = (java.time.LocalDateTime) c[1];
+                    java.util.GregorianCalendar fields = new java.util.GregorianCalendar(zoned ? java.util.TimeZone.getTimeZone("UTC") : java.util.TimeZone.getDefault());
+                    fields.clear();
+                    fields.set(value.getYear(), value.getMonthValue() - 1, value.getDayOfMonth(), value.getHour(), value.getMinute(), value.getSecond());
+                    fields.set(java.util.Calendar.MILLISECOND, value.getNano() / 1_000_000);
+                    java.sql.Timestamp timestamp = new java.sql.Timestamp(fields.getTimeInMillis());
+                    java.sql.ResultSetMetaData metadata = Mockito.mock(java.sql.ResultSetMetaData.class);
+                    Mockito.when(metadata.getColumnType(1)).thenReturn(java.sql.Types.TIMESTAMP);
+                    Mockito.when(metadata.getColumnTypeName(1)).thenReturn((String) c[0]);
+                    java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
+                    Mockito.when(resultSet.getMetaData()).thenReturn(metadata);
+                    Mockito.when(resultSet.findColumn("d")).thenReturn(1);
+                    Mockito.when(resultSet.getString("d")).thenReturn(value.toLocalDate() + " " + String.format("%02d:%02d:%02d.%03d", value.getHour(), value.getMinute(), value.getSecond(),
+                            value.getNano() / 1_000_000) + (zoned ? "+00" : ""));
+                    Mockito.when(resultSet.getDate("d")).thenReturn(new Date(timestamp.getTime()));
+                    Mockito.when(resultSet.getTimestamp(1)).thenReturn(timestamp);
+                    Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenReturn(value.atOffset(java.time.ZoneOffset.UTC));
+                    Assert.assertEquals(zone + " " + c[0] + " " + value, ((java.time.LocalDate) c[2]).toEpochDay(), handler.dateDay(resultSet));
+                }
+            }
+        }
+        finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
+    public void bindTimestampSendsUtcTextWithUnspecifiedType()
+    {
+        String[][] cases = {
+            {"1000-01-01T12:00", "1000-01-01 12:00:00+00"},
+            {"2020-06-01T06:30:00.123456789", "2020-06-01 06:30:00.123457+00"},
+            {"-0043-03-15T12:00", "0044-03-15 12:00:00+00 BC"},
+            {"0000-02-29T06:30:00.500", "0001-02-29 06:30:00.5+00 BC"},
+            {"+10000-01-01T00:00", "10000-01-01 00:00:00+00"},
+            {"-292275055-05-16T16:47:04.192", "-infinity"},
+        };
+        for (String[] c : cases) {
+            Assert.assertEquals(c[0], c[1], PostGreSqlQueryStringBuilder.utcTimestampText(java.time.LocalDateTime.parse(c[0])));
+        }
     }
 
     @Test

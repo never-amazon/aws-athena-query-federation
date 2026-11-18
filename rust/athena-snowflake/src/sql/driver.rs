@@ -12,13 +12,16 @@ use snowflake_connector_rs::{
 use url::Url;
 
 use super::connection::{positive_seconds, SnowflakeConnection};
-use super::executor::{from_connector_error, snowflake_exception, ConnectorExecutor};
+use super::executor::{
+    from_connector_error, snowflake_exception, ConnectorExecutor, TimestampTypeMapping,
+};
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::utils::SnowflakePrivateKey;
 
 const URL_PREFIX: &str = "jdbc:snowflake://";
 const QUERY_TIMEOUT: &str = "QUERYTIMEOUT";
 const QUERY_RESULT_FORMAT: &str = "QUERY_RESULT_FORMAT";
+const CLIENT_TIMESTAMP_TYPE_MAPPING: &str = "CLIENT_TIMESTAMP_TYPE_MAPPING";
 const JSON_RESULT_FORMAT: &str = "JSON";
 pub const QUERY_RESPONSE_TIMEOUT: Duration = Duration::from_mins(15);
 
@@ -77,6 +80,10 @@ impl SnowflakeConnectionSettings {
             .filter(|(key, _)| !CLIENT_SIDE_PROPERTIES.contains(&key.as_str()))
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .chain(default_result_format)
+    }
+
+    pub fn timestamp_type_mapping(&self) -> TimestampTypeMapping {
+        TimestampTypeMapping::from_parameter(self.get(CLIENT_TIMESTAMP_TYPE_MAPPING))
     }
 
     pub fn query_timeout(&self) -> Result<Option<Duration>, SqlException> {
@@ -275,7 +282,10 @@ impl SnowflakeJdbcDriver {
             .map_err(|e| from_connector_error(&e))?;
         Ok(Box::new(
             SnowflakeConnection::new(
-                Arc::new(ConnectorExecutor::new(session)),
+                Arc::new(ConnectorExecutor::new(
+                    session,
+                    settings.timestamp_type_mapping(),
+                )),
                 settings.user().map(ToString::to_string),
             )
             .with_query_timeout(query_timeout),

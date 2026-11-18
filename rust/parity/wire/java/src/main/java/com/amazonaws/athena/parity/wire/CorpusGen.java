@@ -96,6 +96,7 @@ public final class CorpusGen
     static final long BIG_BLOCK = 100_000_000L;
     static final String QPT_SIGNATURE = "SYSTEM.QUERY";
     static final String SECRET_CONNECTION = "postgres://jdbc:postgresql://{{PARITY_PG_HOSTPORT}}/paritydb?${parity-pg-secret}";
+    static final String ZONE_OPTIONS_CONNECTION = "postgres://jdbc:postgresql://{{PARITY_PG_HOSTPORT}}/paritydb?${parity-pg-secret}&options=-c%20TimeZone%3DAsia/Kolkata";
     static final String MISSING_SECRET_CONNECTION = "postgres://jdbc:postgresql://{{PARITY_PG_HOSTPORT}}/paritydb?${parity-missing-secret}";
 
     private static final ObjectMapper META = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -1187,6 +1188,10 @@ public final class CorpusGen
         add("x_cal", "full", 6, "pre-1582, BC and cutover values in scalars and arrays", q -> read(q, calendar, schema, split(q, "*", "*"), constraints(Map.of())));
         Schema dateDaySchema = SchemaBuilder.newBuilder().addField("id", Types.MinorType.INT.getType()).addField("ts", dateDay).addField("tstz", dateDay)
                 .addListField("ts_arr", dateDay).addListField("tstz_arr", dateDay).build();
+        add("x_cal", "session_zone_options", 6, "single", Map.of("default", ZONE_OPTIONS_CONNECTION),
+                "options=-c TimeZone=Asia/Kolkata in the connection string, which the TimeZone startup parameter overrides",
+                q -> read(q, calendar, schema, split(q, "*", "*"), constraints(Map.of("tstz", SortedRangeSet.copyOf(dateMilli,
+                        List.of(Range.range(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0), true, LocalDateTime.of(2020, 6, 1, 6, 30, 0, 123_000_000), true)), false)))));
         add("x_cal", "timestamps_as_dateday", 6, "timestamp scalars and arrays read through DATEDAY fields", q -> read(q, calendar, dateDaySchema, split(q, "*", "*"), constraints(Map.of())));
         String[][] exports = {
             {"export", "SELECT id, d, ts, tstz FROM parity_cal.calendar ORDER BY id"},
@@ -1202,6 +1207,16 @@ public final class CorpusGen
                                 qptConstraints(args), 1_000_000L, 0L);
                     });
         }
+        String zoneQuery = "SELECT current_setting('TimeZone') AS zone, tstz::text AS tstz_text FROM parity_cal.calendar WHERE id = 5";
+        add("x_cal", "session_zone_options_show", 5, "single", Map.of("default", ZONE_OPTIONS_CONNECTION),
+                "session TimeZone with options=-c TimeZone=Asia/Kolkata in the connection string",
+                q -> {
+                    Map<String, String> args = new LinkedHashMap<>(qptArgs(zoneQuery));
+                    args.put("ExportSchema", "true");
+                    return read(q, CATALOG, new TableName("system", "query"), SchemaBuilder.newBuilder().build(),
+                            Split.newBuilder(spill(q, "split-0001"), null).applyProperties(args).build(),
+                            qptConstraints(args), BIG_BLOCK, BIG_BLOCK);
+                });
         Object[][] filters = {
             {"ts_eq", "ts", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0)))},
             {"ts_bc_eq", "ts", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(-43, 3, 15, 12, 0)))},
@@ -1209,6 +1224,7 @@ public final class CorpusGen
             {"ts_cutover_range", "ts", dateMilli, List.of(Range.range(allocator, dateMilli, LocalDateTime.of(1582, 10, 4, 0, 0), true, LocalDateTime.of(1582, 10, 15, 0, 0), true))},
             {"tstz_eq", "tstz", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0)))},
             {"tstz_bc_fraction_eq", "tstz", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(0, 2, 29, 6, 30, 0, 500_000_000)))},
+            {"tstz_modern_eq", "tstz", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(2020, 6, 1, 6, 30, 0, 123_000_000)))},
             {"d_eq", "d", dateDay, List.of(Range.equal(allocator, dateDay, (int) LocalDate.of(1000, 1, 1).toEpochDay()))},
             {"d_bc_in", "d", dateDay, List.of(Range.equal(allocator, dateDay, (int) LocalDate.of(-43, 3, 15).toEpochDay()),
                     Range.equal(allocator, dateDay, (int) LocalDate.of(0, 2, 29).toEpochDay()))},
@@ -1229,6 +1245,7 @@ public final class CorpusGen
             {"ts_cutover_range", "SELECT id, ts FROM parity_cal.calendar WHERE ts BETWEEN TIMESTAMP '1582-10-04 00:00:00' AND TIMESTAMP '1582-10-15 00:00:00'", Map.of()},
             {"tstz_eq", "SELECT id, tstz FROM parity_cal.calendar WHERE tstz = TIMESTAMP '1000-01-01 12:00:00'", Map.of()},
             {"tstz_bc_fraction_eq", "SELECT id, tstz FROM parity_cal.calendar WHERE tstz = TIMESTAMP '1999-01-01 00:00:00'", Map.of(placeholderMicros, leapMicros)},
+            {"tstz_modern_eq", "SELECT id, tstz FROM parity_cal.calendar WHERE tstz = TIMESTAMP '2020-06-01 06:30:00.123'", Map.of()},
             {"d_eq", "SELECT id, d FROM parity_cal.calendar WHERE d = DATE '1000-01-01'", Map.of()},
             {"d_bc_in", "SELECT id, d FROM parity_cal.calendar WHERE d IN (DATE '1999-01-01', DATE '1999-01-02')",
                     Map.of(placeholderDay, (int) LocalDate.of(-43, 3, 15).toEpochDay(), placeholderDay2, (int) LocalDate.of(0, 2, 29).toEpochDay())},

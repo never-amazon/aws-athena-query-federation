@@ -11,7 +11,8 @@ pub use driver::{
     SnowflakeJdbcDriver,
 };
 pub use executor::{
-    ConnectorExecutor, SnowflakeExecutor, SnowflakeQueryResult, SNOWFLAKE_SQL_EXCEPTION,
+    ConnectorExecutor, SnowflakeExecutor, SnowflakeQueryResult, TimestampTypeMapping,
+    SNOWFLAKE_SQL_EXCEPTION,
 };
 pub use type_map::{
     SnowflakeColumn, SnowflakeColumnType, EXTRA_TYPES_DAY_TIME_INTERVAL, EXTRA_TYPES_DECFLOAT,

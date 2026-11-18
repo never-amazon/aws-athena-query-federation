@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use athena_jdbc::connection::JdbcDriver;
 use athena_jdbc::sql::PreparedStatement;
-use athena_snowflake::sql::{parse_connection_settings, SnowflakeJdbcDriver};
+use athena_snowflake::sql::{parse_connection_settings, SnowflakeJdbcDriver, TimestampTypeMapping};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
@@ -149,6 +149,35 @@ fn query_response_timeout_waits_for_the_lambda_limit() {
     .unwrap();
     let config = format!("{:?}", settings.client_config(None).unwrap());
     assert!(config.contains("query_response_timeout: 900s"), "{config}");
+}
+
+#[test]
+fn timestamp_type_mapping_comes_from_the_connection_string() {
+    let cases = [
+        ("", TimestampTypeMapping::Ltz),
+        (
+            "?client_timestamp_type_mapping=timestamp_ntz",
+            TimestampTypeMapping::Ntz,
+        ),
+        (
+            "?CLIENT_TIMESTAMP_TYPE_MAPPING=TIMESTAMP_LTZ",
+            TimestampTypeMapping::Ltz,
+        ),
+    ];
+    for (query, mapping) in cases {
+        let settings = parse_connection_settings(
+            &format!("jdbc:snowflake://acct.snowflakecomputing.com/{query}"),
+            &properties(&[]),
+        )
+        .unwrap();
+        assert_eq!(mapping, settings.timestamp_type_mapping(), "{query}");
+        assert_eq!(
+            !query.is_empty(),
+            settings
+                .session_parameters()
+                .any(|(key, _)| key == "CLIENT_TIMESTAMP_TYPE_MAPPING")
+        );
+    }
 }
 
 #[test]

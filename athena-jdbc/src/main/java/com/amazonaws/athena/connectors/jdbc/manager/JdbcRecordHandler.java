@@ -434,7 +434,7 @@ public abstract class JdbcRecordHandler
             return getTimestampMillis(resultSet, column, (Timestamp) value);
         }
         if (value instanceof Timestamp && type == Types.MinorType.DATEDAY) {
-            return toDateDay(toLocalDate(new java.sql.Date(((Timestamp) value).getTime())));
+            return toDateDay(getLocalDate(resultSet, column, new java.sql.Date(((Timestamp) value).getTime())));
         }
         if (value instanceof java.sql.Date) {
             LocalDate date = toLocalDate((java.sql.Date) value);
@@ -476,6 +476,11 @@ public abstract class JdbcRecordHandler
 
     protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
     {
+    }
+
+    protected LocalDate getLocalDate(ResultSet resultSet, int column, java.sql.Date date) throws SQLException
+    {
+        return toLocalDate(date);
     }
 
     protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
@@ -587,7 +592,7 @@ public abstract class JdbcRecordHandler
                     checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
-                        dst.value = toDateDay(toLocalDate(resultSet.getDate(fieldName)));
+                        dst.value = toDateDay(getLocalDate(resultSet, resultSet.findColumn(fieldName), resultSet.getDate(fieldName)));
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };

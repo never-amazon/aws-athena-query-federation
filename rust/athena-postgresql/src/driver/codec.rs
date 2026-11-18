@@ -7,7 +7,7 @@ use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
-    default_zone_epoch_day, java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp,
+    java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, proleptic_epoch_day,
     DATE_NEGATIVE_INFINITY, DATE_POSITIVE_INFINITY,
 };
 use super::error::PSQL_EXCEPTION;
@@ -33,24 +33,18 @@ fn infinity_millis(text: &str) -> Option<i64> {
 }
 
 fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
-    let epoch_day = |millis| {
-        if zoned {
-            default_zone_epoch_day(millis)
-        } else {
-            java_sql_date_epoch_day(millis)
-        }
-    };
     if let Some(millis) = infinity_millis(text) {
         return Some(
-            SqlValue::java_date_millis(millis, epoch_day(millis), text)
+            SqlValue::java_date_millis(millis, proleptic_epoch_day(millis, zoned), text)
                 .with_exception_class(PSQL_EXCEPTION),
         );
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
-    let epoch_day = epoch_day(millis);
+    let epoch_millis = parsed.epoch_millis();
+    let epoch_day = proleptic_epoch_day(epoch_millis.unwrap_or(millis), zoned);
     Some(
-        match (millis_to_naive(millis, parsed.nanos), parsed.epoch_millis()) {
+        match (millis_to_naive(millis, parsed.nanos), epoch_millis) {
             (Some(ts), Some(epoch_millis)) => {
                 SqlValue::java_timestamp(SqlValue::Timestamp(ts), text, epoch_millis, epoch_day)
                     .with_exception_class(PSQL_EXCEPTION)
@@ -449,10 +443,10 @@ pub(crate) fn encode_parameter(
         SqlValue::Date(d) => (oid::DATE, Some(java_time_text(*d, ""))),
         SqlValue::Time(t) => (0, Some(t.format("%H:%M:%S%.f").to_string())),
         SqlValue::Timestamp(ts) => (
-            oid::TIMESTAMP,
+            0,
             Some(java_time_text(
                 ts.date(),
-                &ts.format(" %H:%M:%S%.f").to_string(),
+                &ts.format(" %H:%M:%S%.f+00").to_string(),
             )),
         ),
         SqlValue::TimestampTz(ts) => (
@@ -587,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn date_and_timestamp_parameters_bind_like_pgjdbc_set_object() {
+    fn date_and_timestamp_parameters_bind_like_the_java_query_builder() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(
             encode_parameter(&SqlValue::Date(date(-43, 3, 15)), false),
@@ -602,18 +596,33 @@ mod tests {
                 &SqlValue::Timestamp(date(1000, 1, 1).and_hms_opt(12, 0, 0).unwrap()),
                 false
             ),
-            (oid::TIMESTAMP, Some("1000-01-01 12:00:00".to_string()))
+            (0, Some("1000-01-01 12:00:00+00".to_string()))
         );
         assert_eq!(
             encode_parameter(
                 &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
                 false
             ),
-            (
-                oid::TIMESTAMP,
-                Some("0044-03-15 12:00:00.500 BC".to_string())
-            )
+            (0, Some("0044-03-15 12:00:00.500+00 BC".to_string()))
         );
+    }
+
+    #[test]
+    fn bind_timestamp_sends_utc_text_with_unspecified_type() {
+        let cases = [
+            ("1000-01-01T12:00:00", "1000-01-01 12:00:00+00"),
+            (
+                "2020-06-01T06:30:00.123456789",
+                "2020-06-01 06:30:00.123456789+00",
+            ),
+            ("-0043-03-15T12:00:00", "0044-03-15 12:00:00+00 BC"),
+            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.500+00 BC"),
+            ("+10000-01-01T00:00:00", "10000-01-01 00:00:00+00"),
+        ];
+        for (timestamp, text) in cases {
+            let value = SqlValue::Timestamp(timestamp.parse().unwrap());
+            assert_eq!((0, Some(text.to_string())), encode_parameter(&value, false));
+        }
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
@@ -655,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_decode_with_the_java_sql_date_calendar_day() {
+    fn timestamps_decode_to_the_proleptic_day() {
         let day = |decoder: Decoder, text: &str| epoch_day(&decoder.decode(Some(text.as_bytes())));
         let expected = |y, m, d| {
             NaiveDate::from_ymd_opt(y, m, d)
@@ -681,10 +690,18 @@ mod tests {
         );
         assert_eq!(
             day(Decoder::TimestampTz, "1582-10-15 03:00:00+05:30"),
-            expected(1582, 10, 4)
+            expected(1582, 10, 14)
+        );
+        assert_eq!(
+            day(Decoder::Timestamp, "1582-10-10 12:00:00"),
+            expected(1582, 10, 10)
+        );
+        assert_eq!(
+            day(Decoder::TimestampTz, "1582-10-10 12:00:00+00"),
+            expected(1582, 10, 10)
         );
         assert_eq!(day(Decoder::Timestamp, "infinity"), 106_751_991_166);
-        assert_eq!(day(Decoder::TimestampTz, "-infinity"), -106_749_799_148);
+        assert_eq!(day(Decoder::TimestampTz, "-infinity"), -106_751_991_168);
     }
 
     #[test]

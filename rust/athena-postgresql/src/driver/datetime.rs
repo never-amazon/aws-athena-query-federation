@@ -260,15 +260,21 @@ pub(crate) fn java_sql_date_epoch_day(millis: i64) -> i64 {
     gregorian_epoch_day(year, month, day)
 }
 
-pub(crate) fn default_zone_epoch_day(millis: i64) -> i64 {
-    zone_epoch_day(millis, &DEFAULT_ZONE)
+pub(crate) fn proleptic_epoch_day(epoch_millis: i64, zoned: bool) -> i64 {
+    if zoned {
+        zone_epoch_day(epoch_millis, &DEFAULT_ZONE)
+    } else {
+        epoch_millis.div_euclid(MILLIS_PER_DAY)
+    }
 }
 
-fn zone_epoch_day(millis: i64, zone: &ZoneId) -> i64 {
-    let offset = DateTime::from_timestamp_millis(millis).map_or(0, |instant| {
+fn zone_epoch_day(epoch_millis: i64, zone: &ZoneId) -> i64 {
+    let offset = DateTime::from_timestamp_millis(epoch_millis).map_or(0, |instant| {
         i64::from(zone.offset_at(&instant).local_minus_utc()) * 1000
     });
-    java_sql_date_epoch_day(millis.saturating_add(offset))
+    epoch_millis
+        .saturating_add(offset)
+        .div_euclid(MILLIS_PER_DAY)
 }
 
 #[cfg(test)]
@@ -372,7 +378,7 @@ mod tests {
         let instant = |text: &str| {
             parse_backend_timestamp(text)
                 .unwrap()
-                .java_millis()
+                .epoch_millis()
                 .unwrap()
         };
         let expected = |y, m, d| epoch_day(NaiveDate::from_ymd_opt(y, m, d).unwrap());
@@ -395,7 +401,7 @@ mod tests {
         assert_eq!(zone_epoch_day(cutover, &zone("UTC")), expected(1582, 10, 4));
         assert_eq!(
             zone_epoch_day(cutover, &zone("Asia/Kolkata")),
-            expected(1582, 10, 15)
+            expected(1582, 10, 5)
         );
         let bc = instant("0044-03-15 20:00:00+00 BC");
         assert_eq!(

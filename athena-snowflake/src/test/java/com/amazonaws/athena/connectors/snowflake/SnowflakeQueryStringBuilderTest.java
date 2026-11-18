@@ -710,6 +710,29 @@ public class SnowflakeQueryStringBuilderTest
         }
     }
 
+    @Test
+    public void bindTimestampUsesTheSessionTimestampTypeMapping() throws Exception
+    {
+        java.time.LocalDateTime[] timestamps = {java.time.LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_456_789),
+                java.time.LocalDateTime.of(1969, 12, 31, 23, 59, 59, 500_000_000), java.time.LocalDateTime.of(1000, 1, 1, 12, 0)};
+        String[] nanos = {"1591012800123456789", "-500000000", "-30610180800000000000"};
+        Object[][] cases = {
+            {net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_NTZ, ""},
+            {net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_LTZ, ""},
+            {net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_TZ, " 1440"},
+        };
+        for (Object[] mapping : cases) {
+            Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings = new HashMap<>();
+            net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement =
+                    driverStatement(bindings, (net.snowflake.client.api.resultset.SnowflakeType) mapping[0]);
+            for (int i = 0; i < timestamps.length; i++) {
+                queryBuilder.bindTimestamp(statement, 1, timestamps[i], null);
+                assertEquals(mapping[0].toString(), bindings.get("1").getType());
+                assertEquals(nanos[i] + mapping[1], bindings.get("1").getValue());
+            }
+        }
+    }
+
     private void assertBinds(net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement,
             Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings, java.time.LocalDateTime value) throws SQLException
     {
@@ -726,6 +749,13 @@ public class SnowflakeQueryStringBuilderTest
     private static net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl driverStatement(
             Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings) throws Exception
     {
+        return driverStatement(bindings, net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_LTZ);
+    }
+
+    private static net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl driverStatement(
+            Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings,
+            net.snowflake.client.api.resultset.SnowflakeType timestampMapping) throws Exception
+    {
         net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement = mock(
                 net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl.class, org.mockito.Mockito.CALLS_REAL_METHODS);
         java.lang.reflect.Field parameterBindings = net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl.class
@@ -735,7 +765,7 @@ public class SnowflakeQueryStringBuilderTest
         net.snowflake.client.internal.api.implementation.connection.SnowflakeConnectionImpl connection = mock(
                 net.snowflake.client.internal.api.implementation.connection.SnowflakeConnectionImpl.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
         when(connection.getSFBaseSession(org.mockito.ArgumentMatchers.any()).getTimestampMappedType())
-                .thenReturn(net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_LTZ);
+                .thenReturn(timestampMapping);
         java.lang.reflect.Field connectionField = net.snowflake.client.internal.api.implementation.statement.SnowflakeStatementImpl.class
                 .getDeclaredField("connection");
         connectionField.setAccessible(true);

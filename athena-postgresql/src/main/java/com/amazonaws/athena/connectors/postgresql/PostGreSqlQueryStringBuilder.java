@@ -26,17 +26,20 @@ import com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder;
 import com.google.common.base.Strings;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.sql.SqlDialect;
+import org.postgresql.jdbc.TimestampUtils;
 
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.TimeZone;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +50,9 @@ import java.util.stream.Collectors;
 public class PostGreSqlQueryStringBuilder
         extends JdbcSplitQueryBuilder
 {
+    private static final String BC_SUFFIX = " BC";
+    private static final String UTC_OFFSET = "+00";
+
     public PostGreSqlQueryStringBuilder(final String quoteCharacters, final FederationExpressionParser federationExpressionParser)
     {
         super(quoteCharacters, federationExpressionParser);
@@ -94,7 +100,19 @@ public class PostGreSqlQueryStringBuilder
     @Override
     protected void bindTimestamp(PreparedStatement statement, int index, LocalDateTime timestamp, Timestamp driverTimestamp) throws SQLException
     {
-        statement.setObject(index, timestamp);
+        statement.setObject(index, utcTimestampText(timestamp), Types.OTHER);
+    }
+
+    static String utcTimestampText(LocalDateTime timestamp)
+    {
+        String text = new TimestampUtils(false, () -> TimeZone.getTimeZone("UTC")).toString(timestamp);
+        if (text.endsWith("infinity")) {
+            return text;
+        }
+        if (text.endsWith(BC_SUFFIX)) {
+            return text.substring(0, text.length() - BC_SUFFIX.length()) + UTC_OFFSET + BC_SUFFIX;
+        }
+        return text + UTC_OFFSET;
     }
 
     @Override
