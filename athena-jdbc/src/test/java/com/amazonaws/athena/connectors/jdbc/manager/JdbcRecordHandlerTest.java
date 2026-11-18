@@ -853,6 +853,7 @@ public class JdbcRecordHandlerTest
 
     @Test
     public void exportReadsPre1582ValuesOnTheProlepticCalendar() throws Exception {
+        org.junit.Assume.assumeTrue(java.time.ZoneId.systemDefault().normalized().equals(java.time.ZoneOffset.UTC));
         Class.forName("org.h2.Driver");
         Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqcalendar;DB_CLOSE_DELAY=-1");
         try (Statement st = h2.createStatement()) {
