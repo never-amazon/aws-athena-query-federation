@@ -1358,21 +1358,19 @@ public class PostGreSqlRecordHandlerTest extends TestBase
             for (Object[] c : cases) {
                 java.time.OffsetDateTime timestamp = java.time.OffsetDateTime.parse((String) c[0]);
                 java.sql.ResultSet resultSet = dateTimeResultSet(columnType, (String) c[1]);
-                Mockito.when(resultSet.getObject("ts", java.time.OffsetDateTime.class)).thenReturn(timestamp);
-                Mockito.when(resultSet.getTimestamp("ts")).thenReturn(java.sql.Timestamp.from(timestamp.toInstant()));
-                Assert.assertEquals((String) c[1], (long) c[2], this.postGreSqlRecordHandler.getTimestampMillis(resultSet, "ts"));
+                Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenReturn(timestamp);
+                Assert.assertEquals((String) c[1], (long) c[2],
+                        this.postGreSqlRecordHandler.getTimestampMillis(resultSet, 1, java.sql.Timestamp.from(timestamp.toInstant())));
             }
             for (java.time.OffsetDateTime infinity : new java.time.OffsetDateTime[] {java.time.OffsetDateTime.MAX, java.time.OffsetDateTime.MIN}) {
                 long millis = infinity == java.time.OffsetDateTime.MAX ? 9_223_372_036_825_200_000L : -9_223_372_036_832_400_000L;
                 java.sql.ResultSet resultSet = dateTimeResultSet(columnType, infinity == java.time.OffsetDateTime.MAX ? "infinity" : "-infinity");
-                Mockito.when(resultSet.getObject("ts", java.time.OffsetDateTime.class)).thenReturn(infinity);
-                Mockito.when(resultSet.getTimestamp("ts")).thenReturn(new java.sql.Timestamp(millis));
-                Assert.assertEquals(millis, this.postGreSqlRecordHandler.getTimestampMillis(resultSet, "ts"));
+                Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenReturn(infinity);
+                Assert.assertEquals(millis, this.postGreSqlRecordHandler.getTimestampMillis(resultSet, 1, new java.sql.Timestamp(millis)));
             }
         }
         java.sql.ResultSet text = dateTimeResultSet(java.sql.Types.VARCHAR, "1000-01-01 12:00:00");
-        Mockito.when(text.getTimestamp("ts")).thenReturn(new java.sql.Timestamp(-30_609_748_800_000L));
-        Assert.assertEquals(-30_609_748_800_000L, this.postGreSqlRecordHandler.getTimestampMillis(text, "ts"));
+        Assert.assertEquals(-30_609_748_800_000L, this.postGreSqlRecordHandler.getTimestampMillis(text, 1, new java.sql.Timestamp(-30_609_748_800_000L)));
     }
 
     private static java.sql.ResultSet dateTimeResultSet(int columnType, String text) throws SQLException

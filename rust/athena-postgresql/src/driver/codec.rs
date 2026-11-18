@@ -65,10 +65,13 @@ fn java_date(text: &str) -> Option<SqlValue> {
 
 fn java_date_element(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
-    Some(match millis_to_naive(millis, 0) {
-        Some(ts) => SqlValue::Timestamp(ts),
-        None => SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION),
-    })
+    Some(
+        match java_sql_date_local_date(millis) {
+            Some(date) => SqlValue::java_sql_date(millis, date, text),
+            None => SqlValue::java_date_millis(millis, text),
+        }
+        .with_exception_class(PSQL_EXCEPTION),
+    )
 }
 
 fn trim_money(text: &str) -> Option<String> {
@@ -212,15 +215,9 @@ impl Decoder {
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
                 SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
             }
-            Decoder::Timestamp | Decoder::TimestampTz => match java_timestamp(&text) {
-                Some(SqlValue::Rendered { value, .. })
-                    if matches!(*value, SqlValue::Timestamp(_)) =>
-                {
-                    *value
-                }
-                Some(other) => other,
-                None => SqlValue::String(text),
-            },
+            Decoder::Timestamp | Decoder::TimestampTz => {
+                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+            }
             _ => match self.decode_text(Cow::Owned(text)) {
                 SqlValue::Rendered { value, .. } => *value,
                 other => other,

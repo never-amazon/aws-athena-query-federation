@@ -84,6 +84,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -329,9 +330,9 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     @Override
-    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp)
     {
-        return undoJulianAdjustment(resultSet.getTimestamp(fieldName).getTime());
+        return undoJulianAdjustment(timestamp.getTime());
     }
 
     @VisibleForTesting

@@ -34,7 +34,7 @@ use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
 use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use crate::qpt::{JdbcQueryPassthrough, QUERY};
-use crate::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Row, Types};
+use crate::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Row, SqlValue, Types};
 use crate::validate::{close_after, null_pointer};
 
 const CLICKHOUSE_DB: &str = "clickhouse";
@@ -235,6 +235,7 @@ fn extract_float8(row: &Row, index: usize, dst: &mut NullableFloat8Holder) -> Re
 }
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
+const GREGORIAN_CUTOVER_MILLIS: i64 = -12_219_292_800_000;
 
 fn epoch_day(date: chrono::NaiveDate) -> i64 {
     date.signed_duration_since(chrono::NaiveDate::default())
@@ -341,8 +342,48 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
     Ok(extractor)
 }
 
+fn calendar_value(value: &SqlValue, minor_type: MinorType) -> Result<Value> {
+    let inner = match value {
+        SqlValue::Rendered { value, .. } => value.as_ref(),
+        other => other,
+    };
+    match (inner, minor_type) {
+        (
+            SqlValue::Timestamp(_) | SqlValue::TimestampTz(_),
+            MinorType::DATEMILLI | MinorType::TIMESTAMPMILLITZ,
+        ) => {
+            if let Some(millis) = value.to_epoch_millis()? {
+                return Ok(Value::Long(millis));
+            }
+        }
+        (SqlValue::Date(_), MinorType::DATEDAY | MinorType::DATEMILLI) => {
+            let pre_cutover = value
+                .to_timestamp_millis()?
+                .is_some_and(|millis| millis < GREGORIAN_CUTOVER_MILLIS);
+            if let (true, Some(date)) = (pre_cutover, value.to_date()?) {
+                return Ok(if minor_type == MinorType::DATEDAY {
+                    Value::LocalDate(date)
+                } else {
+                    Value::Long(epoch_day(date) * MILLIS_PER_DAY)
+                });
+            }
+        }
+        _ => {}
+    }
+    Ok(value.to_value())
+}
+
+fn array_element_value(value: &SqlValue, element_type: MinorType) -> Result<Value> {
+    match (value, element_type) {
+        (SqlValue::Array(_), _) => Ok(value.to_value()),
+        (_, MinorType::DATEMILLI | MinorType::DATEDAY) => calendar_value(value, element_type),
+        _ => Ok(value.to_value()),
+    }
+}
+
 struct ArrayFieldWriter {
     field_name: String,
+    element_type: MinorType,
 }
 
 impl FieldWriter for ArrayFieldWriter {
@@ -354,7 +395,12 @@ impl FieldWriter for ArrayFieldWriter {
     ) -> Result<bool> {
         let row = row_of(context)?;
         if let Some(values) = row.get_array(self.field_name.as_str())? {
-            let list = Value::List(values.iter().map(crate::sql::SqlValue::to_value).collect());
+            let list = Value::List(
+                values
+                    .iter()
+                    .map(|value| array_element_value(value, self.element_type))
+                    .collect::<Result<_>>()?,
+            );
             BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, &list)?;
         }
         Ok(true)
@@ -502,6 +548,10 @@ pub trait JdbcRecordHandler: RecordHandler {
 
     fn make_factory(&self, field: &Field) -> Arc<dyn FieldWriterFactory> {
         let field_name = field.name().clone();
+        let element_type = match field.data_type() {
+            DataType::List(child) => MinorType::get_minor_type_for_arrow_type(child.data_type()),
+            other => MinorType::get_minor_type_for_arrow_type(other),
+        };
         Arc::new(
             move |_vector: &FieldVector,
                   _extractor: Option<&Extractor>,
@@ -509,6 +559,7 @@ pub trait JdbcRecordHandler: RecordHandler {
                   -> Result<Box<dyn FieldWriter>> {
                 Ok(Box::new(ArrayFieldWriter {
                     field_name: field_name.clone(),
+                    element_type,
                 }))
             },
         )

@@ -412,6 +412,70 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeFactoryReadsPre1582ArrayDatesByCalendarDate() throws Exception {
+        LocalDate[] dates = {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1582, 10, 15), LocalDate.of(2025, 4, 22)};
+        for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {
+                org.apache.arrow.vector.types.Types.MinorType.DATEDAY, org.apache.arrow.vector.types.Types.MinorType.DATEMILLI}) {
+            Schema schema = SchemaBuilder.newBuilder().addListField("dates", elementType.getType()).build();
+            ResultSet elements = Mockito.mock(ResultSet.class);
+            when(elements.next()).thenReturn(true, true, true, true, true, false);
+            when(elements.getObject(2)).thenReturn(Date.valueOf(dates[0]), Date.valueOf(dates[1]), null, Date.valueOf(dates[2]), Date.valueOf(dates[3]));
+            java.sql.Array array = Mockito.mock(java.sql.Array.class);
+            when(array.getResultSet()).thenReturn(elements);
+            when(array.getArray()).thenReturn(new Object[] {Date.valueOf(dates[0]), Date.valueOf(dates[1]), null, Date.valueOf(dates[2]), Date.valueOf(dates[3])});
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getArray("dates")).thenReturn(array);
+            List<Object> expected = new ArrayList<>();
+            for (LocalDate date : dates) {
+                expected.add(elementType == org.apache.arrow.vector.types.Types.MinorType.DATEDAY ? (Object) (int) date.toEpochDay() : date.atStartOfDay());
+            }
+            expected.add(2, null);
+            try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+                this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("dates"), null, null).write(resultSet, 0);
+                block.setRowCount(1);
+                Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
+            }
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsArrayTimestampsThroughGetTimestampMillis() throws Exception {
+        JdbcRecordHandler handler = new JdbcRecordHandler(this.amazonS3, this.secretsManager, this.athena,
+                new DatabaseConnectionConfig("testCatalog", "fakedatabase", "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}", "testSecret"),
+                this.jdbcConnectionFactory, ImmutableMap.of())
+        {
+            @Override
+            public PreparedStatement buildSplitSql(Connection c, String cat, TableName t, Schema s, Constraints con, Split sp)
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
+            {
+                return resultSet.getLong(column);
+            }
+        };
+        LocalDateTime[] timestamps = {LocalDateTime.of(1000, 1, 1, 12, 0), LocalDateTime.of(-43, 3, 15, 12, 0), LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_000_000)};
+        ResultSet elements = Mockito.mock(ResultSet.class);
+        when(elements.next()).thenReturn(true, true, true, true, false);
+        when(elements.getObject(2)).thenReturn(Timestamp.valueOf(timestamps[0]), Timestamp.valueOf(timestamps[1]), null, Timestamp.valueOf(timestamps[2]));
+        when(elements.getLong(2)).thenReturn(timestamps[0].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(),
+                timestamps[1].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), timestamps[2].toInstant(java.time.ZoneOffset.UTC).toEpochMilli());
+        java.sql.Array array = Mockito.mock(java.sql.Array.class);
+        when(array.getResultSet()).thenReturn(elements);
+        when(array.getArray()).thenReturn(new Object[] {Timestamp.valueOf(timestamps[0]), Timestamp.valueOf(timestamps[1]), null, Timestamp.valueOf(timestamps[2])});
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        when(resultSet.getArray("ts_arr")).thenReturn(array);
+        Schema schema = SchemaBuilder.newBuilder().addListField("ts_arr", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build();
+        try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+            handler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("ts_arr"), null, null).write(resultSet, 0);
+            block.setRowCount(1);
+            Assert.assertEquals(java.util.Arrays.asList(timestamps[0], timestamps[1], null, timestamps[2]), block.getFieldVector("ts_arr").getObject(0));
+        }
+    }
+
+    @Test
     public void testMakeExtractorWithNullValues() throws Exception {
 
         Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");

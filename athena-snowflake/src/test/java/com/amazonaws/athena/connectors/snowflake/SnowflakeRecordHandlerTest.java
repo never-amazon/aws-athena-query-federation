@@ -1125,9 +1125,7 @@ public class SnowflakeRecordHandlerTest
         for (String instant : instants) {
             long millis = java.time.Instant.parse(instant).toEpochMilli();
             java.sql.Timestamp driverTimestamp = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis));
-            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
-            Mockito.when(resultSet.getTimestamp("ts")).thenReturn(driverTimestamp);
-            assertEquals(instant, millis, handler.getTimestampMillis(resultSet, "ts"));
+            assertEquals(instant, millis, handler.getTimestampMillis(Mockito.mock(java.sql.ResultSet.class), 1, driverTimestamp));
         }
         assertEquals(-30_609_748_800_000L, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(
                 new java.sql.Timestamp(java.time.Instant.parse("1000-01-01T12:00:00Z").toEpochMilli())).getTime());
