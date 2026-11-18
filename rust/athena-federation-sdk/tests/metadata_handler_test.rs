@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockWriter, SchemaBuilder,
+    Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -106,7 +106,7 @@ impl MetadataHandler for TestHandler {
 
     async fn get_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

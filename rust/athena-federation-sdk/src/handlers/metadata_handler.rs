@@ -13,8 +13,8 @@ use super::federation_request_handler::{ConfigOptions, FederationRequestHandler}
 use crate::connection::EnvironmentConstants;
 use crate::data::types::java_field_to_string;
 use crate::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockUtils, BlockWriter, S3Client, S3HeadBucketClient,
-    SchemaBuilder, SimpleBlockWriter, SupportedTypes,
+    BlockAllocator, BlockAllocatorImpl, BlockUtils, S3Client, S3HeadBucketClient, SchemaBuilder,
+    SimpleBlockWriter, SupportedTypes,
 };
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::spill::{S3SpillLocation, SpillLocation, SpillLocationVerifier};
@@ -438,7 +438,7 @@ pub trait MetadataHandler: FederationRequestHandler {
 
     async fn get_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()>;

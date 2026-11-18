@@ -4,7 +4,9 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::connection::EnvironmentConstants;
-use athena_federation_sdk::data::{ArrowType, Block, BlockAllocator, BlockWriter, SchemaBuilder};
+use athena_federation_sdk::data::{
+    ArrowType, Block, BlockAllocator, SchemaBuilder, SimpleBlockWriter,
+};
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -537,7 +539,7 @@ impl MetadataHandler for PostGreSqlMetadataHandler {
 
     async fn get_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

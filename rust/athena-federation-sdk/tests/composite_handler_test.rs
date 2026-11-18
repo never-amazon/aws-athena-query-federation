@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, BlockWriter, SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -127,7 +127,7 @@ impl MetadataHandler for MockMetadataHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

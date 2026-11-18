@@ -6,9 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::Schema;
 use async_trait::async_trait;
-use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockWriter, SimpleBlockWriter,
-};
+use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SimpleBlockWriter};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
@@ -199,7 +197,7 @@ impl MetadataHandler for RecordingHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

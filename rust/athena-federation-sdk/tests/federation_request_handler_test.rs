@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use athena_federation_sdk::data::{BlockAllocator, BlockWriter, S3Client};
+use athena_federation_sdk::data::{BlockAllocator, S3Client, SimpleBlockWriter};
 use athena_federation_sdk::handlers::{
     FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
 };
@@ -93,7 +93,7 @@ impl MetadataHandler for TestMetadataHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

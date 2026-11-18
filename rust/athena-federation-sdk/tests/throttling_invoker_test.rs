@@ -32,7 +32,7 @@ struct MockSpiller;
 impl BlockSpiller for MockSpiller {
     async fn write_rows(
         &self,
-        _row_writer: &mut (dyn RowWriter + Send),
+        _row_writer: &mut RowWriter<'_>,
     ) -> athena_federation_sdk::Result<()> {
         Ok(())
     }

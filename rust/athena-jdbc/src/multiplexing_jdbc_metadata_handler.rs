@@ -5,7 +5,7 @@ use arrow::datatypes::Schema;
 use async_trait::async_trait;
 use indexmap::IndexMap;
 
-use athena_federation_sdk::data::{BlockAllocator, BlockWriter};
+use athena_federation_sdk::data::{BlockAllocator, SimpleBlockWriter};
 use athena_federation_sdk::handlers::{
     FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
 };
@@ -170,7 +170,7 @@ impl MetadataHandler for MultiplexingJdbcMetadataHandler {
 
     async fn get_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

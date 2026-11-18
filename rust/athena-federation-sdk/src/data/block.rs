@@ -2,14 +2,13 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::array::ArrayRef;
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::SchemaRef;
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::arrow_type_comparator::ArrowTypeComparator;
 use super::block_utils::BlockUtils;
 use super::field_resolver::FieldResolver;
 use super::record_batch_serde::ArrowRecordBatch;
-use super::schema_aware::SchemaAware;
 use super::value::Value;
 use super::vector::{FieldReader, FieldVector};
 use crate::domain::predicate::ConstraintEvaluator;
@@ -56,6 +55,10 @@ impl Block {
 
     pub fn schema(&self) -> &SchemaRef {
         &self.schema
+    }
+
+    pub fn get_meta_data(&self, key: &str) -> Option<&str> {
+        self.schema.metadata().get(key).map(String::as_str)
     }
 
     pub fn set_value(
@@ -278,12 +281,6 @@ impl Block {
 impl PartialEq for Block {
     fn eq(&self, other: &Self) -> bool {
         self.try_equals(other).unwrap_or(false)
-    }
-}
-
-impl SchemaAware for Block {
-    fn internal_get_schema(&self) -> &Schema {
-        &self.schema
     }
 }
 

@@ -261,14 +261,14 @@ fn end_to_end_block_test() {
         "Row count missmatch"
     );
 
-    for (actual_field_count, next) in (1usize..).zip(actual_block.fields()) {
+    for (actual_field_count, next) in (1usize..).zip(actual_block.schema().fields()) {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         assert_field_values(&actual_block, actual_field_count, &vector);
     }
 
     BlockUtils::unset_row(0, &mut actual_block).unwrap();
 
-    for next in actual_block.fields() {
+    for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
             MinorType::DATEDAY
@@ -619,7 +619,7 @@ fn list_of_lists_test() {
         actual_block.row_count(),
         "Row count missmatch"
     );
-    for next in actual_block.fields() {
+    for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
             MinorType::LIST => {
@@ -714,7 +714,7 @@ fn list_of_structs_test() {
         actual_block.row_count(),
         "Row count missmatch"
     );
-    for next in actual_block.fields() {
+    for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
             MinorType::LIST => {
@@ -795,7 +795,7 @@ fn struct_of_lists_test() {
     );
     let mut actual_list_values = 0;
     let mut empty_list_values = 0;
-    for next in actual_block.fields() {
+    for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         for i in 0..actual_block.row_count() {
             match vector.minor_type() {

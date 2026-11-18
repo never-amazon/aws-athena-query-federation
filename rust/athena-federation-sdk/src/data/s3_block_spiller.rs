@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use super::block::Block;
 use super::block_allocator::BlockAllocator;
 use super::block_spiller::BlockSpiller;
-use super::block_writer::RowWriter;
+use super::block_spiller::RowWriter;
 use super::s3_block_spill_reader::require_present;
 use super::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
 use super::spill_config::SpillConfig;
@@ -375,12 +375,12 @@ impl S3BlockSpiller {
 
 #[async_trait]
 impl BlockSpiller for S3BlockSpiller {
-    async fn write_rows(&self, row_writer: &mut (dyn RowWriter + Send)) -> Result<()> {
+    async fn write_rows(&self, row_writer: &mut RowWriter<'_>) -> Result<()> {
         let to_spill = {
             let mut slot = lock(&self.in_progress_block);
             let block = self.ensure_init(&mut slot);
             let row_count = block.row_count();
-            let rows = row_writer.write_rows(block, row_count)?;
+            let rows = row_writer(block, row_count)?;
             if rows > 0 {
                 block.set_row_count(row_count + rows);
             }
