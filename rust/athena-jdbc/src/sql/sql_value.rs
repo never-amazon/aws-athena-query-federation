@@ -15,6 +15,7 @@ use super::sql_exception::{SqlException, SQL_EXCEPTION_CLASS};
 pub enum RenderedKind {
     Typed,
     JavaDateMillis(i64),
+    EpochMillis(i64),
     InvalidElement(&'static str),
     InvalidDateTime,
 }
@@ -135,6 +136,19 @@ impl SqlValue {
         }
     }
 
+    pub fn rendered_with_epoch_millis(
+        value: SqlValue,
+        text: impl Into<String>,
+        epoch_millis: i64,
+    ) -> SqlValue {
+        SqlValue::Rendered {
+            value: Box::new(value),
+            text: text.into(),
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::EpochMillis(epoch_millis),
+        }
+    }
+
     pub fn java_date_millis(millis: i64, text: impl Into<String>) -> SqlValue {
         let text = text.into();
         SqlValue::Rendered {
@@ -194,6 +208,17 @@ impl SqlValue {
         Ok(self
             .to_timestamp()?
             .map(|ts| ts.and_utc().timestamp_millis()))
+    }
+
+    pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlException> {
+        if let SqlValue::Rendered {
+            kind: RenderedKind::EpochMillis(millis),
+            ..
+        } = self
+        {
+            return Ok(Some(*millis));
+        }
+        self.to_timestamp_millis()
     }
 
     pub fn is_null(&self) -> bool {

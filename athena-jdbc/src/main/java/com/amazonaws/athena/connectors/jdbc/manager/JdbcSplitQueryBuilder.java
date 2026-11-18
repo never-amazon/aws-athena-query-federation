@@ -435,6 +435,11 @@ public abstract class JdbcSplitQueryBuilder
         return emptyString;
     }
 
+    protected String getSplitTable(Split split)
+    {
+        return emptyString;
+    }
+
     private String getSplitRestriction(Split split)
     {
         List<String> splitClauses = getPartitionWhereClauses(split);
@@ -442,7 +447,7 @@ public abstract class JdbcSplitQueryBuilder
         return where + getSplitPagingClause(split);
     }
 
-    private static boolean restrictScannedTable(SqlNode node, String splitRestriction, SqlDialect sqlDialect)
+    private static boolean restrictScannedTable(SqlNode node, String splitTable, String splitRestriction, SqlDialect sqlDialect)
     {
         if (!(node instanceof SqlSelect)) {
             return false;
@@ -453,7 +458,7 @@ public abstract class JdbcSplitQueryBuilder
             SqlIdentifier table = (SqlIdentifier) from;
             SqlIdentifier alias = new SqlIdentifier(Iterables.getLast(table.names), SqlParserPos.ZERO);
             select.setFrom(SqlStdOperatorTable.AS.createCall(SqlParserPos.ZERO,
-                    splitTable(table, splitRestriction, sqlDialect), alias));
+                    splitTable(table, splitTable, splitRestriction, sqlDialect), alias));
             return true;
         }
         if (from == null || from.getKind() != SqlKind.AS) {
@@ -462,15 +467,16 @@ public abstract class JdbcSplitQueryBuilder
         SqlBasicCall as = (SqlBasicCall) from;
         SqlNode source = as.operand(0);
         if (source instanceof SqlIdentifier) {
-            as.setOperand(0, splitTable((SqlIdentifier) source, splitRestriction, sqlDialect));
+            as.setOperand(0, splitTable((SqlIdentifier) source, splitTable, splitRestriction, sqlDialect));
             return true;
         }
-        return restrictScannedTable(source, splitRestriction, sqlDialect);
+        return restrictScannedTable(source, splitTable, splitRestriction, sqlDialect);
     }
 
-    private static SqlNode splitTable(SqlIdentifier table, String splitRestriction, SqlDialect sqlDialect)
+    private static SqlNode splitTable(SqlIdentifier table, String splitTable, String splitRestriction, SqlDialect sqlDialect)
     {
-        return new SqlText("(SELECT * FROM " + table.toSqlString(sqlDialect).getSql() + splitRestriction + ")");
+        String source = splitTable.isEmpty() ? table.toSqlString(sqlDialect).getSql() : splitTable;
+        return new SqlText("(SELECT * FROM " + source + splitRestriction + ")");
     }
 
     private static final class SqlText extends SqlIdentifier
@@ -534,8 +540,10 @@ public abstract class JdbcSplitQueryBuilder
             LOGGER.debug("CalciteSql parameterized sql with dialect {}: {}", sqlDialect.toString(), parameterizedNode.toSqlString(sqlDialect).getSql());
             LOGGER.debug("CalciteSql parameters: {}", accumulator.toString());
 
+            String splitTable = getSplitTable(split);
             String splitRestriction = getSplitRestriction(split);
-            if (!splitRestriction.isEmpty() && !restrictScannedTable(parameterizedNode, splitRestriction, sqlDialect)) {
+            if ((!splitTable.isEmpty() || !splitRestriction.isEmpty())
+                    && !restrictScannedTable(parameterizedNode, splitTable, splitRestriction, sqlDialect)) {
                 throw new UnsupportedOperationException("Cannot apply the split to a query plan that does not read one table: "
                         + parameterizedNode.toSqlString(sqlDialect).getSql());
             }

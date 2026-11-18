@@ -214,12 +214,27 @@ impl ParsedTimestamp {
         }
     }
 
-    pub(crate) fn java_millis(&self) -> Option<i64> {
-        let day = hybrid_epoch_day(self.proleptic_year(), self.month, self.day);
+    fn millis_on_day(&self, day: i64) -> Option<i64> {
         let seconds = self.hour * 3600 + self.minute * 60 + self.second - self.offset_seconds;
         day.checked_mul(MILLIS_PER_DAY)?
             .checked_add(seconds.checked_mul(1000)?)?
             .checked_add(i64::from(self.nanos / 1_000_000))
+    }
+
+    pub(crate) fn java_millis(&self) -> Option<i64> {
+        self.millis_on_day(hybrid_epoch_day(
+            self.proleptic_year(),
+            self.month,
+            self.day,
+        ))
+    }
+
+    pub(crate) fn epoch_millis(&self) -> Option<i64> {
+        self.millis_on_day(gregorian_epoch_day(
+            self.proleptic_year(),
+            self.month,
+            self.day,
+        ))
     }
 
     pub(crate) fn java_date_millis(&self) -> Option<i64> {

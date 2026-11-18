@@ -55,6 +55,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -155,6 +156,20 @@ public class PostGreSqlRecordHandler
         if (text != null && !PostGreSqlDateTimeText.isValid(text)) {
             throw new PSQLException("Bad value for type timestamp/date/time: " + text, PSQLState.BAD_DATETIME_FORMAT);
         }
+    }
+
+    @Override
+    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    {
+        int columnType = resultSet.getMetaData().getColumnType(resultSet.findColumn(fieldName));
+        if (columnType != Types.TIMESTAMP && columnType != Types.TIMESTAMP_WITH_TIMEZONE) {
+            return super.getTimestampMillis(resultSet, fieldName);
+        }
+        OffsetDateTime timestamp = resultSet.getObject(fieldName, OffsetDateTime.class);
+        if (OffsetDateTime.MAX.equals(timestamp) || OffsetDateTime.MIN.equals(timestamp)) {
+            return super.getTimestampMillis(resultSet, fieldName);
+        }
+        return timestamp.toInstant().toEpochMilli();
     }
 
     private ArrowType exportArrowType(ResultSetMetaData metadata, int column, Calendar utc) throws SQLException

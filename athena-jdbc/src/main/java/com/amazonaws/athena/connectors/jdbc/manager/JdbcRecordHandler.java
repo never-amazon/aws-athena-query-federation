@@ -414,6 +414,11 @@ public abstract class JdbcRecordHandler
     {
     }
 
+    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    {
+        return resultSet.getTimestamp(fieldName).getTime();
+    }
+
     protected boolean enableCaseSensitivelyLookUpSession(Connection connection)
     {
         return false;
@@ -530,7 +535,7 @@ public abstract class JdbcRecordHandler
                         dst.value = LocalDate.parse(resultSet.getDate(fieldName).toString()).toEpochDay() * MILLIS_PER_DAY;
                     }
                     else if (resultSet.getTimestamp(fieldName) != null) {
-                        dst.value = resultSet.getTimestamp(fieldName).getTime();
+                        dst.value = getTimestampMillis(resultSet, fieldName);
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };

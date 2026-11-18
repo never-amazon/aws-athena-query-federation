@@ -270,6 +270,10 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         String::new()
     }
 
+    fn get_split_table(&self, _split: &Split) -> String {
+        String::new()
+    }
+
     fn get_sql_dialect(&self) -> SqlDialect {
         SqlDialect::ansi()
     }
@@ -288,6 +292,7 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         sql_dialect: &SqlDialect,
         split: &Split,
     ) -> Result<PreparedStatement> {
+        let split_table = self.get_split_table(split);
         let split_restriction = split_restriction(self, split);
         let result = async {
             let base64_encoded_plan = constraints
@@ -299,8 +304,12 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
                     )
                 })?;
             tracing::debug!("CalciteSql substrait plan: {}", base64_encoded_plan);
-            let sql = build_calcite_sql(&base64_encoded_plan, sql_dialect, &split_restriction)?;
-            let (sql, accumulator) = sql;
+            let (sql, accumulator) = build_calcite_sql(
+                &base64_encoded_plan,
+                sql_dialect,
+                &split_table,
+                &split_restriction,
+            )?;
             let mut statement = jdbc_connection.prepare_statement(&sql).await?;
             match jdbc_connection.parameter_count(&statement).await? {
                 Some(count) if count != accumulator.len() => {
@@ -387,6 +396,7 @@ fn split_restriction<B: JdbcSplitQueryBuilder + ?Sized>(builder: &B, split: &Spl
 fn build_calcite_sql(
     base64_encoded_plan: &str,
     sql_dialect: &SqlDialect,
+    split_table: &str,
     split_restriction: &str,
 ) -> Result<(String, Vec<SubstraitTypeAndValue>)> {
     let sql_node =
@@ -408,8 +418,13 @@ fn build_calcite_sql(
     );
     tracing::debug!("CalciteSql parameters: {:?}", accumulator);
 
-    if !split_restriction.is_empty()
-        && !restrict_scanned_table(&mut parameterized_node, split_restriction, sql_dialect)
+    if (!split_table.is_empty() || !split_restriction.is_empty())
+        && !restrict_scanned_table(
+            &mut parameterized_node,
+            split_table,
+            split_restriction,
+            sql_dialect,
+        )
     {
         return Err(FederationError::UnsupportedOperation(format!(
             "Cannot apply the split to a query plan that does not read one table: {}",
@@ -421,6 +436,7 @@ fn build_calcite_sql(
 
 fn restrict_scanned_table(
     node: &mut SqlNode,
+    split_table: &str,
     split_restriction: &str,
     sql_dialect: &SqlDialect,
 ) -> bool {
@@ -430,33 +446,39 @@ fn restrict_scanned_table(
     match &mut select.from {
         Some(SqlNode::Identifier(table)) => {
             let alias = table.names.last().cloned().unwrap_or_default();
-            let restricted = split_table(table, split_restriction, sql_dialect);
+            let restricted = restricted_table(table, split_table, split_restriction, sql_dialect);
             select.from = Some(SqlNode::as_alias(restricted, alias));
             true
         }
         Some(SqlNode::Call(call)) if call.op.kind == SqlKind::As => match call.operands.first_mut()
         {
             Some(SqlNode::Identifier(table)) => {
-                let restricted = split_table(table, split_restriction, sql_dialect);
+                let restricted =
+                    restricted_table(table, split_table, split_restriction, sql_dialect);
                 call.operands[0] = restricted;
                 true
             }
-            Some(source) => restrict_scanned_table(source, split_restriction, sql_dialect),
+            Some(source) => {
+                restrict_scanned_table(source, split_table, split_restriction, sql_dialect)
+            }
             None => false,
         },
         _ => false,
     }
 }
 
-fn split_table(
+fn restricted_table(
     table: &SqlIdentifier,
+    split_table: &str,
     split_restriction: &str,
     sql_dialect: &SqlDialect,
 ) -> SqlNode {
-    SqlNode::Text(format!(
-        "(SELECT * FROM {}{split_restriction})",
+    let source = if split_table.is_empty() {
         SqlNode::Identifier(table.clone()).to_sql_string(sql_dialect)
-    ))
+    } else {
+        split_table.to_string()
+    };
+    SqlNode::Text(format!("(SELECT * FROM {source}{split_restriction})"))
 }
 
 fn to_conjuncts<B: JdbcSplitQueryBuilder + ?Sized>(
