@@ -16,6 +16,7 @@ pub enum RenderedKind {
     Typed,
     JavaDateMillis(i64),
     InvalidElement(&'static str),
+    InvalidDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +56,21 @@ fn bad_value(type_name: &str, value: &SqlValue) -> SqlException {
         class_name,
         format!("Bad value for type {type_name} : {value}"),
     )
+}
+
+fn invalid_date_time(value: &SqlValue) -> Option<SqlException> {
+    match value {
+        SqlValue::Rendered {
+            text,
+            exception_class,
+            kind: RenderedKind::InvalidDateTime,
+            ..
+        } => Some(SqlException::with_class_name(
+            exception_class,
+            format!("Bad value for type timestamp/date/time: {text}"),
+        )),
+        _ => None,
+    }
 }
 
 fn first_invalid_element(items: &[SqlValue]) -> Option<&SqlValue> {
@@ -139,6 +155,16 @@ impl SqlValue {
         }
     }
 
+    pub fn invalid_date_time(text: impl Into<String>) -> SqlValue {
+        let text = text.into();
+        SqlValue::Rendered {
+            value: Box::new(SqlValue::String(text.clone())),
+            text,
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::InvalidDateTime,
+        }
+    }
+
     #[must_use]
     pub fn with_exception_class(self, class_name: &'static str) -> SqlValue {
         match self {
@@ -155,6 +181,9 @@ impl SqlValue {
     }
 
     pub fn to_timestamp_millis(&self) -> Result<Option<i64>, SqlException> {
+        if let Some(error) = invalid_date_time(self) {
+            return Err(error);
+        }
         if let SqlValue::Rendered {
             kind: RenderedKind::JavaDateMillis(millis),
             ..
@@ -334,6 +363,9 @@ impl SqlValue {
     }
 
     pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlException> {
+        if let Some(error) = invalid_date_time(self) {
+            return Err(error);
+        }
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_date().map_err(|_| bad_value("date", self));
         }
@@ -350,6 +382,9 @@ impl SqlValue {
     }
 
     pub fn to_timestamp(&self) -> Result<Option<NaiveDateTime>, SqlException> {
+        if let Some(error) = invalid_date_time(self) {
+            return Err(error);
+        }
         if let SqlValue::Rendered { value, .. } = self {
             return value
                 .to_timestamp()

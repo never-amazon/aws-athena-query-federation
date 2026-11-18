@@ -1329,4 +1329,27 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Assert.assertEquals(ArrowType.Utf8.INSTANCE, schema.findField("uuid_col").getType());
         Assert.assertEquals(ArrowType.Utf8.INSTANCE, schema.findField("array_col").getType());
     }
+
+    @Test
+    public void checkDateTimeTextRejectsMalformedDateAndTimestampText() throws SQLException
+    {
+        for (int columnType : new int[] {java.sql.Types.DATE, java.sql.Types.TIMESTAMP, java.sql.Types.TIMESTAMP_WITH_TIMEZONE}) {
+            java.sql.ResultSet resultSet = dateTimeResultSet(columnType, "2147483647-01-01 00:00:00");
+            org.postgresql.util.PSQLException error = Assert.assertThrows(org.postgresql.util.PSQLException.class,
+                    () -> this.postGreSqlRecordHandler.checkDateTimeText(resultSet, "ts"));
+            Assert.assertEquals("Bad value for type timestamp/date/time: 2147483647-01-01 00:00:00", error.getMessage());
+            this.postGreSqlRecordHandler.checkDateTimeText(dateTimeResultSet(columnType, "2020-01-01 00:00:00"), "ts");
+            this.postGreSqlRecordHandler.checkDateTimeText(dateTimeResultSet(columnType, null), "ts");
+        }
+        this.postGreSqlRecordHandler.checkDateTimeText(dateTimeResultSet(java.sql.Types.VARCHAR, "2147483647-01-01 00:00:00"), "ts");
+    }
+
+    private static java.sql.ResultSet dateTimeResultSet(int columnType, String text) throws SQLException
+    {
+        java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class, Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(resultSet.findColumn("ts")).thenReturn(1);
+        Mockito.when(resultSet.getMetaData().getColumnType(1)).thenReturn(columnType);
+        Mockito.when(resultSet.getString("ts")).thenReturn(text);
+        return resultSet;
+    }
 }

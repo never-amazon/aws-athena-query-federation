@@ -19,6 +19,10 @@ fn rendered(value: SqlValue, text: String) -> SqlValue {
     SqlValue::rendered(value, text).with_exception_class(PSQL_EXCEPTION)
 }
 
+fn invalid_date_time(text: Cow<'_, str>) -> SqlValue {
+    SqlValue::invalid_date_time(text.into_owned()).with_exception_class(PSQL_EXCEPTION)
+}
+
 fn infinity_millis(text: &str) -> Option<i64> {
     match text {
         "infinity" => Some(DATE_POSITIVE_INFINITY),
@@ -168,9 +172,9 @@ impl Decoder {
                     _ => unparsed(text),
                 },
             },
-            Decoder::Date => java_date(&text).unwrap_or_else(|| unparsed(text)),
+            Decoder::Date => java_date(&text).unwrap_or_else(|| invalid_date_time(text)),
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or_else(|| unparsed(text))
+                java_timestamp(&text).unwrap_or_else(|| invalid_date_time(text))
             }
             Decoder::Bytea => decode_bytea(&text).map_or_else(|| unparsed(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
@@ -622,27 +626,84 @@ mod tests {
         );
     }
 
+    const MALFORMED_DATE_TIME_TEXT: [&str; 12] = [
+        "2020-01-01 00:00:00+9999999999999999",
+        "9223372036854775807-01-01 00:00:00",
+        "2020-01-01 2562047788015216:00:00",
+        "2147483647-01-01 00:00:00",
+        "292278995-01-01 00:00:00",
+        "2020-01-01 00:00:00+99",
+        "2020-01-01 00:00:00+24:00",
+        "2020-01-01 00:00:00+2147483647",
+        "2020-01-01 00:00:00.9999999999",
+        "2020-01-01 00:00:00x",
+        "abc",
+        "9223372036854775807-01-01",
+    ];
+
+    const ACCEPTED_DATE_TIME_TEXT: [(&str, i64); 8] = [
+        ("2020-01-01 2147483647:00:00", 7_732_518_966_000_000),
+        ("292278994-08-17 07:12:55.807", i64::MAX),
+        ("2020-13-01 00:00:00", 1_609_459_200_000),
+        ("2020-01-01 00:00:00 BC", -125_882_121_600_000),
+        ("2020-01-01", 1_577_836_800_000),
+        ("2020-1-1 1:2:3", 1_577_840_523_000),
+        ("2020-01-01 00:00:00+05:30:15", 1_577_816_985_000),
+        ("infinity", 9_223_372_036_825_200_000),
+    ];
+
     #[test]
-    fn timestamps_with_fields_outside_the_java_int_range_fail_as_bad_values() {
-        for text in [
-            "2020-01-01 00:00:00+9999999999999999",
-            "9223372036854775807-01-01 00:00:00",
-            "2020-01-01 2562047788015216:00:00",
-        ] {
-            for decoder in [Decoder::Timestamp, Decoder::TimestampTz] {
+    fn malformed_date_time_text_fails_like_the_java_connector() {
+        for text in MALFORMED_DATE_TIME_TEXT {
+            for decoder in [Decoder::Timestamp, Decoder::TimestampTz, Decoder::Date] {
                 let value = decoder.decode(Some(text.as_bytes()));
-                assert_eq!(
-                    value.to_timestamp().unwrap_err().message(),
-                    format!("Bad value for type timestamp : {text}")
-                );
+                let expected = format!("Bad value for type timestamp/date/time: {text}");
+                for error in [
+                    value.to_timestamp().unwrap_err(),
+                    value.to_timestamp_millis().unwrap_err(),
+                    value.to_date().unwrap_err(),
+                ] {
+                    assert_eq!(expected, error.message(), "{decoder:?} {text}");
+                    assert_eq!(PSQL_EXCEPTION, error.class_name(), "{decoder:?} {text}");
+                }
+                assert_eq!(Some(text.to_string()), value.to_java_string());
             }
         }
-        let text = "9223372036854775807-01-01";
-        let value = Decoder::Date.decode(Some(text.as_bytes()));
+    }
+
+    #[test]
+    fn check_date_time_text_rejects_malformed_date_and_timestamp_text() {
+        let malformed = "2147483647-01-01 00:00:00";
+        for decoder in [Decoder::Date, Decoder::Timestamp, Decoder::TimestampTz] {
+            let error = decoder
+                .decode(Some(malformed.as_bytes()))
+                .to_timestamp_millis()
+                .unwrap_err();
+            assert_eq!(
+                format!("Bad value for type timestamp/date/time: {malformed}"),
+                error.message()
+            );
+            assert_eq!(PSQL_EXCEPTION, error.class_name());
+            assert!(decoder
+                .decode(Some(b"2020-01-01 00:00:00"))
+                .to_timestamp_millis()
+                .is_ok());
+            assert_eq!(None, decoder.decode(None).to_timestamp_millis().unwrap());
+        }
         assert_eq!(
-            value.to_date().unwrap_err().message(),
-            format!("Bad value for type date : {text}")
+            Some(malformed.to_string()),
+            Decoder::Text
+                .decode(Some(malformed.as_bytes()))
+                .to_java_string()
         );
+    }
+
+    #[test]
+    fn lenient_date_time_text_keeps_the_pgjdbc_value() {
+        for (text, millis) in ACCEPTED_DATE_TIME_TEXT {
+            let value = Decoder::Timestamp.decode(Some(text.as_bytes()));
+            assert_eq!(Some(millis), value.to_timestamp_millis().unwrap(), "{text}");
+        }
     }
 
     #[test]
