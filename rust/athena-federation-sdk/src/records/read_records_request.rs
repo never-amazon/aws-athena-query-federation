@@ -2,7 +2,7 @@ use std::fmt;
 
 use arrow::datatypes::Schema;
 
-use super::{RecordRequest, RecordRequestType};
+use super::RecordRequestType;
 use crate::domain::predicate::Constraints;
 use crate::domain::split::Split;
 use crate::domain::table_name::TableName;
@@ -85,24 +85,6 @@ impl ReadRecordsRequest {
 
     pub fn constraints(&self) -> &Constraints {
         &self.constraints
-    }
-}
-
-impl RecordRequest for ReadRecordsRequest {
-    fn identity(&self) -> Option<&FederatedIdentity> {
-        self.identity.as_ref()
-    }
-
-    fn request_type(&self) -> RecordRequestType {
-        RecordRequestType::ReadRecords
-    }
-
-    fn catalog_name(&self) -> &str {
-        &self.catalog_name
-    }
-
-    fn query_id(&self) -> &str {
-        &self.query_id
     }
 }
 

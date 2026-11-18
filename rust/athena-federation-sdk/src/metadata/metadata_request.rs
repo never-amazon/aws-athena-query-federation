@@ -12,8 +12,6 @@ pub trait MetadataRequest {
     fn query_id(&self) -> Option<&str>;
 
     fn context(&self) -> Option<&LambdaContext>;
-
-    fn set_context(&mut self, context: Option<LambdaContext>);
 }
 
 macro_rules! impl_metadata_request {
@@ -37,10 +35,6 @@ macro_rules! impl_metadata_request {
 
             fn context(&self) -> Option<&$crate::lambda::LambdaContext> {
                 self.context.as_ref()
-            }
-
-            fn set_context(&mut self, context: Option<$crate::lambda::LambdaContext>) {
-                self.context = context;
             }
         }
 

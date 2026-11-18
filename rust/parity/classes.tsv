@@ -129,7 +129,7 @@ com.amazonaws.athena.connector.lambda.metadata.ListTablesRequest	athena-federati
 com.amazonaws.athena.connector.lambda.metadata.ListTablesResponse	athena-federation-sdk/src/metadata/list_tables_response.rs::ListTablesResponse	ported	
 com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/metadata_request.rs::MetadataRequest	ported	
 com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/metadata_request_type.rs::MetadataRequestType	ported	
-com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::MetadataResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::impl_metadata_response	merged	the abstract base class becomes a macro that adds the shared accessors to each response
 com.amazonaws.athena.connector.lambda.metadata.glue.DefaultGlueType	athena-federation-sdk/src/metadata/glue/default_glue_type.rs::DefaultGlueType	ported	
 com.amazonaws.athena.connector.lambda.metadata.glue.GlueFieldLexer	athena-federation-sdk/src/metadata/glue/glue_field_lexer.rs::lex	merged	the static-method class becomes the lex and lex_with_mapper functions
 com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser	athena-federation-sdk/src/metadata/glue/glue_type_parser.rs::GlueTypeParser	ported	
@@ -146,9 +146,9 @@ com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.Qu
 com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthroughSignature	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough_signature.rs::QueryPassthroughSignature	ported	
 com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest	athena-federation-sdk/src/records/read_records_request.rs::ReadRecordsRequest	ported	
 com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse	athena-federation-sdk/src/records/read_records_response.rs::ReadRecordsResponse	ported	
-com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records/record_request.rs::RecordRequest	ported	
+com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records/read_records_request.rs::ReadRecordsRequest	merged	the abstract base class has one subclass, ReadRecordsRequest, which carries its accessors
 com.amazonaws.athena.connector.lambda.records.RecordRequestType	athena-federation-sdk/src/records/record_request_type.rs::RecordRequestType	ported	
-com.amazonaws.athena.connector.lambda.records.RecordResponse	athena-federation-sdk/src/records/record_response.rs::RecordResponse	ported	
+com.amazonaws.athena.connector.lambda.records.RecordResponse	athena-federation-sdk/src/request/federation_response.rs::FederationResponse	merged	the abstract base class becomes the ReadRecords and RemoteReadRecords variants of FederationResponse
 com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse	athena-federation-sdk/src/records/remote_read_records_response.rs::RemoteReadRecordsResponse	ported	
 com.amazonaws.athena.connector.lambda.request.FederationRequest	athena-federation-sdk/src/request/federation_request.rs::FederationRequest	ported	
 com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federation-sdk/src/request/federation_response.rs::FederationResponse	ported	
