@@ -7,7 +7,12 @@ use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
 
 use athena_federation_sdk::connection::EnvironmentConstants;
-use athena_federation_sdk::data::BlockAllocatorImpl;
+use athena_federation_sdk::data::{BlockAllocatorImpl, BlockUtils, Value};
+use athena_federation_sdk::domain::predicate::expression::{
+    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
+    DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
+};
+use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::predicate::{
     Constraints, Direction, OrderByField, Range, SortedRangeSet, ValueSet,
 };
@@ -467,4 +472,118 @@ fn test_get_sql_dialect_with_casing_filter_false() {
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
     assert_eq!(dialect, SnowflakeDialect::new(false).into_sql_dialect());
     assert!(!dialect.is_upper_casing());
+}
+
+fn constant(
+    allocator: &BlockAllocatorImpl,
+    value: Value,
+    arrow_type: DataType,
+) -> FederationExpression {
+    let block = BlockUtils::new_block(
+        allocator,
+        DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
+        &arrow_type,
+        vec![value],
+    )
+    .unwrap();
+    FederationExpression::Constant(ConstantExpression::new(Some(block), arrow_type))
+}
+
+fn function(name: StandardFunctions, arguments: Vec<FederationExpression>) -> FederationExpression {
+    FederationExpression::FunctionCall(FunctionCallExpression::new(
+        DataType::Boolean,
+        name.function_name(),
+        arguments,
+    ))
+}
+
+fn complex_expression_constraints(allocator: &BlockAllocatorImpl) -> Constraints {
+    let col1 =
+        || FederationExpression::Variable(VariableExpression::new("col1", DataType::Utf8).unwrap());
+    let col2 =
+        FederationExpression::Variable(VariableExpression::new("col2", DataType::Int32).unwrap());
+    let greater = function(
+        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME,
+        vec![
+            col2,
+            constant(allocator, Value::from(10_i32), DataType::Int32),
+        ],
+    );
+    let equal = function(
+        StandardFunctions::EQUAL_OPERATOR_FUNCTION_NAME,
+        vec![
+            col1(),
+            constant(allocator, Value::from("it's"), DataType::Utf8),
+        ],
+    );
+    let is_null = function(StandardFunctions::IS_NULL_FUNCTION_NAME, vec![col1()]);
+    let or = function(StandardFunctions::OR_FUNCTION_NAME, vec![equal, is_null]);
+    let range = Range::less_than_or_equal(allocator, &DataType::Int32, 100_i32).unwrap();
+    Constraints::new(
+        int_summary(range),
+        vec![greater, or],
+        vec![OrderByField::new("col1", Direction::DESC_NULLS_LAST)],
+        5,
+        HashMap::new(),
+        None,
+    )
+}
+
+#[test]
+fn test_build_sql_string_literal_with_complex_expressions() {
+    let allocator = BlockAllocatorImpl::new();
+    let constraints = complex_expression_constraints(&allocator);
+    let split = partition_split("partition-primary-\"col2\"-limit-3-offset-6");
+    let mut accumulator = Vec::new();
+
+    let sql = query_builder()
+        .build_sql_string_literal(
+            "cat",
+            "sch",
+            "tbl",
+            &two_column_schema(),
+            &constraints,
+            &split,
+            "\"col1\", \"col2\"",
+            &mut accumulator,
+        )
+        .unwrap();
+
+    assert_eq!(
+        sql,
+        "SELECT \"col1\", \"col2\" FROM \"sch\".\"tbl\" WHERE ((\"col2\" <= ?)) AND (\"col2\" > ?) AND ((\"col1\" = ?) OR (\"col1\" IS NULL)) ORDER BY \"col1\" DESC NULLS LAST, \"col2\" LIMIT 3 OFFSET 6"
+    );
+    let parameters: Vec<(DataType, String)> = accumulator
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.get_type().clone(),
+                parameter.value().java_to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parameters,
+        vec![
+            (DataType::Int32, "100".to_string()),
+            (DataType::Int32, "10".to_string()),
+            (DataType::Utf8, "it's".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn test_get_base_export_sql_string_with_complex_expressions() {
+    let allocator = BlockAllocatorImpl::new();
+    let constraints = complex_expression_constraints(&allocator);
+
+    let result = query_builder()
+        .get_base_export_sql_string("cat", "sch", "tbl", &two_column_schema(), &constraints)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        result,
+        "SELECT \"col1\", \"col2\" FROM \"sch\".\"tbl\" WHERE ((\"col2\" <= 100)) AND (\"col2\" > 10) AND ((\"col1\" = 'it''s') OR (\"col1\" IS NULL)) ORDER BY \"col1\" DESC NULLS LAST LIMIT 5"
+    );
 }
