@@ -7,6 +7,8 @@ use super::block::Block;
 use super::record_batch_serde::ArrowRecordBatch;
 use crate::exceptions::{FederationError, Result};
 
+const MEMORY_LIMIT: usize = i32::MAX as usize;
+
 pub type ArrowBuf = Vec<u8>;
 
 pub type BatchGenerator<'a> = dyn FnMut() -> Result<ArrowRecordBatch> + 'a;
@@ -32,7 +34,6 @@ pub trait BlockAllocator: Send + Sync {
 #[derive(Debug)]
 pub struct BlockAllocatorImpl {
     id: String,
-    memory_limit: usize,
     usage: AtomicUsize,
     blocks_created: AtomicUsize,
     record_batches: Mutex<Vec<usize>>,
@@ -47,17 +48,12 @@ impl Default for BlockAllocatorImpl {
 
 impl BlockAllocatorImpl {
     pub fn new() -> BlockAllocatorImpl {
-        BlockAllocatorImpl::with_id_and_limit(uuid::Uuid::new_v4().to_string(), i32::MAX as usize)
+        BlockAllocatorImpl::with_id(uuid::Uuid::new_v4().to_string())
     }
 
     pub fn with_id(id: impl Into<String>) -> BlockAllocatorImpl {
-        BlockAllocatorImpl::with_id_and_limit(id, i32::MAX as usize)
-    }
-
-    pub fn with_id_and_limit(id: impl Into<String>, memory_limit: usize) -> BlockAllocatorImpl {
         BlockAllocatorImpl {
             id: id.into(),
-            memory_limit,
             usage: AtomicUsize::new(0),
             blocks_created: AtomicUsize::new(0),
             record_batches: Mutex::new(Vec::new()),
@@ -69,17 +65,13 @@ impl BlockAllocatorImpl {
         &self.id
     }
 
-    pub fn memory_limit(&self) -> usize {
-        self.memory_limit
-    }
-
     pub fn blocks_created(&self) -> usize {
         self.blocks_created.load(Ordering::SeqCst)
     }
 
     fn reserve(&self, bytes: usize) -> Result<()> {
         let current = self.usage.load(Ordering::SeqCst);
-        if current.saturating_add(bytes) > self.memory_limit {
+        if current.saturating_add(bytes) > MEMORY_LIMIT {
             return Err(FederationError::Runtime(format!(
                 "Unable to allocate buffer of size {bytes} due to memory limit. Current allocation: {current}"
             )));

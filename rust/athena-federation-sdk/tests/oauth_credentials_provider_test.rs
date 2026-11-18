@@ -39,6 +39,7 @@ impl SecretsManagerClient for MockSecretsClient {
         &self,
         _secret_id: &str,
         _secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> std::result::Result<(), AwsServiceError> {
         match self.put_error.lock().unwrap().clone() {
             Some(e) => Err(e),

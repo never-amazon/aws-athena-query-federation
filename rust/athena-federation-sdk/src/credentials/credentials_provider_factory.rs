@@ -30,7 +30,7 @@ pub async fn create_credential_provider(
         return Ok(None);
     };
     let secret_string = secrets_manager
-        .get_secret_with_override_configuration(secret_name, request_override_configuration)
+        .get_secret(secret_name, request_override_configuration)
         .await?;
     let secret_map = serde_json::from_str::<serde_json::Map<String, JsonValue>>(&secret_string)
         .map(to_string_map)

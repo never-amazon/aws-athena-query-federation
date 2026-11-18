@@ -70,7 +70,7 @@ impl SnowflakeCredentialsProvider {
     async fn resolve_credential_map(&self) -> Result<HashMap<String, String>> {
         let secret_string = self
             .secrets_manager
-            .get_secret_with_override_configuration(
+            .get_secret(
                 &self.oauth_secret_name,
                 self.request_override_configuration.as_ref(),
             )
@@ -237,7 +237,7 @@ impl SnowflakeCredentialsProvider {
                 serde_json::to_string(&*secret_json).map_err(runtime_error)?;
             self.secrets_manager
                 .secrets_manager()
-                .put_secret_value_with_override_configuration(
+                .put_secret_value(
                     &self.oauth_secret_name,
                     &updated_secret_string,
                     self.request_override_configuration.as_ref(),

@@ -71,15 +71,6 @@ impl SecretsManagerClient for RecordingSecretsManager {
         &self,
         secret_id: &str,
         secret_string: &str,
-    ) -> Result<(), AwsServiceError> {
-        self.put_secret_value_with_override_configuration(secret_id, secret_string, None)
-            .await
-    }
-
-    async fn put_secret_value_with_override_configuration(
-        &self,
-        secret_id: &str,
-        secret_string: &str,
         override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         self.puts.lock().unwrap().push((

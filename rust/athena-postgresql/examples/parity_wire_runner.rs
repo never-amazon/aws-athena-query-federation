@@ -121,6 +121,7 @@ impl SecretsManagerClient for Stub {
         &self,
         _secret_id: &str,
         _secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         self.state.record("secretsmanager.putSecretValue");
         Err(stub_call_error("Secrets Manager", "putSecretValue"))

@@ -199,26 +199,6 @@ impl S3BlockSpiller {
         constraint_evaluator: Arc<ConstraintEvaluator>,
         config_options: HashMap<String, String>,
     ) -> Result<S3BlockSpiller> {
-        S3BlockSpiller::new_with_max_rows_per_call(
-            amazon_s3,
-            spill_config,
-            allocator,
-            schema,
-            constraint_evaluator,
-            MAX_ROWS_PER_CALL,
-            config_options,
-        )
-    }
-
-    pub fn new_with_max_rows_per_call(
-        amazon_s3: Arc<dyn S3Client>,
-        spill_config: SpillConfig,
-        allocator: Arc<dyn BlockAllocator>,
-        schema: SchemaRef,
-        constraint_evaluator: Arc<ConstraintEvaluator>,
-        max_rows_per_call: i32,
-        config_options: HashMap<String, String>,
-    ) -> Result<S3BlockSpiller> {
         let block_crypto = BlockCrypto::for_key(spill_config.encryption_key().cloned());
         let async_spill_pool = if spill_config.num_spill_threads() <= 0 {
             None
@@ -238,7 +218,7 @@ impl S3BlockSpiller {
             }),
             allocator,
             schema,
-            max_rows_per_call: i64::from(max_rows_per_call),
+            max_rows_per_call: i64::from(MAX_ROWS_PER_CALL),
             in_progress_block: Mutex::new(None),
             async_spill_pool,
             spill_lock: Arc::new(RwLock::new(())),

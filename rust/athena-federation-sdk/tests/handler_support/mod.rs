@@ -68,6 +68,7 @@ impl SecretsManagerClient for FakeSecretsManager {
         &self,
         _secret_id: &str,
         _secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         Ok(())
     }

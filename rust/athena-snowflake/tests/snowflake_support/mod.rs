@@ -533,6 +533,7 @@ impl SecretsManagerClient for FakeSecretsManager {
         &self,
         secret_id: &str,
         secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         self.puts
             .lock()

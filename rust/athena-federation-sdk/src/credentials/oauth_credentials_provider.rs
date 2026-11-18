@@ -211,7 +211,7 @@ impl OAuthCredentialsProvider {
         let secret_name = self.secret_name.as_str();
         self.secrets_manager
             .secrets_manager()
-            .put_secret_value(secret_name, &secret_string)
+            .put_secret_value(secret_name, &secret_string, None)
             .await
             .map_err(|e| {
                 if !e.is_service_exception_of(AwsService::SecretsManager) {
