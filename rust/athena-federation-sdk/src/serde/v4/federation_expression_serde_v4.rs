@@ -4,12 +4,12 @@ use crate::serde::base::{
     deserialize_nullable, get_type, no_serde_configured, serialize_nullable, write_type,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 pub fn serialize(
     expression: Option<&FederationExpression>,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     serialize_nullable(jgen, expression, |e, j| do_serialize(e, j, version))
 }
@@ -17,7 +17,7 @@ pub fn serialize(
 pub fn do_serialize(
     expression: &FederationExpression,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     match expression {
         FederationExpression::Constant(c) => {

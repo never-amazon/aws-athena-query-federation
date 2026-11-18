@@ -24,7 +24,7 @@ use crate::domain::predicate::ConstraintProjector;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::lambda::LambdaContext;
 use crate::request::{FederationRequest, PingRequest, PingResponse};
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
+use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
 use crate::udf::{
     UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType,
 };
@@ -301,7 +301,7 @@ impl<T: UserDefinedFunctionHandler + ?Sized> UserDefinedFunctionHandlerExt for T
         let block_allocator = Arc::new(BlockAllocatorImpl::new());
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
-            let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
             let raw_request = object_mapper.read_request(input)?;
             match &raw_request {
                 FederationRequest::Ping(ping) => {

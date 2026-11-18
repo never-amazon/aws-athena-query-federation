@@ -25,7 +25,7 @@ use athena_federation_sdk::security::{
     CachableSecretsManager, EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider,
     LocalKeyFactory,
 };
-use athena_federation_sdk::serde::VersionedObjectMapperFactory;
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::Fakes;
 use indexmap::IndexMap;
@@ -88,7 +88,8 @@ fn identity() -> FederatedIdentity {
 }
 
 async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<FederationResponse> {
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&setup.block_allocator));
+    let object_mapper =
+        ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&setup.block_allocator));
     let input = object_mapper.write_value_as_bytes(&request)?;
     let output = setup.handler.handle_request(&input, None).await?;
     object_mapper.read_response(&output)
@@ -219,7 +220,7 @@ async fn record_handler_runs_as_request_stream_handler() {
         ..
     } = set_up();
     let stream_handler = RecordStreamHandler::new(handler);
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&block_allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&block_allocator));
     let ping: FederationRequest = PingRequest::new(Some(identity()), "ok", "q1").into();
     let input = object_mapper.write_value_as_bytes(&ping).unwrap();
     let output = RequestStreamHandler::handle_request(&stream_handler, &input, None)

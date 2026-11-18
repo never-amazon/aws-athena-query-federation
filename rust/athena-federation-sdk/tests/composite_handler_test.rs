@@ -30,7 +30,7 @@ use athena_federation_sdk::request::{
 use athena_federation_sdk::security::{
     AwsService, AwsServiceError, CachableSecretsManager, FederatedIdentity, KmsEncryptionProvider,
 };
-use athena_federation_sdk::serde::{object_mapper_factory, ObjectMapper};
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::udf::{UserDefinedFunctionRequest, UserDefinedFunctionType};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::Fakes;
@@ -224,7 +224,7 @@ fn set_up() -> Setup {
     Setup {
         calls,
         composite_handler: CompositeHandler::new(Arc::new(metadata), Arc::new(record)),
-        object_mapper: object_mapper_factory::create(allocator.clone()),
+        object_mapper: ObjectMapper::new(SerdeVersion::V1, allocator.clone()),
         allocator,
     }
 }

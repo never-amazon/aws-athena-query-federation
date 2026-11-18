@@ -10,6 +10,7 @@ use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPasst
 use athena_federation_sdk::metadata::GetTableRequest;
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederatedIdentity, FederationRequest};
+use athena_federation_sdk::serde::SerdeVersion;
 use athena_federation_sdk::FederationError;
 use indexmap::IndexMap;
 use serde_support::*;
@@ -87,7 +88,7 @@ fn read_records_request() -> ReadRecordsRequest {
 }
 
 fn assert_get_table_request_round_trip(
-    version: i32,
+    version: SerdeVersion,
     expected_query_passthrough_arguments: &HashMap<String, Option<String>>,
 ) {
     let t = TypedSerDe::before();
@@ -114,7 +115,7 @@ fn assert_get_table_request_round_trip(
     assert_serialized_matches(&text, &rewritten, &mapper);
 }
 
-fn assert_read_records_request_round_trip(version: i32) {
+fn assert_read_records_request_round_trip(version: SerdeVersion) {
     let t = TypedSerDe::before();
     let mapper = indented(t.allocator.clone(), version);
     let text = fixture(DIR, &format!("ReadRecordsRequest-v{version}.json"));
@@ -137,7 +138,7 @@ fn assert_read_records_request_round_trip(version: i32) {
     assert_serialized_matches(&text, &rewritten, &mapper);
 }
 
-fn assert_split_null_property_rejected(version: i32) {
+fn assert_split_null_property_rejected(version: SerdeVersion) {
     let t = TypedSerDe::before();
     let mapper = indented(t.allocator.clone(), version);
     let text = fixture(DIR, &format!("ReadRecordsRequest-v{version}.json"))
@@ -153,57 +154,57 @@ fn assert_split_null_property_rejected(version: i32) {
 
 #[test]
 fn get_table_request_null_map_values_v1() {
-    assert_get_table_request_round_trip(1, &null_query_passthrough_arguments());
+    assert_get_table_request_round_trip(SerdeVersion::V1, &null_query_passthrough_arguments());
 }
 
 #[test]
 fn get_table_request_null_map_values_v2() {
-    assert_get_table_request_round_trip(2, &HashMap::new());
+    assert_get_table_request_round_trip(SerdeVersion::V2, &HashMap::new());
 }
 
 #[test]
 fn get_table_request_null_map_values_v3() {
-    assert_get_table_request_round_trip(3, &HashMap::new());
+    assert_get_table_request_round_trip(SerdeVersion::V3, &HashMap::new());
 }
 
 #[test]
 fn get_table_request_null_map_values_v4() {
-    assert_get_table_request_round_trip(4, &HashMap::new());
+    assert_get_table_request_round_trip(SerdeVersion::V4, &HashMap::new());
 }
 
 #[test]
 fn get_table_request_null_map_values_v5() {
-    assert_get_table_request_round_trip(5, &null_query_passthrough_arguments());
+    assert_get_table_request_round_trip(SerdeVersion::V5, &null_query_passthrough_arguments());
 }
 
 #[test]
 fn get_table_request_null_map_values_v6() {
-    assert_get_table_request_round_trip(6, &null_query_passthrough_arguments());
+    assert_get_table_request_round_trip(SerdeVersion::V6, &null_query_passthrough_arguments());
 }
 
 #[test]
 fn read_records_request_null_query_passthrough_argument_v1() {
-    assert_read_records_request_round_trip(1);
+    assert_read_records_request_round_trip(SerdeVersion::V1);
 }
 
 #[test]
 fn read_records_request_null_query_passthrough_argument_v5() {
-    assert_read_records_request_round_trip(5);
+    assert_read_records_request_round_trip(SerdeVersion::V5);
 }
 
 #[test]
 fn read_records_request_null_query_passthrough_argument_v6() {
-    assert_read_records_request_round_trip(6);
+    assert_read_records_request_round_trip(SerdeVersion::V6);
 }
 
 #[test]
 fn split_null_property_rejected_v5() {
-    assert_split_null_property_rejected(5);
+    assert_split_null_property_rejected(SerdeVersion::V5);
 }
 
 #[test]
 fn split_null_property_rejected_v6() {
-    assert_split_null_property_rejected(6);
+    assert_split_null_property_rejected(SerdeVersion::V6);
 }
 
 struct SystemQuerySignature;
@@ -288,7 +289,7 @@ fn read_records_request_with_null_split_property() -> ReadRecordsRequest {
 #[test]
 fn split_null_property_kept_v1() {
     let t = TypedSerDe::before();
-    let mapper = indented(t.allocator.clone(), 1);
+    let mapper = indented(t.allocator.clone(), SerdeVersion::V1);
     let text = fixture(DIR, "ReadRecordsRequest-null-split-property-v1.json");
 
     let actual = write_request(&mapper, read_records_request_with_null_split_property());
@@ -316,7 +317,7 @@ fn split_null_property_kept_v1() {
     assert_serialized_matches(&text, &rewritten, &mapper);
 }
 
-fn assert_split_null_property_written_then_rejected(version: i32) {
+fn assert_split_null_property_written_then_rejected(version: SerdeVersion) {
     let t = TypedSerDe::before();
     let mapper = indented(t.allocator.clone(), version);
     let text = fixture(
@@ -337,27 +338,27 @@ fn assert_split_null_property_written_then_rejected(version: i32) {
 
 #[test]
 fn split_null_property_rejected_v2() {
-    assert_split_null_property_written_then_rejected(2);
+    assert_split_null_property_written_then_rejected(SerdeVersion::V2);
 }
 
 #[test]
 fn split_null_property_rejected_v3() {
-    assert_split_null_property_written_then_rejected(3);
+    assert_split_null_property_written_then_rejected(SerdeVersion::V3);
 }
 
 #[test]
 fn split_null_property_rejected_v4() {
-    assert_split_null_property_written_then_rejected(4);
+    assert_split_null_property_written_then_rejected(SerdeVersion::V4);
 }
 
 #[test]
 fn split_null_property_written_then_rejected_v5() {
-    assert_split_null_property_written_then_rejected(5);
+    assert_split_null_property_written_then_rejected(SerdeVersion::V5);
 }
 
 #[test]
 fn split_null_property_written_then_rejected_v6() {
-    assert_split_null_property_written_then_rejected(6);
+    assert_split_null_property_written_then_rejected(SerdeVersion::V6);
 }
 
 fn null_group_request() -> GetTableRequest {
@@ -377,7 +378,7 @@ fn null_group_request() -> GetTableRequest {
     )
 }
 
-fn assert_null_group_round_trip(version: i32) {
+fn assert_null_group_round_trip(version: SerdeVersion) {
     let t = TypedSerDe::before();
     let mapper = indented(t.allocator.clone(), version);
     let text = fixture(DIR, &format!("GetTableRequest-null-group-v{version}.json"));
@@ -401,30 +402,30 @@ fn assert_null_group_round_trip(version: i32) {
 
 #[test]
 fn federated_identity_null_group_kept_v1() {
-    assert_null_group_round_trip(1);
+    assert_null_group_round_trip(SerdeVersion::V1);
 }
 
 #[test]
 fn federated_identity_null_group_kept_v2() {
-    assert_null_group_round_trip(2);
+    assert_null_group_round_trip(SerdeVersion::V2);
 }
 
 #[test]
 fn federated_identity_null_group_kept_v3() {
-    assert_null_group_round_trip(3);
+    assert_null_group_round_trip(SerdeVersion::V3);
 }
 
 #[test]
 fn federated_identity_null_group_kept_v4() {
-    assert_null_group_round_trip(4);
+    assert_null_group_round_trip(SerdeVersion::V4);
 }
 
 #[test]
 fn federated_identity_null_group_kept_v5() {
-    assert_null_group_round_trip(5);
+    assert_null_group_round_trip(SerdeVersion::V5);
 }
 
 #[test]
 fn federated_identity_null_group_kept_v6() {
-    assert_null_group_round_trip(6);
+    assert_null_group_round_trip(SerdeVersion::V6);
 }

@@ -2,7 +2,7 @@ use crate::exceptions::Result;
 use crate::request::FederationRequest;
 use crate::serde::base::{get_type, no_serde_configured, serialize_object, write_type};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::{ping_request_serde, SerDeContext};
+use crate::serde::{ping_request_serde, SerDeContext, SerdeVersion};
 
 pub const V2_SUB_TYPES: &[&str] = &[
     "PingRequest",
@@ -27,8 +27,8 @@ pub const V4_SUB_TYPES: &[&str] = &[
     "GetDataSourceCapabilitiesRequest",
 ];
 
-pub fn sub_types_for_version(version: i32) -> &'static [&'static str] {
-    if version >= 4 {
+pub fn sub_types_for_version(version: SerdeVersion) -> &'static [&'static str] {
+    if version >= SerdeVersion::V4 {
         V4_SUB_TYPES
     } else {
         V2_SUB_TYPES
@@ -38,7 +38,7 @@ pub fn sub_types_for_version(version: i32) -> &'static [&'static str] {
 pub fn serialize(
     request: &FederationRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     serialize_object(jgen, |j| do_serialize(request, j, version))
 }
@@ -46,7 +46,7 @@ pub fn serialize(
 pub fn do_serialize(
     request: &FederationRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     let type_name = request.type_name();
     if !sub_types_for_version(version).contains(&type_name) {
@@ -62,7 +62,7 @@ pub fn do_serialize(
             super::list_tables_request_serde::do_typed_serialize(r, jgen)
         }
         FederationRequest::GetTable(r) => {
-            if version >= 5 {
+            if version >= SerdeVersion::V5 {
                 crate::serde::v5::get_table_request_serde_v5::do_typed_serialize(r, jgen)
             } else {
                 super::get_table_request_serde::do_typed_serialize(r, jgen)
@@ -106,7 +106,7 @@ pub fn do_deserialize(
             super::list_tables_request_serde::do_typed_deserialize(jparser)?.into()
         }
         "GetTableRequest" => {
-            if ctx.version >= 5 {
+            if ctx.version >= SerdeVersion::V5 {
                 crate::serde::v5::get_table_request_serde_v5::do_typed_deserialize(jparser)?.into()
             } else {
                 super::get_table_request_serde::do_typed_deserialize(jparser)?.into()

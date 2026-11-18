@@ -2,7 +2,7 @@ use crate::domain::predicate::expression::ConstantExpression;
 use crate::exceptions::Result;
 use crate::serde::base::{assert_field_name, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const VALUE_BLOCK_FIELD: &str = "valueBlock";
 const TYPE_FIELD: &str = "type";
@@ -10,7 +10,7 @@ const TYPE_FIELD: &str = "type";
 pub fn do_typed_serialize(
     expression: &ConstantExpression,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
     crate::serde::v2::block_serde::serialize(expression.values(), jgen, version)?;

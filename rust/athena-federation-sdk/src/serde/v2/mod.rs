@@ -20,7 +20,6 @@ pub mod list_tables_request_serde;
 pub mod list_tables_response_serde;
 pub mod marker_serde;
 pub mod metadata_request_serde;
-pub mod object_mapper_factory_v2;
 pub mod range_serde;
 pub mod read_records_request_serde;
 pub mod read_records_response_serde;

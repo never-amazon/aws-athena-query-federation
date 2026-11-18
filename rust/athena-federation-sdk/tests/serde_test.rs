@@ -12,15 +12,12 @@ use athena_federation_sdk::metadata::GetTableLayoutRequest;
 use athena_federation_sdk::request::{
     FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
 };
-use athena_federation_sdk::serde::{
-    object_mapper_factory, VersionedObjectMapperFactory, SERDE_VERSION_TWO,
-};
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use serde_support::*;
 
 fn assert_serialization_request(object: &FederationRequest) {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let ser_de = VersionedObjectMapperFactory::create_with_version(allocator, SERDE_VERSION_TWO)
-        .expect("mapper");
+    let ser_de = ObjectMapper::new(SerdeVersion::V2, allocator);
     let mut out: Vec<u8> = Vec::new();
     ser_de.write_value(&mut out, object).expect("serialize");
     let actual: FederationRequest = ser_de.read_value(&out).expect("deserialize");
@@ -29,8 +26,7 @@ fn assert_serialization_request(object: &FederationRequest) {
 
 fn assert_serialization_response(object: &FederationResponse) {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let ser_de = VersionedObjectMapperFactory::create_with_version(allocator, SERDE_VERSION_TWO)
-        .expect("mapper");
+    let ser_de = ObjectMapper::new(SerdeVersion::V2, allocator);
     let mut out: Vec<u8> = Vec::new();
     ser_de.write_value(&mut out, object).expect("serialize");
     let actual: FederationResponse = ser_de.read_value(&out).expect("deserialize");
@@ -46,7 +42,7 @@ mod block_serialization_test {
         let expected =
             BlockUtils::new_block(&other_allocator, "col1", &DataType::Int32, vec![21i32])
                 .expect("block");
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let mut out: Vec<u8> = Vec::new();
         serializer
             .write_value(&mut out, &expected)
@@ -62,7 +58,7 @@ mod marker_serialization_test {
     #[test]
     fn serialization_test() {
         let allocator = Arc::new(BlockAllocatorImpl::new());
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_value = 1024i32;
         let expected_marker =
             Marker::exactly(allocator.as_ref(), &DataType::Int32, expected_value).expect("marker");
@@ -70,7 +66,7 @@ mod marker_serialization_test {
         serializer
             .write_value(&mut out, &expected_marker)
             .expect("serialize");
-        let deserializer = object_mapper_factory::create(allocator.clone());
+        let deserializer = ObjectMapper::new(SerdeVersion::V1, allocator.clone());
         let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
         assert_eq!(
             expected_marker.schema().metadata(),
@@ -95,13 +91,13 @@ mod marker_serialization_test {
     #[test]
     fn nullable_serialization_test() {
         let allocator = Arc::new(BlockAllocatorImpl::new());
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_marker = Marker::null_marker(allocator.as_ref(), &DataType::Int32);
         let mut out: Vec<u8> = Vec::new();
         serializer
             .write_value(&mut out, &expected_marker)
             .expect("serialize");
-        let deserializer = object_mapper_factory::create(allocator.clone());
+        let deserializer = ObjectMapper::new(SerdeVersion::V1, allocator.clone());
         let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
         assert_eq!(
             expected_marker.schema().metadata(),
@@ -121,7 +117,8 @@ mod schema_serialization_test {
 
     #[test]
     fn serialization_test() {
-        let object_mapper = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let object_mapper =
+            ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_schema: Schema = SchemaBuilder::new()
             .add_metadata("meta1", "meta-value-1")
             .add_metadata("meta2", "meta-value-2")

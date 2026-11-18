@@ -2,7 +2,7 @@ use crate::exceptions::Result;
 use crate::request::FederationResponse;
 use crate::serde::base::{get_type, no_serde_configured, serialize_object, write_type};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::{ping_response_serde, SerDeContext};
+use crate::serde::{ping_response_serde, SerDeContext, SerdeVersion};
 
 pub const V2_SUB_TYPES: &[&str] = &[
     "PingResponse",
@@ -29,8 +29,8 @@ pub const V4_SUB_TYPES: &[&str] = &[
     "GetDataSourceCapabilitiesResponse",
 ];
 
-pub fn sub_types_for_version(version: i32) -> &'static [&'static str] {
-    if version >= 4 {
+pub fn sub_types_for_version(version: SerdeVersion) -> &'static [&'static str] {
+    if version >= SerdeVersion::V4 {
         V4_SUB_TYPES
     } else {
         V2_SUB_TYPES
@@ -40,7 +40,7 @@ pub fn sub_types_for_version(version: i32) -> &'static [&'static str] {
 pub fn serialize(
     response: &FederationResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     serialize_object(jgen, |j| do_serialize(response, j, version))
 }
@@ -48,7 +48,7 @@ pub fn serialize(
 pub fn do_serialize(
     response: &FederationResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     let type_name = response.type_name();
     if !sub_types_for_version(version).contains(&type_name) {

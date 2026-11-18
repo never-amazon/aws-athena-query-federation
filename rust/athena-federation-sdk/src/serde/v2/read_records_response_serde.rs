@@ -2,7 +2,7 @@ use crate::exceptions::Result;
 use crate::records::ReadRecordsResponse;
 use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const CATALOG_NAME_FIELD: &str = "catalogName";
 const RECORDS_FIELD: &str = "records";
@@ -10,7 +10,7 @@ const RECORDS_FIELD: &str = "records";
 pub fn do_typed_serialize(
     response: &ReadRecordsResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(RECORDS_FIELD)?;

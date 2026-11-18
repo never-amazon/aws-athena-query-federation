@@ -83,16 +83,12 @@ mod object_mapper_factory_v5_test {
 
     use arrow::datatypes::DataType;
     use athena_federation_sdk::data::BlockAllocatorImpl;
-    use athena_federation_sdk::serde::{VersionedObjectMapperFactory, SERDE_VERSION_FIVE};
+    use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
     use athena_federation_sdk::FederationError;
 
     #[test]
     fn test_strict_serializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(
-            Arc::new(BlockAllocatorImpl::new()),
-            SERDE_VERSION_FIVE,
-        )
-        .unwrap();
+        let mapper = ObjectMapper::new(SerdeVersion::V5, Arc::new(BlockAllocatorImpl::new()));
         let result = mapper.write_value_as_string(&DataType::Null);
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
@@ -102,11 +98,7 @@ mod object_mapper_factory_v5_test {
 
     #[test]
     fn test_strict_deserializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(
-            Arc::new(BlockAllocatorImpl::new()),
-            SERDE_VERSION_FIVE,
-        )
-        .unwrap();
+        let mapper = ObjectMapper::new(SerdeVersion::V5, Arc::new(BlockAllocatorImpl::new()));
         let result = mapper.read_value_from_str::<DataType>(
             "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
         );

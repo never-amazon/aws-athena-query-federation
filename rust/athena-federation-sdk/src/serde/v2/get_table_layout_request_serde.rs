@@ -7,7 +7,7 @@ use crate::serde::base::{
     write_string_array,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const TABLE_NAME_FIELD: &str = "tableName";
 const CONSTRAINTS_FIELD: &str = "constraints";
@@ -17,7 +17,7 @@ const PARTITION_COLS_FIELD: &str = "partitionColumns";
 pub fn do_typed_serialize(
     request: &GetTableLayoutRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;

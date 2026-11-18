@@ -113,7 +113,7 @@ com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-f
 com.amazonaws.athena.connector.lambda.handlers.GlueMetadataHandler	athena-federation-sdk/src/handlers/glue_metadata_handler.rs::GlueMetadataHandler	ported	abstract class becomes a trait over MetadataHandler
 com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation-sdk/src/handlers/metadata_handler.rs::MetadataHandler	ported	abstract class becomes a trait; final methods live in MetadataHandlerExt and fields in MetadataHandlerBase
 com.amazonaws.athena.connector.lambda.handlers.RecordHandler	athena-federation-sdk/src/handlers/record_handler.rs::RecordHandler	ported	abstract class becomes a trait; final methods live in RecordHandlerExt and fields in RecordHandlerBase
-com.amazonaws.athena.connector.lambda.handlers.SerDeVersion	athena-federation-sdk/src/serde/mod.rs::SERDE_VERSION	merged	constant holder class; its one constant is SERDE_VERSION
+com.amazonaws.athena.connector.lambda.handlers.SerDeVersion	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	constant holder class; the version constants become the SerdeVersion enum
 com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler	athena-federation-sdk/src/handlers/user_defined_function_handler.rs::UserDefinedFunctionHandler	ported	abstract class becomes a trait; reflection lookup becomes the UdfMethods registry
 com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesRequest	athena-federation-sdk/src/metadata/get_data_source_capabilities_request.rs::GetDataSourceCapabilitiesRequest	ported	
 com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesResponse	athena-federation-sdk/src/metadata/get_data_source_capabilities_response.rs::GetDataSourceCapabilitiesResponse	ported	
@@ -173,14 +173,14 @@ com.amazonaws.athena.connector.lambda.serde.BlockSerializer	athena-federation-sd
 com.amazonaws.athena.connector.lambda.serde.DelegatingDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.DelegatingSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.FederatedIdentitySerDe	athena-federation-sdk/src/serde/mod.rs::federated_identity_serde	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.ObjectMapperFactory	athena-federation-sdk/src/serde/mod.rs::object_mapper_factory	ported	factory class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.ObjectMapperFactory	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V1
 com.amazonaws.athena.connector.lambda.serde.PingRequestSerDe	athena-federation-sdk/src/serde/mod.rs::ping_request_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.PingResponseSerDe	athena-federation-sdk/src/serde/mod.rs::ping_response_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.SchemaDeserializer	athena-federation-sdk/src/serde/mod.rs::schema_deserializer	ported	Jackson deserializer class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.SchemaSerializer	athena-federation-sdk/src/serde/mod.rs::schema_serializer	ported	Jackson serializer class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.TypedDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.TypedSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
-com.amazonaws.athena.connector.lambda.serde.VersionedObjectMapperFactory	athena-federation-sdk/src/serde/versioned_object_mapper_factory.rs::VersionedObjectMapperFactory	ported	
+com.amazonaws.athena.connector.lambda.serde.VersionedObjectMapperFactory	athena-federation-sdk/src/serde/object_mapper.rs::ObjectMapper	merged	the static factory becomes ObjectMapper::new and ObjectMapper::read_request_with_version_fallback
 com.amazonaws.athena.connector.lambda.serde.VersionedSerDe	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.v2.AllOrNoneValueSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::all_or_none_value_set_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.ArrowRecordBatchSerDe	athena-federation-sdk/src/serde/v2/mod.rs::arrow_record_batch_serde	ported	Jackson serde class becomes a module of functions
@@ -205,7 +205,7 @@ com.amazonaws.athena.connector.lambda.serde.v2.ListTablesResponseSerDe	athena-fe
 com.amazonaws.athena.connector.lambda.serde.v2.MarkerSerDe	athena-federation-sdk/src/serde/v2/mod.rs::marker_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.MetadataRequestDeserializer	athena-federation-sdk/src/serde/v2/mod.rs::metadata_request_serde	merged	serializer and deserializer base classes share the metadata_request_serde module
 com.amazonaws.athena.connector.lambda.serde.v2.MetadataRequestSerializer	athena-federation-sdk/src/serde/v2/mod.rs::metadata_request_serde	merged	serializer and deserializer base classes share the metadata_request_serde module
-com.amazonaws.athena.connector.lambda.serde.v2.ObjectMapperFactoryV2	athena-federation-sdk/src/serde/v2/mod.rs::object_mapper_factory_v2	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v2.ObjectMapperFactoryV2	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V2
 com.amazonaws.athena.connector.lambda.serde.v2.RangeSerDe	athena-federation-sdk/src/serde/v2/mod.rs::range_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.ReadRecordsRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::read_records_request_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.ReadRecordsResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::read_records_response_serde	ported	Jackson serde class becomes a module of functions
@@ -219,33 +219,33 @@ com.amazonaws.athena.connector.lambda.serde.v2.TableNameSerDe	athena-federation-
 com.amazonaws.athena.connector.lambda.serde.v2.UserDefinedFunctionRequestSerDe	athena-federation-sdk/src/serde/v2/mod.rs::user_defined_function_request_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.UserDefinedFunctionResponseSerDe	athena-federation-sdk/src/serde/v2/mod.rs::user_defined_function_response_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v2.ValueSetSerDe	athena-federation-sdk/src/serde/v2/mod.rs::value_set_serde	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v3.ArrowRecordBatchSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::arrow_record_batch_serde_v3	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v3.BlockSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::block_serde_v3	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v3.ObjectMapperFactoryV3	athena-federation-sdk/src/serde/v3/mod.rs::object_mapper_factory_v3	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v3.ArrowRecordBatchSerDeV3	athena-federation-sdk/src/serde/v2/mod.rs::arrow_record_batch_serde	merged	the V3 subclass only delegates to the V2 serde
+com.amazonaws.athena.connector.lambda.serde.v3.BlockSerDeV3	athena-federation-sdk/src/serde/v2/mod.rs::block_serde	merged	the V3 subclass differs only by SerdeVersion, which block_serde takes as a parameter
+com.amazonaws.athena.connector.lambda.serde.v3.ObjectMapperFactoryV3	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V3
 com.amazonaws.athena.connector.lambda.serde.v3.SchemaSerDeV3	athena-federation-sdk/src/serde/v3/mod.rs::schema_serde_v3	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.ArrowRecordBatchSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::arrow_record_batch_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.BlockSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::block_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ArrowRecordBatchSerDeV4	athena-federation-sdk/src/serde/v2/mod.rs::arrow_record_batch_serde	merged	the V4 subclass only delegates to the V2 serde
+com.amazonaws.athena.connector.lambda.serde.v4.BlockSerDeV4	athena-federation-sdk/src/serde/v2/mod.rs::block_serde	merged	the V4 subclass differs only by SerdeVersion, which block_serde takes as a parameter
 com.amazonaws.athena.connector.lambda.serde.v4.ConstantExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::constant_expression_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.ConstraintsSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::constraints_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ConstraintsSerDeV4	athena-federation-sdk/src/serde/v2/mod.rs::constraints_serde	merged	the V4 subclass differs only by SerdeVersion, which constraints_serde takes as a parameter
 com.amazonaws.athena.connector.lambda.serde.v4.FederationExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_expression_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.FederationRequestSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_request_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.FederationResponseSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::federation_response_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.FederationRequestSerDeV4	athena-federation-sdk/src/serde/v2/mod.rs::federation_request_serde	merged	the V4 subclass differs only by SerdeVersion, which federation_request_serde takes as a parameter
+com.amazonaws.athena.connector.lambda.serde.v4.FederationResponseSerDeV4	athena-federation-sdk/src/serde/v2/mod.rs::federation_response_serde	merged	the V4 subclass differs only by SerdeVersion, which federation_response_serde takes as a parameter
 com.amazonaws.athena.connector.lambda.serde.v4.FunctionCallExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::function_call_expression_serde_v4	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v4.FunctionNameSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::function_name_serde_v4	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v4.GetDataSourceCapabilitiesRequestSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::get_data_source_capabilities_request_serde_v4	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v4.GetDataSourceCapabilitiesResponseSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::get_data_source_capabilities_response_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.ObjectMapperFactoryV4	athena-federation-sdk/src/serde/v4/mod.rs::object_mapper_factory_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.ObjectMapperFactoryV4	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V4
 com.amazonaws.athena.connector.lambda.serde.v4.OptimizationSubTypeSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::optimization_sub_type_serde_v4	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.serde.v4.OrderByFieldSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::order_by_field_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v4.SchemaSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::schema_serde_v4	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v4.SchemaSerDeV4	athena-federation-sdk/src/serde/v3/mod.rs::schema_serde_v3	merged	the V4 subclass only delegates to the V3 serde
 com.amazonaws.athena.connector.lambda.serde.v4.VariableExpressionSerDeV4	athena-federation-sdk/src/serde/v4/mod.rs::variable_expression_serde_v4	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v5.ConstraintsSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::constraints_serde_v5	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v5.FederationRequestSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::federation_request_serde_v5	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.ConstraintsSerDeV5	athena-federation-sdk/src/serde/v2/mod.rs::constraints_serde	merged	the V5 subclass differs only by SerdeVersion, which constraints_serde takes as a parameter
+com.amazonaws.athena.connector.lambda.serde.v5.FederationRequestSerDeV5	athena-federation-sdk/src/serde/v2/mod.rs::federation_request_serde	merged	the V5 subclass differs only by SerdeVersion, which federation_request_serde takes as a parameter
 com.amazonaws.athena.connector.lambda.serde.v5.GetTableRequestSerDeV5	athena-federation-sdk/src/serde/v5/mod.rs::get_table_request_serde_v5	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v5.ObjectMapperFactoryV5	athena-federation-sdk/src/serde/v5/mod.rs::object_mapper_factory_v5	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v6.ConstraintsSerDeV6	athena-federation-sdk/src/serde/v6/mod.rs::constraints_serde_v6	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v6.FederationRequestSerDeV6	athena-federation-sdk/src/serde/v6/mod.rs::federation_request_serde_v6	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.serde.v6.ObjectMapperFactoryV6	athena-federation-sdk/src/serde/v6/mod.rs::object_mapper_factory_v6	ported	Jackson serde class becomes a module of functions
+com.amazonaws.athena.connector.lambda.serde.v5.ObjectMapperFactoryV5	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V5
+com.amazonaws.athena.connector.lambda.serde.v6.ConstraintsSerDeV6	athena-federation-sdk/src/serde/v2/mod.rs::constraints_serde	merged	the V6 subclass differs only by SerdeVersion, which constraints_serde takes as a parameter
+com.amazonaws.athena.connector.lambda.serde.v6.FederationRequestSerDeV6	athena-federation-sdk/src/serde/v2/mod.rs::federation_request_serde	merged	the V6 subclass differs only by SerdeVersion, which federation_request_serde takes as a parameter
+com.amazonaws.athena.connector.lambda.serde.v6.ObjectMapperFactoryV6	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V6
 com.amazonaws.athena.connector.lambda.serde.v6.QueryPlanSerDe	athena-federation-sdk/src/serde/v6/mod.rs::query_plan_serde	ported	Jackson serde class becomes a module of functions
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-federation-sdk/src/udf/user_defined_function_request.rs::UserDefinedFunctionRequest	ported	
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf/user_defined_function_response.rs::UserDefinedFunctionResponse	ported	

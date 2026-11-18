@@ -17,12 +17,12 @@ use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsR
 use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
 use crate::serde::v2::lambda_function_exception_serde::{self, LambdaException};
-use crate::serde::{v1, v2, SerDeContext, SERDE_VERSION_ONE};
+use crate::serde::{v1, v2, SerDeContext, SerdeVersion};
 use crate::udf::{UserDefinedFunctionRequest, UserDefinedFunctionResponse};
 
 #[derive(Clone)]
 pub struct ObjectMapper {
-    version: i32,
+    version: SerdeVersion,
     allocator: Arc<dyn BlockAllocator>,
     indent_output: bool,
 }
@@ -94,7 +94,8 @@ fn wrap_as_io(e: FederationError) -> FederationError {
 }
 
 impl ObjectMapper {
-    pub fn strict(version: i32, allocator: Arc<dyn BlockAllocator>) -> ObjectMapper {
+    pub fn new(version: SerdeVersion, allocator: Arc<dyn BlockAllocator>) -> ObjectMapper {
+        tracing::debug!("Athena SDK SerDe Version: {}", version);
         ObjectMapper {
             version,
             allocator,
@@ -102,38 +103,45 @@ impl ObjectMapper {
         }
     }
 
-    pub fn bean(allocator: Arc<dyn BlockAllocator>) -> ObjectMapper {
-        ObjectMapper {
-            version: SERDE_VERSION_ONE,
-            allocator,
-            indent_output: false,
-        }
-    }
-
-    pub fn ser_de_version(&self) -> i32 {
-        self.version
-    }
-
-    pub fn is_strict(&self) -> bool {
-        self.version > SERDE_VERSION_ONE
-    }
-
-    pub fn allocator(&self) -> &Arc<dyn BlockAllocator> {
-        &self.allocator
-    }
-
-    pub fn enable_indent_output(&mut self) -> &mut ObjectMapper {
+    #[must_use]
+    pub fn indented(mut self) -> ObjectMapper {
         self.indent_output = true;
         self
     }
 
-    pub fn disable_indent_output(&mut self) -> &mut ObjectMapper {
-        self.indent_output = false;
-        self
+    pub fn version(&self) -> SerdeVersion {
+        self.version
     }
 
-    pub fn is_indent_output(&self) -> bool {
-        self.indent_output
+    pub fn read_request_with_version_fallback(
+        allocator: &Arc<dyn BlockAllocator>,
+        input: &[u8],
+    ) -> Result<(ObjectMapper, FederationRequest)> {
+        let mut candidate = Some(SerdeVersion::CURRENT);
+        while let Some(version) = candidate {
+            let mapper = ObjectMapper::new(version, Arc::clone(allocator));
+            match mapper.read_request(input) {
+                Ok(request) => {
+                    tracing::info!(
+                        "Parsing request with resolvedSerDeVersion: '{}', connector SerDeVersion: '{}'",
+                        version,
+                        SerdeVersion::CURRENT
+                    );
+                    return Ok((mapper, request));
+                }
+                Err(FederationError::IllegalState(_)) => {
+                    candidate = version.lower();
+                    tracing::debug!(
+                        "Client's SerDe mis-matched with connector version:, attempt with lower version: '{}'",
+                        version.as_i32() - 1
+                    );
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(FederationError::invalid_input(
+            "FederationRequest/ObjectMapper is null with SerDeVersion: '0'",
+        ))
     }
 
     pub fn context(&self) -> SerDeContext<'_> {
@@ -148,7 +156,7 @@ impl ObjectMapper {
         if let Some(r) = to_response(any) {
             return Ok(Writable::Response(Box::new(r)));
         }
-        if !self.is_strict() {
+        if !self.version.is_strict() {
             if let Some(b) = any.downcast_ref::<Block>() {
                 return Ok(Writable::Block(b.clone()));
             }
@@ -166,7 +174,7 @@ impl ObjectMapper {
     }
 
     fn write_writable(&self, writable: &Writable, jgen: &mut JsonGenerator) -> Result<()> {
-        if self.is_strict() {
+        if self.version.is_strict() {
             match writable {
                 Writable::Request(r) => {
                     v2::federation_request_serde::serialize(r, jgen, self.version)
@@ -231,7 +239,7 @@ impl ObjectMapper {
     pub fn read_request(&self, input: &[u8]) -> Result<FederationRequest> {
         let mut jparser = Self::init_for_reading(input, "FederationRequest")?;
         let ctx = self.context();
-        if self.is_strict() {
+        if self.version.is_strict() {
             v2::federation_request_serde::do_deserialize(&mut jparser, &ctx)
         } else {
             v1::bean_serde::deserialize_request(&mut jparser, &ctx)
@@ -241,7 +249,7 @@ impl ObjectMapper {
     pub fn read_response(&self, input: &[u8]) -> Result<FederationResponse> {
         let mut jparser = Self::init_for_reading(input, "FederationResponse")?;
         let ctx = self.context();
-        if self.is_strict() {
+        if self.version.is_strict() {
             v2::federation_response_serde::do_deserialize(&mut jparser, &ctx)
         } else {
             v1::bean_serde::deserialize_response(&mut jparser, &ctx)
@@ -249,7 +257,7 @@ impl ObjectMapper {
     }
 
     pub fn read_lambda_exception(&self, input: &[u8]) -> Result<LambdaException> {
-        if !self.is_strict() {
+        if !self.version.is_strict() {
             return Err(FederationError::invalid_input(format!(
                 "Cannot construct instance of {}",
                 simple_type(type_name::<LambdaException>())
@@ -260,7 +268,7 @@ impl ObjectMapper {
     }
 
     pub fn read_block(&self, input: &[u8]) -> Result<Block> {
-        if self.is_strict() {
+        if self.version.is_strict() {
             return Err(FederationError::invalid_input(format!(
                 "No explicitly configured deserializer for {}",
                 simple_type(type_name::<Block>())
@@ -271,7 +279,7 @@ impl ObjectMapper {
     }
 
     pub fn read_schema(&self, input: &[u8]) -> Result<Schema> {
-        if self.is_strict() {
+        if self.version.is_strict() {
             return Err(FederationError::invalid_input(format!(
                 "No explicitly configured deserializer for {}",
                 simple_type(type_name::<Schema>())
@@ -282,7 +290,7 @@ impl ObjectMapper {
     }
 
     pub fn read_marker(&self, input: &[u8]) -> Result<Marker> {
-        if self.is_strict() {
+        if self.version.is_strict() {
             return Err(FederationError::invalid_input(format!(
                 "No explicitly configured deserializer for {}",
                 simple_type(type_name::<Marker>())

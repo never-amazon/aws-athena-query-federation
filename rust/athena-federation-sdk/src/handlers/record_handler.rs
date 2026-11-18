@@ -16,7 +16,7 @@ use crate::lambda::LambdaContext;
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
 use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
 use crate::security::{AwsServiceError, CachableSecretsManager, KmsEncryptionProvider};
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
+use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
 use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
 
 const MAX_BLOCK_SIZE_BYTES: &str = "MAX_BLOCK_SIZE_BYTES";
@@ -248,7 +248,7 @@ impl<T: RecordHandler + ?Sized> RecordHandlerExt for T {
         let block_allocator = Arc::new(BlockAllocatorImpl::new());
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
-            let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
             let raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = do_ping(self, ping).await;

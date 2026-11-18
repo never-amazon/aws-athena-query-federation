@@ -27,7 +27,7 @@ use athena_federation_sdk::request::{FederatedIdentity, FederationRequest, Feder
 use athena_federation_sdk::security::EncryptionKey;
 use athena_federation_sdk::serde::java_hash::java_hash_order_default;
 use athena_federation_sdk::serde::{
-    block_deserializer, schema_from_bytes, ObjectMapper, SerDeContext, VersionedObjectMapperFactory,
+    block_deserializer, schema_from_bytes, ObjectMapper, SerDeContext, SerdeVersion,
 };
 use indexmap::IndexMap;
 use serde_json::Value as Json;
@@ -47,10 +47,10 @@ impl TypedSerDe {
     pub fn before() -> TypedSerDe {
         let allocator = Arc::new(BlockAllocatorImpl::with_id(TEST_ALLOCATOR_ID));
         TypedSerDe {
-            mapper: indented(allocator.clone(), 2),
-            mapper_v4: indented(allocator.clone(), 4),
-            mapper_v5: indented(allocator.clone(), 5),
-            mapper_v6: indented(allocator.clone(), 6),
+            mapper: indented(allocator.clone(), SerdeVersion::V2),
+            mapper_v4: indented(allocator.clone(), SerdeVersion::V4),
+            mapper_v5: indented(allocator.clone(), SerdeVersion::V5),
+            mapper_v6: indented(allocator.clone(), SerdeVersion::V6),
             allocator,
             federated_identity: federated_identity(),
         }
@@ -61,11 +61,8 @@ impl TypedSerDe {
     }
 }
 
-pub fn indented(allocator: Arc<BlockAllocatorImpl>, version: i32) -> ObjectMapper {
-    let mut mapper =
-        VersionedObjectMapperFactory::create_with_version(allocator, version).expect("mapper");
-    mapper.enable_indent_output();
-    mapper
+pub fn indented(allocator: Arc<BlockAllocatorImpl>, version: SerdeVersion) -> ObjectMapper {
+    ObjectMapper::new(version, allocator).indented()
 }
 
 pub fn federated_identity() -> FederatedIdentity {
@@ -323,7 +320,7 @@ fn compare(
                 assert_eq!(e.get("aId"), a.get("aId"), "aId differs at {path}");
                 if e != a {
                     let ctx_alloc = BlockAllocatorImpl::with_id(TEST_ALLOCATOR_ID);
-                    let ctx = SerDeContext::new(mapper.ser_de_version(), &ctx_alloc);
+                    let ctx = SerDeContext::new(mapper.version(), &ctx_alloc);
                     let e_block = block_deserializer::deserialize_tree(expected, &ctx)
                         .expect("decode fixture block");
                     let a_block = block_deserializer::deserialize_tree(actual, &ctx)

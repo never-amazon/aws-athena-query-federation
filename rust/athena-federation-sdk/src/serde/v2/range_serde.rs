@@ -4,16 +4,16 @@ use crate::serde::base::{
     assert_field_name, deserialize_nullable, require_non_null, serialize_object,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const LOW_FIELD: &str = "low";
 const HIGH_FIELD: &str = "high";
 
-pub fn serialize(range: &Range, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn serialize(range: &Range, jgen: &mut JsonGenerator, version: SerdeVersion) -> Result<()> {
     serialize_object(jgen, |j| do_serialize(range, j, version))
 }
 
-pub fn do_serialize(range: &Range, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_serialize(range: &Range, jgen: &mut JsonGenerator, version: SerdeVersion) -> Result<()> {
     jgen.write_field_name(LOW_FIELD)?;
     super::marker_serde::serialize(range.low(), jgen, version)?;
     jgen.write_field_name(HIGH_FIELD)?;

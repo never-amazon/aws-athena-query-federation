@@ -26,7 +26,7 @@ use athena_federation_sdk::request::{FederationRequest, FederationResponse, Ping
 use athena_federation_sdk::security::{
     CachableSecretsManager, FederatedIdentity, KmsEncryptionProvider, LocalKeyFactory,
 };
-use athena_federation_sdk::serde::VersionedObjectMapperFactory;
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::{Fakes, RecordingAllocator};
 
@@ -168,7 +168,8 @@ fn layout_request(
 }
 
 async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<FederationResponse> {
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&setup.block_allocator));
+    let object_mapper =
+        ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&setup.block_allocator));
     let input = object_mapper.write_value_as_bytes(&request)?;
     let output = setup.handler.handle_request(&input, None).await?;
     object_mapper.read_response(&output)
@@ -388,7 +389,7 @@ async fn metadata_handler_runs_as_request_stream_handler() {
         block_allocator,
     } = set_up();
     let stream_handler = MetadataStreamHandler::new(handler);
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&block_allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&block_allocator));
     let request: FederationRequest =
         GetDataSourceCapabilitiesRequest::new(Some(identity()), Some(QUERY_ID.into()), CATALOG)
             .into();

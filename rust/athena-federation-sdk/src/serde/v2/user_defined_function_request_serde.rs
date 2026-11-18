@@ -4,7 +4,7 @@ use crate::serde::base::{
 };
 use crate::serde::federated_identity_serde;
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 use crate::udf::{UserDefinedFunctionRequest, UserDefinedFunctionType};
 
 const IDENTITY_FIELD: &str = "identity";
@@ -16,7 +16,7 @@ const FUNCTION_TYPE_FIELD: &str = "functionType";
 pub fn do_typed_serialize(
     request: &UserDefinedFunctionRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
     federated_identity_serde::serialize(request.identity(), jgen)?;

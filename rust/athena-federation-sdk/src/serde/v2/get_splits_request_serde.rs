@@ -5,7 +5,7 @@ use crate::serde::base::{
     require_non_null, write_string_array,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const TABLE_NAME_FIELD: &str = "tableName";
 const PARTITIONS_FIELD: &str = "partitions";
@@ -16,7 +16,7 @@ const CONTINUATION_TOKEN_FIELD: &str = "continuationToken";
 pub fn do_typed_serialize(
     request: &GetSplitsRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     super::metadata_request_serde::serialize_header(request, jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;

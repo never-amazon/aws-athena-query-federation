@@ -1,7 +1,7 @@
 use crate::exceptions::Result;
 use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 use crate::udf::UserDefinedFunctionResponse;
 
 const RECORDS_FIELD: &str = "records";
@@ -10,7 +10,7 @@ const METHOD_NAME_FIELD: &str = "methodName";
 pub fn do_typed_serialize(
     response: &UserDefinedFunctionResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(RECORDS_FIELD)?;
     super::block_serde::serialize(Some(response.records()), jgen, version)?;

@@ -33,7 +33,7 @@ use crate::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, EncryptionKey,
     EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider, KmsKeyFactory, LocalKeyFactory,
 };
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
+use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
 use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
 
 pub const PARTITION_ID_COL: &str = "partitionId";
@@ -509,7 +509,7 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
         let block_allocator = Arc::new(BlockAllocatorImpl::new());
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
-            let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
             let mut raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = self.do_ping(ping).await;

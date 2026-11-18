@@ -5,7 +5,7 @@ use crate::serde::base::{
     no_enum_constant, require_non_null, serialize_object,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const VALUE_BLOCK_FIELD: &str = "valueBlock";
 const BOUND_FIELD: &str = "bound";
@@ -23,11 +23,15 @@ pub fn bound_value_of(name: Option<&str>) -> Result<Bound> {
     }
 }
 
-pub fn serialize(marker: &Marker, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn serialize(marker: &Marker, jgen: &mut JsonGenerator, version: SerdeVersion) -> Result<()> {
     serialize_object(jgen, |j| do_serialize(marker, j, version))
 }
 
-pub fn do_serialize(marker: &Marker, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_serialize(
+    marker: &Marker,
+    jgen: &mut JsonGenerator,
+    version: SerdeVersion,
+) -> Result<()> {
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
     let block = marker.get_value_block()?;
     super::block_serde::serialize(Some(&block), jgen, version)?;

@@ -5,7 +5,7 @@ use crate::serde::base::{
 };
 use crate::serde::federated_identity_serde;
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const IDENTITY_FIELD: &str = "identity";
 const QUERY_ID_FIELD: &str = "queryId";
@@ -20,7 +20,7 @@ const MAX_INLINE_BLOCK_SIZE_FIELD: &str = "maxInlineBlockSize";
 pub fn do_typed_serialize(
     request: &ReadRecordsRequest,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
     federated_identity_serde::serialize(request.identity(), jgen)?;
