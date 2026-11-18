@@ -4,7 +4,7 @@ use std::str::FromStr;
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
 use athena_jdbc::sql::{SqlException, SqlValue};
 use bigdecimal::BigDecimal;
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
 
 use super::datetime::{
     java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, proleptic_epoch_day,
@@ -14,6 +14,7 @@ use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
+const NANOS_PER_MICRO: u32 = 1000;
 const MIN_TIMESTAMP_DATE: Option<NaiveDate> = NaiveDate::from_ymd_opt(-4713, 11, 24);
 const TIMESTAMP_OUT_OF_RANGE: &str =
     "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999";
@@ -422,12 +423,26 @@ fn java_time_text(date: NaiveDate, time: &str) -> String {
 }
 
 fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlException> {
-    if Some(timestamp.date()) < MIN_TIMESTAMP_DATE || *timestamp == NaiveDateTime::MAX {
-        return Err(SqlException::new(TIMESTAMP_OUT_OF_RANGE));
+    let out_of_range = || SqlException::new(TIMESTAMP_OUT_OF_RANGE);
+    let rounded = if timestamp.nanosecond() % NANOS_PER_MICRO >= NANOS_PER_MICRO / 2 {
+        timestamp
+            .checked_add_signed(TimeDelta::microseconds(1))
+            .ok_or_else(out_of_range)?
+    } else {
+        *timestamp
+    };
+    if Some(rounded.date()) < MIN_TIMESTAMP_DATE {
+        return Err(out_of_range());
     }
+    let micros = rounded.nanosecond() / NANOS_PER_MICRO;
+    let fraction = if micros == 0 {
+        String::new()
+    } else {
+        format!(".{micros:06}").trim_end_matches('0').to_string()
+    };
     Ok(java_time_text(
-        timestamp.date(),
-        &timestamp.format(" %H:%M:%S%.f+00").to_string(),
+        rounded.date(),
+        &format!(" {}{fraction}+00", rounded.format("%H:%M:%S")),
     ))
 }
 
@@ -618,7 +633,7 @@ mod tests {
                 &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
                 false
             ),
-            (0, Some("0044-03-15 12:00:00.500+00 BC".to_string()))
+            (0, Some("0044-03-15 12:00:00.5+00 BC".to_string()))
         );
     }
 
@@ -628,10 +643,25 @@ mod tests {
             ("1000-01-01T12:00:00", "1000-01-01 12:00:00+00"),
             (
                 "2020-06-01T06:30:00.123456789",
-                "2020-06-01 06:30:00.123456789+00",
+                "2020-06-01 06:30:00.123457+00",
             ),
             ("-0043-03-15T12:00:00", "0044-03-15 12:00:00+00 BC"),
-            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.500+00 BC"),
+            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.5+00 BC"),
+            (
+                "2020-06-01T06:30:00.000002500",
+                "2020-06-01 06:30:00.000003+00",
+            ),
+            (
+                "2020-06-01T06:30:00.000002499",
+                "2020-06-01 06:30:00.000002+00",
+            ),
+            ("2020-06-01T06:30:00.000000400", "2020-06-01 06:30:00+00"),
+            ("2020-06-01T06:30:00.999999500", "2020-06-01 06:30:01+00"),
+            ("2020-06-01T23:59:59.999999700", "2020-06-02 00:00:00+00"),
+            (
+                "-4713-11-23T23:59:59.999999500",
+                "4714-11-24 00:00:00+00 BC",
+            ),
             ("+10000-01-01T00:00:00", "10000-01-01 00:00:00+00"),
             ("-4712-01-01T00:00:00", "4713-01-01 00:00:00+00 BC"),
             ("-4713-12-31T23:59:59", "4714-12-31 23:59:59+00 BC"),
