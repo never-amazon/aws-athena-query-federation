@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use athena_jdbc::sql::{RowSource, SqlException, SqlValue};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-use snowflake_connector_rs::bind::{Binary, BindType, RawBind, Time, TimestampLtz, TimestampTz};
+use snowflake_connector_rs::bind::{Binary, BindType, RawBind, Time, TimestampTz};
 use snowflake_connector_rs::decode::{CellPlan, FromRow, RowPlanContext};
 use snowflake_connector_rs::error::{PlanBuildError, RowDecodeError};
 use snowflake_connector_rs::{
@@ -312,18 +312,55 @@ fn bind_error(error: impl std::fmt::Display) -> SqlException {
 
 type PositionalStatement = Statement<snowflake_connector_rs::PositionalBinds>;
 
-fn bind_statement(sql: &str, binds: &[SqlValue]) -> Result<PositionalStatement, SqlException> {
-    binds
-        .iter()
-        .try_fold(Statement::new_positional(sql.to_string()), bind_value)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimestampTypeMapping {
+    #[default]
+    Ltz,
+    Ntz,
+    Tz,
+}
+
+impl TimestampTypeMapping {
+    pub fn from_parameter(value: Option<&str>) -> TimestampTypeMapping {
+        match value.map(str::to_uppercase).as_deref() {
+            Some("TIMESTAMP_NTZ") => TimestampTypeMapping::Ntz,
+            Some("TIMESTAMP_TZ") => TimestampTypeMapping::Tz,
+            _ => TimestampTypeMapping::Ltz,
+        }
+    }
+
+    fn bind(self, timestamp: NaiveDateTime) -> RawBind {
+        let utc = timestamp.and_utc();
+        let nanos =
+            i128::from(utc.timestamp()) * 1_000_000_000 + i128::from(utc.timestamp_subsec_nanos());
+        match self {
+            TimestampTypeMapping::Ltz => RawBind::new(BindType::TimestampLtz, nanos.to_string()),
+            TimestampTypeMapping::Ntz => RawBind::new(BindType::TimestampNtz, nanos.to_string()),
+            TimestampTypeMapping::Tz => {
+                RawBind::new(BindType::TimestampTz, format!("{nanos} 1440"))
+            }
+        }
+    }
+}
+
+fn bind_statement(
+    sql: &str,
+    binds: &[SqlValue],
+    mapping: TimestampTypeMapping,
+) -> Result<PositionalStatement, SqlException> {
+    binds.iter().try_fold(
+        Statement::new_positional(sql.to_string()),
+        |statement, value| bind_value(statement, value, mapping),
+    )
 }
 
 fn bind_value(
     statement: PositionalStatement,
     value: &SqlValue,
+    mapping: TimestampTypeMapping,
 ) -> Result<PositionalStatement, SqlException> {
     let statement = match value {
-        SqlValue::Rendered { value, .. } => return bind_value(statement, value),
+        SqlValue::Rendered { value, .. } => return bind_value(statement, value, mapping),
         SqlValue::Null => statement.bind(Option::<String>::None),
         SqlValue::Boolean(v) => statement.bind(*v),
         SqlValue::TinyInt(v) => statement.bind(*v),
@@ -337,9 +374,7 @@ fn bind_value(
         SqlValue::Bytes(v) => statement.bind(Binary::new(v.clone())),
         SqlValue::Date(v) => statement.bind(*v),
         SqlValue::Time(v) => statement.bind(Time::try_from(*v).map_err(bind_error)?),
-        SqlValue::Timestamp(v) => {
-            statement.bind(TimestampLtz::try_from(v.and_utc()).map_err(bind_error)?)
-        }
+        SqlValue::Timestamp(v) => statement.bind(mapping.bind(*v)),
         SqlValue::TimestampTz(v) => statement.bind(TimestampTz::try_from(*v).map_err(bind_error)?),
         SqlValue::Array(_) => {
             return Err(snowflake_exception(
@@ -376,11 +411,18 @@ where
 
 pub struct ConnectorExecutor {
     session: Session,
+    timestamp_type_mapping: TimestampTypeMapping,
 }
 
 impl ConnectorExecutor {
-    pub fn new(session: Session) -> ConnectorExecutor {
-        ConnectorExecutor { session }
+    pub fn new(
+        session: Session,
+        timestamp_type_mapping: TimestampTypeMapping,
+    ) -> ConnectorExecutor {
+        ConnectorExecutor {
+            session,
+            timestamp_type_mapping,
+        }
     }
 }
 
@@ -392,7 +434,7 @@ impl SnowflakeExecutor for ConnectorExecutor {
         binds: &[SqlValue],
         timeout: Option<Duration>,
     ) -> Result<SnowflakeQueryResult, SqlException> {
-        let statement = bind_statement(sql, binds)?;
+        let statement = bind_statement(sql, binds, self.timestamp_type_mapping)?;
         let mut options = QueryOptions::new();
         if let Some(timeout) = timeout {
             options = options.with_query_response_timeout(timeout + CANCEL_GRACE_PERIOD);
@@ -434,7 +476,9 @@ impl SnowflakeExecutor for ConnectorExecutor {
 mod tests {
     use chrono::{DateTime, Days, FixedOffset, NaiveDate, NaiveDateTime};
 
-    use super::{decode_cell, RawCell, SnowflakeColumn, SnowflakeColumnType, SqlValue};
+    use super::{
+        decode_cell, RawCell, SnowflakeColumn, SnowflakeColumnType, SqlValue, TimestampTypeMapping,
+    };
 
     const JAVA_DATE_EPOCH_DAYS: [(i64, Option<i64>); 21] = [
         (0, Some(0)),
@@ -614,6 +658,54 @@ mod tests {
                 "{timestamp}"
             );
             timestamp += step;
+        }
+    }
+
+    #[test]
+    fn bind_timestamp_uses_the_session_timestamp_type_mapping() {
+        let cases = [
+            (
+                Some("timestamp_ntz"),
+                "TimestampNtz",
+                ["1591012800123456789", "-500000000", "-30610180800000000000"],
+            ),
+            (
+                None,
+                "TimestampLtz",
+                ["1591012800123456789", "-500000000", "-30610180800000000000"],
+            ),
+            (
+                Some("TIMESTAMP_TZ"),
+                "TimestampTz",
+                [
+                    "1591012800123456789 1440",
+                    "-500000000 1440",
+                    "-30610180800000000000 1440",
+                ],
+            ),
+        ];
+        let timestamps = [
+            NaiveDate::from_ymd_opt(2020, 6, 1)
+                .unwrap()
+                .and_hms_nano_opt(12, 0, 0, 123_456_789)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(1969, 12, 31)
+                .unwrap()
+                .and_hms_milli_opt(23, 59, 59, 500)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(1000, 1, 1)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+        ];
+        for (parameter, bind_type, values) in cases {
+            let mapping = TimestampTypeMapping::from_parameter(parameter);
+            for (timestamp, value) in timestamps.iter().zip(values) {
+                assert_eq!(
+                    format!("RawBind {{ ty: {bind_type}, value: Some({value:?}) }}"),
+                    format!("{:?}", mapping.bind(*timestamp))
+                );
+            }
         }
     }
 
