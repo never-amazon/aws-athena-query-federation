@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::CredentialsProvider;
+use athena_federation_sdk::exceptions::{
+    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode,
+};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
@@ -165,7 +168,13 @@ async fn create_private_key_off_the_async_thread(
         SnowflakeAuthUtils::create_private_key(&private_key_pem, passphrase.as_deref())
     })
     .await
-    .map_err(|e| FederationError::internal(e.to_string()))?
+    .map_err(|e| {
+        FederationError::AthenaConnector(AthenaConnectorException::with_cause(
+            e.to_string(),
+            Arc::new(e),
+            ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
+        ))
+    })?
 }
 
 #[async_trait]

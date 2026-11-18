@@ -10,6 +10,9 @@ use pkcs8::der::Decode;
 use pkcs8::ObjectIdentifier;
 use rc2::Rc2;
 use rc4::Rc4;
+use zeroize::Zeroizing;
+
+use super::ber::BerError;
 
 pub(super) const MAX_ITERATION_COUNT: u32 = 10_000_000;
 const MAX_JAVA_INT: u32 = 0x7fff_ffff;
@@ -46,6 +49,16 @@ pub(crate) enum PrivateKeyError {
     ScryptParallelization { max_p: i32, r: i32 },
     #[error("Could not generate secret key")]
     ScryptKeyGeneration,
+    #[error("Could not generate secret key")]
+    ScryptParams(#[source] scrypt::errors::InvalidParams),
+    #[error("Could not generate secret key")]
+    ScryptOutputLength(#[source] scrypt::errors::InvalidOutputLen),
+    #[error("Could not generate secret key")]
+    Pbkdf2KeyLength(#[source] hmac::digest::InvalidLength),
+    #[error("unknown PRF in PKCS#2: {0}")]
+    UnknownPrf(ObjectIdentifier),
+    #[error("unsupported key derivation function: {0}")]
+    UnsupportedKdf(ObjectIdentifier),
     #[error("no key size for algorithm: {0}")]
     UnsupportedPbes2Cipher(ObjectIdentifier),
     #[error("Passphrase is required for encrypted private key")]
@@ -54,6 +67,8 @@ pub(crate) enum PrivateKeyError {
         "Unsupported private key format. Expected PKCS8EncryptedPrivateKeyInfo or PrivateKeyInfo, got: {0}"
     )]
     UnsupportedFormat(String),
+    #[error(transparent)]
+    Ber(#[from] BerError),
     #[error(transparent)]
     Base64(#[from] base64::DecodeError),
     #[error(transparent)]
@@ -168,7 +183,7 @@ impl PbeScheme {
         parameters: Option<AnyRef<'_>>,
         passphrase: &str,
         ciphertext: &[u8],
-    ) -> Result<Vec<u8>, PrivateKeyError> {
+    ) -> Result<Zeroizing<Vec<u8>>, PrivateKeyError> {
         let parameters = parameters.ok_or(PrivateKeyError::MissingPbeParameters)?;
         let (salt, iterations) = parameters.sequence(|reader| {
             let salt = OctetStringRef::decode(reader)?;
@@ -200,7 +215,7 @@ impl PbeScheme {
                 match cipher {
                     Pkcs12Cipher::Rc4 { key_len } => {
                         let key = derive(PKCS12_KEY_ID, key_len);
-                        let mut plaintext = ciphertext.to_vec();
+                        let mut plaintext = Zeroizing::new(ciphertext.to_vec());
                         if key_len == 5 {
                             Rc4::<U5>::new_from_slice(&key)?.apply_keystream(&mut plaintext);
                         } else {
@@ -236,11 +251,11 @@ pub(super) fn cbc_decrypt<C>(
     cipher: C,
     iv: &[u8],
     ciphertext: &[u8],
-) -> Result<Vec<u8>, PrivateKeyError>
+) -> Result<Zeroizing<Vec<u8>>, PrivateKeyError>
 where
     C: BlockCipher + BlockDecryptMut,
 {
-    let mut buffer = ciphertext.to_vec();
+    let mut buffer = Zeroizing::new(ciphertext.to_vec());
     let plaintext_len = cbc::Decryptor::<C>::inner_iv_slice_init(cipher, iv)?
         .decrypt_padded_mut::<Pkcs7>(&mut buffer)?
         .len();
@@ -248,19 +263,21 @@ where
     Ok(buffer)
 }
 
-fn ascii_password(passphrase: &str) -> Vec<u8> {
+pub(super) fn ascii_password(passphrase: &str) -> Zeroizing<Vec<u8>> {
     #[allow(
         clippy::cast_possible_truncation,
         reason = "BouncyCastle PasswordConverter.ASCII keeps the low byte of each UTF-16 unit"
     )]
-    passphrase.encode_utf16().map(|unit| unit as u8).collect()
+    Zeroizing::new(passphrase.encode_utf16().map(|unit| unit as u8).collect())
 }
 
-fn bmp_password(passphrase: &str) -> Vec<u8> {
-    let mut bytes: Vec<u8> = passphrase
-        .encode_utf16()
-        .flat_map(u16::to_be_bytes)
-        .collect();
+fn bmp_password(passphrase: &str) -> Zeroizing<Vec<u8>> {
+    let mut bytes = Zeroizing::new(
+        passphrase
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<u8>>(),
+    );
     bytes.extend_from_slice(&[0, 0]);
     bytes
 }
@@ -273,37 +290,48 @@ fn digest_bytes(digest: Pbes1Digest, data: &[u8]) -> Vec<u8> {
     }
 }
 
-fn pbkdf1(digest: Pbes1Digest, password: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
-    let mut input = password.to_vec();
+fn pbkdf1(
+    digest: Pbes1Digest,
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+) -> Zeroizing<Vec<u8>> {
+    let mut input = Zeroizing::new(password.to_vec());
     input.extend_from_slice(salt);
-    let mut derived = digest_bytes(digest, &input);
+    let mut derived = Zeroizing::new(digest_bytes(digest, &input));
     for _ in 1..iterations {
-        derived = digest_bytes(digest, &derived);
+        derived = Zeroizing::new(digest_bytes(digest, &derived));
     }
     derived.truncate(2 * BLOCK_IV_LEN);
     derived
 }
 
-fn repeat_to_block_multiple(data: &[u8]) -> Vec<u8> {
+fn repeat_to_block_multiple(data: &[u8]) -> Zeroizing<Vec<u8>> {
     if data.is_empty() {
-        return Vec::new();
+        return Zeroizing::new(Vec::new());
     }
     let len = SHA1_BLOCK_LEN * data.len().div_ceil(SHA1_BLOCK_LEN);
-    data.iter().copied().cycle().take(len).collect()
+    Zeroizing::new(data.iter().copied().cycle().take(len).collect())
 }
 
-fn pkcs12_kdf(password: &[u8], salt: &[u8], iterations: u32, id: u8, len: usize) -> Vec<u8> {
+fn pkcs12_kdf(
+    password: &[u8],
+    salt: &[u8],
+    iterations: u32,
+    id: u8,
+    len: usize,
+) -> Zeroizing<Vec<u8>> {
     let diversifier = [id; SHA1_BLOCK_LEN];
     let mut input = repeat_to_block_multiple(salt);
-    input.extend(repeat_to_block_multiple(password));
-    let mut output = Vec::with_capacity(len);
+    input.extend_from_slice(&repeat_to_block_multiple(password));
+    let mut output = Zeroizing::new(Vec::with_capacity(len));
     while output.len() < len {
         let mut hasher = sha1::Sha1::new();
         hasher.update(diversifier);
-        hasher.update(&input);
-        let mut block = hasher.finalize().to_vec();
+        hasher.update(&*input);
+        let mut block = Zeroizing::new(hasher.finalize().to_vec());
         for _ in 1..iterations {
-            block = sha1::Sha1::digest(&block).to_vec();
+            block = Zeroizing::new(sha1::Sha1::digest(&*block).to_vec());
         }
         output.extend_from_slice(&block);
         for chunk in input.chunks_mut(SHA1_BLOCK_LEN) {

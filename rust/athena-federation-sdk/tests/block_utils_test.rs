@@ -363,3 +363,111 @@ fn write_errors_name_list_children_like_java_list_vectors() {
         assert_eq!(expected, complex_write_error(field, &value), "{label}");
     }
 }
+
+fn map_field(
+    name: &str,
+    entries: &str,
+    key: &str,
+    value: arrow::datatypes::Field,
+) -> arrow::datatypes::Field {
+    let key = arrow::datatypes::Field::new(key, DataType::Utf8, false);
+    let entries = arrow::datatypes::Field::new(entries, struct_of(vec![key, value]), false);
+    nested(name, DataType::Map(Arc::new(entries), false))
+}
+
+fn complex_write_result(field: arrow::datatypes::Field, value: &Value) -> String {
+    let s = setup();
+    let schema = arrow::datatypes::Schema::new(vec![field]);
+    let mut block = s.allocator.create_block(Arc::new(schema));
+    let vector = block.get_field_vector_mut("c").unwrap();
+    match BlockUtils::set_complex_value(vector, 0, &DefaultFieldResolver, value) {
+        Ok(()) => "OK".to_string(),
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn write_errors_render_map_fields_like_java_vectors() {
+    let entry = |key: &str, value: Value| Value::Map(vec![(Value::String(key.to_string()), value)]);
+    let cases = [
+        (
+            map_field("c", "e", "k", nested("v", DataType::Int32)),
+            entry("k", Value::Int(1)),
+            "Invalid Arrow Map schema: c: Map(false)<entries: Struct<k: Utf8 not null, v: Int(32, true)> not null>",
+        ),
+        (
+            map_field("c", "e", "key", nested("value", DataType::Int32)),
+            entry("k", Value::Int(1)),
+            "OK",
+        ),
+        (
+            nested(
+                "c",
+                list_of(map_field("m", "entries", "k", nested("v", DataType::Int32))),
+            ),
+            Value::List(vec![entry("a", Value::Int(1))]),
+            "Invalid Arrow Map schema: $data$: Map(false)<entries: Struct<k: Utf8 not null, v: Int(32, true)> not null>",
+        ),
+        (
+            map_field(
+                "c",
+                "entries",
+                "key",
+                nested("val", list_of(nested("item", DataType::Int32))),
+            ),
+            entry("k", Value::List(vec![Value::Int(1)])),
+            "Invalid Arrow Map schema: c: Map(false)<entries: Struct<key: Utf8 not null, val: List<$data$: Int(32, true)>> not null>",
+        ),
+        (
+            nested(
+                "c",
+                struct_of(vec![map_field("m", "x", "a", nested("b", DataType::Utf8))]),
+            ),
+            entry("m", entry("k", Value::String("v".to_string()))),
+            "Invalid Arrow Map schema: m: Map(false)<entries: Struct<a: Utf8 not null, b: Utf8> not null>",
+        ),
+        (
+            map_field("c", "entries", "key", nested("v", decimal(10, 2))),
+            entry("k", Value::Int(1)),
+            "Invalid Arrow Map schema: c: Map(false)<entries: Struct<key: Utf8 not null, v: Decimal(10, 2, 128)> not null>",
+        ),
+        (
+            map_field(
+                "c",
+                "entries",
+                "k",
+                nested(
+                    "value",
+                    DataType::Timestamp(TimeUnit::Millisecond, Some("UTC".into())),
+                ),
+            ),
+            entry("k", Value::Int(1)),
+            "Invalid Arrow Map schema: c: Map(false)<entries: Struct<k: Utf8 not null, value: Timestamp(MILLISECOND, UTC)> not null>",
+        ),
+        (
+            map_field(
+                "c",
+                "entries",
+                "key",
+                map_field("value", "kv", "a", nested("b", DataType::Int32)),
+            ),
+            entry("k", entry("x", Value::Int(1))),
+            "Invalid Arrow Map schema: value: Map(false)<entries: Struct<a: Utf8 not null, b: Int(32, true)> not null>",
+        ),
+        (
+            nested(
+                "c",
+                list_of(nested(
+                    "l",
+                    list_of(map_field("m", "e", "k", nested("value", DataType::Int32))),
+                )),
+            ),
+            Value::List(vec![Value::List(vec![entry("a", Value::Int(1))])]),
+            "Invalid Arrow Map schema: $data$: Map(false)<entries: Struct<k: Utf8 not null, value: Int(32, true)> not null>",
+        ),
+    ];
+    for (field, value, expected) in cases {
+        let label = format!("{field:?}");
+        assert_eq!(expected, complex_write_result(field, &value), "{label}");
+    }
+}

@@ -19,24 +19,33 @@ bytes = { workspace = true }
 cbc = { workspace = true }
 chrono = { workspace = true }
 des = { workspace = true }
+gost94 = { workspace = true }
+hmac = { workspace = true }
 indexmap = { workspace = true }
 md2 = { workspace = true }
 md-5 = { workspace = true }
 parquet = { workspace = true }
+pbkdf2 = { workspace = true }
 pkcs8 = { workspace = true }
 rc2 = { workspace = true }
 rc4 = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 rsa = { workspace = true }
+scrypt = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+sm3 = { workspace = true }
+sm4 = { workspace = true }
 snowflake-connector-rs = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "rt-multi-thread", "macros"] }
 tracing = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 aws-credential-types = { workspace = true }

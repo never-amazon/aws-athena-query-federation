@@ -143,7 +143,7 @@ fn calcite_extended_oracle_matches() {
             }
         }
     }
-    assert_eq!(checked, 169 * 12);
+    assert_eq!(checked, 186 * 12);
     assert!(
         failures.is_empty(),
         "{} of {checked} rows differ:\n{}",

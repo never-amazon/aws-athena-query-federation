@@ -1,65 +1,18 @@
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 const BOOTSTRAP: &str = "bootstrap";
-const PLATFORM: &str = "platform";
 
-const JDK_PACKAGES: [(&str, &str, &str); 47] = [
-    ("java.lang", "java.base", BOOTSTRAP),
-    ("java.lang.instrument", "java.instrument", BOOTSTRAP),
-    ("java.lang.management", "java.management", BOOTSTRAP),
-    ("java.math", "java.base", BOOTSTRAP),
-    ("java.util", "java.base", BOOTSTRAP),
-    ("java.util.logging", "java.logging", BOOTSTRAP),
-    ("java.util.prefs", "java.prefs", BOOTSTRAP),
-    ("java.time", "java.base", BOOTSTRAP),
-    ("java.io", "java.base", BOOTSTRAP),
-    ("java.nio", "java.base", BOOTSTRAP),
-    ("java.net", "java.base", BOOTSTRAP),
-    ("java.net.http", "java.net.http", PLATFORM),
-    ("java.text", "java.base", BOOTSTRAP),
-    ("java.security", "java.base", BOOTSTRAP),
-    ("javax.crypto", "java.base", BOOTSTRAP),
-    ("javax.net", "java.base", BOOTSTRAP),
-    ("javax.security.auth", "java.base", BOOTSTRAP),
-    (
-        "javax.security.auth.kerberos",
-        "java.security.jgss",
-        PLATFORM,
-    ),
-    ("javax.security.cert", "java.base", BOOTSTRAP),
-    ("javax.security.sasl", "java.security.sasl", BOOTSTRAP),
-    ("org.ietf.jgss", "java.security.jgss", PLATFORM),
-    ("java.sql", "java.sql", PLATFORM),
-    ("javax.sql", "java.sql", PLATFORM),
-    ("javax.sql.rowset", "java.sql.rowset", PLATFORM),
-    ("java.awt", "java.desktop", BOOTSTRAP),
-    ("java.awt.datatransfer", "java.datatransfer", BOOTSTRAP),
-    ("java.beans", "java.desktop", BOOTSTRAP),
-    ("javax.swing", "java.desktop", BOOTSTRAP),
-    ("javax.imageio", "java.desktop", BOOTSTRAP),
-    ("javax.sound", "java.desktop", BOOTSTRAP),
-    ("javax.print", "java.desktop", BOOTSTRAP),
-    ("javax.naming", "java.naming", BOOTSTRAP),
-    ("java.rmi", "java.rmi", BOOTSTRAP),
-    ("javax.rmi.ssl", "java.rmi", BOOTSTRAP),
-    ("javax.management", "java.management", BOOTSTRAP),
-    ("javax.script", "java.scripting", PLATFORM),
-    ("javax.lang.model", "java.compiler", PLATFORM),
-    ("javax.tools", "java.compiler", PLATFORM),
-    ("javax.annotation.processing", "java.compiler", PLATFORM),
-    ("javax.xml", "java.xml", BOOTSTRAP),
-    ("javax.xml.crypto", "java.xml.crypto", PLATFORM),
-    ("org.w3c.dom", "java.xml", BOOTSTRAP),
-    ("org.w3c.dom.css", "jdk.xml.dom", PLATFORM),
-    ("org.w3c.dom.html", "jdk.xml.dom", PLATFORM),
-    ("org.w3c.dom.stylesheets", "jdk.xml.dom", PLATFORM),
-    ("org.w3c.dom.xpath", "jdk.xml.dom", PLATFORM),
-    ("org.xml.sax", "java.xml", BOOTSTRAP),
-];
-
-fn package_matches(package: &str, prefix: &str) -> bool {
-    package
-        .strip_prefix(prefix)
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
-}
+static JDK_PACKAGES: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
+    LazyLock::new(|| {
+        include_str!("jdk17_packages.tsv")
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\t');
+                Some((fields.next()?, (fields.next()?, fields.next()?)))
+            })
+            .collect()
+    });
 
 fn module_and_loader(name: &str) -> Option<(&'static str, &'static str)> {
     if let Some(element) = name.strip_prefix('[') {
@@ -74,11 +27,7 @@ fn module_and_loader(name: &str) -> Option<(&'static str, &'static str)> {
     if class.is_empty() {
         return None;
     }
-    JDK_PACKAGES
-        .iter()
-        .filter(|(prefix, _, _)| package_matches(package, prefix))
-        .max_by_key(|(prefix, _, _)| prefix.len())
-        .map(|(_, module, loader)| (*module, *loader))
+    JDK_PACKAGES.get(package).copied()
 }
 
 pub fn class_cast_message(from: &str, to: &str) -> String {
@@ -168,6 +117,40 @@ mod tests {
         assert_eq!(
             class_cast_message("org.w3c.dom.css.CSSRule", "org.w3c.dom.ls.LSInput"),
             "class org.w3c.dom.css.CSSRule cannot be cast to class org.w3c.dom.ls.LSInput (org.w3c.dom.css.CSSRule is in module jdk.xml.dom of loader 'platform'; org.w3c.dom.ls.LSInput is in module java.xml of loader 'bootstrap')"
+        );
+    }
+
+    #[test]
+    fn names_the_jdk_17_module_of_every_package() {
+        assert_eq!(870, super::JDK_PACKAGES.len());
+        assert_eq!(
+            class_cast_message("javax.management.remote.rmi.RMIServerImpl", "java.lang.Integer"),
+            "class javax.management.remote.rmi.RMIServerImpl cannot be cast to class java.lang.Integer (javax.management.remote.rmi.RMIServerImpl is in module java.management.rmi of loader 'bootstrap'; java.lang.Integer is in module java.base of loader 'bootstrap')"
+        );
+        for (class, module, loader) in [
+            ("java.applet.Applet", "java.desktop", "bootstrap"),
+            (
+                "javax.accessibility.Accessible",
+                "java.desktop",
+                "bootstrap",
+            ),
+            ("javax.smartcardio.Card", "java.smartcardio", "platform"),
+            (
+                "javax.transaction.xa.XAResource",
+                "java.transaction.xa",
+                "platform",
+            ),
+            ("com.sun.tools.javac.Main", "jdk.compiler", "app"),
+            ("sun.awt.AppContext", "java.desktop", "bootstrap"),
+        ] {
+            assert_eq!(
+                class_cast_message(class, "java.lang.Integer"),
+                format!("class {class} cannot be cast to class java.lang.Integer ({class} is in module {module} of loader '{loader}'; java.lang.Integer is in module java.base of loader 'bootstrap')"),
+            );
+        }
+        assert_eq!(
+            class_cast_message("javax.xml.bind.JAXBElement", "java.lang.Integer"),
+            "class javax.xml.bind.JAXBElement cannot be cast to class java.lang.Integer"
         );
     }
 

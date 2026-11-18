@@ -13,6 +13,9 @@ use pkcs8::{EncryptedPrivateKeyInfo, ObjectIdentifier, PrivateKeyInfo};
 use regex::Regex;
 use rsa::pkcs8::DecodePrivateKey;
 
+use zeroize::Zeroizing;
+
+use super::ber;
 use super::pbe::{PbeScheme, PrivateKeyError};
 use super::pbes2::{self, PBES2_OID};
 use crate::snowflake_constants::{is_blank, java_trim, SnowflakeConstants};
@@ -195,22 +198,25 @@ fn parse_pem_object(
     let (label, der) = read_pem(pem)?;
     match label.as_str() {
         "ENCRYPTED PRIVATE KEY" => {
+            let der = ber::to_der(&der)?;
             let (algorithm, ciphertext) = read_encrypted_private_key_info(&der)?;
             let Some(passphrase) = passphrase.filter(|p| !java_trim(p).is_empty()) else {
                 return Err(PrivateKeyError::PassphraseRequired);
             };
-            let plaintext = match PbeScheme::from_oid(algorithm.oid) {
+            let mut plaintext = match PbeScheme::from_oid(algorithm.oid) {
                 Some(scheme) => scheme.decrypt(algorithm.parameters, passphrase, ciphertext)?,
                 None if algorithm.oid == PBES2_OID => {
                     pbes2::decrypt(algorithm.parameters, passphrase, ciphertext)?
                 }
-                None => EncryptedPrivateKeyInfo::try_from(der.as_slice())?
-                    .decrypt(passphrase.as_bytes())?
-                    .as_bytes()
-                    .to_vec(),
+                None => Zeroizing::new(
+                    EncryptedPrivateKeyInfo::try_from(der.as_slice())?
+                        .decrypt(passphrase.as_bytes())?
+                        .as_bytes()
+                        .to_vec(),
+                ),
             };
             check_private_key_info(&plaintext)?;
-            Ok(plaintext)
+            Ok(std::mem::take(&mut *plaintext))
         }
         "PRIVATE KEY" => {
             check_private_key_info(&der)?;
