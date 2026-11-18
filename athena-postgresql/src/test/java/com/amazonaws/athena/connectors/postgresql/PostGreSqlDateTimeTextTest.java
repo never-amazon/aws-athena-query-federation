@@ -23,6 +23,7 @@ import org.junit.Test;
 import org.postgresql.jdbc.TimestampUtils;
 
 import java.sql.SQLException;
+import java.util.Calendar;
 import java.util.TimeZone;
 
 import static org.junit.Assert.assertEquals;
@@ -72,7 +73,7 @@ public class PostGreSqlDateTimeTextTest
         for (Object[] c : ACCEPTED_DATE_TIME_TEXT) {
             String text = (String) c[0];
             assertTrue(text, PostGreSqlDateTimeText.isValid(text));
-            assertEquals(text, c[1], timestampUtils.toTimestamp(null, text).getTime());
+            assertEquals(text, c[1], timestampUtils.toTimestamp(Calendar.getInstance(TimeZone.getTimeZone("UTC")), text).getTime());
         }
     }
 }
