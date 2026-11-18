@@ -249,9 +249,13 @@ pub(crate) fn millis_to_naive(millis: i64, nanos: u32) -> Option<NaiveDateTime> 
 
 pub(crate) fn java_sql_date_local_date(millis: i64) -> Option<NaiveDate> {
     let (year, month, day) = hybrid_fields(millis.div_euclid(MILLIS_PER_DAY));
-    let year_of_era = if year <= 0 { 1 - year } else { year };
+    let label_year = if year <= 0 {
+        1 - (1 - year) % 10_000
+    } else {
+        year % 10_000
+    };
     NaiveDate::from_ymd_opt(
-        i32::try_from(year_of_era % 10_000).ok()?,
+        i32::try_from(label_year).ok()?,
         u32::try_from(month).ok()?,
         u32::try_from(day).ok()?,
     )
@@ -352,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn java_sql_date_strings_keep_four_year_digits_and_drop_the_era() {
+    fn java_sql_date_strings_keep_four_year_digits_and_the_era() {
         let day = |text: &str| {
             epoch_day(
                 java_sql_date_local_date(
@@ -364,7 +368,7 @@ mod tests {
                 .unwrap(),
             )
         };
-        assert_eq!(day("0001-01-01 BC"), -719_162);
+        assert_eq!(day("0001-01-01 BC"), -719_528);
         assert_eq!(day("10000-01-01"), -719_528);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(
@@ -377,7 +381,7 @@ mod tests {
         );
         assert_eq!(
             epoch_day(java_sql_date_local_date(DATE_NEGATIVE_INFINITY).unwrap()),
-            2_588_078
+            -4_026_098
         );
     }
 }

@@ -103,10 +103,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -123,6 +125,7 @@ public abstract class JdbcRecordHandler
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcRecordHandler.class);
     private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private final DatabaseConnectionConfig databaseConnectionConfig;
     // The base RecordHandler keeps these private; the export path needs them as getS3Client/getAthenaClient defaults.
@@ -303,7 +306,8 @@ public abstract class JdbcRecordHandler
                         spiller.writeRows((Block block, int rowNum) -> {
                             List<FieldVector> vectors = block.getFieldVectors();
                             for (int i = 0; i < columnCount; i++) {
-                                BlockUtils.setValue(vectors.get(i), rowNum, resultSet.getObject(i + 1));
+                                FieldVector vector = vectors.get(i);
+                                BlockUtils.setValue(vector, rowNum, calendarValue(resultSet, i + 1, resultSet.getObject(i + 1), vector.getMinorType()));
                             }
                             return 1;
                         });
@@ -398,25 +402,67 @@ public abstract class JdbcRecordHandler
      */
     protected FieldWriterFactory makeFactory(Field field)
     {
+        Types.MinorType elementType = Types.getMinorTypeForArrowType(field.getChildren().get(0).getType());
         return (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                 (FieldWriter) (Object context, int rowNum) ->
                 {
                     Array arrayField = ((ResultSet) context).getArray(field.getName());
                     if (!((ResultSet) context).wasNull()) {
-                        List<Object> fieldValue = new ArrayList<>(Arrays.asList((Object[]) arrayField.getArray()));
-                        BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, fieldValue);
+                        BlockUtils.setComplexValue(vector, rowNum, FieldResolver.DEFAULT, arrayValues(arrayField, elementType));
                     }
                     return true;
                 };
+    }
+
+    private List<Object> arrayValues(Array array, Types.MinorType elementType) throws SQLException
+    {
+        if (elementType != Types.MinorType.DATEMILLI && elementType != Types.MinorType.DATEDAY) {
+            return new ArrayList<>(Arrays.asList((Object[]) array.getArray()));
+        }
+        List<Object> values = new ArrayList<>();
+        try (ResultSet elements = array.getResultSet()) {
+            while (elements.next()) {
+                Object element = elements.getObject(2);
+                values.add(element instanceof Array ? ((Array) element).getArray() : calendarValue(elements, 2, element, elementType));
+            }
+        }
+        return values;
+    }
+
+    private Object calendarValue(ResultSet resultSet, int column, Object value, Types.MinorType type) throws SQLException
+    {
+        if (value instanceof Timestamp && (type == Types.MinorType.DATEMILLI || type == Types.MinorType.TIMESTAMPMILLITZ)) {
+            return getTimestampMillis(resultSet, column, (Timestamp) value);
+        }
+        if (value instanceof java.sql.Date && ((java.sql.Date) value).getTime() < GREGORIAN_CUTOVER_MILLIS) {
+            LocalDate date = toLocalDate((java.sql.Date) value);
+            if (type == Types.MinorType.DATEDAY) {
+                return date;
+            }
+            if (type == Types.MinorType.DATEMILLI) {
+                return date.toEpochDay() * MILLIS_PER_DAY;
+            }
+        }
+        return value;
+    }
+
+    private static LocalDate toLocalDate(java.sql.Date date)
+    {
+        String[] fields = date.toString().split("-");
+        int year = Integer.parseInt(fields[0]);
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(date);
+        return LocalDate.of(calendar.get(Calendar.ERA) == GregorianCalendar.BC ? 1 - year : year,
+                Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
     }
 
     protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
     {
     }
 
-    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
     {
-        return resultSet.getTimestamp(fieldName).getTime();
+        return timestamp.getTime();
     }
 
     protected boolean enableCaseSensitivelyLookUpSession(Connection connection)
@@ -523,7 +569,7 @@ public abstract class JdbcRecordHandler
                     checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
-                        dst.value = (int) LocalDate.parse(resultSet.getDate(fieldName).toString()).toEpochDay();
+                        dst.value = (int) toLocalDate(resultSet.getDate(fieldName)).toEpochDay();
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };
@@ -532,10 +578,10 @@ public abstract class JdbcRecordHandler
                 {
                     checkDateTimeText(resultSet, fieldName);
                     if (resultSet.getObject(fieldName) instanceof java.sql.Date) {
-                        dst.value = LocalDate.parse(resultSet.getDate(fieldName).toString()).toEpochDay() * MILLIS_PER_DAY;
+                        dst.value = toLocalDate(resultSet.getDate(fieldName)).toEpochDay() * MILLIS_PER_DAY;
                     }
                     else if (resultSet.getTimestamp(fieldName) != null) {
-                        dst.value = getTimestampMillis(resultSet, fieldName);
+                        dst.value = getTimestampMillis(resultSet, resultSet.findColumn(fieldName), resultSet.getTimestamp(fieldName));
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };

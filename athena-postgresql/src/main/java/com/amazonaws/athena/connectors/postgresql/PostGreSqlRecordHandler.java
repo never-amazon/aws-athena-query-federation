@@ -39,6 +39,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.lang3.Validate;
+import org.postgresql.PGStatement;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 import org.slf4j.Logger;
@@ -54,10 +55,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 
@@ -159,17 +164,26 @@ public class PostGreSqlRecordHandler
     }
 
     @Override
-    protected long getTimestampMillis(ResultSet resultSet, String fieldName) throws SQLException
+    protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
     {
-        int columnType = resultSet.getMetaData().getColumnType(resultSet.findColumn(fieldName));
+        int columnType = resultSet.getMetaData().getColumnType(column);
         if (columnType != Types.TIMESTAMP && columnType != Types.TIMESTAMP_WITH_TIMEZONE) {
-            return super.getTimestampMillis(resultSet, fieldName);
+            return super.getTimestampMillis(resultSet, column, timestamp);
         }
-        OffsetDateTime timestamp = resultSet.getObject(fieldName, OffsetDateTime.class);
-        if (OffsetDateTime.MAX.equals(timestamp) || OffsetDateTime.MIN.equals(timestamp)) {
-            return super.getTimestampMillis(resultSet, fieldName);
+        if (timestamp.getTime() != PGStatement.DATE_NEGATIVE_INFINITY) {
+            GregorianCalendar fields = new GregorianCalendar(columnType == Types.TIMESTAMP ? TimeZone.getDefault() : TimeZone.getTimeZone("UTC"));
+            fields.setTimeInMillis(timestamp.getTime());
+            if (fields.get(Calendar.ERA) == GregorianCalendar.BC) {
+                return LocalDateTime.of(1 - fields.get(Calendar.YEAR), fields.get(Calendar.MONTH) + 1, fields.get(Calendar.DAY_OF_MONTH),
+                        fields.get(Calendar.HOUR_OF_DAY), fields.get(Calendar.MINUTE), fields.get(Calendar.SECOND))
+                        .toInstant(ZoneOffset.UTC).toEpochMilli() + fields.get(Calendar.MILLISECOND);
+            }
         }
-        return timestamp.toInstant().toEpochMilli();
+        OffsetDateTime value = resultSet.getObject(column, OffsetDateTime.class);
+        if (OffsetDateTime.MAX.equals(value) || OffsetDateTime.MIN.equals(value)) {
+            return super.getTimestampMillis(resultSet, column, timestamp);
+        }
+        return value.toInstant().toEpochMilli();
     }
 
     private ArrowType exportArrowType(ResultSetMetaData metadata, int column, Calendar utc) throws SQLException

@@ -601,6 +601,132 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
     }
 }
 
+fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<SqlValue>) -> Value {
+    let mut schema_builder = SchemaBuilder::new_builder();
+    schema_builder.add_list_field("values", element);
+    let schema = Arc::new(schema_builder.build());
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("values", Types::ARRAY)]);
+    let context = row(metadata, vec![SqlValue::Array(values)]);
+    let mut block = BlockAllocatorImpl::new().create_block(Arc::clone(&schema));
+    let vector = block.get_field_vector_mut("values").unwrap();
+    let mut writer = handler
+        .make_factory(schema.field(0))
+        .create(vector, None, None)
+        .unwrap();
+    writer.write(vector, &context, 0).unwrap();
+    block.set_row_count(1);
+    block.get_field_vector("values").unwrap().get_object(0)
+}
+
+#[tokio::test]
+async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
+    let s = set_up();
+    let dates = [
+        ((1000, 1, 1), -354_280),
+        ((1582, 10, 4), -141_428),
+        ((1582, 10, 15), -141_427),
+        ((2025, 4, 22), 20_200),
+    ];
+    let elements = || {
+        let mut elements: Vec<SqlValue> = dates
+            .iter()
+            .map(|&((year, month, day), java_day)| {
+                let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
+                SqlValue::java_sql_date(java_day * 86_400_000, date, date.to_string())
+            })
+            .collect();
+        elements.insert(2, SqlValue::Null);
+        elements
+    };
+    let epoch_days = || {
+        let mut days: Vec<i64> = dates
+            .iter()
+            .map(|&((year, month, day), _)| {
+                NaiveDate::from_ymd_opt(year, month, day)
+                    .unwrap()
+                    .signed_duration_since(NaiveDate::default())
+                    .num_days()
+            })
+            .collect::<Vec<_>>();
+        days.insert(2, i64::MIN);
+        days
+    };
+    let as_value =
+        |day: i64, f: &dyn Fn(i64) -> Value| if day == i64::MIN { Value::Null } else { f(day) };
+    let expected_days = Value::List(
+        epoch_days()
+            .into_iter()
+            .map(|day| as_value(day, &|day| Value::Int(i32::try_from(day).unwrap())))
+            .collect(),
+    );
+    assert_eq!(
+        expected_days,
+        write_array(&s.handler, DataType::Date32, elements())
+    );
+    let expected_millis = Value::List(
+        epoch_days()
+            .into_iter()
+            .map(|day| {
+                as_value(day, &|day| {
+                    Value::LocalDateTime(
+                        NaiveDate::default()
+                            .checked_add_signed(chrono::TimeDelta::days(day))
+                            .unwrap()
+                            .and_hms_opt(0, 0, 0)
+                            .unwrap(),
+                    )
+                })
+            })
+            .collect(),
+    );
+    assert_eq!(
+        expected_millis,
+        write_array(&s.handler, DataType::Date64, elements())
+    );
+}
+
+#[tokio::test]
+async fn make_factory_reads_array_timestamps_through_get_timestamp_millis() {
+    let s = set_up();
+    let timestamps = [
+        NaiveDate::from_ymd_opt(1000, 1, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(-43, 3, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2020, 6, 1)
+            .unwrap()
+            .and_hms_milli_opt(12, 0, 0, 123)
+            .unwrap(),
+    ];
+    let elements = vec![
+        SqlValue::rendered_with_epoch_millis(
+            SqlValue::Timestamp(timestamps[0] + chrono::TimeDelta::days(5)),
+            "1000-01-01 12:00:00",
+            timestamps[0].and_utc().timestamp_millis(),
+        ),
+        SqlValue::rendered_with_epoch_millis(
+            SqlValue::Timestamp(timestamps[1] - chrono::TimeDelta::days(2)),
+            "0044-03-15 12:00:00 BC",
+            timestamps[1].and_utc().timestamp_millis(),
+        ),
+        SqlValue::Null,
+        SqlValue::Timestamp(timestamps[2]),
+    ];
+    assert_eq!(
+        Value::List(vec![
+            Value::LocalDateTime(timestamps[0]),
+            Value::LocalDateTime(timestamps[1]),
+            Value::Null,
+            Value::LocalDateTime(timestamps[2]),
+        ]),
+        write_array(&s.handler, DataType::Date64, elements)
+    );
+}
+
 #[tokio::test]
 async fn test_make_extractor_with_null_values() {
     let s = set_up();
@@ -929,6 +1055,82 @@ async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
         .unwrap();
     assert_eq!(Value::Int(1), block.field_vectors()[0].get_object(0));
     assert_eq!(Value::Int(2), block.field_vectors()[1].get_object(0));
+}
+
+#[tokio::test]
+async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
+    let key = LocalKeyFactory::new().create().await.unwrap();
+    let timestamps = [
+        NaiveDate::from_ymd_opt(1000, 1, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(1582, 10, 4)
+            .unwrap()
+            .and_hms_milli_opt(23, 59, 59, 999)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2020, 6, 1)
+            .unwrap()
+            .and_hms_milli_opt(12, 0, 0, 123)
+            .unwrap(),
+    ];
+    let java_days = [-354_280, -141_428, 18_414];
+    let timestamp = |i: usize| {
+        let ts: NaiveDateTime = timestamps[i];
+        SqlValue::rendered_with_epoch_millis(
+            SqlValue::Timestamp(ts + chrono::TimeDelta::days(java_days[i] - epoch_day(ts.date()))),
+            ts.to_string(),
+            ts.and_utc().timestamp_millis(),
+        )
+    };
+    let java_date = |i: usize| {
+        let label = timestamps[i].date();
+        SqlValue::java_sql_date(java_days[i] * 86_400_000, label, label.to_string())
+    };
+    let data = ResultSetData::of_columns(
+        vec![
+            ColumnMetadata::new("D", Types::DATE),
+            ColumnMetadata::new("TS", Types::TIMESTAMP),
+            ColumnMetadata::new("TS", Types::TIMESTAMP),
+        ],
+        (0..2)
+            .map(|i| vec![java_date(i), timestamp(i), timestamp(i + 1)])
+            .collect(),
+    );
+    let run = run_export(
+        &key,
+        data,
+        "SELECT a.d, a.ts, b.ts FROM c a JOIN c b ON b.id = a.id + 1 ORDER BY a.id",
+        100_000_000_000,
+    )
+    .await;
+    let data_location = run.response.remote_blocks()[0].as_s3().unwrap();
+    let block = crypto()
+        .decrypt_with_schema(
+            Some(&key),
+            &object(&run.fakes, data_location.key()).unwrap(),
+            Arc::new(run.response.schema().clone()),
+        )
+        .unwrap();
+    assert_eq!(2, block.row_count());
+    for row in 0..2 {
+        assert_eq!(
+            Value::Int(i32::try_from(epoch_day(timestamps[row].date())).unwrap()),
+            block.field_vectors()[0].get_object(row)
+        );
+        assert_eq!(
+            Value::Long(timestamps[row].and_utc().timestamp_millis()),
+            block.field_vectors()[1].get_raw(row)
+        );
+        assert_eq!(
+            Value::Long(timestamps[row + 1].and_utc().timestamp_millis()),
+            block.field_vectors()[2].get_raw(row)
+        );
+    }
+}
+
+fn epoch_day(date: NaiveDate) -> i64 {
+    date.signed_duration_since(NaiveDate::default()).num_days()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -315,6 +315,34 @@ async fn build_split_sql_for_date_test() {
     .await;
 }
 
+#[tokio::test]
+async fn build_sql_binds_pre1582_timestamps_and_dates_as_java_time() {
+    let f = setup();
+    let schema = schema_with(&[("ts", DataType::Date64), ("d", DataType::Date32)]);
+    let timestamp = NaiveDate::from_ymd_opt(1000, 1, 1)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap();
+    let date = NaiveDate::from_ymd_opt(-43, 3, 15).unwrap();
+    let epoch_day =
+        i32::try_from(date.signed_duration_since(NaiveDate::default()).num_days()).unwrap();
+    let c = constraints(vec![
+        (
+            "ts",
+            f.single(&DataType::Date64, Value::LocalDateTime(timestamp)),
+        ),
+        ("d", f.single(&DataType::Date32, epoch_day)),
+    ]);
+    assert_build(
+        &f,
+        &schema,
+        &c,
+        "SELECT \"ts\", \"d\" FROM \"s0\".\"p0\"  WHERE (\"ts\" = ?) AND (\"d\" = ?)",
+        &[SqlValue::Timestamp(timestamp), SqlValue::Date(date)],
+    )
+    .await;
+}
+
 async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static str) {
     f.connection.on_prepare(move |sql| {
         if sql == CHAR_COLUMNS_QUERY {

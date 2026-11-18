@@ -159,6 +159,15 @@ impl SqlValue {
         }
     }
 
+    pub fn java_sql_date(millis: i64, date: NaiveDate, text: impl Into<String>) -> SqlValue {
+        SqlValue::Rendered {
+            value: Box::new(SqlValue::Date(date)),
+            text: text.into(),
+            exception_class: SQL_EXCEPTION_CLASS,
+            kind: RenderedKind::JavaDateMillis(millis),
+        }
+    }
+
     pub fn invalid_element(java_type: &'static str, text: impl Into<String>) -> SqlValue {
         let text = text.into();
         SqlValue::Rendered {

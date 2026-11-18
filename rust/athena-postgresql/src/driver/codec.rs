@@ -4,6 +4,7 @@ use std::str::FromStr;
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
 use athena_jdbc::sql::SqlValue;
 use bigdecimal::BigDecimal;
+use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
     java_sql_date_local_date, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
@@ -57,18 +58,21 @@ fn java_date_millis(text: &str) -> Option<i64> {
 
 fn java_date(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
-    Some(rendered(
-        SqlValue::Date(java_sql_date_local_date(millis)?),
-        text.to_string(),
-    ))
+    Some(
+        SqlValue::java_sql_date(millis, java_sql_date_local_date(millis)?, text)
+            .with_exception_class(PSQL_EXCEPTION),
+    )
 }
 
 fn java_date_element(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
-    Some(match millis_to_naive(millis, 0) {
-        Some(ts) => SqlValue::Timestamp(ts),
-        None => SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION),
-    })
+    Some(
+        match java_sql_date_local_date(millis) {
+            Some(date) => SqlValue::java_sql_date(millis, date, text),
+            None => SqlValue::java_date_millis(millis, text),
+        }
+        .with_exception_class(PSQL_EXCEPTION),
+    )
 }
 
 fn trim_money(text: &str) -> Option<String> {
@@ -212,15 +216,9 @@ impl Decoder {
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
                 SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
             }
-            Decoder::Timestamp | Decoder::TimestampTz => match java_timestamp(&text) {
-                Some(SqlValue::Rendered { value, .. })
-                    if matches!(*value, SqlValue::Timestamp(_)) =>
-                {
-                    *value
-                }
-                Some(other) => other,
-                None => SqlValue::String(text),
-            },
+            Decoder::Timestamp | Decoder::TimestampTz => {
+                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+            }
             _ => match self.decode_text(Cow::Owned(text)) {
                 SqlValue::Rendered { value, .. } => *value,
                 other => other,
@@ -416,6 +414,15 @@ fn hex_bytes(bytes: &[u8]) -> String {
     out
 }
 
+fn java_time_text(date: NaiveDate, time: &str) -> String {
+    let (year, era) = if date.year() > 0 {
+        (date.year(), "")
+    } else {
+        (1 - date.year(), " BC")
+    };
+    format!("{year:04}-{:02}-{:02}{time}{era}", date.month(), date.day())
+}
+
 pub(crate) fn encode_parameter(
     value: &SqlValue,
     string_unspecified: bool,
@@ -438,9 +445,15 @@ pub(crate) fn encode_parameter(
             Some(s.clone()),
         ),
         SqlValue::Bytes(b) => (oid::BYTEA, Some(hex_bytes(b))),
-        SqlValue::Date(d) => (0, Some(format!("{} +00", d.format("%Y-%m-%d")))),
+        SqlValue::Date(d) => (oid::DATE, Some(java_time_text(*d, ""))),
         SqlValue::Time(t) => (0, Some(t.format("%H:%M:%S%.f").to_string())),
-        SqlValue::Timestamp(ts) => (0, Some(format!("{}+00", ts.format(TIMESTAMP_FORMAT)))),
+        SqlValue::Timestamp(ts) => (
+            oid::TIMESTAMP,
+            Some(java_time_text(
+                ts.date(),
+                &ts.format(" %H:%M:%S%.f").to_string(),
+            )),
+        ),
         SqlValue::TimestampTz(ts) => (
             0,
             Some(format!("{}+00", ts.naive_utc().format(TIMESTAMP_FORMAT))),
@@ -563,13 +576,43 @@ mod tests {
                 &SqlValue::Date(NaiveDate::from_ymd_opt(2020, 1, 2).unwrap()),
                 false
             ),
-            (0, Some("2020-01-02 +00".to_string()))
+            (oid::DATE, Some("2020-01-02".to_string()))
         );
         assert_eq!(
             encode_parameter(&SqlValue::Boolean(true), false),
             (oid::BOOL, Some("TRUE".to_string()))
         );
         assert_eq!(Types::ARRAY, cache().sql_type(1007));
+    }
+
+    #[test]
+    fn date_and_timestamp_parameters_bind_like_pgjdbc_set_object() {
+        let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(
+            encode_parameter(&SqlValue::Date(date(-43, 3, 15)), false),
+            (oid::DATE, Some("0044-03-15 BC".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(&SqlValue::Date(date(0, 2, 29)), false),
+            (oid::DATE, Some("0001-02-29 BC".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(
+                &SqlValue::Timestamp(date(1000, 1, 1).and_hms_opt(12, 0, 0).unwrap()),
+                false
+            ),
+            (oid::TIMESTAMP, Some("1000-01-01 12:00:00".to_string()))
+        );
+        assert_eq!(
+            encode_parameter(
+                &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
+                false
+            ),
+            (
+                oid::TIMESTAMP,
+                Some("0044-03-15 12:00:00.500 BC".to_string())
+            )
+        );
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
@@ -601,14 +644,32 @@ mod tests {
     #[test]
     fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
         let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
-        assert_eq!(day("0001-01-01 BC"), -719_162);
+        assert_eq!(day("0001-01-01 BC"), -719_528);
         assert_eq!(day("infinity"), 2_565_691);
-        assert_eq!(day("-infinity"), 2_588_078);
+        assert_eq!(day("-infinity"), -4_026_098);
         assert_eq!(day("10000-01-01"), -719_528);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn bc_dates_decode_on_the_proleptic_calendar() {
+        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        for (text, (year, month, date)) in [
+            ("0001-01-01 BC", (0, 1, 1)),
+            ("0001-02-29 BC", (0, 2, 29)),
+            ("0002-03-01 BC", (-1, 3, 1)),
+            ("0044-03-15 BC", (-43, 3, 15)),
+            ("4713-11-24 BC", (-4712, 11, 24)),
+        ] {
+            let expected = NaiveDate::from_ymd_opt(year, month, date)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days();
+            assert_eq!(day(text), expected, "{text}");
+        }
     }
 
     #[test]
@@ -623,6 +684,7 @@ mod tests {
         let cases = [
             ("1000-01-01 12:00:00", -30_610_180_800_000),
             ("0044-03-15 12:00:00 BC", -63_517_780_800_000),
+            ("0001-02-29 06:30:00.5 BC", -62_162_098_199_500),
             ("1582-10-04 23:59:59.999", -12_220_156_800_001),
             ("1582-10-15 00:00:00", -12_219_292_800_000),
             ("2020-06-01 12:00:00.123456+05:30", 1_590_993_000_123),

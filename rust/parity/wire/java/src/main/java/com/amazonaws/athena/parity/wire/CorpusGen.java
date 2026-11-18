@@ -336,6 +336,7 @@ public final class CorpusGen
         defineReadRecords();
         defineExtra();
         defineUnicode();
+        defineCalendar();
     }
 
     private void defineUnsupported()
@@ -1117,4 +1118,48 @@ public final class CorpusGen
         add("x_big", "edges_full", 6, "edges full", q -> read(q, edges, Schemas.allTypes(), split(q, "*", "*"), constraints(Map.of())));
     }
 
+
+    private void defineCalendar()
+    {
+        TableName calendar = new TableName("parity_cal", "calendar");
+        ArrowType dateDay = Types.MinorType.DATEDAY.getType();
+        ArrowType dateMilli = Types.MinorType.DATEMILLI.getType();
+        Schema schema = SchemaBuilder.newBuilder().addField("id", Types.MinorType.INT.getType()).addField("d", dateDay).addField("ts", dateMilli)
+                .addField("tstz", dateMilli).addListField("ts_arr", dateMilli).addListField("d_arr", dateDay).build();
+        add("x_cal", "full", 6, "pre-1582, BC and cutover values in scalars and arrays", q -> read(q, calendar, schema, split(q, "*", "*"), constraints(Map.of())));
+        String[][] exports = {
+            {"export", "SELECT id, d, ts, tstz FROM parity_cal.calendar ORDER BY id"},
+            {"export_duplicate_labels", "SELECT a.ts, b.ts, a.d, b.d FROM parity_cal.calendar a JOIN parity_cal.calendar b ON b.id = a.id + 1 ORDER BY a.id"},
+        };
+        for (String[] export : exports) {
+            add("x_cal", export[0], 5, "query passthrough export of " + export[1],
+                    q -> {
+                        Map<String, String> args = new LinkedHashMap<>(qptArgs(export[1]));
+                        args.put("ExportSchema", "true");
+                        return read(q, CATALOG, new TableName("system", "query"), SchemaBuilder.newBuilder().build(),
+                                Split.newBuilder(spill(q, "split-0001"), null).applyProperties(args).build(),
+                                qptConstraints(args), 1_000_000L, 0L);
+                    });
+        }
+        Object[][] filters = {
+            {"ts_eq", "ts", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0)))},
+            {"ts_bc_eq", "ts", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(-43, 3, 15, 12, 0)))},
+            {"ts_lt", "ts", dateMilli, List.of(Range.lessThan(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0, 0, 1_000_000)))},
+            {"ts_cutover_range", "ts", dateMilli, List.of(Range.range(allocator, dateMilli, LocalDateTime.of(1582, 10, 4, 0, 0), true, LocalDateTime.of(1582, 10, 15, 0, 0), true))},
+            {"tstz_eq", "tstz", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(1000, 1, 1, 12, 0)))},
+            {"tstz_bc_fraction_eq", "tstz", dateMilli, List.of(Range.equal(allocator, dateMilli, LocalDateTime.of(0, 2, 29, 6, 30, 0, 500_000_000)))},
+            {"d_eq", "d", dateDay, List.of(Range.equal(allocator, dateDay, (int) LocalDate.of(1000, 1, 1).toEpochDay()))},
+            {"d_bc_in", "d", dateDay, List.of(Range.equal(allocator, dateDay, (int) LocalDate.of(-43, 3, 15).toEpochDay()),
+                    Range.equal(allocator, dateDay, (int) LocalDate.of(0, 2, 29).toEpochDay()))},
+            {"d_lt_cutover", "d", dateDay, List.of(Range.lessThan(allocator, dateDay, (int) LocalDate.of(1582, 10, 15).toEpochDay()))},
+        };
+        for (Object[] filter : filters) {
+            String column = (String) filter[1];
+            @SuppressWarnings("unchecked")
+            List<Range> ranges = (List<Range>) filter[3];
+            add("x_cal", "pred_" + filter[0], 6, "filter on " + column + " with pre-1582 values",
+                    q -> read(q, calendar, Schemas.project(schema, "id", column), split(q, "*", "*"),
+                            constraints(Map.of(column, SortedRangeSet.copyOf((ArrowType) filter[2], ranges, false)))));
+        }
+    }
 }

@@ -412,6 +412,96 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeExtractorReadsBcDatesOnTheProlepticCalendar() throws Exception {
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        int[][] bcFields = {{1, 1, 1}, {1, 2, 29}, {2, 3, 1}, {44, 3, 15}, {4713, 11, 24}};
+        LocalDate[] expected = {LocalDate.of(0, 1, 1), LocalDate.of(0, 2, 29), LocalDate.of(-1, 3, 1), LocalDate.of(-43, 3, 15), LocalDate.of(-4712, 11, 24)};
+        for (int i = 0; i < bcFields.length; i++) {
+            java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+            calendar.clear();
+            calendar.set(java.util.Calendar.ERA, java.util.GregorianCalendar.BC);
+            calendar.set(bcFields[i][0], bcFields[i][1] - 1, bcFields[i][2]);
+            Date date = new Date(calendar.getTimeInMillis());
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getObject("testCol")).thenReturn(date);
+            when(resultSet.getDate("testCol")).thenReturn(date);
+            when(resultSet.wasNull()).thenReturn(false);
+
+            NullableDateDayHolder day = new NullableDateDayHolder();
+            ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build(), resultSet, partitionMap)).extract(null, day);
+            NullableDateMilliHolder milli = new NullableDateMilliHolder();
+            ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build(), resultSet, partitionMap)).extract(null, milli);
+
+            Assert.assertEquals(expected[i].toString(), expected[i].toEpochDay(), day.value);
+            Assert.assertEquals(expected[i].toString(), expected[i].toEpochDay() * 86_400_000L, milli.value);
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsPre1582ArrayDatesByCalendarDate() throws Exception {
+        LocalDate[] dates = {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1582, 10, 15), LocalDate.of(2025, 4, 22)};
+        for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {
+                org.apache.arrow.vector.types.Types.MinorType.DATEDAY, org.apache.arrow.vector.types.Types.MinorType.DATEMILLI}) {
+            Schema schema = SchemaBuilder.newBuilder().addListField("dates", elementType.getType()).build();
+            ResultSet elements = Mockito.mock(ResultSet.class);
+            when(elements.next()).thenReturn(true, true, true, true, true, false);
+            when(elements.getObject(2)).thenReturn(Date.valueOf(dates[0]), Date.valueOf(dates[1]), null, Date.valueOf(dates[2]), Date.valueOf(dates[3]));
+            java.sql.Array array = Mockito.mock(java.sql.Array.class);
+            when(array.getResultSet()).thenReturn(elements);
+            when(array.getArray()).thenReturn(new Object[] {Date.valueOf(dates[0]), Date.valueOf(dates[1]), null, Date.valueOf(dates[2]), Date.valueOf(dates[3])});
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getArray("dates")).thenReturn(array);
+            List<Object> expected = new ArrayList<>();
+            for (LocalDate date : dates) {
+                expected.add(elementType == org.apache.arrow.vector.types.Types.MinorType.DATEDAY ? (Object) (int) date.toEpochDay() : date.atStartOfDay());
+            }
+            expected.add(2, null);
+            try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+                this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("dates"), null, null).write(resultSet, 0);
+                block.setRowCount(1);
+                Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
+            }
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsArrayTimestampsThroughGetTimestampMillis() throws Exception {
+        JdbcRecordHandler handler = new JdbcRecordHandler(this.amazonS3, this.secretsManager, this.athena,
+                new DatabaseConnectionConfig("testCatalog", "fakedatabase", "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}", "testSecret"),
+                this.jdbcConnectionFactory, ImmutableMap.of())
+        {
+            @Override
+            public PreparedStatement buildSplitSql(Connection c, String cat, TableName t, Schema s, Constraints con, Split sp)
+            {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
+            {
+                return resultSet.getLong(column);
+            }
+        };
+        LocalDateTime[] timestamps = {LocalDateTime.of(1000, 1, 1, 12, 0), LocalDateTime.of(-43, 3, 15, 12, 0), LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_000_000)};
+        ResultSet elements = Mockito.mock(ResultSet.class);
+        when(elements.next()).thenReturn(true, true, true, true, false);
+        when(elements.getObject(2)).thenReturn(Timestamp.valueOf(timestamps[0]), Timestamp.valueOf(timestamps[1]), null, Timestamp.valueOf(timestamps[2]));
+        when(elements.getLong(2)).thenReturn(timestamps[0].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(),
+                timestamps[1].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), timestamps[2].toInstant(java.time.ZoneOffset.UTC).toEpochMilli());
+        java.sql.Array array = Mockito.mock(java.sql.Array.class);
+        when(array.getResultSet()).thenReturn(elements);
+        when(array.getArray()).thenReturn(new Object[] {Timestamp.valueOf(timestamps[0]), Timestamp.valueOf(timestamps[1]), null, Timestamp.valueOf(timestamps[2])});
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        when(resultSet.getArray("ts_arr")).thenReturn(array);
+        Schema schema = SchemaBuilder.newBuilder().addListField("ts_arr", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build();
+        try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+            handler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("ts_arr"), null, null).write(resultSet, 0);
+            block.setRowCount(1);
+            Assert.assertEquals(java.util.Arrays.asList(timestamps[0], timestamps[1], null, timestamps[2]), block.getFieldVector("ts_arr").getObject(0));
+        }
+    }
+
+    @Test
     public void testMakeExtractorWithNullValues() throws Exception {
 
         Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
@@ -681,6 +771,33 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void exportReadsPre1582ValuesOnTheProlepticCalendar() throws Exception {
+        Class.forName("org.h2.Driver");
+        Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqcalendar;DB_CLOSE_DELAY=-1");
+        try (Statement st = h2.createStatement()) {
+            st.execute("CREATE TABLE c (id INT, d DATE, ts TIMESTAMP)");
+            st.execute("INSERT INTO c VALUES (1, DATE '1000-01-06', TIMESTAMP '1000-01-01 12:00:00')");
+            st.execute("INSERT INTO c VALUES (2, DATE '1582-10-14', TIMESTAMP '1582-10-04 23:59:59.999')");
+            st.execute("INSERT INTO c VALUES (3, DATE '2020-06-01', TIMESTAMP '2020-06-01 12:00:00.123')");
+        }
+        EncryptionKey key = new LocalKeyFactory().create();
+        Map<String, byte[]> written = new ConcurrentHashMap<>();
+        RemoteReadRecordsResponse remote = runExport(h2, key, written,
+                "SELECT a.d, a.ts, b.ts FROM c a JOIN c b ON b.id = a.id + 1 ORDER BY a.id", 100_000_000_000L, true);
+
+        S3SpillLocation dataLoc = (S3SpillLocation) remote.getRemoteBlocks().get(0);
+        Block block = new AesGcmBlockCrypto(new BlockAllocatorImpl()).decrypt(key, written.get(dataLoc.getKey()), remote.getSchema());
+        LocalDateTime[] timestamps = {LocalDateTime.of(1000, 1, 1, 12, 0), LocalDateTime.of(1582, 10, 4, 23, 59, 59, 999_000_000),
+                LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_000_000)};
+        Assert.assertEquals(2, block.getRowCount());
+        for (int row = 0; row < 2; row++) {
+            Assert.assertEquals((int) timestamps[row].toLocalDate().toEpochDay(), block.getFieldVectors().get(0).getObject(row));
+            Assert.assertEquals(timestamps[row].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), ((TimeStampMilliTZVector) block.getFieldVectors().get(1)).get(row));
+            Assert.assertEquals(timestamps[row + 1].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), ((TimeStampMilliTZVector) block.getFieldVectors().get(2)).get(row));
+        }
+    }
+
+    @Test
     public void testDoReadRecordsDirectQueryReturnsEveryBlockWithAsyncSpill() throws Exception {
         Class.forName("org.h2.Driver");
         Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqmulti;DB_CLOSE_DELAY=-1");
@@ -722,6 +839,13 @@ public class JdbcRecordHandlerTest
             long maxBlockBytes)
             throws Exception
     {
+        return runExport(h2, key, written, query, maxBlockBytes, false);
+    }
+
+    private RemoteReadRecordsResponse runExport(Connection h2, EncryptionKey key, Map<String, byte[]> written, String query,
+            long maxBlockBytes, boolean localDateTimeMillis)
+            throws Exception
+    {
         JdbcConnectionFactory h2Factory = Mockito.mock(JdbcConnectionFactory.class);
         when(h2Factory.getConnection(nullable(CredentialsProvider.class))).thenReturn(h2);
         S3Client mockS3 = Mockito.mock(S3Client.class);
@@ -738,6 +862,15 @@ public class JdbcRecordHandlerTest
             public PreparedStatement buildSplitSql(Connection c, String cat, TableName t, Schema s, Constraints con, Split sp)
             {
                 throw new UnsupportedOperationException("export query must not call buildSplitSql");
+            }
+
+            @Override
+            protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
+            {
+                if (!localDateTimeMillis) {
+                    return super.getTimestampMillis(resultSet, column, timestamp);
+                }
+                return resultSet.getObject(column, LocalDateTime.class).toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
             }
         };
 

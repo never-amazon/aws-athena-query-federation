@@ -204,3 +204,14 @@ CREATE TABLE parity.big (LIKE parity.all_types INCLUDING ALL);
 INSERT INTO parity.big SELECT a.id + k * 3000, a.smallint_col, a.int_col, a.bigint_col, a.numeric_scaled, a.numeric_noscale, a.numeric_unbounded, a.real_col, a.double_col, a.text_col, a.varchar_col, a.char_col, a.bool_col, a.date_col, a.ts_col, a.tstz_col, a.bytea_col, a.int_arr, a.bigint_arr, a.text_arr, a.float8_arr, a.bool_arr, a.date_arr, a.numeric_arr, a.uuid_col, a.json_col, a.time_col
 FROM parity.all_types a CROSS JOIN generate_series(0, 66) k;
 ANALYZE parity.big;
+
+CREATE SCHEMA parity_cal;
+CREATE TABLE parity_cal.calendar (id integer PRIMARY KEY, d date, ts timestamp, tstz timestamptz, ts_arr timestamp[], d_arr date[]);
+INSERT INTO parity_cal.calendar VALUES
+ (1, '1000-01-01', '1000-01-01 12:00:00', '1000-01-01 12:00:00+00', '{"1000-01-01 12:00:00","1582-10-04 23:59:59.999"}', '{1000-01-01,1582-10-04}'),
+ (2, '0044-03-15 BC', '0044-03-15 12:00:00 BC', '0044-03-15 12:00:00+00 BC', '{"0044-03-15 12:00:00 BC"}', '{"0044-03-15 BC","0001-01-01 BC"}'),
+ (3, '0001-02-29 BC', '0001-02-29 06:30:00.5 BC', '0001-02-29 06:30:00.5+00 BC', '{"0001-02-29 06:30:00.5 BC"}', '{"0001-02-29 BC"}'),
+ (4, '1582-10-15', '1582-10-15 00:00:00', '1582-10-15 00:00:00+00', '{"1582-10-15 00:00:00",NULL}', '{1582-10-15,NULL}'),
+ (5, '2020-06-01', '2020-06-01 12:00:00.123', '2020-06-01 12:00:00.123+05:30', '{"2020-06-01 12:00:00.123",infinity}', '{2020-06-01,infinity}'),
+ (6, NULL, NULL, NULL, NULL, NULL);
+ANALYZE parity_cal.calendar;

@@ -652,4 +652,73 @@ public class SnowflakeQueryStringBuilderTest
         assertEquals("SELECT \"q?\" FROM \"t\" WHERE \"a\" = 'a?b' AND \"b\" = '?' AND \"c\" = 'c'",
                 queryBuilder.expandSql(sql, values));
     }
+
+    @Test
+    public void bindTimestampAndDateSendExactEpochValuesThroughTheDriver() throws Exception
+    {
+        Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings = new HashMap<>();
+        net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement = driverStatement(bindings);
+        java.time.LocalDateTime start = java.time.LocalDateTime.of(-43, 3, 15, 12, 0);
+        java.time.LocalDateTime end = java.time.LocalDateTime.of(1583, 1, 1, 0, 0);
+        int checked = 0;
+        java.time.LocalDateTime gapStart = java.time.LocalDateTime.of(1582, 9, 25, 0, 0);
+        java.time.LocalDateTime gapEnd = java.time.LocalDateTime.of(1582, 10, 5, 0, 0);
+        for (java.time.LocalDateTime value = start; value.isBefore(end); value = value.plusDays(5).plusHours(1).plusNanos(1_500_000)) {
+            if (value.isBefore(gapStart) || !value.isBefore(gapEnd)) {
+                assertBinds(statement, bindings, value);
+                checked++;
+            }
+        }
+        for (java.time.LocalDateTime value = gapStart; value.isBefore(gapEnd); value = value.plusHours(7)) {
+            queryBuilder.bindTimestamp(statement, 1, value, null);
+            assertEquals(value.toString(), String.valueOf(java.math.BigDecimal.valueOf(value.minusDays(10).toEpochSecond(java.time.ZoneOffset.UTC))
+                    .scaleByPowerOfTen(9).toPlainString()), bindings.get("1").getValue());
+            queryBuilder.bindDate(statement, 2, value.toLocalDate(), null);
+            assertEquals(value.toString(), String.valueOf(value.toLocalDate().minusDays(10).toEpochDay() * 86_400_000L), bindings.get("2").getValue());
+        }
+        for (java.time.LocalDateTime value : new java.time.LocalDateTime[] {java.time.LocalDateTime.of(1000, 1, 1, 12, 0),
+                java.time.LocalDateTime.of(1582, 9, 24, 23, 59, 59, 999_000_000), java.time.LocalDateTime.of(1582, 10, 15, 0, 0),
+                java.time.LocalDateTime.of(1969, 12, 31, 23, 59, 59, 500_000_000), java.time.LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_456_789)}) {
+            assertBinds(statement, bindings, value);
+        }
+        assertTrue(checked > 40_000);
+
+        java.time.LocalDateTime shifted = java.time.LocalDateTime.of(1000, 1, 1, 12, 0);
+        statement.setTimestamp(1, new java.sql.Timestamp(shifted.toInstant(java.time.ZoneOffset.UTC).toEpochMilli()));
+        assertEquals(java.math.BigDecimal.valueOf(shifted.minusDays(5).toEpochSecond(java.time.ZoneOffset.UTC)).scaleByPowerOfTen(9).toPlainString(),
+                bindings.get("1").getValue());
+    }
+
+    private void assertBinds(net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement,
+            Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings, java.time.LocalDateTime value) throws SQLException
+    {
+        queryBuilder.bindTimestamp(statement, 1, value, null);
+        java.math.BigDecimal nanos = java.math.BigDecimal.valueOf(value.toEpochSecond(java.time.ZoneOffset.UTC)).scaleByPowerOfTen(9)
+                .add(java.math.BigDecimal.valueOf(value.getNano()));
+        assertEquals(value.toString(), String.valueOf(nanos), bindings.get("1").getValue());
+        assertEquals("TIMESTAMP_LTZ", bindings.get("1").getType());
+        queryBuilder.bindDate(statement, 2, value.toLocalDate(), null);
+        assertEquals(value.toLocalDate().toString(), String.valueOf(value.toLocalDate().toEpochDay() * 86_400_000L), bindings.get("2").getValue());
+        assertEquals("DATE", bindings.get("2").getType());
+    }
+
+    private static net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl driverStatement(
+            Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings) throws Exception
+    {
+        net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement = mock(
+                net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        java.lang.reflect.Field parameterBindings = net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl.class
+                .getDeclaredField("parameterBindings");
+        parameterBindings.setAccessible(true);
+        parameterBindings.set(statement, bindings);
+        net.snowflake.client.internal.api.implementation.connection.SnowflakeConnectionImpl connection = mock(
+                net.snowflake.client.internal.api.implementation.connection.SnowflakeConnectionImpl.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        when(connection.getSFBaseSession(org.mockito.ArgumentMatchers.any()).getTimestampMappedType())
+                .thenReturn(net.snowflake.client.api.resultset.SnowflakeType.TIMESTAMP_LTZ);
+        java.lang.reflect.Field connectionField = net.snowflake.client.internal.api.implementation.statement.SnowflakeStatementImpl.class
+                .getDeclaredField("connection");
+        connectionField.setAccessible(true);
+        connectionField.set(statement, connection);
+        return statement;
+    }
 }

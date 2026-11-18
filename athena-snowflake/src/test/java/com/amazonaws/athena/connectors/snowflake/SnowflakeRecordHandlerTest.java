@@ -1125,9 +1125,7 @@ public class SnowflakeRecordHandlerTest
         for (String instant : instants) {
             long millis = java.time.Instant.parse(instant).toEpochMilli();
             java.sql.Timestamp driverTimestamp = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis));
-            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
-            Mockito.when(resultSet.getTimestamp("ts")).thenReturn(driverTimestamp);
-            assertEquals(instant, millis, handler.getTimestampMillis(resultSet, "ts"));
+            assertEquals(instant, millis, handler.getTimestampMillis(Mockito.mock(java.sql.ResultSet.class), 1, driverTimestamp));
         }
         assertEquals(-30_609_748_800_000L, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(
                 new java.sql.Timestamp(java.time.Instant.parse("1000-01-01T12:00:00Z").toEpochMilli())).getTime());
@@ -1142,6 +1140,36 @@ public class SnowflakeRecordHandlerTest
         for (long millis = start; millis < end; millis += step) {
             long adjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis)).getTime();
             assertEquals(java.time.Instant.ofEpochMilli(millis).toString(), millis, SnowflakeRecordHandler.undoJulianAdjustment(adjusted));
+        }
+    }
+
+    @Test
+    public void makeExtractorReadsBcDriverDatesOnTheProlepticCalendar() throws Throwable
+    {
+        class ExtractorHandler extends SnowflakeRecordHandler
+        {
+            ExtractorHandler()
+            {
+                super(new DatabaseConnectionConfig("testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
+                        "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx"), amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
+            }
+
+            com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor dateDay(java.sql.ResultSet resultSet) throws Exception
+            {
+                return (com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
+                        com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, java.util.Collections.emptyMap());
+            }
+        }
+        ExtractorHandler extractorHandler = new ExtractorHandler();
+        java.util.TimeZone utc = java.util.TimeZone.getTimeZone("UTC");
+        int[] days = {0, -719_162, -719_468, -719_469, -719_470, -719_528, -719_529, -719_893, -720_000, -755_994, -1_000_000, -3_000_000};
+        for (int day : days) {
+            java.sql.Date driverDate = net.snowflake.client.internal.core.arrow.DateConverter.getDate(day, utc, utc, false);
+            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
+            Mockito.when(resultSet.getDate("d")).thenReturn(driverDate);
+            org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
+            extractorHandler.dateDay(resultSet).extract(null, holder);
+            assertEquals(driverDate.toString(), day, holder.value);
         }
     }
 
