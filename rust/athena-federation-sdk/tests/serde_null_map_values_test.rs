@@ -207,26 +207,16 @@ fn split_null_property_rejected_v6() {
     assert_split_null_property_rejected(SerdeVersion::V6);
 }
 
-struct SystemQuerySignature;
-
-impl QueryPassthroughSignature for SystemQuerySignature {
-    fn function_schema(&self) -> String {
-        "system".to_string()
-    }
-
-    fn function_name(&self) -> String {
-        "query".to_string()
-    }
-
-    fn function_arguments(&self) -> Vec<String> {
-        vec!["QUERY".to_string()]
-    }
-}
+const SYSTEM_QUERY_SIGNATURE: QueryPassthroughSignature = QueryPassthroughSignature {
+    schema: "system",
+    name: "query",
+    arguments: &["QUERY"],
+};
 
 #[test]
 fn verify_rejects_null_function_signature() {
     let args = nullable_map(&[("schemaFunctionName", None), ("QUERY", Some("SELECT 1"))]);
-    match SystemQuerySignature.verify(&args) {
+    match SYSTEM_QUERY_SIGNATURE.verify(&args) {
         Err(FederationError::NullPointer(Some(message))) => assert_eq!(
             "Cannot invoke \"String.equalsIgnoreCase(String)\" because \"receivedSignature\" is null",
             message
@@ -241,7 +231,7 @@ fn verify_rejects_null_argument_value() {
         ("schemaFunctionName", Some("SYSTEM.QUERY")),
         ("QUERY", None),
     ]);
-    let err = SystemQuerySignature
+    let err = SYSTEM_QUERY_SIGNATURE
         .verify(&args)
         .expect_err("null argument");
     assert!(err.as_connector_exception().is_some(), "{err:?}");

@@ -19,7 +19,6 @@ use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, LimitPushdownSubType,
     PushdownSubTypes, TopNPushdownSubType,
 };
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::metadata::optimizations::{
     DataSourceOptimizations, OptimizationSubType,
 };
@@ -42,7 +41,7 @@ use athena_jdbc::manager::{
     JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt, JdbcSplitQueryBuilder,
     JdbcUtil, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
-use athena_jdbc::qpt::{JdbcQueryPassthrough, QUERY};
+use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt};
 use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlException};
 use indexmap::IndexMap;
@@ -396,9 +395,7 @@ impl SnowflakeMetadataHandler {
     fn get_snow_flake_copy_into_base_sql(&self, request: &GetSplitsRequest) -> Result<String> {
         let constraints = request.constraints();
         if constraints.is_query_pass_through() {
-            self.base
-                .jdbc_query_passthrough()
-                .verify(constraints.query_passthrough_arguments())?;
+            JDBC_QUERY_PASSTHROUGH.verify(constraints.query_passthrough_arguments())?;
             return Ok(constraints
                 .query_passthrough_arguments()
                 .get(QUERY)
@@ -890,7 +887,7 @@ fn capabilities(
             TopNPushdownSubType::SupportsOrderBy,
         )])?;
     capabilities.insert(name, sub_types);
-    JdbcQueryPassthrough
+    JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
     Ok(capabilities)
 }

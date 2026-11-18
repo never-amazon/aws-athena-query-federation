@@ -287,7 +287,7 @@ com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdb
 com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder	athena-jdbc/src/manager/jdbc_split_query_builder.rs::JdbcSplitQueryBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.PreparedStatementBuilder	athena-jdbc/src/manager/prepared_statement_builder.rs::PreparedStatementBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.TypeAndValue	athena-jdbc/src/manager/type_and_value.rs::TypeAndValue	ported	
-com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough	athena-jdbc/src/qpt/jdbc_query_passthrough.rs::JdbcQueryPassthrough	ported	
+com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough	athena-jdbc/src/qpt/jdbc_query_passthrough.rs::JDBC_QUERY_PASSTHROUGH	merged	the signature subclass becomes a QueryPassthroughSignature constant
 com.amazonaws.athena.connectors.jdbc.resolver.DefaultJDBCCaseResolver	athena-jdbc/src/resolver/default_jdbc_case_resolver.rs::DefaultJdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.jdbc.resolver.JDBCCaseResolver	athena-jdbc/src/resolver/jdbc_case_resolver.rs::JdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.jdbc.splits.IntegerSplitter	athena-jdbc/src/splits/integer_splitter.rs::IntegerSplitter	ported	

@@ -14,7 +14,6 @@ use athena_federation_sdk::handlers::{
 use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype, PushdownSubTypes,
 };
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::metadata::optimizations::{
     DataSourceOptimizations, OptimizationSubType,
 };
@@ -483,7 +482,7 @@ fn capabilities(
                 .with_sub_type_properties(&function_names)?,
         )])?;
     capabilities.insert(name, sub_types);
-    athena_jdbc::qpt::JdbcQueryPassthrough
+    athena_jdbc::qpt::JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
     let non_default_collate = config_options
         .get(PostGreSqlMetadataHandler::NON_DEFAULT_COLLATE)
