@@ -97,7 +97,7 @@ cd athena-postgresql
 sam deploy --guided --template-file athena-postgresql.yaml
 ```
 
-The Snowflake templates set `SNOWFLAKE_ENABLE_S3_EXPORT`, as the Java templates do. The Java and the Rust connectors both read the lowercase key `snowflake_enable_s3_export`, so the uppercase variable has no effect on either. The Rust binaries read every other environment variable that the templates set.
+The Rust binaries read every environment variable that the templates set.
 
 ## Parity tooling
 

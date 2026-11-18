@@ -319,7 +319,7 @@ com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-sno
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxRecordHandler	athena-snowflake/src/snowflake_mux_record_handler.rs::SnowflakeMuxRecordHandler	ported	SnowflakeMuxRecordHandlerFactory lives in the same file
 com.amazonaws.athena.connectors.snowflake.SnowflakeQueryStringBuilder	athena-snowflake/src/snowflake_query_string_builder.rs::SnowflakeQueryStringBuilder	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeRecordHandler	athena-snowflake/src/snowflake_record_handler.rs::SnowflakeRecordHandler	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeUtils	-	not_ported	installCaCertificate and setupNativeEnvironmentVariables write the JDK cacerts store and env vars for the Arrow JDBC native path; the Rust client uses rustls with bundled roots
+com.amazonaws.athena.connectors.snowflake.SnowflakeUtils	-	not_ported	installCaCertificate and setupNativeEnvironmentVariables write the JDK cacerts store and env vars for the Arrow JDBC native path; the Rust client uses rustls with the operating system certificate store
 com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory	athena-snowflake/src/connection/snowflake_connection_factory.rs::SnowflakeConnectionFactory	ported	
 com.amazonaws.athena.connectors.snowflake.resolver.SnowflakeJDBCCaseResolver	athena-snowflake/src/resolver/snowflake_jdbc_case_resolver.rs::SnowflakeJdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter	athena-snowflake/src/utils/snowflake_arrow_type_converter.rs::SnowflakeArrowTypeConverter	ported	

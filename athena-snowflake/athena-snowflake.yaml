@@ -82,7 +82,7 @@ Resources:
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
           default: !Ref DefaultConnectionString
-          SNOWFLAKE_ENABLE_S3_EXPORT: !Ref EnableS3Export
+          snowflake_enable_s3_export: !Ref EnableS3Export
       FunctionName: !Ref LambdaFunctionName
       PackageType: "Image"
       ImageUri: !Sub
