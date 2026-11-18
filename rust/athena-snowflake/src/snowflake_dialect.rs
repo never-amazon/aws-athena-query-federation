@@ -12,7 +12,7 @@ impl SnowflakeDialect {
 
     pub fn new(catalog_casing_filter: bool) -> SnowflakeDialect {
         SnowflakeDialect {
-            inner: SqlDialect::snowflake_with_casing(catalog_casing_filter),
+            inner: SqlDialect::snowflake_with_casing(catalog_casing_filter).without_char_set(),
         }
     }
 

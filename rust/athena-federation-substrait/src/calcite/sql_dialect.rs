@@ -43,6 +43,7 @@ pub struct SqlDialect {
     quote_end: String,
     escaped_quote: String,
     upper_case_identifiers: bool,
+    char_set: bool,
 }
 
 impl SqlDialect {
@@ -53,6 +54,7 @@ impl SqlDialect {
             quote_end: "`".to_string(),
             escaped_quote: "``".to_string(),
             upper_case_identifiers: false,
+            char_set: true,
         }
     }
 
@@ -63,6 +65,7 @@ impl SqlDialect {
             quote_end: "\"".to_string(),
             escaped_quote: "\"\"".to_string(),
             upper_case_identifiers: false,
+            char_set: true,
         }
     }
 
@@ -73,6 +76,7 @@ impl SqlDialect {
             quote_end: "\"".to_string(),
             escaped_quote: "\"\"".to_string(),
             upper_case_identifiers: false,
+            char_set: true,
         }
     }
 
@@ -86,6 +90,12 @@ impl SqlDialect {
         let mut d = SqlDialect::snowflake();
         d.upper_case_identifiers = upper_case;
         d
+    }
+
+    #[must_use]
+    pub fn without_char_set(mut self) -> SqlDialect {
+        self.char_set = false;
+        self
     }
 
     pub fn database_product(&self) -> DatabaseProduct {
@@ -256,6 +266,6 @@ impl SqlDialect {
     }
 
     pub fn supports_char_set(&self) -> bool {
-        self.product != DatabaseProduct::Postgresql
+        self.char_set && self.product != DatabaseProduct::Postgresql
     }
 }

@@ -765,7 +765,7 @@ async fn test_prepare_statement_with_calcite_sql_partition_clauses_before_fetch_
         .unwrap();
     assert_eq!(
         f.prepared(),
-        "SELECT *\nFROM `warehouse`.`call_center` WHERE \"partition_col\" = '2024'\nORDER BY `cc_rec_start_date`\nFETCH NEXT 100 ROWS ONLY"
+        "SELECT *\nFROM (SELECT * FROM `warehouse`.`call_center` WHERE \"partition_col\" = '2024') AS `call_center`\nORDER BY `cc_rec_start_date`\nFETCH NEXT 100 ROWS ONLY"
     );
 }
 
@@ -785,6 +785,25 @@ async fn test_prepare_statement_with_calcite_sql_partition_clauses_before_fetch_
         .unwrap();
     assert_eq!(
         f.prepared(),
-        "SELECT *\nFROM `tpch`.`lineitem`\nWHERE `l_returnflag` = ? AND \"partition_col\" = '2024'\nFETCH NEXT 50 ROWS ONLY"
+        "SELECT *\nFROM (SELECT * FROM `tpch`.`lineitem` WHERE \"partition_col\" = '2024') AS `lineitem`\nWHERE `l_returnflag` = ?\nFETCH NEXT 50 ROWS ONLY"
+    );
+}
+
+#[tokio::test]
+async fn test_prepare_statement_with_calcite_sql_partition_clauses_keep_or_precedence() {
+    let plan = "ChsIARIXL2Z1bmN0aW9uc19ib29sZWFuLnlhbWwKHggCEhovZnVuY3Rpb25zX2NvbXBhcmlzb24ueWFtbBIPGg0IARABGgdvcjpib29sEhIaEAgCEAIaCmx0OmFueV9hbnkSFRoTCAIQAxoNZXF1YWw6YW55X2FueRrPARLMAQq/ATq8AQoGEgQKAgIDEpsBEpgBCgIKABI9CjsKAgoAEhoKAmlkCgRuYW1lEg4KBCoCEAIKBGICEAEYAjoZCgt0ZXN0X3NjaGVtYQoKdGVzdF90YWJsZRpTGlEIARoECgIQASIgGh4aHAgCGgQKAhACIgoaCBIGCgISACIAIgYaBAoCKAUiJRojGiEIAxoECgIQASIMGgoSCAoEEgIIASIAIgkaBwoFYgNuMTcaCBIGCgISACIAGgoSCAoEEgIIASIAEgJJRBIETkFNRTILEEoqB2lzdGhtdXM=";
+    let f = Fixture::new();
+    f.builder
+        .prepare_statement_with_calcite_sql(
+            &f.connection,
+            &plan_constraints(plan),
+            &SqlDialect::ansi(),
+            &f.split,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.prepared(),
+        "SELECT *\nFROM (SELECT * FROM `test_schema`.`test_table` WHERE \"partition_col\" = '2024') AS `test_table`\nWHERE `id` < ? OR `name` = ?"
     );
 }

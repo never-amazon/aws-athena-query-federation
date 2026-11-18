@@ -1377,7 +1377,7 @@ public class JdbcSplitQueryBuilderTest
         verify(mockConnection).prepareStatement(sqlCaptor.capture());
         String sql = sqlCaptor.getValue();
         assertEquals("SELECT *\n"
-                + "FROM `warehouse`.`call_center` WHERE \"partition_col\" = '2024'\n"
+                + "FROM (SELECT * FROM `warehouse`.`call_center` WHERE \"partition_col\" = '2024') AS `call_center`\n"
                 + "ORDER BY `cc_rec_start_date`\n"
                 + "FETCH NEXT 100 ROWS ONLY", sql);
     }
@@ -1400,7 +1400,29 @@ public class JdbcSplitQueryBuilderTest
         verify(mockConnection).prepareStatement(sqlCaptor.capture());
         String sql = sqlCaptor.getValue();
         assertEquals("SELECT *\n"
-                + "FROM `tpch`.`lineitem`\n"
-                + "WHERE `l_returnflag` = ? AND \"partition_col\" = '2024'\n"
-                + "FETCH NEXT 50 ROWS ONLY", sql);    }
+                + "FROM (SELECT * FROM `tpch`.`lineitem` WHERE \"partition_col\" = '2024') AS `lineitem`\n"
+                + "WHERE `l_returnflag` = ?\n"
+                + "FETCH NEXT 50 ROWS ONLY", sql);
+    }
+
+    @Test
+    public void testPrepareStatementWithCalciteSql_PartitionClausesKeepOrPrecedence()
+            throws Exception
+    {
+        // SELECT id, name FROM test_schema.test_table WHERE id < 5 OR name = 'n17'
+        String base64Plan = "ChsIARIXL2Z1bmN0aW9uc19ib29sZWFuLnlhbWwKHggCEhovZnVuY3Rpb25zX2NvbXBhcmlzb24ueWFtbBIPGg0IARABGgdvcjpib29sEhIaEAgCEAIaCmx0OmFueV9hbnkSFRoTCAIQAxoNZXF1YWw6YW55X2FueRrPARLMAQq/ATq8AQoGEgQKAgIDEpsBEpgBCgIKABI9CjsKAgoAEhoKAmlkCgRuYW1lEg4KBCoCEAIKBGICEAEYAjoZCgt0ZXN0X3NjaGVtYQoKdGVzdF90YWJsZRpTGlEIARoECgIQASIgGh4aHAgCGgQKAhACIgoaCBIGCgISACIAIgYaBAoCKAUiJRojGiEIAxoECgIQASIMGgoSCAoEEgIIASIAIgkaBwoFYgNuMTcaCBIGCgISACIAGgoSCAoEEgIIASIAEgJJRBIETkFNRTILEEoqB2lzdGhtdXM=";
+
+        QueryPlan queryPlan = mock(QueryPlan.class);
+        Constraints constraintsWithQueryPlan = mock(Constraints.class);
+        when(queryPlan.getSubstraitPlan()).thenReturn(base64Plan);
+        when(constraintsWithQueryPlan.getQueryPlan()).thenReturn(queryPlan);
+
+        builder.prepareStatementWithCalciteSql(mockConnection, constraintsWithQueryPlan, AnsiSqlDialect.DEFAULT, split);
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mockConnection).prepareStatement(sqlCaptor.capture());
+        assertEquals("SELECT *\n"
+                + "FROM (SELECT * FROM `test_schema`.`test_table` WHERE \"partition_col\" = '2024') AS `test_table`\n"
+                + "WHERE `id` < ? OR `name` = ?", sqlCaptor.getValue());
+    }
 }

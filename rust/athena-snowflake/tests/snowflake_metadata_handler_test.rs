@@ -620,6 +620,38 @@ async fn do_get_splits_with_s3_export() {
 }
 
 #[tokio::test]
+async fn do_get_splits_with_s3_export_keeps_format_text_in_query() {
+    let f = fixture_with(FakeS3Lister::with_keys(&["0/part_0.csv"]), export_options());
+    f.connection.on_query(|statement: &PreparedStatement| {
+        if statement.sql() == DESC_TEST_INTEGRATION {
+            return Ok(integration_rows(&[
+                &["STORAGE_ALLOWED_LOCATIONS", "s3://test-bucket/export/"],
+                &["STORAGE_PROVIDER", "S3"],
+            ]));
+        }
+        Ok(ResultSetData::empty(&[]))
+    });
+    let request = splits_request(
+        identity(),
+        BlockAllocatorImpl::new().create_block_from_schema(&SchemaBuilder::new_builder().build()),
+        Vec::new(),
+        qpt_constraints("SELECT * FROM t WHERE c = '%s'"),
+    );
+    f.handler
+        .do_get_splits(&f.allocator, &request)
+        .await
+        .unwrap();
+    let executed = f.connection.executed();
+    let copy = executed
+        .iter()
+        .find(|statement| statement.sql().starts_with("COPY INTO"))
+        .unwrap();
+    assert!(copy.sql().contains(
+        "FROM (SELECT * FROM t WHERE c = '%s') STORAGE_INTEGRATION = \"TEST_INTEGRATION\" HEADER = TRUE"
+    ));
+}
+
+#[tokio::test]
 async fn test_get_partition_schema() {
     let f = fixture();
     let schema = f.handler.get_partition_schema(CATALOG).unwrap();

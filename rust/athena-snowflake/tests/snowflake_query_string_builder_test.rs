@@ -18,8 +18,8 @@ use athena_federation_sdk::domain::predicate::{
 };
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
-use athena_federation_substrait::{DatabaseProduct, SqlDialect};
-use athena_jdbc::manager::JdbcSplitQueryBuilder;
+use athena_federation_substrait::DatabaseProduct;
+use athena_jdbc::manager::{JdbcSplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 use athena_snowflake::{
     SnowflakeDialect, SnowflakeFederationExpressionParser, SnowflakeQueryStringBuilder,
@@ -454,8 +454,8 @@ fn test_get_base_export_sql_string_with_order_by_and_limit() {
 fn test_get_sql_dialect() {
     let dialect = query_builder().get_sql_dialect();
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
-    assert_eq!(dialect, SqlDialect::snowflake());
-    assert_eq!(dialect, SnowflakeDialect::default_dialect());
+    assert_eq!(dialect, SnowflakeDialect::new(false).into_sql_dialect());
+    assert!(!dialect.supports_char_set());
 }
 
 #[test]
@@ -585,5 +585,42 @@ fn test_get_base_export_sql_string_with_complex_expressions() {
     assert_eq!(
         result,
         "SELECT \"col1\", \"col2\" FROM \"sch\".\"tbl\" WHERE ((\"col2\" <= 100)) AND (\"col2\" > 10) AND ((\"col1\" = 'it''s') OR (\"col1\" IS NULL)) ORDER BY \"col1\" DESC NULLS LAST LIMIT 5"
+    );
+}
+
+fn varchar(value: &str) -> TypeAndValue {
+    TypeAndValue::new(DataType::Utf8, Value::String(value.to_string())).unwrap()
+}
+
+#[test]
+fn test_expand_sql_escapes_backslash_and_quote() {
+    let sql = r#"SELECT * FROM "t" WHERE "a" = ? AND "b" = ? AND "c" = ?"#;
+    let values = [varchar("x\\"), varchar("\\' OR 1=1 --"), varchar("it's")];
+    assert_eq!(
+        Some(
+            r#"SELECT * FROM "t" WHERE "a" = 'x\\' AND "b" = '\\'' OR 1=1 --' AND "c" = 'it''s'"#
+                .to_string()
+        ),
+        query_builder().expand_sql(sql, &values).unwrap()
+    );
+}
+
+#[test]
+fn test_expand_sql_keeps_dollar_and_backslash_in_values_literal() {
+    let sql = r#"SELECT * FROM "t" WHERE "a" = ? AND "b" = ?"#;
+    let values = [varchar("$1"), varchar("a\\$0b")];
+    assert_eq!(
+        Some(r#"SELECT * FROM "t" WHERE "a" = '$1' AND "b" = 'a\\$0b'"#.to_string()),
+        query_builder().expand_sql(sql, &values).unwrap()
+    );
+}
+
+#[test]
+fn test_expand_sql_keeps_question_marks_inside_literals_and_identifiers() {
+    let sql = r#"SELECT "q?" FROM "t" WHERE "a" = ? AND "b" = '?' AND "c" = ?"#;
+    let values = [varchar("a?b"), varchar("c")];
+    assert_eq!(
+        Some(r#"SELECT "q?" FROM "t" WHERE "a" = 'a?b' AND "b" = '?' AND "c" = 'c'"#.to_string()),
+        query_builder().expand_sql(sql, &values).unwrap()
     );
 }

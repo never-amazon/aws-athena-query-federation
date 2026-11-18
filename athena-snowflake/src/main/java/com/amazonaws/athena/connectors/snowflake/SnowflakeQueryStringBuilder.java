@@ -30,7 +30,6 @@ import org.apache.arrow.vector.types.Types;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.sql.SqlDialect;
-import org.apache.calcite.sql.dialect.SnowflakeSqlDialect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +116,7 @@ public class SnowflakeQueryStringBuilder
             return null;
         }
         
+        List<String> sqlLiterals = new ArrayList<>();
         for (TypeAndValue typeAndValue : accumulator) {
             String sqlLiteral;
             
@@ -160,9 +160,40 @@ public class SnowflakeQueryStringBuilder
                 }
             }
             
-            sql = sql.replaceFirst("\\?", sqlLiteral);
+            sqlLiterals.add(sqlLiteral);
         }
-        return sql;
+        return replacePlaceholders(sql, sqlLiterals);
+    }
+
+    private static String replacePlaceholders(String sql, List<String> sqlLiterals)
+    {
+        StringBuilder expanded = new StringBuilder(sql.length());
+        int next = 0;
+        char openQuote = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (openQuote != 0) {
+                if (c == '\\' && openQuote == '\'' && i + 1 < sql.length()) {
+                    expanded.append(c).append(sql.charAt(++i));
+                    continue;
+                }
+                if (c == openQuote) {
+                    openQuote = 0;
+                }
+                expanded.append(c);
+            }
+            else if (c == '\'' || c == '"') {
+                openQuote = c;
+                expanded.append(c);
+            }
+            else if (c == '?' && next < sqlLiterals.size()) {
+                expanded.append(sqlLiterals.get(next++));
+            }
+            else {
+                expanded.append(c);
+            }
+        }
+        return expanded.toString();
     }
 
     protected String quote(String name)
@@ -173,7 +204,7 @@ public class SnowflakeQueryStringBuilder
 
     protected String singleQuote(String name)
     {
-        name = name.replace(SINGLE_QUOTE_CHAR, SINGLE_QUOTE_CHAR + SINGLE_QUOTE_CHAR);
+        name = name.replace("\\", "\\\\").replace(SINGLE_QUOTE_CHAR, SINGLE_QUOTE_CHAR + SINGLE_QUOTE_CHAR);
         return SINGLE_QUOTE_CHAR + name + SINGLE_QUOTE_CHAR;
     }
 
@@ -207,6 +238,14 @@ public class SnowflakeQueryStringBuilder
         }
         String orderBy = orderByClause.isEmpty() ? " ORDER BY " : " " + orderByClause + ", ";
         return orderBy + page.get().primaryKey + appendLimitOffsetWithValue(page.get().limitWithin(constraints.getLimit()), page.get().offset);
+    }
+
+    @Override
+    protected String getSplitPagingClause(Split split)
+    {
+        return getSplitPage(split)
+                .map(page -> " ORDER BY " + page.primaryKey + appendLimitOffsetWithValue(page.limit, page.offset))
+                .orElse("");
     }
 
     private Optional<SplitPage> getSplitPage(Split split)
@@ -277,7 +316,7 @@ public class SnowflakeQueryStringBuilder
     @Override
     protected SqlDialect getSqlDialect()
     {
-       return SnowflakeSqlDialect.DEFAULT;
+        return new SnowflakeDialect(false);
     }
     
     @Override

@@ -2436,16 +2436,16 @@ SCHEMA	RecordType(VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col0, BOOLEAN N
 REMAP	varchar_col0=varchar_col
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1)) [patched ab => 😀]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrGCRLDCQqkBzqhBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEu8EEuwECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQBo+CAEaBAoCEAIiDBoKEggKBBICCAgiACImGiRaIgoEYgIQAhIYWhYKB6oBBAgBGAISCQoHqgEE8J+YgBgCGAIaCBIGCgISACIAGgoSCAoEEgIIASIAGgoSCAoEEgIIAiIAGgoSCAoEEgIIAyIAGgoSCAoEEgIIBCIAGgoSCAoEEgIIBSIAGgoSCAoEEgIIBiIAGgoSCAoEEgIIByIAGgoSCAoEEgIICCIAGgoSCAoEEgIICSIAGgoSCAoEEgIICiIAGgoSCAoEEgIICyIAGgoSCAoEEgIIDCIAGgoSCAoEEgIIDSIAGgoSCAoEEgIIDiIAGgoSCAoEEgIIDyIAGgoSCAoEEgIIECIAGgoSCAoEEgIIESIAGgoSCAoEEgIIEiIAGgoSCAoEEgIIEyIAGgoSCAoEEgIIFCIAGgoSCAoEEgIIFSIAGgoSCAoEEgIIFiIAEghib29sX2NvbBILdGlueWludF9jb2wSDHNtYWxsaW50X2NvbBIHaW50X2NvbBIKYmlnaW50X2NvbBIJZmxvYXRfY29sEgpkb3VibGVfY29sEghyZWFsX2NvbBILdmFyY2hhcl9jb2wSCGNoYXJfY29sEgpiaW5hcnlfY29sEg12YXJiaW5hcnlfY29sEghkYXRlX2NvbBIIdGltZV9jb2wSDXRpbWVzdGFtcF9jb2wSC2RlY2ltYWxfY29sEgxkZWNpbWFsX2NvbDISDGRlY2ltYWxfY29sMxIJYXJyYXlfY29sEg1pbnRfYXJyYXlfY29sEgdtYXBfY29sEhBtYXBfd2l0aF9kZWNpbWFsEgxuZXN0ZWRfYXJyYXkyCxBKKgdpc3RobXVz
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '?'
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|?|varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '?'
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|?|varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '?'
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|?|varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '?'
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|?|varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '?'
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|?|varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀'
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀|varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1)) [patched ab => a😀]
@@ -2464,30 +2464,30 @@ SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2)) [patched abc => a😀b]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrICRLFCQqmBzqjBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEvEEEu4ECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQhpACAEaBAoCEAIiDBoKEggKBBICCAgiACIoGiZaJAoEYgIQAhIaWhgKB6oBBAgCGAISCwoJqgEGYfCfmIBiGAIYAhoIEgYKAhIAIgAaChIICgQSAggBIgAaChIICgQSAggCIgAaChIICgQSAggDIgAaChIICgQSAggEIgAaChIICgQSAggFIgAaChIICgQSAggGIgAaChIICgQSAggHIgAaChIICgQSAggIIgAaChIICgQSAggJIgAaChIICgQSAggKIgAaChIICgQSAggLIgAaChIICgQSAggMIgAaChIICgQSAggNIgAaChIICgQSAggOIgAaChIICgQSAggPIgAaChIICgQSAggQIgAaChIICgQSAggRIgAaChIICgQSAggSIgAaChIICgQSAggTIgAaChIICgQSAggUIgAaChIICgQSAggVIgAaChIICgQSAggWIgASCGJvb2xfY29sEgt0aW55aW50X2NvbBIMc21hbGxpbnRfY29sEgdpbnRfY29sEgpiaWdpbnRfY29sEglmbG9hdF9jb2wSCmRvdWJsZV9jb2wSCHJlYWxfY29sEgt2YXJjaGFyX2NvbBIIY2hhcl9jb2wSCmJpbmFyeV9jb2wSDXZhcmJpbmFyeV9jb2wSCGRhdGVfY29sEgh0aW1lX2NvbBINdGltZXN0YW1wX2NvbBILZGVjaW1hbF9jb2wSDGRlY2ltYWxfY29sMhIMZGVjaW1hbF9jb2wzEglhcnJheV9jb2wSDWludF9hcnJheV9jb2wSB21hcF9jb2wSEG1hcF93aXRoX2RlY2ltYWwSDG5lc3RlZF9hcnJheTILEEoqB2lzdGhtdXM=
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = 'a?'
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|a?|varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a?'
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a?'
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a?'
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a?'
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a?|varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = 'a😀'
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a😀'
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a😀'
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a😀'
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a😀'
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a😀|varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(2)) [patched abc => 😀b]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrHCRLECQqlBzqiBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEvAEEu0ECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQRo/CAEaBAoCEAIiDBoKEggKBBICCAgiACInGiVaIwoEYgIQAhIZWhcKB6oBBAgCGAISCgoIqgEF8J+YgGIYAhgCGggSBgoCEgAiABoKEggKBBICCAEiABoKEggKBBICCAIiABoKEggKBBICCAMiABoKEggKBBICCAQiABoKEggKBBICCAUiABoKEggKBBICCAYiABoKEggKBBICCAciABoKEggKBBICCAgiABoKEggKBBICCAkiABoKEggKBBICCAoiABoKEggKBBICCAsiABoKEggKBBICCAwiABoKEggKBBICCA0iABoKEggKBBICCA4iABoKEggKBBICCA8iABoKEggKBBICCBAiABoKEggKBBICCBEiABoKEggKBBICCBIiABoKEggKBBICCBMiABoKEggKBBICCBQiABoKEggKBBICCBUiABoKEggKBBICCBYiABIIYm9vbF9jb2wSC3RpbnlpbnRfY29sEgxzbWFsbGludF9jb2wSB2ludF9jb2wSCmJpZ2ludF9jb2wSCWZsb2F0X2NvbBIKZG91YmxlX2NvbBIIcmVhbF9jb2wSC3ZhcmNoYXJfY29sEghjaGFyX2NvbBIKYmluYXJ5X2NvbBINdmFyYmluYXJ5X2NvbBIIZGF0ZV9jb2wSCHRpbWVfY29sEg10aW1lc3RhbXBfY29sEgtkZWNpbWFsX2NvbBIMZGVjaW1hbF9jb2wyEgxkZWNpbWFsX2NvbDMSCWFycmF5X2NvbBINaW50X2FycmF5X2NvbBIHbWFwX2NvbBIQbWFwX3dpdGhfZGVjaW1hbBIMbmVzdGVkX2FycmF5MgsQSioHaXN0aG11cw==
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀'
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀|varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀b'
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀b'
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀b'
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀b'
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀b'
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀b|varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('ab' AS CHAR(1)) [patched ab => é😀]
@@ -2520,16 +2520,16 @@ SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('a' AS CHAR(3)) [patched a => 😀]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrGCRLDCQqkBzqhBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEu8EEuwECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQBo+CAEaBAoCEAIiDBoKEggKBBICCAgiACImGiRaIgoEYgIQAhIYWhYKB6oBBAgDGAISCQoHqgEE8J+YgBgCGAIaCBIGCgISACIAGgoSCAoEEgIIASIAGgoSCAoEEgIIAiIAGgoSCAoEEgIIAyIAGgoSCAoEEgIIBCIAGgoSCAoEEgIIBSIAGgoSCAoEEgIIBiIAGgoSCAoEEgIIByIAGgoSCAoEEgIICCIAGgoSCAoEEgIICSIAGgoSCAoEEgIICiIAGgoSCAoEEgIICyIAGgoSCAoEEgIIDCIAGgoSCAoEEgIIDSIAGgoSCAoEEgIIDiIAGgoSCAoEEgIIDyIAGgoSCAoEEgIIECIAGgoSCAoEEgIIESIAGgoSCAoEEgIIEiIAGgoSCAoEEgIIEyIAGgoSCAoEEgIIFCIAGgoSCAoEEgIIFSIAGgoSCAoEEgIIFiIAEghib29sX2NvbBILdGlueWludF9jb2wSDHNtYWxsaW50X2NvbBIHaW50X2NvbBIKYmlnaW50X2NvbBIJZmxvYXRfY29sEgpkb3VibGVfY29sEghyZWFsX2NvbBILdmFyY2hhcl9jb2wSCGNoYXJfY29sEgpiaW5hcnlfY29sEg12YXJiaW5hcnlfY29sEghkYXRlX2NvbBIIdGltZV9jb2wSDXRpbWVzdGFtcF9jb2wSC2RlY2ltYWxfY29sEgxkZWNpbWFsX2NvbDISDGRlY2ltYWxfY29sMxIJYXJyYXlfY29sEg1pbnRfYXJyYXlfY29sEgdtYXBfY29sEhBtYXBfd2l0aF9kZWNpbWFsEgxuZXN0ZWRfYXJyYXkyCxBKKgdpc3RobXVz
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀 '
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀 |varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀 '
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀 |varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀 '
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀 |varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀 '
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀 |varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀 '
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀 |varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀  '
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀  |varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀  '
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀  |varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀  '
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀  |varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀  '
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀  |varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀  '
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀  |varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS CHAR(3)) [patched abc => 😀😀]
@@ -2562,30 +2562,30 @@ SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2)) [patched abc => 😀b]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrHCRLECQqlBzqiBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEvAEEu0ECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQRo/CAEaBAoCEAIiDBoKEggKBBICCAgiACInGiVaIwoEYgIQAhIZWhcKB7IBBAgCGAISCgoIqgEF8J+YgGIYAhgCGggSBgoCEgAiABoKEggKBBICCAEiABoKEggKBBICCAIiABoKEggKBBICCAMiABoKEggKBBICCAQiABoKEggKBBICCAUiABoKEggKBBICCAYiABoKEggKBBICCAciABoKEggKBBICCAgiABoKEggKBBICCAkiABoKEggKBBICCAoiABoKEggKBBICCAsiABoKEggKBBICCAwiABoKEggKBBICCA0iABoKEggKBBICCA4iABoKEggKBBICCA8iABoKEggKBBICCBAiABoKEggKBBICCBEiABoKEggKBBICCBIiABoKEggKBBICCBMiABoKEggKBBICCBQiABoKEggKBBICCBUiABoKEggKBBICCBYiABIIYm9vbF9jb2wSC3RpbnlpbnRfY29sEgxzbWFsbGludF9jb2wSB2ludF9jb2wSCmJpZ2ludF9jb2wSCWZsb2F0X2NvbBIKZG91YmxlX2NvbBIIcmVhbF9jb2wSC3ZhcmNoYXJfY29sEghjaGFyX2NvbBIKYmluYXJ5X2NvbBINdmFyYmluYXJ5X2NvbBIIZGF0ZV9jb2wSCHRpbWVfY29sEg10aW1lc3RhbXBfY29sEgtkZWNpbWFsX2NvbBIMZGVjaW1hbF9jb2wyEgxkZWNpbWFsX2NvbDMSCWFycmF5X2NvbBINaW50X2FycmF5X2NvbBIHbWFwX2NvbBIQbWFwX3dpdGhfZGVjaW1hbBIMbmVzdGVkX2FycmF5MgsQSioHaXN0aG11cw==
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀'
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀|varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀'
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀'
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀|varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = '😀b'
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀b'
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = '😀b'
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀b'
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀b|varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = '😀b'
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|😀b|varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('abc' AS VARCHAR(2)) [patched abc => a😀b]
 PLAN	Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRrICRLFCQqmBzqjBwobEhkKFxcYGRobHB0eHyAhIiMkJSYnKCkqKywtEvEEEu4ECgIKABKjBAqgBAoCCgAS/gMKCGJvb2xfY29sCgt0aW55aW50X2NvbAoMc21hbGxpbnRfY29sCgdpbnRfY29sCgpiaWdpbnRfY29sCglmbG9hdF9jb2wKCmRvdWJsZV9jb2wKCHJlYWxfY29sCgt2YXJjaGFyX2NvbAoIY2hhcl9jb2wKCmJpbmFyeV9jb2wKDXZhcmJpbmFyeV9jb2wKCGRhdGVfY29sCgh0aW1lX2NvbAoNdGltZXN0YW1wX2NvbAoLZGVjaW1hbF9jb2wKDGRlY2ltYWxfY29sMgoMZGVjaW1hbF9jb2wzCglhcnJheV9jb2wKDWludF9hcnJheV9jb2wKB21hcF9jb2wKEG1hcF93aXRoX2RlY2ltYWwKDG5lc3RlZF9hcnJheRLfAQoECgIQAgoEEgIQAgoEGgIQAgoEKgIQAgoEOgIQAgoEWgIQAgoEWgIQAgoEUgIQAgoEYgIQAgoHqgEECAEYAgoHugEECAEYAgoEagIQAgoFggECEAIKBYoBAhACCgWKAgIYAgoJwgEGCAQQEyACCgnCAQYIAhAKIAIKCcIBBggKEBMgAgoL2gEICgRiAhACGAIKC9oBCAoEKgIQAhgCChHiAQ4KBGICEAISBCoCEAIgAgoW4gETCgRiAhACEgnCAQYIAhAKIAIgAgoS2gEPCgvaAQgKBCoCEAIYAhgCGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaQhpACAEaBAoCEAIiDBoKEggKBBICCAgiACIoGiZaJAoEYgIQAhIaWhgKB7IBBAgCGAISCwoJqgEGYfCfmIBiGAIYAhoIEgYKAhIAIgAaChIICgQSAggBIgAaChIICgQSAggCIgAaChIICgQSAggDIgAaChIICgQSAggEIgAaChIICgQSAggFIgAaChIICgQSAggGIgAaChIICgQSAggHIgAaChIICgQSAggIIgAaChIICgQSAggJIgAaChIICgQSAggKIgAaChIICgQSAggLIgAaChIICgQSAggMIgAaChIICgQSAggNIgAaChIICgQSAggOIgAaChIICgQSAggPIgAaChIICgQSAggQIgAaChIICgQSAggRIgAaChIICgQSAggSIgAaChIICgQSAggTIgAaChIICgQSAggUIgAaChIICgQSAggVIgAaChIICgQSAggWIgASCGJvb2xfY29sEgt0aW55aW50X2NvbBIMc21hbGxpbnRfY29sEgdpbnRfY29sEgpiaWdpbnRfY29sEglmbG9hdF9jb2wSCmRvdWJsZV9jb2wSCHJlYWxfY29sEgt2YXJjaGFyX2NvbBIIY2hhcl9jb2wSCmJpbmFyeV9jb2wSDXZhcmJpbmFyeV9jb2wSCGRhdGVfY29sEgh0aW1lX2NvbBINdGltZXN0YW1wX2NvbBILZGVjaW1hbF9jb2wSDGRlY2ltYWxfY29sMhIMZGVjaW1hbF9jb2wzEglhcnJheV9jb2wSDWludF9hcnJheV9jb2wSB21hcF9jb2wSEG1hcF93aXRoX2RlY2ltYWwSDG5lc3RlZF9hcnJheTILEEoqB2lzdGhtdXM=
-CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = 'a?'
-PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|a?|varchar_col
-CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a?'
-PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a?'
-PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a?'
-PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a?|varchar_col
-CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a?'
-PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a?|varchar_col
+CALCITE_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = 'a😀'
+PARAM_ansi	SELECT *\nFROM `test_schema`.`test_table`\nWHERE `varchar_col` = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a😀'
+PARAM_postgres	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = 'a😀'
+PARAM_snowflake	SELECT *\nFROM "test_schema"."test_table"\nWHERE "varchar_col" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a😀'
+PARAM_postgres_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a😀|varchar_col
+CALCITE_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = 'a😀'
+PARAM_snowflake_upper	SELECT *\nFROM "TEST_SCHEMA"."TEST_TABLE"\nWHERE "VARCHAR_COL" = ?	VARCHAR|String|a😀|varchar_col
 SCHEMA	RecordType(BOOLEAN NOT NULL bool_col, TINYINT NOT NULL tinyint_col, SMALLINT NOT NULL smallint_col, INTEGER NOT NULL int_col, BIGINT NOT NULL bigint_col, DOUBLE NOT NULL float_col, DOUBLE NOT NULL double_col, REAL NOT NULL real_col, VARCHAR CHARACTER SET "UTF-8" NOT NULL varchar_col, CHAR(1) CHARACTER SET "UTF-8" NOT NULL char_col, BINARY(1) NOT NULL binary_col, VARBINARY NOT NULL varbinary_col, DATE NOT NULL date_col, TIME(3) NOT NULL time_col, TIMESTAMP(0) NOT NULL timestamp_col, DECIMAL(19, 4) NOT NULL decimal_col, DECIMAL(10, 2) NOT NULL decimal_col2, DECIMAL(19, 10) NOT NULL decimal_col3, VARCHAR CHARACTER SET "UTF-8" NOT NULL ARRAY NOT NULL array_col, INTEGER NOT NULL ARRAY NOT NULL int_array_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, INTEGER NOT NULL) MAP NOT NULL map_col, (VARCHAR CHARACTER SET "UTF-8" NOT NULL, DECIMAL(10, 2) NOT NULL) MAP NOT NULL map_with_decimal, INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL nested_array) NOT NULL
 REMAP
 QUERY	std	SELECT * FROM test_table WHERE varchar_col = CAST('a' AS VARCHAR(3))

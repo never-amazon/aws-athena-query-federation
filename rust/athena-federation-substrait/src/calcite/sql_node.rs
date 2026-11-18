@@ -308,6 +308,7 @@ pub enum SqlNode {
     NodeList(Vec<SqlNode>),
     Select(Box<SqlSelect>),
     DataType(SqlDataTypeSpec),
+    Text(String),
 }
 
 impl SqlNode {
@@ -353,7 +354,7 @@ impl SqlNode {
 
     pub fn kind(&self) -> SqlKind {
         match self {
-            SqlNode::Identifier(_) => SqlKind::Identifier,
+            SqlNode::Identifier(_) | SqlNode::Text(_) => SqlKind::Identifier,
             SqlNode::Literal(_) => SqlKind::Literal,
             SqlNode::DynamicParam(_) => SqlKind::DynamicParam,
             SqlNode::Call(c) => c.op.kind,
