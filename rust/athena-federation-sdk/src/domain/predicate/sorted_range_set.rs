@@ -9,8 +9,6 @@ use crate::exceptions::{FederationError, Result};
 
 use super::marker::{Bound, Marker};
 use super::range::Range;
-use super::ranges::Ranges;
-use super::value_marker::{LiteralValueMarker, ValueMarker};
 
 #[derive(Debug, Clone)]
 pub struct SortedRangeSet {
@@ -118,10 +116,6 @@ impl SortedRangeSet {
         &self.arrow_type
     }
 
-    pub fn get_ordered_ranges(&self) -> Vec<Range> {
-        self.low_indexed_ranges.clone()
-    }
-
     pub fn ordered_ranges(&self) -> &[Range] {
         &self.low_indexed_ranges
     }
@@ -157,10 +151,10 @@ impl SortedRangeSet {
         self.low_indexed_ranges[0].get_single_value()
     }
 
-    fn floor_entry(&self, marker: &dyn ValueMarker) -> Result<Option<&Range>> {
+    fn floor_entry(&self, marker: &Marker) -> Result<Option<&Range>> {
         let mut found = None;
         for range in &self.low_indexed_ranges {
-            if range.low().compare_to(marker)? <= 0 {
+            if range.low().try_cmp(marker)?.is_le() {
                 found = Some(range);
             } else {
                 break;
@@ -190,7 +184,7 @@ impl SortedRangeSet {
         if value.is_null() {
             return Ok(self.null_allowed);
         }
-        let marker = LiteralValueMarker::new(value.clone(), self.arrow_type.clone());
+        let marker = Marker::literal(self.arrow_type.clone(), value.clone());
         match self.floor_entry(&marker)? {
             Some(range) => range.includes(&marker),
             None => Ok(false),
@@ -235,7 +229,7 @@ impl SortedRangeSet {
                 if range1.overlaps(range2)? {
                     builder.add(range1.intersect(range2)?)?;
                 }
-                if range1.high().compare_to(range2.high())? <= 0 {
+                if range1.high().try_cmp(range2.high())?.is_le() {
                     match it1.next() {
                         Some(r) => range1 = r,
                         None => break,
@@ -354,20 +348,6 @@ impl SortedRangeSet {
     }
 }
 
-impl Ranges for SortedRangeSet {
-    fn range_count(&self) -> usize {
-        SortedRangeSet::range_count(self)
-    }
-
-    fn get_ordered_ranges(&self) -> Vec<Range> {
-        SortedRangeSet::get_ordered_ranges(self)
-    }
-
-    fn get_span(&self) -> Result<Range> {
-        SortedRangeSet::get_span(self)
-    }
-}
-
 impl PartialEq for SortedRangeSet {
     fn eq(&self, other: &Self) -> bool {
         self.null_allowed == other.null_allowed
@@ -430,8 +410,8 @@ impl SortedRangeSetBuilder {
     pub fn build(&self) -> Result<SortedRangeSet> {
         let error: RefCell<Option<FederationError>> = RefCell::new(None);
         let mut ranges = self.ranges.clone();
-        ranges.sort_by(|a, b| match a.low().compare_to(b.low()) {
-            Ok(c) => c.cmp(&0),
+        ranges.sort_by(|a, b| match a.low().try_cmp(b.low()) {
+            Ok(c) => c,
             Err(e) => {
                 error.borrow_mut().get_or_insert(e);
                 std::cmp::Ordering::Equal

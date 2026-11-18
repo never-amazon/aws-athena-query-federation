@@ -5,15 +5,13 @@ use arrow::datatypes::Schema;
 
 use super::constraint_projector::ConstraintProjector;
 use super::constraints::Constraints;
-use super::marker::Bound;
-use super::marker_factory::MarkerFactory;
+use super::marker::{Bound, Marker};
 use crate::data::{ArrowType, Value};
 use crate::exceptions::Result;
 
 #[derive(Debug, Default)]
 pub struct ConstraintEvaluator {
     constraints: Constraints,
-    marker_factory: MarkerFactory,
     type_map: HashMap<String, ArrowType>,
 }
 
@@ -26,7 +24,6 @@ impl ConstraintEvaluator {
             .collect();
         ConstraintEvaluator {
             constraints,
-            marker_factory: MarkerFactory::new(),
             type_map,
         }
     }
@@ -42,9 +39,7 @@ impl ConstraintEvaluator {
     pub fn apply(&self, field_name: &str, value: &Value) -> Result<bool> {
         let constraint = self.constraints.summary().get(field_name);
         if let (Some(constraint), Some(arrow_type)) = (constraint, self.type_map.get(field_name)) {
-            let marker = self
-                .marker_factory
-                .create_nullable(arrow_type, value, Bound::Exactly)?;
+            let marker = Marker::nullable(arrow_type, value, Bound::Exactly)?;
             return constraint.contains_marker(&marker);
         }
         Ok(true)

@@ -78,7 +78,7 @@ fn test_empty_set() {
     assert!(range_set.is_none());
     assert!(!range_set.is_all());
     assert!(!range_set.is_single_value());
-    assert!(range_set.get_ordered_ranges().is_empty());
+    assert!(range_set.ordered_ranges().is_empty());
     assert_eq!(range_set.range_count(), 0);
     assert_eq!(range_set.complement(&h.a).unwrap(), h.all());
     assert!(!range_set.includes_marker(&h.lower()).unwrap());
@@ -121,7 +121,7 @@ fn test_single_value() {
     assert!(!range_set.is_none());
     assert!(!range_set.is_all());
     assert!(range_set.is_single_value());
-    assert_eq!(range_set.get_ordered_ranges(), vec![h.eq(10)]);
+    assert_eq!(range_set.ordered_ranges(), vec![h.eq(10)]);
     assert_eq!(range_set.range_count(), 1);
     assert_eq!(range_set.complement(&h.a).unwrap(), complement);
     assert!(!range_set.includes_marker(&h.lower()).unwrap());
@@ -152,7 +152,7 @@ fn test_bounded_set() {
     assert!(!range_set.is_none());
     assert!(!range_set.is_all());
     assert!(!range_set.is_single_value());
-    assert_eq!(range_set.get_ordered_ranges(), normalized_result);
+    assert_eq!(range_set.ordered_ranges(), normalized_result);
     assert_eq!(
         range_set,
         SortedRangeSet::copy_of(&BIGINT, normalized_result, false).unwrap()
@@ -184,7 +184,7 @@ fn test_unbounded_set() {
     assert!(!range_set.is_none());
     assert!(!range_set.is_all());
     assert!(!range_set.is_single_value());
-    assert_eq!(range_set.get_ordered_ranges(), normalized_result);
+    assert_eq!(range_set.ordered_ranges(), normalized_result);
     assert_eq!(
         range_set,
         SortedRangeSet::copy_of(&BIGINT, normalized_result, false).unwrap()

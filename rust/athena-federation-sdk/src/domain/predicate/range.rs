@@ -5,7 +5,6 @@ use crate::data::{ArrowType, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
 use super::marker::{Bound, Marker};
-use super::value_marker::ValueMarker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Range {
@@ -32,7 +31,7 @@ impl Range {
                 "high bound must be EXACTLY or BELOW",
             ));
         }
-        if low.compare_to(&high)? > 0 {
+        if low.try_cmp(&high)?.is_gt() {
             return Err(FederationError::invalid_input(
                 "low must be less than or equal to high",
             ));
@@ -157,12 +156,12 @@ impl Range {
         self.low.is_lower_unbounded() && self.high.is_upper_unbounded()
     }
 
-    pub fn includes(&self, marker: &dyn ValueMarker) -> Result<bool> {
-        Ok(self.low.compare_to(marker)? <= 0 && self.high.compare_to(marker)? >= 0)
+    pub fn includes(&self, marker: &Marker) -> Result<bool> {
+        Ok(self.low.try_cmp(marker)?.is_le() && self.high.try_cmp(marker)?.is_ge())
     }
 
     pub fn contains(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.low())? <= 0 && self.high.compare_to(other.high())? >= 0)
+        Ok(self.low.try_cmp(other.low())?.is_le() && self.high.try_cmp(other.high())?.is_ge())
     }
 
     pub fn span(&self, other: &Range) -> Result<Range> {
@@ -172,7 +171,7 @@ impl Range {
     }
 
     pub fn overlaps(&self, other: &Range) -> Result<bool> {
-        Ok(self.low.compare_to(other.high())? <= 0 && other.low().compare_to(&self.high)? <= 0)
+        Ok(self.low.try_cmp(other.high())?.is_le() && other.low().try_cmp(&self.high)?.is_le())
     }
 
     pub fn intersect(&self, other: &Range) -> Result<Range> {

@@ -83,16 +83,16 @@ com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator	athen
 com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector	athena-federation-sdk/src/domain/predicate/constraint_projector.rs::ConstraintProjector	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Constraints	athena-federation-sdk/src/domain/predicate/constraints.rs::Constraints	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.EquatableValueSet	athena-federation-sdk/src/domain/predicate/equatable_value_set.rs::EquatableValueSet	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::LiteralValueMarker	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::literal builds an EXACTLY marker around a plain value
 com.amazonaws.athena.connector.lambda.domain.predicate.Marker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker_factory.rs::MarkerFactory	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::nullable replaces MarkerFactory.createNullable, the only factory method in use
 com.amazonaws.athena.connector.lambda.domain.predicate.OrderByField	athena-federation-sdk/src/domain/predicate/order_by_field.rs::OrderByField	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan	athena-federation-sdk/src/domain/predicate/query_plan.rs::QueryPlan	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Range	athena-federation-sdk/src/domain/predicate/range.rs::Range	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/ranges.rs::Ranges	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	merged	SortedRangeSet is the only implementor; its inherent methods cover the interface
 com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarker	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarkerComparator	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker is the only marker type, so the interface is gone
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::try_cmp returns an Ordering with the same null and unbounded rules
 com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet	athena-federation-sdk/src/domain/predicate/value_set.rs::ValueSet	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.expression.ConstantExpression	athena-federation-sdk/src/domain/predicate/expression/constant_expression.rs::ConstantExpression	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression	athena-federation-sdk/src/domain/predicate/expression/federation_expression.rs::FederationExpression	ported	
