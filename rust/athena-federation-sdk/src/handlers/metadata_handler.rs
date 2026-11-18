@@ -406,7 +406,6 @@ pub trait MetadataHandler: FederationRequestHandler {
             .await?;
         let base = self.metadata_base();
         let constraint_evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(allocator.as_ref()),
             &constraint_schema.build(),
             request.constraints().clone(),
         ));

@@ -107,11 +107,7 @@ fn constrained_block_test() {
         HashMap::new(),
         None,
     );
-    let constraint_evaluator = Arc::new(ConstraintEvaluator::new(
-        Some(&allocator),
-        &schema,
-        constraints,
-    ));
+    let constraint_evaluator = Arc::new(ConstraintEvaluator::new(&schema, constraints));
     block.constrain(Some(constraint_evaluator));
     assert!(block.set_value("col1", 0, 10).unwrap());
     assert!(block.offer_value("col1", 0, 10).unwrap());

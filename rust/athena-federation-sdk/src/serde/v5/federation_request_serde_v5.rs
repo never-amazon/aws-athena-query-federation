@@ -13,7 +13,7 @@ pub fn do_deserialize(
 ) -> Result<FederationRequest> {
     let ctx = SerDeContext {
         version: SERDE_VERSION_FIVE,
-        allocators: ctx.allocators,
+        allocator: ctx.allocator,
     };
     crate::serde::v2::federation_request_serde::do_deserialize(jparser, &ctx)
 }

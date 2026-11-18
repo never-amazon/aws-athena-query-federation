@@ -19,7 +19,7 @@ pub mod v5;
 pub mod v6;
 pub(crate) mod versioned_object_mapper_factory;
 
-use crate::data::{BlockAllocator, BlockAllocatorRegistry};
+use crate::data::BlockAllocator;
 
 pub use arrow_ipc::{
     block_batch_bytes, record_batch_from_bytes, record_batch_to_bytes, schema_from_bytes,
@@ -42,33 +42,14 @@ pub const SERDE_VERSION_FIVE: i32 = 5;
 pub const SERDE_VERSION_SIX: i32 = 6;
 
 #[derive(Clone, Copy)]
-pub enum AllocatorSource<'a> {
-    Allocator(&'a dyn BlockAllocator),
-    Registry(&'a dyn BlockAllocatorRegistry),
-}
-
-#[derive(Clone, Copy)]
 pub struct SerDeContext<'a> {
     pub version: i32,
-    pub allocators: AllocatorSource<'a>,
+    pub allocator: &'a dyn BlockAllocator,
 }
 
 impl<'a> SerDeContext<'a> {
     pub fn new(version: i32, allocator: &'a dyn BlockAllocator) -> SerDeContext<'a> {
-        SerDeContext {
-            version,
-            allocators: AllocatorSource::Allocator(allocator),
-        }
-    }
-
-    pub fn with_registry(
-        version: i32,
-        registry: &'a dyn BlockAllocatorRegistry,
-    ) -> SerDeContext<'a> {
-        SerDeContext {
-            version,
-            allocators: AllocatorSource::Registry(registry),
-        }
+        SerDeContext { version, allocator }
     }
 
     pub fn ipc_format(&self) -> IpcFormat {

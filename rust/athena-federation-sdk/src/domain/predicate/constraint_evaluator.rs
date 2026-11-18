@@ -7,7 +7,7 @@ use super::constraint_projector::ConstraintProjector;
 use super::constraints::Constraints;
 use super::marker::Bound;
 use super::marker_factory::MarkerFactory;
-use crate::data::{ArrowType, BlockAllocator, Value};
+use crate::data::{ArrowType, Value};
 use crate::exceptions::Result;
 
 #[derive(Debug, Default)]
@@ -18,11 +18,7 @@ pub struct ConstraintEvaluator {
 }
 
 impl ConstraintEvaluator {
-    pub fn new(
-        _allocator: Option<&dyn BlockAllocator>,
-        schema: &Schema,
-        constraints: Constraints,
-    ) -> ConstraintEvaluator {
+    pub fn new(schema: &Schema, constraints: Constraints) -> ConstraintEvaluator {
         let type_map = schema
             .fields()
             .iter()
@@ -36,7 +32,7 @@ impl ConstraintEvaluator {
     }
 
     pub fn empty_evaluator() -> ConstraintEvaluator {
-        ConstraintEvaluator::new(None, &Schema::empty(), Constraints::empty())
+        ConstraintEvaluator::new(&Schema::empty(), Constraints::empty())
     }
 
     pub fn constraints(&self) -> &Constraints {
@@ -75,7 +71,7 @@ mod tests {
     use indexmap::IndexMap;
 
     use super::*;
-    use crate::data::{BlockAllocatorImpl, SchemaBuilder};
+    use crate::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
     use crate::domain::predicate::{EquatableValueSet, ValueSet};
 
     #[test]
@@ -92,11 +88,7 @@ mod tests {
         let mut summary = IndexMap::new();
         summary.insert("col1".to_string(), set);
         let constraints = Constraints::new(summary, vec![], vec![], -1, HashMap::new(), None);
-        let evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(&allocator),
-            &schema,
-            constraints,
-        ));
+        let evaluator = Arc::new(ConstraintEvaluator::new(&schema, constraints));
         block.constrain(Some(evaluator.clone()));
         assert!(block.set_value("col1", 0, 10).unwrap());
         assert!(block.offer_value("col1", 0, 10).unwrap());

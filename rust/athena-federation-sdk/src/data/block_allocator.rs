@@ -29,10 +29,6 @@ pub trait BlockAllocator: Send + Sync {
     }
 }
 
-pub trait BlockAllocatorRegistry {
-    fn get_or_create_allocator(&self, id: &str) -> Arc<dyn BlockAllocator>;
-}
-
 #[derive(Debug)]
 pub struct BlockAllocatorImpl {
     id: String,

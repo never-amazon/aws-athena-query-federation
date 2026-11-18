@@ -23,5 +23,5 @@ pub fn deserialize(
         )));
     }
     let bytes = jparser.get_binary_value()?;
-    crate::serde::v2::block_serde::with_allocator(ctx, None, |a| record_batch_from_bytes(a, &bytes))
+    record_batch_from_bytes(ctx.allocator, &bytes)
 }

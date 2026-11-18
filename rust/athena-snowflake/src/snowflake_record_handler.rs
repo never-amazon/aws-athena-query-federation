@@ -284,7 +284,6 @@ impl SnowflakeRecordHandler {
             .construct_arrow_reader(&s3_path, &derived_schema)
             .await?;
         let evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(allocator.as_ref()),
             &derived_schema,
             request.constraints().clone(),
         ));

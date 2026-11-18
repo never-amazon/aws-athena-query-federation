@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 
-use crate::data::{Block, BlockAllocator};
+use crate::data::Block;
 use crate::exceptions::Result;
 use crate::serde::arrow_ipc::{block_batch_bytes, record_batch_from_bytes, IpcFormat};
 use crate::serde::base::{
@@ -10,7 +10,7 @@ use crate::serde::base::{
     serialize_nullable,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::{AllocatorSource, SerDeContext};
+use crate::serde::SerDeContext;
 
 const ALLOCATOR_ID_FIELD_NAME: &str = "aId";
 const SCHEMA_FIELD_NAME: &str = "schema";
@@ -49,31 +49,16 @@ pub fn deserialize_schema_for_version(
 }
 
 pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Block> {
-    let allocator_id = get_next_string_field(jparser, ALLOCATOR_ID_FIELD_NAME)?;
+    get_next_string_field(jparser, ALLOCATOR_ID_FIELD_NAME)?;
     assert_field_name(jparser, Some(SCHEMA_FIELD_NAME))?;
     let schema = deserialize_schema_for_version(jparser, ctx.version)?;
     let batch_bytes = get_next_binary_field(jparser, BATCH_FIELD_NAME)?;
-    with_allocator(ctx, allocator_id.as_deref(), |allocator| {
-        let mut block = allocator.create_block(Arc::new(schema));
-        if !batch_bytes.is_empty() {
-            let batch = record_batch_from_bytes(allocator, &batch_bytes)?;
-            block.load_arrow_record_batch(&batch)?;
-        }
-        Ok(block)
-    })
-}
-
-pub fn with_allocator<T, F>(ctx: &SerDeContext<'_>, allocator_id: Option<&str>, f: F) -> Result<T>
-where
-    F: FnOnce(&dyn BlockAllocator) -> Result<T>,
-{
-    match ctx.allocators {
-        AllocatorSource::Allocator(a) => f(a),
-        AllocatorSource::Registry(r) => {
-            let allocator = r.get_or_create_allocator(allocator_id.unwrap_or("null"));
-            f(allocator.as_ref())
-        }
+    let mut block = ctx.allocator.create_block(Arc::new(schema));
+    if !batch_bytes.is_empty() {
+        let batch = record_batch_from_bytes(ctx.allocator, &batch_bytes)?;
+        block.load_arrow_record_batch(&batch)?;
     }
+    Ok(block)
 }
 
 pub fn ipc_format(version: i32) -> IpcFormat {

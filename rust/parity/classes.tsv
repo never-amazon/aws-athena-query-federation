@@ -22,7 +22,7 @@ com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption	athena-fede
 com.amazonaws.athena.connector.lambda.data.Block	athena-federation-sdk/src/data/block.rs::Block	ported	
 com.amazonaws.athena.connector.lambda.data.BlockAllocator	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocator	ported	
 com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorImpl	ported	
-com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorRegistry	ported	
+com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry	-	not_ported	no code path looks up an allocator by id; SerDeContext carries the one allocator every deserializer uses
 com.amazonaws.athena.connector.lambda.data.BlockSpiller	athena-federation-sdk/src/data/block_spiller.rs::BlockSpiller	ported	
 com.amazonaws.athena.connector.lambda.data.BlockUtils	athena-federation-sdk/src/data/block_utils.rs::BlockUtils	ported	
 com.amazonaws.athena.connector.lambda.data.BlockWriter	athena-federation-sdk/src/data/block_writer.rs::BlockWriter	ported	

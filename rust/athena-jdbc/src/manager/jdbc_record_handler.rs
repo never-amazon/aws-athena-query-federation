@@ -675,7 +675,6 @@ async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Si
             .await?;
 
         let evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(allocator.as_ref()),
             &derived_schema,
             request.constraints().clone(),
         ));

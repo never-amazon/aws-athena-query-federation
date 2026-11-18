@@ -29,9 +29,7 @@ pub mod writers;
 pub use arrow_schema_utils::ArrowSchemaUtils;
 pub use arrow_type_comparator::{compare_unsigned_bytes, java_string_compare, ArrowTypeComparator};
 pub use block::Block;
-pub use block_allocator::{
-    ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl, BlockAllocatorRegistry,
-};
+pub use block_allocator::{ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl};
 pub use block_spiller::BlockSpiller;
 pub use block_utils::{
     to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short, BlockUtils,
