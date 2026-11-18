@@ -34,7 +34,7 @@ use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
 use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use crate::qpt::{JdbcQueryPassthrough, QUERY};
-use crate::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Row};
+use crate::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Row, Types};
 use crate::validate::{close_after, null_pointer};
 
 const CLICKHOUSE_DB: &str = "clickhouse";
@@ -234,6 +234,13 @@ fn extract_float8(row: &Row, index: usize, dst: &mut NullableFloat8Holder) -> Re
     Ok(())
 }
 
+const MILLIS_PER_DAY: i64 = 86_400_000;
+
+fn epoch_day(date: chrono::NaiveDate) -> i64 {
+    date.signed_duration_since(chrono::NaiveDate::default())
+        .num_days()
+}
+
 fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
     let extractor = match field_type {
         MinorType::BIT => Extractor::bit(move |context: &dyn Any, dst: &mut _| {
@@ -286,9 +293,7 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
         MinorType::DATEDAY => Extractor::date_day(move |context: &dyn Any, dst: &mut _| {
             let value = row_of(context)?.get_date(index)?;
             if let Some(date) = value {
-                let days = date
-                    .signed_duration_since(chrono::NaiveDate::default())
-                    .num_days();
+                let days = epoch_day(date);
                 #[allow(
                     clippy::cast_possible_truncation,
                     reason = "the (int) cast of toEpochDay narrows the same way"
@@ -300,7 +305,13 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
             Ok(())
         }),
         MinorType::DATEMILLI => Extractor::date_milli(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_object(index)?.to_timestamp_millis()?;
+            let row = row_of(context)?;
+            let value = if row.metadata().column_type(index)? == Types::DATE {
+                row.get_date(index)?
+                    .map(|date| epoch_day(date) * MILLIS_PER_DAY)
+            } else {
+                row.get_object(index)?.to_timestamp_millis()?
+            };
             if let Some(millis) = value {
                 dst.value = millis;
             }

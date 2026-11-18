@@ -392,6 +392,26 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeExtractorReadsDateAsTimestampByCalendarDate() throws Exception {
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        for (LocalDate localDate : new LocalDate[] {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1, 1, 1), LocalDate.of(2025, 4, 22)}) {
+            Date date = Date.valueOf(localDate);
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getObject("testCol12")).thenReturn(date);
+            when(resultSet.getDate("testCol12")).thenReturn(date);
+            when(resultSet.getTimestamp("testCol12")).thenReturn(new Timestamp(date.getTime()));
+            when(resultSet.wasNull()).thenReturn(false);
+            Extractor dateMilli = this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol12", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build(), resultSet, partitionMap);
+
+            NullableDateMilliHolder holder = new NullableDateMilliHolder();
+            ((DateMilliExtractor) dateMilli).extract(null, holder);
+
+            Assert.assertEquals(localDate.toString(), localDate.toEpochDay() * 86_400_000L, holder.value);
+            Assert.assertEquals(1, holder.isSet);
+        }
+    }
+
+    @Test
     public void testMakeExtractorWithNullValues() throws Exception {
 
         Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
