@@ -581,6 +581,27 @@ async fn test_make_extractor_without_null_values() {
 }
 
 #[tokio::test]
+async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
+    let s = set_up();
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol12", Types::DATE)]);
+    let extractor = s
+        .handler
+        .make_extractor(
+            &field("testCol12", DataType::Date64),
+            &metadata,
+            &partition_map(),
+        )
+        .unwrap();
+    for (year, month, day) in [(1000, 1, 1), (1582, 10, 4), (1, 1, 1), (2025, 4, 22)] {
+        let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
+        let context = row(metadata.clone(), vec![SqlValue::Date(date)]);
+        let h = date_milli_holder(&extractor, &context);
+        let epoch_day = date.signed_duration_since(NaiveDate::default()).num_days();
+        assert_eq!((epoch_day * 86_400_000, 1), (h.value, h.is_set), "{date}");
+    }
+}
+
+#[tokio::test]
 async fn test_make_extractor_with_null_values() {
     let s = set_up();
     let metadata = extractor_metadata();

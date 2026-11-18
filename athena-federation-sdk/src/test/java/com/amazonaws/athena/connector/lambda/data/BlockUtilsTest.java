@@ -259,6 +259,31 @@ public class BlockUtilsTest
     }
 
     @Test
+    public void writeErrorsRenderArrayValuesByElement()
+    {
+        Schema schema = SchemaBuilder.newBuilder()
+                .addField("int", new ArrowType.Int(32, true))
+                .addListField("int_arr", new ArrowType.Int(32, true))
+                .build();
+        Block block = allocator.createBlock(schema);
+        FieldVector intVector = block.getFieldVector("int");
+        FieldVector listVector = block.getFieldVector("int_arr");
+
+        AthenaConnectorException nested = assertThrows(AthenaConnectorException.class,
+                () -> BlockUtils.setComplexValue(listVector, 0, FieldResolver.DEFAULT,
+                        java.util.Arrays.asList(new Integer[] {1, 2}, new Integer[] {3, 4})));
+        assertEquals("Unable to write value for field $data$ using value [1, 2] with minor type INT", nested.getMessage());
+
+        AthenaConnectorException bytes = assertThrows(AthenaConnectorException.class,
+                () -> BlockUtils.setValue(intVector, 0, new byte[] {0, -1, 127}));
+        assertEquals("Unable to set value for field int using value [0, -1, 127] of type INT", bytes.getMessage());
+
+        AthenaConnectorException deep = assertThrows(AthenaConnectorException.class,
+                () -> BlockUtils.setValue(intVector, 0, new Object[] {new Integer[] {1}, java.util.Arrays.asList(new byte[] {2}, null)}));
+        assertEquals("Unable to set value for field int using value [[1], [[2], null]] of type INT", deep.getMessage());
+    }
+
+    @Test
     public void setValueRoundsDoubleIntoDecimalFromItsDecimalForm()
     {
         Schema schema = SchemaBuilder.newBuilder()

@@ -8,10 +8,11 @@ use base64::Engine;
 use pkcs8::der::asn1::{AnyRef, OctetStringRef};
 use pkcs8::der::pem::LineEnding;
 use pkcs8::der::Decode;
+use pkcs8::der::Encode;
 use pkcs8::spki::AlgorithmIdentifierRef;
 use pkcs8::{EncryptedPrivateKeyInfo, ObjectIdentifier, PrivateKeyInfo};
 use regex::Regex;
-use rsa::pkcs8::DecodePrivateKey;
+use rsa::pkcs1::DecodeRsaPrivateKey;
 
 use zeroize::Zeroizing;
 
@@ -203,7 +204,7 @@ fn parse_pem_object(
             let Some(passphrase) = passphrase.filter(|p| !java_trim(p).is_empty()) else {
                 return Err(PrivateKeyError::PassphraseRequired);
             };
-            let mut plaintext = match PbeScheme::from_oid(algorithm.oid) {
+            let plaintext = match PbeScheme::from_oid(algorithm.oid) {
                 Some(scheme) => scheme.decrypt(algorithm.parameters, passphrase, ciphertext)?,
                 None if algorithm.oid == PBES2_OID => {
                     pbes2::decrypt(algorithm.parameters, passphrase, ciphertext)?
@@ -215,13 +216,9 @@ fn parse_pem_object(
                         .to_vec(),
                 ),
             };
-            check_private_key_info(&plaintext)?;
-            Ok(std::mem::take(&mut *plaintext))
+            normalize_private_key_info(&plaintext)
         }
-        "PRIVATE KEY" => {
-            check_private_key_info(&der)?;
-            Ok(der)
-        }
+        "PRIVATE KEY" => normalize_private_key_info(&der),
         other => Err(PrivateKeyError::UnsupportedFormat(other.to_string())),
     }
 }
@@ -254,10 +251,13 @@ fn read_pem(pem: &str) -> std::result::Result<(String, Vec<u8>), PrivateKeyError
     Ok((label, der))
 }
 
-fn check_private_key_info(der: &[u8]) -> std::result::Result<(), PrivateKeyError> {
-    let info = PrivateKeyInfo::try_from(der)?;
-    if info.algorithm.oid == RSA_ENCRYPTION_OID {
-        rsa::RsaPrivateKey::from_pkcs8_der(der)?;
+fn normalize_private_key_info(ber_bytes: &[u8]) -> std::result::Result<Vec<u8>, PrivateKeyError> {
+    let der = Zeroizing::new(ber::to_der(ber_bytes)?);
+    let info = PrivateKeyInfo::try_from(der.as_slice())?;
+    if info.algorithm.oid != RSA_ENCRYPTION_OID {
+        return Ok(der.to_vec());
     }
-    Ok(())
+    let rsa_key = Zeroizing::new(ber::to_der(info.private_key)?);
+    rsa::RsaPrivateKey::from_pkcs1_der(&rsa_key)?;
+    Ok(PrivateKeyInfo::new(info.algorithm, &rsa_key).to_der()?)
 }

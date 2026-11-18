@@ -92,6 +92,7 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * This utility class abstracts many facets of reading and writing values into Apache Arrow's FieldReader and FieldVector
@@ -155,7 +156,7 @@ public class BlockUtils
                 setValue(block.getFieldVector(columnName), count++, next);
             }
             catch (Exception ex) {
-                throw new AthenaConnectorException("Error for " + type + " " + columnName + " " + next, ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).errorMessage(ex.getMessage()).build());
+                throw new AthenaConnectorException("Error for " + type + " " + columnName + " " + valueText(next), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).errorMessage(ex.getMessage()).build());
             }
         }
         block.setRowCount(count);
@@ -397,7 +398,7 @@ public class BlockUtils
         catch (RuntimeException ex) {
             String fieldName = (vector != null) ? vector.getField().getName() : "null_vector";
             throw new AthenaConnectorException("Unable to set value for field " + fieldName
-                + " using value " + value
+                + " using value " + valueText(value)
                 + " of type " + vector.getMinorType(), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).build());
         }
     }
@@ -1055,7 +1056,7 @@ public class BlockUtils
         }
         catch (RuntimeException ex) {
             throw new AthenaConnectorException("Unable to write value for field "
-                + field.getName() + " using value " + value
+                + field.getName() + " using value " + valueText(value)
                 + " with minor type " + Types.getMinorTypeForArrowType(type), ErrorDetails.builder().errorCode(FederationSourceErrorCode.INVALID_INPUT_EXCEPTION.toString()).build());
         }
     }
@@ -1264,6 +1265,21 @@ public class BlockUtils
     }
 
     private BlockUtils() {}
+
+    @VisibleForTesting
+    static String valueText(Object value)
+    {
+        if (value instanceof byte[]) {
+            return Arrays.toString((byte[]) value);
+        }
+        if (value instanceof Object[]) {
+            return valueText(Arrays.asList((Object[]) value));
+        }
+        if (value instanceof List) {
+            return ((List<?>) value).stream().map(BlockUtils::valueText).collect(Collectors.joining(", ", "[", "]"));
+        }
+        return String.valueOf(value);
+    }
 
     private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
 

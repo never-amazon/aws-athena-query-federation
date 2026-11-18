@@ -290,9 +290,9 @@ public class GlueFieldLexerTest
         // 128 bits is the default for Arrow Decimal if not specified
         assertEquals("testField1: Decimal(13, 7, 128)", field1.toString());
 
-        String input2 = "DECIMAL(13,7,8)";
+        String input2 = "DECIMAL(13,7,256)";
         Field field2 = GlueFieldLexer.lex("testField2", input2);
-        assertEquals("testField2: Decimal(13, 7, 8)", field2.toString());
+        assertEquals("testField2: Decimal(13, 7, 256)", field2.toString());
 
         String input3 = "DECIMAL";
         Field field3 = GlueFieldLexer.lex("testField3", input3);
@@ -306,18 +306,18 @@ public class GlueFieldLexerTest
         // Unfortunately we are on Java 11 so we don't have block quotes
         String input = "struct<" +
             "somearrfield0:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>," +
-            "mapinner0:struct<numberset_deep:set<decimal(23,3,8)>>," +
+            "mapinner0:struct<numberset_deep:set<decimal(23,3,256)>>," +
             "somearrfield1:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>," +
-            "mapinner1:struct<numberset_deep:set<decimal(23,3,16)>>," +
+            "mapinner1:struct<numberset_deep:set<decimal(23,3,128)>>," +
             "somearrfield2:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>," +
-            "mapinner2:struct<numberset_deep:set<decimal(23,3,32)>>>";
+            "mapinner2:struct<numberset_deep:set<decimal(23,3,256)>>>";
 
         Field field = GlueFieldLexer.lex("testAsdf2", input);
 
         String expectedFieldToString = "testAsdf2: " +
-            "Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 8)>>, " +
-            "somearrfield1: List<somearrfield1: List<somearrfield1: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner1: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 16)>>, " +
-            "somearrfield2: List<somearrfield2: List<somearrfield2: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner2: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 32)>>>";
+            "Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>, " +
+            "somearrfield1: List<somearrfield1: List<somearrfield1: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner1: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 128)>>, " +
+            "somearrfield2: List<somearrfield2: List<somearrfield2: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner2: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>>";
 
         // Just directly compare against the string, its pointless to write code to compare the fields individually
         assertEquals(expectedFieldToString, field.toString());
@@ -340,12 +340,34 @@ public class GlueFieldLexerTest
         // Extra complex case
         String innerStruct = "struct<" +
             "somearrfield0:array<set<struct<somefield:decimal(38,9),someset:set<decimal(11,7)>>>>," +
-            "mapinner0:struct<numberset_deep:set<decimal(23,3,8)>>" +
+            "mapinner0:struct<numberset_deep:set<decimal(23,3,256)>>" +
             ">";
         String input2 = "map<" + innerStruct + ", map<string, " + innerStruct + ">>";
         Field field2 = GlueFieldLexer.lex("SomeMap2", input2);
-        String expectedFieldToString2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 8)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 8)>>>> not null>> not null>";
+        String expectedFieldToString2 = "SomeMap2: Map(false)<entries: Struct<key: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>> not null, value: Map(false)<entries: Struct<key: Utf8 not null, value: Struct<somearrfield0: List<somearrfield0: List<somearrfield0: Struct<somefield: Decimal(38, 9, 128), someset: List<someset: Decimal(11, 7, 128)>>>>, mapinner0: Struct<numberset_deep: List<numberset_deep: Decimal(23, 3, 256)>>>> not null>> not null>";
         assertEquals(expectedFieldToString2, field2.toString());
     }
-}
 
+    @Test
+    public void lexDecimalRejectsTypesArrowCannotRead()
+    {
+        for (String input : new String[] {"decimal(10,2,3)", "decimal(10,2,8)", "decimal(10,2,32)", "decimal(10,2,64)", "decimal(300,2,8)"}) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> GlueFieldLexer.lex("col", input));
+            assertEquals(input, "Library only supports 128-bit and 256-bit decimal values", error.getMessage());
+        }
+        String[][] invalid = {
+                {"decimal(0,0)", "128", "38"},
+                {"decimal(39,2)", "128", "38"},
+                {"decimal(300,2)", "128", "38"},
+                {"decimal(10,200)", "128", "38"},
+                {"decimal(77,2,256)", "256", "76"},
+        };
+        for (String[] c : invalid) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> GlueFieldLexer.lex("col", c[0]));
+            assertEquals("Invalid decimal type " + c[0] + ": a " + c[1] + "-bit decimal needs a precision from 1 to " + c[2]
+                    + " and a scale no larger than the precision", error.getMessage());
+        }
+        assertEquals("col: Decimal(38, 38, 128)", GlueFieldLexer.lex("col", "decimal(38,38)").toString());
+        assertEquals("col: Decimal(76, 0, 256)", GlueFieldLexer.lex("col", "decimal(76,0,256)").toString());
+    }
+}

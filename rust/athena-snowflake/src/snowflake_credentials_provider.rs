@@ -430,10 +430,8 @@ impl CredentialsProvider for SnowflakeCredentialsProvider {
             if passes_through(&e) {
                 e
             } else {
-                let message = e.to_string();
-                FederationError::Runtime(format!(
-                    "Error retrieving Snowflake credentials: {message}"
-                ))
+                let message = format!("Error retrieving Snowflake credentials: {e}");
+                FederationError::runtime_with_cause(message, e)
             }
         })
     }

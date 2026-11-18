@@ -39,6 +39,8 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.lang3.Validate;
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.PSQLState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.athena.AthenaClient;
@@ -49,6 +51,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -139,6 +142,19 @@ public class PostGreSqlRecordHandler
             fields.add(Field.nullable(metadata.getColumnLabel(column), exportArrowType(metadata, column, utc)));
         }
         return new Schema(fields);
+    }
+
+    @Override
+    protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
+    {
+        int columnType = resultSet.getMetaData().getColumnType(resultSet.findColumn(fieldName));
+        if (columnType != Types.DATE && columnType != Types.TIMESTAMP && columnType != Types.TIMESTAMP_WITH_TIMEZONE) {
+            return;
+        }
+        String text = resultSet.getString(fieldName);
+        if (text != null && !PostGreSqlDateTimeText.isValid(text)) {
+            throw new PSQLException("Bad value for type timestamp/date/time: " + text, PSQLState.BAD_DATETIME_FORMAT);
+        }
     }
 
     private ArrowType exportArrowType(ResultSetMetaData metadata, int column, Calendar utc) throws SQLException

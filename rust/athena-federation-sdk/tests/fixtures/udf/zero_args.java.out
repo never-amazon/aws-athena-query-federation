@@ -1,2 +1,0 @@
-errorType: java.lang.NullPointerException
-errorMessage: Cannot invoke "org.apache.arrow.memory.ArrowBuf.getReferenceManager()" because "body" is null

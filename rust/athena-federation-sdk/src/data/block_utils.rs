@@ -229,7 +229,7 @@ impl BlockUtils {
                         "Error for {} {} {}",
                         arrow_type_to_string(arrow_type),
                         column_name,
-                        next
+                        java_value_text(&next)
                     ),
                     ex.to_string(),
                 ));
@@ -278,7 +278,7 @@ impl BlockUtils {
             Err(_) => Err(FederationError::invalid_input(format!(
                 "Unable to set value for field {} using value {} of type {}",
                 vector.name(),
-                value,
+                java_value_text(value),
                 vector.minor_type()
             ))),
         }
@@ -780,7 +780,7 @@ impl BlockUtils {
         FederationError::invalid_input(format!(
             "Unable to write value for field {} using value {} with minor type {}",
             field.name(),
-            value,
+            java_value_text(value),
             minor
         ))
     }
@@ -972,5 +972,19 @@ impl BlockUtils {
 
     pub fn float_to_java_string(value: f32) -> String {
         float_to_string(value)
+    }
+}
+
+fn java_value_text(value: &Value) -> String {
+    let joined = |parts: Vec<String>| format!("[{}]", parts.join(", "));
+    match value {
+        Value::Bytes(bytes) => joined(
+            bytes
+                .iter()
+                .map(|byte| byte.cast_signed().to_string())
+                .collect(),
+        ),
+        Value::List(items) => joined(items.iter().map(java_value_text).collect()),
+        other => other.java_to_string(),
     }
 }

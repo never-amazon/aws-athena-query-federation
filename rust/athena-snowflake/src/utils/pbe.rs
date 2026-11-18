@@ -76,6 +76,8 @@ pub(crate) enum PrivateKeyError {
     #[error(transparent)]
     Pkcs8(#[from] pkcs8::Error),
     #[error(transparent)]
+    Pkcs1(#[from] rsa::pkcs1::Error),
+    #[error(transparent)]
     InvalidKeyLength(#[from] InvalidLength),
     #[error("{0}")]
     Unpad(UnpadError),

@@ -122,6 +122,7 @@ public abstract class JdbcRecordHandler
         implements AutoCloseable
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcRecordHandler.class);
+    private static final long MILLIS_PER_DAY = 86_400_000L;
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private final DatabaseConnectionConfig databaseConnectionConfig;
     // The base RecordHandler keeps these private; the export path needs them as getS3Client/getAthenaClient defaults.
@@ -409,6 +410,10 @@ public abstract class JdbcRecordHandler
                 };
     }
 
+    protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
+    {
+    }
+
     protected boolean enableCaseSensitivelyLookUpSession(Connection connection)
     {
         return false;
@@ -510,6 +515,7 @@ public abstract class JdbcRecordHandler
             case DATEDAY:
                 return (DateDayExtractor) (Object context, NullableDateDayHolder dst) ->
                 {
+                    checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
                         dst.value = (int) LocalDate.parse(resultSet.getDate(fieldName).toString()).toEpochDay();
@@ -519,7 +525,11 @@ public abstract class JdbcRecordHandler
             case DATEMILLI:
                 return (DateMilliExtractor) (Object context, NullableDateMilliHolder dst) ->
                 {
-                    if (resultSet.getTimestamp(fieldName) != null) {
+                    checkDateTimeText(resultSet, fieldName);
+                    if (resultSet.getObject(fieldName) instanceof java.sql.Date) {
+                        dst.value = LocalDate.parse(resultSet.getDate(fieldName).toString()).toEpochDay() * MILLIS_PER_DAY;
+                    }
+                    else if (resultSet.getTimestamp(fieldName) != null) {
                         dst.value = resultSet.getTimestamp(fieldName).getTime();
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;

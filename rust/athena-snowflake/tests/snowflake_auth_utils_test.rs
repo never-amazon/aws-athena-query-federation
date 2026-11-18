@@ -563,6 +563,113 @@ fn pbe_plain_der() -> Vec<u8> {
         .to_vec()
 }
 
+const JAVA_ENCODED_SHA256: &str =
+    "62e7c614258732ba42618d3f1cf14b46278eff50cbb703df906bec522db118aa";
+const JAVA_ENCODED_WITHOUT_NULL_SHA256: &str =
+    "c13490a11c777d3298a0da21a838d530043b0e2aeb00a34c5a9573fa2ec818b5";
+
+const BER_PRIVATE_KEY_INFOS: [(&str, &str); 20] = [
+    (
+        "enc_algid_without_null",
+        include_str!("fixtures/inner_ber/enc_algid_without_null.p8"),
+    ),
+    (
+        "enc_all_indefinite",
+        include_str!("fixtures/inner_ber/enc_all_indefinite.p8"),
+    ),
+    (
+        "enc_constructed_octet_string",
+        include_str!("fixtures/inner_ber/enc_constructed_octet_string.p8"),
+    ),
+    ("enc_der", include_str!("fixtures/inner_ber/enc_der.p8")),
+    (
+        "enc_inner_and_outer_ber",
+        include_str!("fixtures/inner_ber/enc_inner_and_outer_ber.p8"),
+    ),
+    (
+        "enc_inner_rsa_indefinite",
+        include_str!("fixtures/inner_ber/enc_inner_rsa_indefinite.p8"),
+    ),
+    (
+        "enc_inner_rsa_long_form",
+        include_str!("fixtures/inner_ber/enc_inner_rsa_long_form.p8"),
+    ),
+    (
+        "enc_long_form_lengths",
+        include_str!("fixtures/inner_ber/enc_long_form_lengths.p8"),
+    ),
+    (
+        "enc_outer_indefinite",
+        include_str!("fixtures/inner_ber/enc_outer_indefinite.p8"),
+    ),
+    (
+        "enc_with_attributes",
+        include_str!("fixtures/inner_ber/enc_with_attributes.p8"),
+    ),
+    (
+        "plain_algid_without_null",
+        include_str!("fixtures/inner_ber/plain_algid_without_null.p8"),
+    ),
+    (
+        "plain_all_indefinite",
+        include_str!("fixtures/inner_ber/plain_all_indefinite.p8"),
+    ),
+    (
+        "plain_constructed_octet_string",
+        include_str!("fixtures/inner_ber/plain_constructed_octet_string.p8"),
+    ),
+    ("plain_der", include_str!("fixtures/inner_ber/plain_der.p8")),
+    (
+        "plain_inner_and_outer_ber",
+        include_str!("fixtures/inner_ber/plain_inner_and_outer_ber.p8"),
+    ),
+    (
+        "plain_inner_rsa_indefinite",
+        include_str!("fixtures/inner_ber/plain_inner_rsa_indefinite.p8"),
+    ),
+    (
+        "plain_inner_rsa_long_form",
+        include_str!("fixtures/inner_ber/plain_inner_rsa_long_form.p8"),
+    ),
+    (
+        "plain_long_form_lengths",
+        include_str!("fixtures/inner_ber/plain_long_form_lengths.p8"),
+    ),
+    (
+        "plain_outer_indefinite",
+        include_str!("fixtures/inner_ber/plain_outer_indefinite.p8"),
+    ),
+    (
+        "plain_with_attributes",
+        include_str!("fixtures/inner_ber/plain_with_attributes.p8"),
+    ),
+];
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .concat()
+}
+
+#[test]
+fn test_create_private_key_reencodes_ber_private_key_info_like_get_encoded() {
+    assert_eq!(JAVA_ENCODED_SHA256, sha256_hex(&pbe_plain_der()));
+    for (name, pem) in BER_PRIVATE_KEY_INFOS {
+        let passphrase = name.starts_with("enc_").then_some(PBE_PASSPHRASE);
+        let key = SnowflakeAuthUtils::create_private_key(pem, passphrase)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let expected = if name.ends_with("algid_without_null") {
+            JAVA_ENCODED_WITHOUT_NULL_SHA256
+        } else {
+            JAVA_ENCODED_SHA256
+        };
+        assert_eq!(expected, sha256_hex(key.der()), "{name}");
+    }
+}
+
 #[test]
 fn test_create_private_key_with_pbes1_and_pkcs12_encrypted_keys() {
     let expected = pbe_plain_der();
