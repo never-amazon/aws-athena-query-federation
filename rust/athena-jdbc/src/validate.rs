@@ -1,8 +1,3 @@
-use std::error::Error;
-use std::fmt;
-use std::sync::Arc;
-
-use athena_federation_sdk::exceptions::JavaExceptionKind;
 use athena_federation_sdk::{FederationError, Result};
 
 use crate::sql::JdbcConnection;
@@ -29,35 +24,11 @@ pub(crate) fn is_blank(value: Option<&str>) -> bool {
     value.is_none_or(|v| v.trim().is_empty())
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct RuntimeException {
-    message: String,
-    cause: Arc<FederationError>,
-}
-
-impl fmt::Display for RuntimeException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl Error for RuntimeException {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(self.cause.as_ref())
-    }
-}
-
 pub(crate) fn runtime_with_cause(
     message: impl Into<String>,
     cause: FederationError,
 ) -> FederationError {
-    FederationError::wrapped(
-        JavaExceptionKind::Runtime,
-        RuntimeException {
-            message: message.into(),
-            cause: Arc::new(cause),
-        },
-    )
+    FederationError::runtime_with_cause(message, cause)
 }
 
 pub(crate) fn null_pointer(message: impl Into<String>) -> FederationError {

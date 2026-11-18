@@ -98,6 +98,14 @@ fn java_to_string(error: &FederationError) -> String {
 
 pub type Result<T> = std::result::Result<T, FederationError>;
 
+#[derive(Debug, Clone, Error)]
+#[error("{message}")]
+struct CausedRuntimeException {
+    message: String,
+    #[source]
+    cause: Arc<FederationError>,
+}
+
 impl FederationError {
     pub fn connector(
         code: FederationSourceErrorCode,
@@ -159,6 +167,19 @@ impl FederationError {
             kind,
             source: Arc::new(source),
         }
+    }
+
+    pub fn runtime_with_cause(
+        message: impl Into<String>,
+        cause: FederationError,
+    ) -> FederationError {
+        FederationError::wrapped(
+            JavaExceptionKind::Runtime,
+            CausedRuntimeException {
+                message: message.into(),
+                cause: Arc::new(cause),
+            },
+        )
     }
 
     pub fn java_message(&self) -> Option<String> {

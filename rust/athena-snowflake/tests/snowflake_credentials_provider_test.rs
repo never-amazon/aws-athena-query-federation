@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -6,6 +7,7 @@ use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
     CredentialsProvider, DefaultCredentials, HttpClient, HttpClientError, HttpRequest, HttpResponse,
 };
+use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, SecretsManagerClient,
 };
@@ -392,7 +394,7 @@ async fn test_get_credential_map_with_http_error() {
 
     let error = provider.get_credential_map().await.unwrap_err();
 
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert_runtime_with_cause(&error);
     assert!(error
         .to_string()
         .contains("Error retrieving Snowflake credential"));
@@ -407,7 +409,7 @@ async fn test_get_credential_map_with_invalid_json_response() {
 
     let error = provider.get_credential_map().await.unwrap_err();
 
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert_runtime_with_cause(&error);
     assert!(error
         .to_string()
         .contains("Error retrieving Snowflake credentials"));
@@ -421,11 +423,21 @@ async fn test_get_credential_map_with_io_exception() {
 
     let error = provider.get_credential_map().await.unwrap_err();
 
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert_runtime_with_cause(&error);
     assert!(error
         .to_string()
         .contains("Error retrieving Snowflake credentials"));
     assert!(error.to_string().contains("Connection failed"));
+    let report = LambdaError::new(&error).to_report();
+    assert!(
+        report.contains("\ncause: java.lang.RuntimeException: Connection failed\n"),
+        "{report}"
+    );
+}
+
+fn assert_runtime_with_cause(error: &FederationError) {
+    assert_eq!("java.lang.RuntimeException", error.java_class_name());
+    assert!(error.source().is_some(), "{error:?}");
 }
 
 #[tokio::test]
@@ -447,7 +459,7 @@ async fn test_get_credential_map_with_invalid_secret_json() {
 
     let error = provider.get_credential_map().await.unwrap_err();
 
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert_runtime_with_cause(&error);
     assert!(error
         .to_string()
         .contains("Error retrieving Snowflake credentials"));
