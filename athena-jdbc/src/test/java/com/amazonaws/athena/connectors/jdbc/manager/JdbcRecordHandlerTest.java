@@ -745,6 +745,33 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void exportReadsPre1582ValuesOnTheProlepticCalendar() throws Exception {
+        Class.forName("org.h2.Driver");
+        Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqcalendar;DB_CLOSE_DELAY=-1");
+        try (Statement st = h2.createStatement()) {
+            st.execute("CREATE TABLE c (id INT, d DATE, ts TIMESTAMP)");
+            st.execute("INSERT INTO c VALUES (1, DATE '1000-01-06', TIMESTAMP '1000-01-01 12:00:00')");
+            st.execute("INSERT INTO c VALUES (2, DATE '1582-10-14', TIMESTAMP '1582-10-04 23:59:59.999')");
+            st.execute("INSERT INTO c VALUES (3, DATE '2020-06-01', TIMESTAMP '2020-06-01 12:00:00.123')");
+        }
+        EncryptionKey key = new LocalKeyFactory().create();
+        Map<String, byte[]> written = new ConcurrentHashMap<>();
+        RemoteReadRecordsResponse remote = runExport(h2, key, written,
+                "SELECT a.d, a.ts, b.ts FROM c a JOIN c b ON b.id = a.id + 1 ORDER BY a.id", 100_000_000_000L, true);
+
+        S3SpillLocation dataLoc = (S3SpillLocation) remote.getRemoteBlocks().get(0);
+        Block block = new AesGcmBlockCrypto(new BlockAllocatorImpl()).decrypt(key, written.get(dataLoc.getKey()), remote.getSchema());
+        LocalDateTime[] timestamps = {LocalDateTime.of(1000, 1, 1, 12, 0), LocalDateTime.of(1582, 10, 4, 23, 59, 59, 999_000_000),
+                LocalDateTime.of(2020, 6, 1, 12, 0, 0, 123_000_000)};
+        Assert.assertEquals(2, block.getRowCount());
+        for (int row = 0; row < 2; row++) {
+            Assert.assertEquals((int) timestamps[row].toLocalDate().toEpochDay(), block.getFieldVectors().get(0).getObject(row));
+            Assert.assertEquals(timestamps[row].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), ((TimeStampMilliTZVector) block.getFieldVectors().get(1)).get(row));
+            Assert.assertEquals(timestamps[row + 1].toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), ((TimeStampMilliTZVector) block.getFieldVectors().get(2)).get(row));
+        }
+    }
+
+    @Test
     public void testDoReadRecordsDirectQueryReturnsEveryBlockWithAsyncSpill() throws Exception {
         Class.forName("org.h2.Driver");
         Connection h2 = DriverManager.getConnection("jdbc:h2:mem:jdbcdqmulti;DB_CLOSE_DELAY=-1");
@@ -786,6 +813,13 @@ public class JdbcRecordHandlerTest
             long maxBlockBytes)
             throws Exception
     {
+        return runExport(h2, key, written, query, maxBlockBytes, false);
+    }
+
+    private RemoteReadRecordsResponse runExport(Connection h2, EncryptionKey key, Map<String, byte[]> written, String query,
+            long maxBlockBytes, boolean localDateTimeMillis)
+            throws Exception
+    {
         JdbcConnectionFactory h2Factory = Mockito.mock(JdbcConnectionFactory.class);
         when(h2Factory.getConnection(nullable(CredentialsProvider.class))).thenReturn(h2);
         S3Client mockS3 = Mockito.mock(S3Client.class);
@@ -802,6 +836,15 @@ public class JdbcRecordHandlerTest
             public PreparedStatement buildSplitSql(Connection c, String cat, TableName t, Schema s, Constraints con, Split sp)
             {
                 throw new UnsupportedOperationException("export query must not call buildSplitSql");
+            }
+
+            @Override
+            protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
+            {
+                if (!localDateTimeMillis) {
+                    return super.getTimestampMillis(resultSet, column, timestamp);
+                }
+                return resultSet.getObject(column, LocalDateTime.class).toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
             }
         };
 

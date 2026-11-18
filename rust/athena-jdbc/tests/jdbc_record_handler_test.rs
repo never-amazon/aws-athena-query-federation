@@ -1057,6 +1057,82 @@ async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
     assert_eq!(Value::Int(2), block.field_vectors()[1].get_object(0));
 }
 
+#[tokio::test]
+async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
+    let key = LocalKeyFactory::new().create().await.unwrap();
+    let timestamps = [
+        NaiveDate::from_ymd_opt(1000, 1, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(1582, 10, 4)
+            .unwrap()
+            .and_hms_milli_opt(23, 59, 59, 999)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2020, 6, 1)
+            .unwrap()
+            .and_hms_milli_opt(12, 0, 0, 123)
+            .unwrap(),
+    ];
+    let java_days = [-354_280, -141_428, 18_414];
+    let timestamp = |i: usize| {
+        let ts: NaiveDateTime = timestamps[i];
+        SqlValue::rendered_with_epoch_millis(
+            SqlValue::Timestamp(ts + chrono::TimeDelta::days(java_days[i] - epoch_day(ts.date()))),
+            ts.to_string(),
+            ts.and_utc().timestamp_millis(),
+        )
+    };
+    let java_date = |i: usize| {
+        let label = timestamps[i].date();
+        SqlValue::java_sql_date(java_days[i] * 86_400_000, label, label.to_string())
+    };
+    let data = ResultSetData::of_columns(
+        vec![
+            ColumnMetadata::new("D", Types::DATE),
+            ColumnMetadata::new("TS", Types::TIMESTAMP),
+            ColumnMetadata::new("TS", Types::TIMESTAMP),
+        ],
+        (0..2)
+            .map(|i| vec![java_date(i), timestamp(i), timestamp(i + 1)])
+            .collect(),
+    );
+    let run = run_export(
+        &key,
+        data,
+        "SELECT a.d, a.ts, b.ts FROM c a JOIN c b ON b.id = a.id + 1 ORDER BY a.id",
+        100_000_000_000,
+    )
+    .await;
+    let data_location = run.response.remote_blocks()[0].as_s3().unwrap();
+    let block = crypto()
+        .decrypt_with_schema(
+            Some(&key),
+            &object(&run.fakes, data_location.key()).unwrap(),
+            Arc::new(run.response.schema().clone()),
+        )
+        .unwrap();
+    assert_eq!(2, block.row_count());
+    for row in 0..2 {
+        assert_eq!(
+            Value::Int(i32::try_from(epoch_day(timestamps[row].date())).unwrap()),
+            block.field_vectors()[0].get_object(row)
+        );
+        assert_eq!(
+            Value::Long(timestamps[row].and_utc().timestamp_millis()),
+            block.field_vectors()[1].get_raw(row)
+        );
+        assert_eq!(
+            Value::Long(timestamps[row + 1].and_utc().timestamp_millis()),
+            block.field_vectors()[2].get_raw(row)
+        );
+    }
+}
+
+fn epoch_day(date: NaiveDate) -> i64 {
+    date.signed_duration_since(NaiveDate::default()).num_days()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_do_read_records_direct_query_returns_every_block_with_async_spill() {
     let key = LocalKeyFactory::new().create().await.unwrap();

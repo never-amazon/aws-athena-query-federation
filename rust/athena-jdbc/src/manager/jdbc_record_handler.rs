@@ -741,7 +741,7 @@ fn write_export_row(
 ) -> Result<usize> {
     let vectors = block.field_vectors_mut();
     for (i, vector) in vectors.iter_mut().enumerate().take(column_count) {
-        let value = row.get_object(i + 1)?.to_value();
+        let value = calendar_value(row.get_object(i + 1)?, vector.minor_type())?;
         BlockUtils::set_value(vector, row_num, &value)?;
     }
     Ok(1)

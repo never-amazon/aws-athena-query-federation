@@ -57,10 +57,10 @@ fn java_date_millis(text: &str) -> Option<i64> {
 
 fn java_date(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
-    Some(rendered(
-        SqlValue::Date(java_sql_date_local_date(millis)?),
-        text.to_string(),
-    ))
+    Some(
+        SqlValue::java_sql_date(millis, java_sql_date_local_date(millis)?, text)
+            .with_exception_class(PSQL_EXCEPTION),
+    )
 }
 
 fn java_date_element(text: &str) -> Option<SqlValue> {

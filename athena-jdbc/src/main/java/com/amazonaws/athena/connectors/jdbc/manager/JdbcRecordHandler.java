@@ -305,7 +305,8 @@ public abstract class JdbcRecordHandler
                         spiller.writeRows((Block block, int rowNum) -> {
                             List<FieldVector> vectors = block.getFieldVectors();
                             for (int i = 0; i < columnCount; i++) {
-                                BlockUtils.setValue(vectors.get(i), rowNum, resultSet.getObject(i + 1));
+                                FieldVector vector = vectors.get(i);
+                                BlockUtils.setValue(vector, rowNum, calendarValue(resultSet, i + 1, resultSet.getObject(i + 1), vector.getMinorType()));
                             }
                             return 1;
                         });
