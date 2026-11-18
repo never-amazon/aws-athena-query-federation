@@ -143,7 +143,7 @@ parity/probes/calcite/regenerate.sh /tmp/calcite-fixtures
 
 ## Differences from the Java connectors
 
-Each item below is true at commit 848a84fc. The test ledger notes in `parity/tests.tsv` cover the smaller differences in test setup, such as fakes in place of Mockito mocks.
+Each item below is true at the tip of this branch. The test ledger notes in `parity/tests.tsv` cover the smaller differences in test setup, such as fakes in place of Mockito mocks.
 
 ### Behavior that still differs
 
@@ -152,7 +152,6 @@ PostgreSQL:
 - The Rust client honors `sslmode`, `ssl`, `sslfactory` (the LibPQ, NonValidating and DefaultJava factories), `sslNegotiation`, `sslrootcert`, `sslResponseTimeout`, `channelBinding`, `requireAuth`, `scramMaxIterations`, `connectTimeout`, `socketTimeout`, `loginTimeout`, `cancelSignalTimeout`, `tcpKeepAlive`, `ApplicationName`, `currentSchema`, `options`, `stringtype` and `logServerErrorDetail`. It ignores `defaultRowFetchSize`, `sslcert`, `sslkey`, `sslpassword`, `sslhostnameverifier`, `prepareThreshold`, `binaryTransfer`, `targetServerType`, `loadBalanceHosts` and `readOnly`.
 - The Rust client sends no client certificate, and GSS and SSPI logins fail.
 - With `sslfactory` set to the DefaultJava factory, Rust trusts the Mozilla roots from `webpki-roots`. Java trusts the JVM truststore.
-- For a filter date before 4713 BC, pgjdbc sends `-infinity` and the query runs. Rust sends the real BC value, PostgreSQL rejects it as out of range, and the query fails.
 - Rust reads the default time zone from `TZ` only, and falls back to UTC. Java also reads `-Duser.timezone` and `/etc/localtime`. On Lambda, `TZ` is `:UTC`, so both use UTC.
 
 Snowflake:
@@ -162,13 +161,11 @@ Snowflake:
 - Rust reads `CLIENT_TIMESTAMP_TYPE_MAPPING` from the connection string only, with `TIMESTAMP_LTZ` as the default. An account-level value is not applied, so filters on `TIMESTAMP_NTZ` or `TIMESTAMP_TZ` columns can shift by the session zone offset.
 - Java `SnowflakeUtils` writes the JVM CA certificates to `/tmp/cacert.pem` and sets the native environment variables at startup. Rust has no counterpart (`classes.tsv` marks the class `not_ported`). The Rust HTTPS client trusts the operating system store, so a CA added only to a JVM truststore is not trusted.
 - For timestamps before 1582-10-15, the Snowflake JDBC driver maps some different server values to one value, and Java returns the earliest of them. Rust returns the exact server value.
-- In a JVM whose default zone is not UTC, Java takes the DATEDAY of a Snowflake timestamp column in that zone. Rust takes the UTC day. On Lambda both use UTC.
 
 SDK and JDBC:
 
 - `aws-esdk` has no caching materials manager. Java caches one per KMS key for 24 hours. Rust caches only the keyring, so each decrypt of a FAS token calls KMS.
-- Rust stores dates and timestamps with `chrono`, which ends at year 262143. Filter values beyond that year clamp to the `chrono` limit, where Java binds the exact value.
-- The `chrono-tz` tables end in 2099. In a time zone with daylight saving time, Rust uses standard time for later dates, where Java keeps the daylight saving rules.
+- Rust stores dates and timestamps with `chrono`, which ends at year 262143. Java binds PostgreSQL filter values from year 262143 to 294276 and Rust rejects them. Both reject values outside the PostgreSQL range.
 - Error text from JSON parsing (serde_json in place of Jackson) and from Substrait plan decoding (prost in place of protobuf-java) differs. These are the only differences in the wire harness.
 - A `ClassCastException` message for a class outside the JDK, such as a Calcite or SDK class, has no "is in unnamed module of loader" suffix. JDK classes keep the suffix.
 - Lambda error responses carry `errorType` and `errorMessage` with the Java exception class name, and no Java stack trace.
@@ -176,7 +173,7 @@ SDK and JDBC:
 
 ### Java bugs fixed on both sides
 
-The port found these bugs in the Java code. The Java code is fixed, and the Rust code behaves the same way. To list the commits, run `git log --oneline --no-merges 61974a93..848a84fc -- athena-federation-sdk/src/main athena-jdbc/src/main athena-postgresql/src/main athena-snowflake/src/main`. Three commits in that range are not in the list below. 77f3cb82 adds a static import, and a7af4f39 speeds up the Snowflake Julian adjustment. 42402dfd fixes Java to keep the era in Snowflake expanded DATE literals, which Rust already did.
+The port found these bugs in the Java code. The Java code is fixed, and the Rust code behaves the same way. To list the commits, run `git log --oneline --no-merges 61974a93..HEAD -- athena-federation-sdk/src/main athena-jdbc/src/main athena-postgresql/src/main athena-snowflake/src/main`. Three commits in that range are not in the list below. 77f3cb82 adds a static import, and a7af4f39 speeds up the Snowflake Julian adjustment. 42402dfd fixes Java to keep the era in Snowflake expanded DATE literals, which Rust already did.
 
 Query generation and binds:
 
@@ -187,6 +184,7 @@ Query generation and binds:
 - Java truncated pre-epoch timestamp literal fractions and rendered years outside 0001 to 9999 without an error (9cb2e5a7).
 - Java bound PostgreSQL DATEMILLI filters as local date-times, so timestamptz filters matched the wrong rows outside a UTC JVM (f971a0c6). It bound pre-1582 filter values on the hybrid Julian and Gregorian calendar (baa0f73f).
 - An integer overflow in the Snowflake JDBC driver made Java send wrong binds and reject reads before about 3500 BC (0a759e83).
+- pgjdbc turned PostgreSQL filter timestamps before 4713 BC into `-infinity`, so `=` matched the `-infinity` rows (929c1183).
 
 Dates and timestamps read from the database:
 
@@ -194,7 +192,7 @@ Dates and timestamps read from the database:
 - Java read 1 BC as 1 AD and failed on BC leap days (4e31022e), and read BC timestamptz values in the JVM zone (11962ee8).
 - Java read DATE values from year 10000 and later as year 0 (1e1539e2), and DATE array elements wrapped for infinity (16cf2c63).
 - Java mapped PostgreSQL `timestamptz[]` to VARCHAR (5449759d).
-- The DATEDAY of a timestamp kept the calendar shift for array elements (0fa7525a), for PostgreSQL timestamp columns between 1582-10-05 and 1582-10-14 (76f66e03), and for Snowflake timestamp columns, where it was up to 26 days off before 3500 BC (73c84bdf).
+- The DATEDAY of a timestamp kept the calendar shift for array elements (0fa7525a), for PostgreSQL timestamp columns between 1582-10-05 and 1582-10-14 (76f66e03), and for Snowflake timestamp columns, where it was up to 26 days off before 3500 BC (73c84bdf). In a JVM outside UTC, Java also read Snowflake timestamp columns as DATEDAY and DATEMILLI in the JVM zone (6e2976f8).
 - Java accepted overflowing PostgreSQL date and time fields without an error (4d85587d).
 
 SDK:
@@ -202,3 +200,7 @@ SDK:
 - Java accepted Glue decimal types that Java Arrow cannot read (a98fd6d4).
 - Java threw `NullPointerException` on record batches with an empty body, so zero-argument UDFs failed (e1c69495).
 - `BlockUtils` write errors printed `[Ljava.lang.Integer;@<hash>` in place of the array elements (a7d8219c).
+
+Templates:
+
+- The Snowflake templates set `SNOWFLAKE_ENABLE_S3_EXPORT`, but the connectors read `snowflake_enable_s3_export`, so `EnableS3Export` had no effect. The Java and Rust templates now set the lowercase key (6a205d73).
