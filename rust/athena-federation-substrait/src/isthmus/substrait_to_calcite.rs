@@ -272,13 +272,16 @@ impl SubstraitToCalcite {
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
     fn read(&self, r: &ReadRel) -> Result<RelNode> {
-        let schema = r.base_schema.clone().unwrap_or_default();
-        let st = schema.r#struct.clone().unwrap_or_default();
+        let names = r
+            .base_schema
+            .as_ref()
+            .map_or(&[][..], |s| s.names.as_slice());
+        let st = r.base_schema.as_ref().and_then(|s| s.r#struct.as_ref());
         let row_type = named_struct_to_calcite(
             self.system,
-            &schema.names,
-            &st.types,
-            is_nullable(st.nullability),
+            names,
+            st.map_or(&[][..], |s| s.types.as_slice()),
+            is_nullable(st.map_or(0, |s| s.nullability)),
         )?;
         let node = match &r.read_type {
             Some(ReadType::NamedTable(t)) => RelBuilder::scan(t.names.clone(), row_type),
@@ -527,16 +530,24 @@ impl SubstraitToCalcite {
     )]
     fn aggregate(&self, a: &AggregateRel) -> Result<RelNode> {
         let child = self.convert(input_of(a.input.as_deref())?)?;
-        let groupings: Vec<Vec<Expression>> = a
+        let original: Vec<&[Expression]> = a
             .groupings
             .iter()
-            .map(|g| g.grouping_expressions.clone())
+            .map(|g| g.grouping_expressions.as_slice())
             .collect();
-        let mut measures = a.measures.clone();
-        let (child, groupings) = if Self::aggregate_inputs_are_simple(&measures, &groupings) {
-            (child, groupings)
+        let (child, projected) = if Self::aggregate_inputs_are_simple(&a.measures, &original) {
+            (child, None)
         } else {
-            self.project_aggregate_inputs(child, &mut measures, &groupings)?
+            let mut measures = a.measures.clone();
+            let (child, groupings) =
+                self.project_aggregate_inputs(child, &mut measures, &original)?;
+            (child, Some((measures, groupings)))
+        };
+        let (measures, groupings): (&[Measure], Vec<&[Expression]>) = match &projected {
+            Some((measures, groupings)) => {
+                (measures, groupings.iter().map(Vec::as_slice).collect())
+            }
+            None => (&a.measures, original),
         };
         let row_type = expression_row_type(&child);
         let ex = self.expressions();
@@ -544,7 +555,7 @@ impl SubstraitToCalcite {
         let mut group_lists: Vec<Vec<RexNode>> = Vec::with_capacity(groupings.len());
         for g in &groupings {
             let mut list = Vec::with_capacity(g.len());
-            for e in g {
+            for e in *g {
                 let rex = ex.convert(e, &row_type)?;
                 if !group_exprs.contains(&rex) {
                     group_exprs.push(rex.clone());
@@ -554,7 +565,7 @@ impl SubstraitToCalcite {
             group_lists.push(list);
         }
         let mut calls = Vec::with_capacity(measures.len());
-        for m in &measures {
+        for m in measures {
             calls.push(self.aggregate_call(&ex, m, &row_type)?);
         }
         let node = self
@@ -563,7 +574,7 @@ impl SubstraitToCalcite {
         self.apply_remap(node, remap_of(a.common.as_ref()))
     }
 
-    fn aggregate_inputs_are_simple(measures: &[Measure], groupings: &[Vec<Expression>]) -> bool {
+    fn aggregate_inputs_are_simple(measures: &[Measure], groupings: &[&[Expression]]) -> bool {
         measures.iter().all(|m| {
             m.measure.as_ref().is_none_or(|f| {
                 f.arguments.iter().all(|arg| match &arg.arg_type {
@@ -591,7 +602,7 @@ impl SubstraitToCalcite {
         &self,
         child: RelNode,
         measures: &mut [Measure],
-        groupings: &[Vec<Expression>],
+        groupings: &[&[Expression]],
     ) -> Result<(RelNode, Vec<Vec<Expression>>)> {
         let child_type = expression_row_type(&child);
         let mut new_expressions: Vec<RexNode> = Vec::new();
@@ -641,7 +652,7 @@ impl SubstraitToCalcite {
         let mut new_groupings = Vec::with_capacity(groupings.len());
         for g in groupings {
             let mut list = Vec::with_capacity(g.len());
-            for e in g {
+            for e in *g {
                 list.push(project_out(e, &mut new_expressions)?);
             }
             new_groupings.push(list);
