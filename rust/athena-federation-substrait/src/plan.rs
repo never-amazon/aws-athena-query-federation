@@ -136,7 +136,7 @@ pub fn to_sql_node(plan_string: &str, sql_dialect: &SqlDialect) -> Result<SqlNod
     let attempt = || -> Result<SqlNode> {
         let plan = decode(plan_string)?;
         let node = rel_node(&plan, sql_dialect)?;
-        let mut converter = RelToSqlConverter::new(sql_dialect.clone());
+        let mut converter = RelToSqlConverter::new(*sql_dialect);
         let result = converter.visit_root(&node)?;
         Ok(result.to_statement(sql_dialect))
     };

@@ -1,7 +1,6 @@
 use super::rel_data_type::{
     RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED, SCALE_NOT_SPECIFIED,
 };
-use super::rex::{Direction, NullDirection};
 use super::sql_node::SqlDataTypeSpec;
 use super::sql_type_name::SqlTypeName;
 
@@ -19,16 +18,8 @@ pub enum Conformance {
 }
 
 impl Conformance {
-    pub fn is_sort_by_ordinal(self) -> bool {
-        true
-    }
-
     pub fn is_sort_by_alias(self) -> bool {
         self == Conformance::Default
-    }
-
-    pub fn is_having_alias(self) -> bool {
-        false
     }
 
     pub fn allow_explicit_row_value_constructor(self) -> bool {
@@ -36,12 +27,12 @@ impl Conformance {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SqlDialect {
     product: DatabaseProduct,
-    quote_start: String,
-    quote_end: String,
-    escaped_quote: String,
+    quote_start: &'static str,
+    quote_end: &'static str,
+    escaped_quote: &'static str,
     upper_case_identifiers: bool,
     char_set: bool,
 }
@@ -50,9 +41,9 @@ impl SqlDialect {
     pub fn ansi() -> SqlDialect {
         SqlDialect {
             product: DatabaseProduct::Unknown,
-            quote_start: "`".to_string(),
-            quote_end: "`".to_string(),
-            escaped_quote: "``".to_string(),
+            quote_start: "`",
+            quote_end: "`",
+            escaped_quote: "``",
             upper_case_identifiers: false,
             char_set: true,
         }
@@ -61,9 +52,9 @@ impl SqlDialect {
     pub fn postgresql() -> SqlDialect {
         SqlDialect {
             product: DatabaseProduct::Postgresql,
-            quote_start: "\"".to_string(),
-            quote_end: "\"".to_string(),
-            escaped_quote: "\"\"".to_string(),
+            quote_start: "\"",
+            quote_end: "\"",
+            escaped_quote: "\"\"",
             upper_case_identifiers: false,
             char_set: true,
         }
@@ -72,9 +63,9 @@ impl SqlDialect {
     pub fn snowflake() -> SqlDialect {
         SqlDialect {
             product: DatabaseProduct::Snowflake,
-            quote_start: "\"".to_string(),
-            quote_end: "\"".to_string(),
-            escaped_quote: "\"\"".to_string(),
+            quote_start: "\"",
+            quote_end: "\"",
+            escaped_quote: "\"\"",
             upper_case_identifiers: false,
             char_set: true,
         }
@@ -126,18 +117,10 @@ impl SqlDialect {
             return format!("\"{upper}\"");
         }
         let mut out = String::new();
-        out.push_str(&self.quote_start);
-        out.push_str(&val.replace(&self.quote_end, &self.escaped_quote));
-        out.push_str(&self.quote_end);
+        out.push_str(self.quote_start);
+        out.push_str(&val.replace(self.quote_end, self.escaped_quote));
+        out.push_str(self.quote_end);
         out
-    }
-
-    pub fn quote_string_literal(&self, val: &str) -> String {
-        format!("'{}'", val.replace('\'', "''"))
-    }
-
-    pub fn has_implicit_table_alias(&self) -> bool {
-        true
     }
 
     pub fn requires_alias_for_from_items(&self) -> bool {
@@ -152,27 +135,12 @@ impl SqlDialect {
         self.product != DatabaseProduct::Postgresql
     }
 
-    pub fn supports_aggregate_function_filter(&self) -> bool {
-        true
-    }
-
     pub fn supports_approx_count_distinct(&self) -> bool {
         self.product == DatabaseProduct::Snowflake
     }
 
-    pub fn supports_boolean_case_when(&self) -> bool {
-        true
-    }
-
     pub fn uses_limit_for_fetch(&self) -> bool {
         self.product == DatabaseProduct::Snowflake
-    }
-
-    pub fn default_null_direction(&self, direction: Direction) -> NullDirection {
-        match direction {
-            Direction::Ascending => NullDirection::Last,
-            Direction::Descending => NullDirection::First,
-        }
     }
 
     pub fn supports_implicit_type_coercion(

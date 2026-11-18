@@ -333,8 +333,7 @@ fn unparse_literal(w: &mut SqlWriter<'_>, l: &SqlLiteral) {
         SqlLiteralValue::Exact(d) => w.literal(&java_big_decimal_to_plain_string(d)),
         SqlLiteralValue::Approx(d) => w.literal(&super::values::java_big_decimal_to_scientific(d)),
         SqlLiteralValue::Char(s) => {
-            let q = w.dialect().quote_string_literal(s);
-            w.literal(&q);
+            w.literal(&format!("'{}'", s.replace('\'', "''")));
         }
         SqlLiteralValue::Date(d) => w.literal(&format!("DATE '{d}'")),
         SqlLiteralValue::Time(t, p) => {

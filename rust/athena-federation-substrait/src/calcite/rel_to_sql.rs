@@ -55,14 +55,8 @@ pub struct SqlResult {
 
 #[derive(Debug, Clone)]
 enum ContextKind {
-    Alias {
-        aliases: Aliases,
-        qualified: bool,
-    },
-    SelectList {
-        items: Vec<SqlNode>,
-        alias_ref: bool,
-    },
+    Alias { aliases: Aliases, qualified: bool },
+    SelectList { items: Vec<SqlNode> },
 }
 
 #[derive(Debug, Clone)]
@@ -304,13 +298,7 @@ impl SqlResult {
     fn to_select(&self, dialect: &SqlDialect) -> SqlSelect {
         match &self.node {
             SqlNode::Select(s) => (**s).clone(),
-            other => {
-                if dialect.has_implicit_table_alias() {
-                    wrap_select(dialect, other.clone())
-                } else {
-                    wrap_select(dialect, self.to_from())
-                }
-            }
+            other => wrap_select(dialect, other.clone()),
         }
     }
 
@@ -345,10 +333,7 @@ impl SqlResult {
             return true;
         }
         if let RelNode::Project { exprs, input, .. } = rel {
-            if clauses.contains(&Clause::OrderBy)
-                && dialect.conformance().is_sort_by_ordinal()
-                && has_sort_by_ordinal(node)
-            {
+            if clauses.contains(&Clause::OrderBy) && has_sort_by_ordinal(node) {
                 return true;
             }
             if let RelNode::Aggregate {
@@ -439,14 +424,11 @@ fn strip_trivial_aliases(node: SqlNode) -> SqlNode {
 }
 
 fn requires_alias(dialect: &SqlDialect, node: &SqlNode) -> bool {
-    if !dialect.requires_alias_for_from_items() {
-        return false;
-    }
-    match node.kind() {
-        SqlKind::Identifier => !dialect.has_implicit_table_alias(),
-        SqlKind::As | SqlKind::Join => false,
-        _ => true,
-    }
+    dialect.requires_alias_for_from_items()
+        && !matches!(
+            node.kind(),
+            SqlKind::Identifier | SqlKind::As | SqlKind::Join
+        )
 }
 
 fn wrap_select(dialect: &SqlDialect, node: SqlNode) -> SqlSelect {
@@ -473,7 +455,7 @@ impl Context {
     fn alias_context(dialect: &SqlDialect, aliases: Aliases, qualified: bool) -> Context {
         Context {
             kind: ContextKind::Alias { aliases, qualified },
-            dialect: dialect.clone(),
+            dialect: *dialect,
             correl: Vec::new(),
             subqueries: Vec::new(),
         }
@@ -539,19 +521,12 @@ impl Context {
                     "field ordinal {ordinal} out of range"
                 )))
             }
-            ContextKind::SelectList { items, alias_ref } => {
+            ContextKind::SelectList { items } => {
                 let item = items.get(ordinal).ok_or_else(|| {
                     SubstraitError::IndexOutOfBounds(format!("Index {ordinal} out of bounds"))
                 })?;
                 match item {
-                    SqlNode::Call(c) if c.op.kind == SqlKind::As => {
-                        if *alias_ref {
-                            if let Some(alias) = c.operands.get(1) {
-                                return Ok(alias.clone());
-                            }
-                        }
-                        Ok(c.operands[0].clone())
-                    }
+                    SqlNode::Call(c) if c.op.kind == SqlKind::As => Ok(c.operands[0].clone()),
                     other => Ok(other.clone()),
                 }
             }
@@ -560,20 +535,18 @@ impl Context {
 
     fn base_order_field(&self, ordinal: usize) -> Result<SqlNode> {
         let node = self.field(ordinal)?;
-        let by_ordinal = self.dialect.conformance().is_sort_by_ordinal();
         match &node {
             SqlNode::Literal(l)
-                if by_ordinal
-                    && matches!(
-                        l.value,
-                        SqlLiteralValue::Exact(_) | SqlLiteralValue::Approx(_)
-                    ) =>
+                if matches!(
+                    l.value,
+                    SqlLiteralValue::Exact(_) | SqlLiteralValue::Approx(_)
+                ) =>
             {
                 Ok(SqlNode::Literal(SqlLiteral::char_string(l.to_value())))
             }
-            SqlNode::Call(_) | SqlNode::Case(_) if by_ordinal => Ok(SqlNode::Literal(
-                SqlLiteral::exact(&(ordinal + 1).to_string()),
-            )),
+            SqlNode::Call(_) | SqlNode::Case(_) => Ok(SqlNode::Literal(SqlLiteral::exact(
+                &(ordinal + 1).to_string(),
+            ))),
             _ => Ok(node),
         }
     }
@@ -607,7 +580,7 @@ impl Context {
         if collation.direction == Direction::Descending {
             node = SqlNode::call(&operators::DESC, vec![node]);
         }
-        if collation.null_direction != self.dialect.default_null_direction(collation.direction) {
+        if collation.null_direction != collation.direction.default_null_direction() {
             match collation.null_direction {
                 NullDirection::First => node = SqlNode::call(&operators::NULLS_FIRST, vec![node]),
                 NullDirection::Last => node = SqlNode::call(&operators::NULLS_LAST, vec![node]),
@@ -874,7 +847,7 @@ impl Context {
         if rfc.direction == Direction::Descending {
             node = SqlNode::call(&operators::DESC, vec![node]);
         }
-        if rfc.null_direction != self.dialect.default_null_direction(rfc.direction) {
+        if rfc.null_direction != rfc.direction.default_null_direction() {
             match rfc.null_direction {
                 NullDirection::First => node = SqlNode::call(&operators::NULLS_FIRST, vec![node]),
                 NullDirection::Last => node = SqlNode::call(&operators::NULLS_LAST, vec![node]),
@@ -1224,17 +1197,11 @@ impl RelToSqlConverter {
         let alias4 = uniquify_expr(&alias3, &mut self.alias_set);
         let row_type = adjusted_row_type(rel_row_type, &node);
         if let Some(a) = aliases {
-            if !a.is_empty() && (!self.dialect.has_implicit_table_alias() || a.len() > 1) {
+            if a.len() > 1 {
                 return self.make_result(node, clauses, Some(alias4), Some(row_type), a);
             }
         }
-        let alias5 = if alias2.as_deref() != Some(alias4.as_str())
-            || !self.dialect.has_implicit_table_alias()
-        {
-            Some(alias4.clone())
-        } else {
-            None
-        };
+        let alias5 = (alias2.as_deref() != Some(alias4.as_str())).then(|| alias4.clone());
         self.make_result(
             node,
             clauses,
@@ -1260,7 +1227,7 @@ impl RelToSqlConverter {
         clause_list.extend(expected.iter().copied());
         let mut new_aliases: Option<Aliases> = None;
         let context = if is_singleton_star(&select.select_list) {
-            let qualified = !self.dialect.has_implicit_table_alias() || x.aliases.len() > 1;
+            let qualified = x.aliases.len() > 1;
             let contains_needed = |a: &str| x.aliases.iter().any(|(k, _)| k == a);
             match &x.needed_alias {
                 Some(na) if need_new && (x.aliases.len() != 1 || !contains_needed(na)) => {
@@ -1274,14 +1241,11 @@ impl RelToSqlConverter {
                 _ => Context::alias_context(&self.dialect, x.aliases.clone(), qualified),
             }
         } else {
-            let alias_ref =
-                expected.contains(&Clause::Having) && self.dialect.conformance().is_having_alias();
             Context {
                 kind: ContextKind::SelectList {
                     items: select.select_list.clone(),
-                    alias_ref,
                 },
-                dialect: self.dialect.clone(),
+                dialect: self.dialect,
                 correl: Vec::new(),
                 subqueries: Vec::new(),
             }

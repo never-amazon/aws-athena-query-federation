@@ -153,10 +153,6 @@ impl Direction {
             Direction::Descending => NullDirection::First,
         }
     }
-
-    pub fn is_descending(self) -> bool {
-        self == Direction::Descending
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
