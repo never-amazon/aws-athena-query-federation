@@ -87,7 +87,7 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
             SqlNode::NodeList(list) => Ok(self.visit_list(list)?.map(SqlNode::NodeList)),
             SqlNode::Case(case) => self.visit_case(case),
             SqlNode::Window(window) => self.visit_window(window),
-            SqlNode::DynamicParam(_) | SqlNode::DataType(_) => Ok(None),
+            SqlNode::DynamicParam(_) | SqlNode::DataType(_) | SqlNode::Text(_) => Ok(None),
         }
     }
 

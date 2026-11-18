@@ -306,6 +306,16 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
         Vec::new()
     }
 
+    fn get_split_paging_clause(&self, split: &Split) -> String {
+        split_page(split).map_or_else(String::new, |page| {
+            format!(
+                " ORDER BY {}{}",
+                page.primary_key,
+                self.append_limit_offset_with_value(page.limit, Some(page.offset))
+            )
+        })
+    }
+
     fn quote(&self, name: &str) -> String {
         let quote = SnowflakeConstants::DOUBLE_QUOTE_CHAR;
         format!("{quote}{}{quote}", name.replace(quote, "\"\""))

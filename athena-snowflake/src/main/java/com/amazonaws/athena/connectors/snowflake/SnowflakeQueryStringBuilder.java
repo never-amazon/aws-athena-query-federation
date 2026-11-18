@@ -241,6 +241,14 @@ public class SnowflakeQueryStringBuilder
         return orderBy + page.get().primaryKey + appendLimitOffsetWithValue(page.get().limitWithin(constraints.getLimit()), page.get().offset);
     }
 
+    @Override
+    protected String getSplitPagingClause(Split split)
+    {
+        return getSplitPage(split)
+                .map(page -> " ORDER BY " + page.primaryKey + appendLimitOffsetWithValue(page.limit, page.offset))
+                .orElse("");
+    }
+
     private Optional<SplitPage> getSplitPage(Split split)
     {
         String partitionVal = split == null ? null : split.getProperty(BLOCK_PARTITION_COLUMN_NAME);

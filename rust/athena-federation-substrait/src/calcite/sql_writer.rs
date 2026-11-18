@@ -338,6 +338,7 @@ pub fn unparse(w: &mut SqlWriter<'_>, node: &SqlNode, left_prec: i32, right_prec
         SqlNode::Window(win) => unparse_window(w, win),
         SqlNode::Select(select) => unparse_select_node(w, select, left_prec, right_prec),
         SqlNode::DataType(spec) => unparse_data_type(w, spec),
+        SqlNode::Text(text) => w.literal(text),
     }
 }
 

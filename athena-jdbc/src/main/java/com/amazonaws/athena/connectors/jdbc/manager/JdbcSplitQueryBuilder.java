@@ -40,10 +40,16 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlDialect;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.dialect.AnsiSqlDialect;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.BitString;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimestampString;
@@ -67,7 +73,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -76,11 +81,6 @@ import java.util.stream.Collectors;
 public abstract class JdbcSplitQueryBuilder
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcSplitQueryBuilder.class);
-
-    private static final Pattern WHERE_PATTERN = Pattern.compile("\\bWHERE\\b", Pattern.CASE_INSENSITIVE);
-
-    private static final Pattern TRAILING_CLAUSES_PATTERN = Pattern.compile(
-            "\\s+(FETCH\\s|ORDER\\s+BY\\s|LIMIT\\s|OFFSET\\s)", Pattern.CASE_INSENSITIVE);
 
     private static final int MILLIS_SHIFT = 12;
 
@@ -430,6 +430,66 @@ public abstract class JdbcSplitQueryBuilder
         return " LIMIT " + limit + " OFFSET " + offset;
     }
 
+    protected String getSplitPagingClause(Split split)
+    {
+        return emptyString;
+    }
+
+    private String getSplitRestriction(Split split)
+    {
+        List<String> splitClauses = getPartitionWhereClauses(split);
+        String where = splitClauses.isEmpty() ? emptyString : " WHERE " + String.join(" AND ", splitClauses);
+        return where + getSplitPagingClause(split);
+    }
+
+    private static boolean restrictScannedTable(SqlNode node, String splitRestriction, SqlDialect sqlDialect)
+    {
+        if (!(node instanceof SqlSelect)) {
+            return false;
+        }
+        SqlSelect select = (SqlSelect) node;
+        SqlNode from = select.getFrom();
+        if (from instanceof SqlIdentifier) {
+            SqlIdentifier table = (SqlIdentifier) from;
+            SqlIdentifier alias = new SqlIdentifier(Iterables.getLast(table.names), SqlParserPos.ZERO);
+            select.setFrom(SqlStdOperatorTable.AS.createCall(SqlParserPos.ZERO,
+                    splitTable(table, splitRestriction, sqlDialect), alias));
+            return true;
+        }
+        if (from == null || from.getKind() != SqlKind.AS) {
+            return false;
+        }
+        SqlBasicCall as = (SqlBasicCall) from;
+        SqlNode source = as.operand(0);
+        if (source instanceof SqlIdentifier) {
+            as.setOperand(0, splitTable((SqlIdentifier) source, splitRestriction, sqlDialect));
+            return true;
+        }
+        return restrictScannedTable(source, splitRestriction, sqlDialect);
+    }
+
+    private static SqlNode splitTable(SqlIdentifier table, String splitRestriction, SqlDialect sqlDialect)
+    {
+        return new SqlText("(SELECT * FROM " + table.toSqlString(sqlDialect).getSql() + splitRestriction + ")");
+    }
+
+    private static final class SqlText extends SqlIdentifier
+    {
+        private final String text;
+
+        private SqlText(String text)
+        {
+            super(text, SqlParserPos.ZERO);
+            this.text = text;
+        }
+
+        @Override
+        public void unparse(SqlWriter writer, int leftPrec, int rightPrec)
+        {
+            writer.literal(text);
+        }
+    }
+
     protected SqlDialect getSqlDialect()
     {
         return AnsiSqlDialect.DEFAULT;
@@ -474,20 +534,12 @@ public abstract class JdbcSplitQueryBuilder
             LOGGER.debug("CalciteSql parameterized sql with dialect {}: {}", sqlDialect.toString(), parameterizedNode.toSqlString(sqlDialect).getSql());
             LOGGER.debug("CalciteSql parameters: {}", accumulator.toString());
 
-            String sql = parameterizedNode.toSqlString(sqlDialect).getSql();
-            List<String> splitClauses = getPartitionWhereClauses(split);
-            if (!splitClauses.isEmpty()) {
-                String splitWhere = String.join(" AND ", splitClauses);
-                String conjunction = WHERE_PATTERN.matcher(sql).find() ? " AND " : " WHERE ";
-                java.util.regex.Matcher trailingMatcher = TRAILING_CLAUSES_PATTERN.matcher(sql);
-                if (trailingMatcher.find()) {
-                    int insertPos = trailingMatcher.start();
-                    sql = sql.substring(0, insertPos) + conjunction + splitWhere + sql.substring(insertPos);
-                }
-                else {
-                    sql = sql + conjunction + splitWhere;
-                }
+            String splitRestriction = getSplitRestriction(split);
+            if (!splitRestriction.isEmpty() && !restrictScannedTable(parameterizedNode, splitRestriction, sqlDialect)) {
+                throw new UnsupportedOperationException("Cannot apply the split to a query plan that does not read one table: "
+                        + parameterizedNode.toSqlString(sqlDialect).getSql());
             }
+            String sql = parameterizedNode.toSqlString(sqlDialect).getSql();
             PreparedStatement statement = jdbcConnection.prepareStatement(sql);
             ParameterMetaData metaData = statement.getParameterMetaData();
             if (metaData != null && metaData.getParameterCount() != accumulator.size()) {
