@@ -1,3 +1,4 @@
+mod ber;
 mod pbe;
 mod pbes2;
 mod snowflake_arrow_type_converter;

@@ -70,6 +70,14 @@ rc4 = "0.1"
 md2 = "0.11"
 md-5 = "0.11"
 sha1 = "0.11"
+sha3 = "0.11"
+sm3 = "0.5"
+sm4 = "0.5"
+gost94 = "0.11"
+hmac = "0.13"
+pbkdf2 = { version = "0.13", default-features = false }
+zeroize = "1"
+scrypt = { version = "0.11", default-features = false, features = ["std"] }
 parquet = { version = "60", default-features = false, features = ["arrow", "snap"] }
 bytes = "1"
 url = "2.5"

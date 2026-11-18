@@ -621,7 +621,99 @@ fn test_create_private_key_rejects_pbe_iteration_count_over_bouncy_castle_limit(
     }
 }
 
-const PBES2_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 8] = [
+const PBES2_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 31] = [
+    (
+        "pbkdf2 aes256 key length 0",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_key_length_0.p8"),
+    ),
+    (
+        "pbkdf2 aes256 key length 1099511627776",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_key_length_1099511627776.p8"),
+    ),
+    (
+        "pbkdf2 aes256 key length 16",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_key_length_16.p8"),
+    ),
+    (
+        "pbkdf2 aes256 key length 64",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_key_length_64.p8"),
+    ),
+    (
+        "pbkdf2 aes256 key length minus 1",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_key_length_minus_1.p8"),
+    ),
+    (
+        "pbkdf2 ber all indefinite",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_all_indefinite.p8"),
+    ),
+    (
+        "pbkdf2 ber constructed ciphertext",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_constructed_ciphertext.p8"),
+    ),
+    (
+        "pbkdf2 ber long form lengths",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_long_form_lengths.p8"),
+    ),
+    (
+        "pbkdf2 ber outer indefinite",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_outer_indefinite.p8"),
+    ),
+    (
+        "pbkdf2 extra trailing element",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_extra_trailing_element.p8"),
+    ),
+    (
+        "pbkdf2 gost",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_gost.p8"),
+    ),
+    (
+        "pbkdf2 sha1 without null",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha1_without_null.p8"),
+    ),
+    (
+        "pbkdf2 sha224",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha224.p8"),
+    ),
+    (
+        "pbkdf2 sha256 without null",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha256_without_null.p8"),
+    ),
+    (
+        "pbkdf2 sha3 224",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha3_224.p8"),
+    ),
+    (
+        "pbkdf2 sha3 256",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha3_256.p8"),
+    ),
+    (
+        "pbkdf2 sha3 384",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha3_384.p8"),
+    ),
+    (
+        "pbkdf2 sha3 512",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha3_512.p8"),
+    ),
+    (
+        "pbkdf2 sha384",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha384.p8"),
+    ),
+    (
+        "pbkdf2 sha512",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha512.p8"),
+    ),
+    (
+        "pbkdf2 sm3",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sm3.p8"),
+    ),
+    (
+        "pbkdf2 sm4",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sm4.p8"),
+    ),
+    (
+        "scrypt ber outer indefinite",
+        include_str!("fixtures/pbes2/pbes2_scrypt_ber_outer_indefinite.p8"),
+    ),
     (
         "PBKDF2 2048",
         include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_2048.p8"),
@@ -656,7 +748,39 @@ const PBES2_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 8] = [
     ),
 ];
 
-const PBES2_KEYS_REJECTED_BY_BOUNCY_CASTLE: [(&str, &str); 16] = [
+const PBES2_KEYS_REJECTED_BY_BOUNCY_CASTLE: [(&str, &str); 24] = [
+    (
+        "pbkdf2 ber data after end of contents",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_data_after_end_of_contents.p8"),
+    ),
+    (
+        "pbkdf2 ber missing end of contents",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_ber_missing_end_of_contents.p8"),
+    ),
+    (
+        "pbkdf2 md5",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_md5.p8"),
+    ),
+    (
+        "pbkdf2 sha512 256",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha512_256.p8"),
+    ),
+    (
+        "scrypt aes256 n 3",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_3.p8"),
+    ),
+    (
+        "scrypt aes256 n 65536 r 1",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_65536_r_1.p8"),
+    ),
+    (
+        "scrypt aes256 n 6",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_6.p8"),
+    ),
+    (
+        "scrypt aes256 r 1024 p 2048",
+        include_str!("fixtures/pbes2/pbes2_scrypt_aes256_r_1024_p_2048.p8"),
+    ),
     (
         "PBKDF2 10000001",
         include_str!("fixtures/pbes2/pbes2_pbkdf2_aes256_iter_10000001.p8"),
@@ -722,6 +846,56 @@ const PBES2_KEYS_REJECTED_BY_BOUNCY_CASTLE: [(&str, &str); 16] = [
         include_str!("fixtures/pbes2/pbes2_scrypt_aes256_n_1073741824_r_8.p8"),
     ),
 ];
+
+const PBES2_UNICODE_PASSPHRASE: &str = "pässwörd€😀";
+
+const PBES2_UNICODE_KEYS_ACCEPTED_BY_BOUNCY_CASTLE: [(&str, &str); 4] = [
+    (
+        "pbkdf2 prf absent unicode 8bit",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_prf_absent_unicode_8bit.p8"),
+    ),
+    (
+        "pbkdf2 sha1 unicode 8bit",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha1_unicode_8bit.p8"),
+    ),
+    (
+        "pbkdf2 sha256 unicode utf8",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha256_unicode_utf8.p8"),
+    ),
+    (
+        "pbkdf2 sha3 256 unicode utf8",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha3_256_unicode_utf8.p8"),
+    ),
+];
+
+const PBES2_UNICODE_KEYS_REJECTED_BY_BOUNCY_CASTLE: [(&str, &str); 3] = [
+    (
+        "pbkdf2 prf absent unicode utf8",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_prf_absent_unicode_utf8.p8"),
+    ),
+    (
+        "pbkdf2 sha1 unicode utf8",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha1_unicode_utf8.p8"),
+    ),
+    (
+        "pbkdf2 sha256 unicode 8bit",
+        include_str!("fixtures/pbes2/pbes2_pbkdf2_sha256_unicode_8bit.p8"),
+    ),
+];
+
+#[test]
+fn test_create_private_key_encodes_pbes2_unicode_passphrase_like_bouncy_castle() {
+    let expected = pbe_plain_der();
+    for (scheme, pem) in PBES2_UNICODE_KEYS_ACCEPTED_BY_BOUNCY_CASTLE {
+        let key = SnowflakeAuthUtils::create_private_key(pem, Some(PBES2_UNICODE_PASSPHRASE))
+            .unwrap_or_else(|e| panic!("{scheme}: {e}"));
+        assert_eq!(expected, key.der(), "{scheme}");
+    }
+    for (scheme, pem) in PBES2_UNICODE_KEYS_REJECTED_BY_BOUNCY_CASTLE {
+        let result = SnowflakeAuthUtils::create_private_key(pem, Some(PBES2_UNICODE_PASSPHRASE));
+        assert_invalid_private_key(&result.expect_err(scheme));
+    }
+}
 
 #[test]
 fn test_create_private_key_with_pbes2_keys_accepted_by_bouncy_castle() {
