@@ -42,7 +42,7 @@ fn compound(names: &[&str]) -> SqlNode {
 }
 
 fn num(v: &str) -> SqlNode {
-    SqlNode::literal(SqlLiteral::exact(v))
+    SqlNode::literal(SqlLiteral::exact(v.parse().expect("decimal")))
 }
 
 fn chars(v: &str) -> SqlNode {

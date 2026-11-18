@@ -109,21 +109,19 @@ impl SqlLiteral {
         }
     }
 
-    pub fn exact(s: &str) -> SqlLiteral {
-        let value = s.parse::<BigDecimal>().unwrap_or_default();
+    pub fn exact(value: BigDecimal) -> SqlLiteral {
+        let (_, scale) = value.as_bigint_and_exponent();
+        let value = if scale < 0 {
+            value.with_scale(0)
+        } else {
+            value
+        };
         SqlLiteral {
             value: SqlLiteralValue::Exact(value),
         }
     }
 
-    pub fn exact_decimal(d: BigDecimal) -> SqlLiteral {
-        SqlLiteral {
-            value: SqlLiteralValue::Exact(d),
-        }
-    }
-
-    pub fn approx(s: &str) -> SqlLiteral {
-        let value = s.parse::<BigDecimal>().unwrap_or_default();
+    pub fn approx(value: BigDecimal) -> SqlLiteral {
         SqlLiteral {
             value: SqlLiteralValue::Approx(value),
         }

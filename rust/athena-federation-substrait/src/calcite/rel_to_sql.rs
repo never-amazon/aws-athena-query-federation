@@ -588,7 +588,7 @@ impl Context {
                 Ok(SqlNode::Literal(SqlLiteral::char_string(l.to_value())))
             }
             SqlNode::Call(_) | SqlNode::Case(_) => Ok(SqlNode::Literal(SqlLiteral::exact(
-                &(ordinal + 1).to_string(),
+                BigDecimal::from(ordinal_number(ordinal)?),
             ))),
             _ => Ok(node),
         }
@@ -606,7 +606,7 @@ impl Context {
                                     && self.dialect.conformance().is_sort_by_alias()
                                 {
                                     return Ok(SqlNode::Literal(SqlLiteral::exact(
-                                        &(ordinal + 1).to_string(),
+                                        BigDecimal::from(ordinal_number(ordinal)?),
                                     )));
                                 }
                             }
@@ -978,7 +978,10 @@ impl Context {
             )?;
             return Ok(SqlNode::call(
                 &operators::COALESCE,
-                vec![node, SqlNode::Literal(SqlLiteral::exact("0"))],
+                vec![
+                    node,
+                    SqlNode::Literal(SqlLiteral::exact(BigDecimal::from(0))),
+                ],
             ));
         }
         let operands = if op.kind == SqlKind::Count && operands.is_empty() {
@@ -1042,7 +1045,10 @@ fn create_over_call(
         let node = create_over_call(&operators::SUM, operands, window, distinct);
         return SqlNode::call(
             &operators::COALESCE,
-            vec![node, SqlNode::Literal(SqlLiteral::exact("0"))],
+            vec![
+                node,
+                SqlNode::Literal(SqlLiteral::exact(BigDecimal::from(0))),
+            ],
         );
     }
     let agg = SqlNode::Call(SqlCall {
@@ -1051,6 +1057,15 @@ fn create_over_call(
         distinct,
     });
     SqlNode::call(&operators::OVER, vec![agg, window])
+}
+
+fn java_double_decimal(value: f64) -> BigDecimal {
+    java_double_to_string(value).parse().unwrap_or_default()
+}
+
+fn ordinal_number(ordinal: usize) -> Result<u64> {
+    u64::try_from(ordinal + 1)
+        .map_err(|_| SubstraitError::IndexOutOfBounds(format!("Index {ordinal} out of bounds")))
 }
 
 pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
@@ -1067,19 +1082,18 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
         LiteralValue::Char(s) => SqlLiteral::char_string(s.clone()),
         LiteralValue::Exact(d) => {
             if tn.is_approx() {
-                SqlLiteral::approx(&java_double_to_string(
+                SqlLiteral::approx(java_double_decimal(
                     d.to_string().parse::<f64>().unwrap_or(0.0),
                 ))
             } else {
-                SqlLiteral::exact(&java_big_decimal_to_plain_string(d))
+                SqlLiteral::exact(d.clone())
             }
         }
         LiteralValue::Approx(f) => {
             if tn.is_approx() || tn.family() != SqlTypeFamily::Numeric {
-                SqlLiteral::approx(&java_double_to_string(*f))
+                SqlLiteral::approx(java_double_decimal(*f))
             } else {
-                let d: BigDecimal = java_double_to_string(*f).parse().unwrap_or_default();
-                SqlLiteral::exact(&java_big_decimal_to_plain_string(&d))
+                SqlLiteral::exact(java_double_decimal(*f))
             }
         }
         LiteralValue::Boolean(b) => SqlLiteral::boolean(*b),
@@ -1403,8 +1417,8 @@ impl RelToSqlConverter {
         }
         let mut query = SqlNode::call(&operators::AS, as_operands);
         if tuples.is_empty() {
-            let one = SqlNode::Literal(SqlLiteral::exact("1"));
-            let zero = SqlNode::Literal(SqlLiteral::exact("0"));
+            let one = SqlNode::Literal(SqlLiteral::exact(BigDecimal::from(1)));
+            let zero = SqlNode::Literal(SqlLiteral::exact(BigDecimal::from(0)));
             query = SqlNode::Select(Box::new(SqlSelect {
                 select_list: vec![SqlNode::star()],
                 from: Some(query),
@@ -1614,7 +1628,7 @@ impl RelToSqlConverter {
                 add_select(&mut select_list, sql, row_type);
             }
             if select_list.is_empty() {
-                select_list.push(SqlNode::Literal(SqlLiteral::exact("1")));
+                select_list.push(SqlNode::Literal(SqlLiteral::exact(BigDecimal::from(1))));
             }
             if builder.select.group_by.is_none()
                 && builder.select.having.is_none()
