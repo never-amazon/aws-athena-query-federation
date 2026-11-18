@@ -1,0 +1,45 @@
+name: Rust
+
+on:
+  pull_request:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust.yml'
+  push:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: Check the test parity ledger
+        run: python3 parity/check_parity.py --modules athena-federation-sdk,athena-jdbc,athena-postgresql,athena-snowflake
+      - name: Check the class parity table
+        run: |
+          for module in athena-federation-sdk athena-jdbc athena-postgresql athena-snowflake; do
+            python3 parity/check_classes.py --module "$module"
+          done
