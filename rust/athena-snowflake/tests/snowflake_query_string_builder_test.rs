@@ -593,6 +593,23 @@ fn varchar(value: &str) -> TypeAndValue {
 }
 
 #[test]
+fn test_expand_sql_keeps_era_and_sign_in_date_and_timestamp_literals() {
+    let sql = r#"SELECT * FROM "t" WHERE "d" = ? AND "e" = ? AND "ts" = ?"#;
+    let values = [
+        TypeAndValue::new(DataType::Date32, Value::Int(-735_160)).unwrap(),
+        TypeAndValue::new(DataType::Date32, Value::Int(2_932_897)).unwrap(),
+        TypeAndValue::new(DataType::Date64, Value::Long(-63_517_780_800_000)).unwrap(),
+    ];
+    assert_eq!(
+        Some(
+            r#"SELECT * FROM "t" WHERE "d" = DATE '-0043-03-15' AND "e" = DATE '+10000-01-01' AND "ts" = TIMESTAMP '-0043-03-15T12:00:00Z'"#
+                .to_string()
+        ),
+        query_builder().expand_sql(sql, &values).unwrap()
+    );
+}
+
+#[test]
 fn test_expand_sql_escapes_backslash_and_quote() {
     let sql = r#"SELECT * FROM "t" WHERE "a" = ? AND "b" = ? AND "c" = ?"#;
     let values = [varchar("x\\"), varchar("\\' OR 1=1 --"), varchar("it's")];
@@ -627,17 +644,37 @@ fn test_expand_sql_keeps_question_marks_inside_literals_and_identifiers() {
 
 #[tokio::test]
 async fn bind_timestamp_and_date_send_exact_epoch_values_through_the_driver() {
+    let timestamp = chrono::NaiveDate::from_ymd_opt(1582, 9, 29)
+        .unwrap()
+        .and_hms_milli_opt(6, 2, 56, 643)
+        .unwrap();
+    assert_exact_binds(
+        timestamp,
+        chrono::NaiveDate::from_ymd_opt(-43, 3, 15).unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn bind_timestamp_and_date_send_exact_epoch_values_before3500_bc() {
+    let timestamp = chrono::NaiveDate::from_ymd_opt(-5000, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 30, 0)
+        .unwrap();
+    assert_exact_binds(
+        timestamp,
+        chrono::NaiveDate::from_ymd_opt(-5000, 1, 1).unwrap(),
+    )
+    .await;
+}
+
+async fn assert_exact_binds(timestamp: chrono::NaiveDateTime, date: chrono::NaiveDate) {
     let allocator = BlockAllocatorImpl::new();
     let connection = FakeConnection::new();
     let schema = Schema::new(vec![
         Field::new("ts", DataType::Date64, true),
         Field::new("d", DataType::Date32, true),
     ]);
-    let timestamp = chrono::NaiveDate::from_ymd_opt(1582, 9, 29)
-        .unwrap()
-        .and_hms_milli_opt(6, 2, 56, 643)
-        .unwrap();
-    let date = chrono::NaiveDate::from_ymd_opt(-43, 3, 15).unwrap();
     let epoch_day = date
         .signed_duration_since(chrono::NaiveDate::default())
         .num_days();

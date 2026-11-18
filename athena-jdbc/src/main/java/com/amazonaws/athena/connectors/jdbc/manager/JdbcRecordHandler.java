@@ -125,7 +125,6 @@ public abstract class JdbcRecordHandler
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcRecordHandler.class);
     private static final long MILLIS_PER_DAY = 86_400_000L;
-    private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private final DatabaseConnectionConfig databaseConnectionConfig;
     // The base RecordHandler keeps these private; the export path needs them as getS3Client/getAthenaClient defaults.
@@ -434,26 +433,45 @@ public abstract class JdbcRecordHandler
         if (value instanceof Timestamp && (type == Types.MinorType.DATEMILLI || type == Types.MinorType.TIMESTAMPMILLITZ)) {
             return getTimestampMillis(resultSet, column, (Timestamp) value);
         }
-        if (value instanceof java.sql.Date && ((java.sql.Date) value).getTime() < GREGORIAN_CUTOVER_MILLIS) {
+        if (value instanceof Timestamp && type == Types.MinorType.DATEDAY) {
+            return toDateDay(toLocalDate(new java.sql.Date(((Timestamp) value).getTime())));
+        }
+        if (value instanceof java.sql.Date) {
             LocalDate date = toLocalDate((java.sql.Date) value);
             if (type == Types.MinorType.DATEDAY) {
-                return date;
+                return toDateDay(date);
             }
             if (type == Types.MinorType.DATEMILLI) {
-                return date.toEpochDay() * MILLIS_PER_DAY;
+                return toDateMillis(date);
             }
         }
         return value;
     }
 
+    private static int toDateDay(LocalDate date)
+    {
+        return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, date.toEpochDay()));
+    }
+
+    private static long toDateMillis(LocalDate date)
+    {
+        long day = date.toEpochDay();
+        if (day > Long.MAX_VALUE / MILLIS_PER_DAY) {
+            return Long.MAX_VALUE;
+        }
+        if (day < Long.MIN_VALUE / MILLIS_PER_DAY) {
+            return Long.MIN_VALUE;
+        }
+        return day * MILLIS_PER_DAY;
+    }
+
     private static LocalDate toLocalDate(java.sql.Date date)
     {
-        String[] fields = date.toString().split("-");
-        int year = Integer.parseInt(fields[0]);
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(date);
+        int year = calendar.get(Calendar.YEAR);
         return LocalDate.of(calendar.get(Calendar.ERA) == GregorianCalendar.BC ? 1 - year : year,
-                Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
+                calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH));
     }
 
     protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
@@ -569,7 +587,7 @@ public abstract class JdbcRecordHandler
                     checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
-                        dst.value = (int) toLocalDate(resultSet.getDate(fieldName)).toEpochDay();
+                        dst.value = toDateDay(toLocalDate(resultSet.getDate(fieldName)));
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };
@@ -578,7 +596,7 @@ public abstract class JdbcRecordHandler
                 {
                     checkDateTimeText(resultSet, fieldName);
                     if (resultSet.getObject(fieldName) instanceof java.sql.Date) {
-                        dst.value = toLocalDate(resultSet.getDate(fieldName)).toEpochDay() * MILLIS_PER_DAY;
+                        dst.value = toDateMillis(toLocalDate(resultSet.getDate(fieldName)));
                     }
                     else if (resultSet.getTimestamp(fieldName) != null) {
                         dst.value = getTimestampMillis(resultSet, resultSet.findColumn(fieldName), resultSet.getTimestamp(fieldName));

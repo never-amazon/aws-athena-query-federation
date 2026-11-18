@@ -193,6 +193,75 @@ public class SubstraitSqlUtilsTest {
     }
 
     @Test
+    void testSqlConversion_KeepsFractionsOfTimestampsBeforeTheEpoch() throws SqlParseException {
+        String[][] cases = {
+            {"1969-12-31 23:59:59.999", "TIMESTAMP '1969-12-31 23:59:59.999'"},
+            {"1000-01-01 12:00:00.001", "TIMESTAMP '1000-01-01 12:00:00.001'"},
+            {"1960-06-30 08:15:30.5", "TIMESTAMP '1960-06-30 08:15:30.5'"},
+            {"2020-06-01 12:00:00.123", "TIMESTAMP '2020-06-01 12:00:00.123'"},
+        };
+        for (String[] c : cases) {
+            String query = "SELECT * FROM test_table WHERE timestamp_col < TIMESTAMP '" + c[0] + "'";
+            Plan plan = EncodedSubstraitPlanStringGenerator.convertSqlToSubstraitPlan(query);
+            String encodedPlan = Base64.getEncoder().encodeToString(plan.toByteArray());
+            SqlNode sql = SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(encodedPlan, EncodedSubstraitPlanStringGenerator.DIALECT);
+            String sqlStr = sql.toSqlString(EncodedSubstraitPlanStringGenerator.DIALECT).getSql();
+            Assertions.assertTrue(sqlStr.contains(c[1]), sqlStr);
+        }
+    }
+
+    @Test
+    void testSqlConversion_RejectsDateTimeLiteralsOutsideYearsOneTo9999() throws SqlParseException {
+        long placeholderDay = java.time.LocalDate.of(1999, 1, 1).toEpochDay();
+        long placeholderMicros = java.time.LocalDate.of(1999, 1, 1).toEpochDay() * 86_400_000_000L;
+        Object[][] cases = {
+            {"SELECT * FROM test_table WHERE date_col = DATE '1999-01-01'", placeholderDay, java.time.LocalDate.of(-43, 3, 15).toEpochDay(),
+                "Date literal -0043-03-15 is outside the years 0001 to 9999"},
+            {"SELECT * FROM test_table WHERE date_col = DATE '1999-01-01'", placeholderDay, java.time.LocalDate.of(0, 2, 29).toEpochDay(),
+                "Date literal 0000-02-29 is outside the years 0001 to 9999"},
+            {"SELECT * FROM test_table WHERE date_col = DATE '1999-01-01'", placeholderDay, java.time.LocalDate.of(10000, 1, 1).toEpochDay(),
+                "Date literal +10000-01-01 is outside the years 0001 to 9999"},
+            {"SELECT * FROM test_table WHERE timestamp_col = TIMESTAMP '1999-01-01 00:00:00'", placeholderMicros,
+                java.time.LocalDate.of(-43, 3, 15).toEpochDay() * 86_400_000_000L + 43_200_000_000L,
+                "Timestamp literal on -0043-03-15 is outside the years 0001 to 9999"},
+        };
+        for (Object[] c : cases) {
+            Plan plan = EncodedSubstraitPlanStringGenerator.convertSqlToSubstraitPlan((String) c[0]);
+            String encodedPlan = Base64.getEncoder().encodeToString(replaceNumber(plan, (long) c[1], (long) c[2]).toByteArray());
+            RuntimeException error = Assertions.assertThrows(RuntimeException.class,
+                    () -> SubstraitSqlUtils.getSqlNodeFromSubstraitPlan(encodedPlan, EncodedSubstraitPlanStringGenerator.DIALECT));
+            Assertions.assertEquals("Failed to convert from Substrait plan to RelNode", error.getCause().getMessage());
+            Assertions.assertEquals(c[3], error.getCause().getCause().getMessage());
+        }
+    }
+
+    private static com.google.protobuf.Message replaceNumber(com.google.protobuf.Message message, long from, long to)
+    {
+        com.google.protobuf.Message.Builder builder = message.toBuilder();
+        for (java.util.Map.Entry<com.google.protobuf.Descriptors.FieldDescriptor, Object> entry : message.getAllFields().entrySet()) {
+            com.google.protobuf.Descriptors.FieldDescriptor field = entry.getKey();
+            if (field.isRepeated()) {
+                if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                    java.util.List<?> values = (java.util.List<?>) entry.getValue();
+                    for (int i = 0; i < values.size(); i++) {
+                        builder.setRepeatedField(field, i, replaceNumber((com.google.protobuf.Message) values.get(i), from, to));
+                    }
+                }
+            }
+            else if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.MESSAGE) {
+                builder.setField(field, replaceNumber((com.google.protobuf.Message) entry.getValue(), from, to));
+            }
+            else if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.INT && Long.valueOf(from).equals(((Integer) entry.getValue()).longValue())) {
+                builder.setField(field, (int) to);
+            }
+            else if (field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.LONG && Long.valueOf(from).equals(entry.getValue())) {
+                builder.setField(field, to);
+            }
+        }
+        return builder.build();
+    }
+
+    @Test
     void testSqlConversion_Between() throws SqlParseException {
         String query = "SELECT * FROM test_table WHERE int_col BETWEEN 10 AND 100";
         Plan plan = EncodedSubstraitPlanStringGenerator.convertSqlToSubstraitPlan(query);

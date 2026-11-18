@@ -47,7 +47,7 @@ impl SnowflakeConstants {
     pub const STORAGE_INTEGRATION_STORAGE_PROVIDER_KEY: &'static str = "STORAGE_PROVIDER";
     pub const COUNT_RECORDS_QUERY: &'static str = "SELECT row_count\nFROM   information_schema.tables\nWHERE  table_type = 'BASE TABLE'\nAND table_schema= ?\nAND TABLE_NAME = ? ";
     pub const SHOW_PRIMARY_KEYS_QUERY: &'static str = "SHOW PRIMARY KEYS IN ";
-    pub const COPY_INTO_QUERY_TEMPLATE: &'static str = "COPY INTO '%s' FROM (%s) STORAGE_INTEGRATION = %s HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800";
+    pub const COPY_INTO_QUERY_TEMPLATE: &'static str = "COPY INTO %s FROM (%s) STORAGE_INTEGRATION = %s HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800";
     pub const LIST_PAGINATED_TABLES_QUERY: &'static str = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ? ORDER BY TABLE_NAME LIMIT ? OFFSET ?";
     pub const VIEW_CHECK_QUERY: &'static str =
         "SELECT * FROM information_schema.views WHERE table_schema = ? AND table_name = ?";

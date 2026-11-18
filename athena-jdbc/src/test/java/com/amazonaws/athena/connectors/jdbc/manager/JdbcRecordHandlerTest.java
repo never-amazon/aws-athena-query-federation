@@ -115,6 +115,7 @@ import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -438,6 +439,26 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeExtractorReadsDatesFromYearTenThousand() throws Exception {
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        for (LocalDate localDate : new LocalDate[] {LocalDate.of(9999, 12, 31), LocalDate.of(10000, 1, 1), LocalDate.of(123456, 7, 8), LocalDate.of(5874897, 12, 31)}) {
+            Date date = new Date(localDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getObject("testCol")).thenReturn(date);
+            when(resultSet.getDate("testCol")).thenReturn(date);
+            when(resultSet.wasNull()).thenReturn(false);
+
+            NullableDateDayHolder day = new NullableDateDayHolder();
+            ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build(), resultSet, partitionMap)).extract(null, day);
+            NullableDateMilliHolder milli = new NullableDateMilliHolder();
+            ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build(), resultSet, partitionMap)).extract(null, milli);
+
+            Assert.assertEquals(localDate.toString(), localDate.toEpochDay(), day.value);
+            Assert.assertEquals(localDate.toString(), localDate.toEpochDay() * 86_400_000L, milli.value);
+        }
+    }
+
+    @Test
     public void makeFactoryReadsPre1582ArrayDatesByCalendarDate() throws Exception {
         LocalDate[] dates = {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1582, 10, 15), LocalDate.of(2025, 4, 22)};
         for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {
@@ -461,6 +482,66 @@ public class JdbcRecordHandlerTest
                 block.setRowCount(1);
                 Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
             }
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsArrayDatesLikeScalarDates() throws Exception {
+        Date[] dates = {new Date(9223372036825200000L), new Date(-9223372036832400000L), Date.valueOf(LocalDate.of(10000, 1, 1)), Date.valueOf(LocalDate.of(2025, 4, 22))};
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {
+                org.apache.arrow.vector.types.Types.MinorType.DATEDAY, org.apache.arrow.vector.types.Types.MinorType.DATEMILLI}) {
+            List<Object> expected = new ArrayList<>();
+            for (Date date : dates) {
+                ResultSet scalar = Mockito.mock(ResultSet.class);
+                when(scalar.getObject("testCol")).thenReturn(date);
+                when(scalar.getDate("testCol")).thenReturn(date);
+                Field field = FieldBuilder.newBuilder("testCol", elementType.getType()).build();
+                if (elementType == org.apache.arrow.vector.types.Types.MinorType.DATEDAY) {
+                    NullableDateDayHolder holder = new NullableDateDayHolder();
+                    ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(field, scalar, partitionMap)).extract(null, holder);
+                    expected.add(holder.value);
+                }
+                else {
+                    NullableDateMilliHolder holder = new NullableDateMilliHolder();
+                    ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(field, scalar, partitionMap)).extract(null, holder);
+                    expected.add(LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(holder.value), java.time.ZoneOffset.UTC));
+                }
+            }
+            Schema schema = SchemaBuilder.newBuilder().addListField("dates", elementType.getType()).build();
+            ResultSet elements = Mockito.mock(ResultSet.class);
+            when(elements.next()).thenReturn(true, true, true, true, false);
+            when(elements.getObject(2)).thenReturn(dates[0], dates[1], dates[2], dates[3]);
+            java.sql.Array array = Mockito.mock(java.sql.Array.class);
+            when(array.getResultSet()).thenReturn(elements);
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getArray("dates")).thenReturn(array);
+            try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+                this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("dates"), null, null).write(resultSet, 0);
+                block.setRowCount(1);
+                Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
+            }
+        }
+    }
+
+    @Test
+    public void makeFactoryReadsArrayTimestampsUnderDateDayByCalendarDate() throws Exception {
+        Timestamp[] timestamps = {Timestamp.valueOf("1000-01-01 12:00:00"), Timestamp.valueOf("1582-10-04 23:59:59.999"), new Timestamp(9223372036825200000L),
+                new Timestamp(-9223372036832400000L), Timestamp.valueOf("2020-06-01 12:00:00.123")};
+        Schema schema = SchemaBuilder.newBuilder().addListField("ts_arr", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build();
+        ResultSet elements = Mockito.mock(ResultSet.class);
+        when(elements.next()).thenReturn(true, true, true, true, true, true, false);
+        when(elements.getObject(2)).thenReturn(timestamps[0], timestamps[1], null, timestamps[2], timestamps[3], timestamps[4]);
+        java.sql.Array array = Mockito.mock(java.sql.Array.class);
+        when(array.getResultSet()).thenReturn(elements);
+        ResultSet resultSet = Mockito.mock(ResultSet.class);
+        when(resultSet.getArray("ts_arr")).thenReturn(array);
+        List<Object> expected = Arrays.asList((int) LocalDate.of(1000, 1, 1).toEpochDay(), (int) LocalDate.of(1582, 10, 4).toEpochDay(), null,
+                Integer.MAX_VALUE, Integer.MIN_VALUE, (int) LocalDate.of(2020, 6, 1).toEpochDay());
+        try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+            this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("ts_arr"), null, null).write(resultSet, 0);
+            block.setRowCount(1);
+            Assert.assertEquals(expected, block.getFieldVector("ts_arr").getObject(0));
         }
     }
 

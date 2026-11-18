@@ -627,6 +627,18 @@ public class SnowflakeQueryStringBuilderTest
     }
 
     @Test
+    public void testExpandSqlKeepsEraAndSignInDateAndTimestampLiterals()
+    {
+        String sql = "SELECT * FROM \"t\" WHERE \"d\" = ? AND \"e\" = ? AND \"ts\" = ?";
+        List<TypeAndValue> values = Arrays.asList(
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType(), -735_160L),
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType(), 2_932_897L),
+                new TypeAndValue(org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType(), -63_517_780_800_000L));
+        assertEquals("SELECT * FROM \"t\" WHERE \"d\" = DATE '-0043-03-15' AND \"e\" = DATE '+10000-01-01' AND \"ts\" = TIMESTAMP '-0043-03-15T12:00:00Z'",
+                queryBuilder.expandSql(sql, values));
+    }
+
+    @Test
     public void testExpandSqlEscapesBackslashAndQuote()
     {
         String sql = "SELECT * FROM \"t\" WHERE \"a\" = ? AND \"b\" = ? AND \"c\" = ?";
@@ -661,20 +673,12 @@ public class SnowflakeQueryStringBuilderTest
         java.time.LocalDateTime start = java.time.LocalDateTime.of(-43, 3, 15, 12, 0);
         java.time.LocalDateTime end = java.time.LocalDateTime.of(1583, 1, 1, 0, 0);
         int checked = 0;
-        java.time.LocalDateTime gapStart = java.time.LocalDateTime.of(1582, 9, 25, 0, 0);
-        java.time.LocalDateTime gapEnd = java.time.LocalDateTime.of(1582, 10, 5, 0, 0);
         for (java.time.LocalDateTime value = start; value.isBefore(end); value = value.plusDays(5).plusHours(1).plusNanos(1_500_000)) {
-            if (value.isBefore(gapStart) || !value.isBefore(gapEnd)) {
-                assertBinds(statement, bindings, value);
-                checked++;
-            }
+            assertBinds(statement, bindings, value);
+            checked++;
         }
-        for (java.time.LocalDateTime value = gapStart; value.isBefore(gapEnd); value = value.plusHours(7)) {
-            queryBuilder.bindTimestamp(statement, 1, value, null);
-            assertEquals(value.toString(), String.valueOf(java.math.BigDecimal.valueOf(value.minusDays(10).toEpochSecond(java.time.ZoneOffset.UTC))
-                    .scaleByPowerOfTen(9).toPlainString()), bindings.get("1").getValue());
-            queryBuilder.bindDate(statement, 2, value.toLocalDate(), null);
-            assertEquals(value.toString(), String.valueOf(value.toLocalDate().minusDays(10).toEpochDay() * 86_400_000L), bindings.get("2").getValue());
+        for (java.time.LocalDateTime value = java.time.LocalDateTime.of(1582, 9, 25, 0, 0); value.isBefore(java.time.LocalDateTime.of(1582, 10, 5, 0, 0)); value = value.plusHours(7)) {
+            assertBinds(statement, bindings, value);
         }
         for (java.time.LocalDateTime value : new java.time.LocalDateTime[] {java.time.LocalDateTime.of(1000, 1, 1, 12, 0),
                 java.time.LocalDateTime.of(1582, 9, 24, 23, 59, 59, 999_000_000), java.time.LocalDateTime.of(1582, 10, 15, 0, 0),
@@ -687,6 +691,23 @@ public class SnowflakeQueryStringBuilderTest
         statement.setTimestamp(1, new java.sql.Timestamp(shifted.toInstant(java.time.ZoneOffset.UTC).toEpochMilli()));
         assertEquals(java.math.BigDecimal.valueOf(shifted.minusDays(5).toEpochSecond(java.time.ZoneOffset.UTC)).scaleByPowerOfTen(9).toPlainString(),
                 bindings.get("1").getValue());
+    }
+
+    @Test
+    public void bindTimestampAndDateSendExactEpochValuesBefore3500Bc() throws Exception
+    {
+        Map<String, net.snowflake.client.internal.core.ParameterBindingDTO> bindings = new HashMap<>();
+        net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement = driverStatement(bindings);
+        queryBuilder.bindTimestamp(statement, 1, java.time.LocalDateTime.of(-5000, 1, 1, 0, 30), null);
+        assertEquals("-219951934200000000000", bindings.get("1").getValue());
+        queryBuilder.bindDate(statement, 2, java.time.LocalDate.of(-5000, 1, 1), null);
+        assertEquals("-219951936000000", bindings.get("2").getValue());
+        for (java.time.LocalDateTime value = java.time.LocalDateTime.of(-20000, 1, 1, 0, 30); value.getYear() < 1; value = value.plusDays(97).plusHours(5).plusNanos(1_500_000)) {
+            assertBinds(statement, bindings, value);
+        }
+        for (java.time.LocalDateTime value = java.time.LocalDateTime.of(-1000, 12, 1, 0, 30); value.isBefore(java.time.LocalDateTime.of(-999, 1, 10, 0, 0)); value = value.plusHours(5)) {
+            assertBinds(statement, bindings, value);
+        }
     }
 
     private void assertBinds(net.snowflake.client.internal.api.implementation.statement.SnowflakePreparedStatementImpl statement,
@@ -719,6 +740,10 @@ public class SnowflakeQueryStringBuilderTest
                 .getDeclaredField("connection");
         connectionField.setAccessible(true);
         connectionField.set(statement, connection);
+        java.lang.reflect.Field closedField = net.snowflake.client.internal.api.implementation.statement.SnowflakeStatementImpl.class
+                .getDeclaredField("isClosed");
+        closedField.setAccessible(true);
+        closedField.set(statement, false);
         return statement;
     }
 }

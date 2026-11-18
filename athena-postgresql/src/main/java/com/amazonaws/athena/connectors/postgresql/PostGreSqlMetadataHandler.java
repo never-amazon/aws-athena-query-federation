@@ -406,6 +406,7 @@ public class PostGreSqlMetadataHandler
             case "_date":
                 return Types.MinorType.DATEDAY.getType();
             case "_timestamp":
+            case "_timestamptz":
                 return Types.MinorType.DATEMILLI.getType();
             case "_numeric":
                 return new ArrowType.Decimal(precision, scale);

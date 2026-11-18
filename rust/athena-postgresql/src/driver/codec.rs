@@ -7,8 +7,8 @@ use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
-    java_sql_date_local_date, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
-    DATE_POSITIVE_INFINITY,
+    default_zone_epoch_day, java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp,
+    DATE_NEGATIVE_INFINITY, DATE_POSITIVE_INFINITY,
 };
 use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
@@ -32,22 +32,32 @@ fn infinity_millis(text: &str) -> Option<i64> {
     }
 }
 
-fn java_timestamp(text: &str) -> Option<SqlValue> {
+fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
+    let epoch_day = |millis| {
+        if zoned {
+            default_zone_epoch_day(millis)
+        } else {
+            java_sql_date_epoch_day(millis)
+        }
+    };
     if let Some(millis) = infinity_millis(text) {
-        return Some(SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION));
+        return Some(
+            SqlValue::java_date_millis(millis, epoch_day(millis), text)
+                .with_exception_class(PSQL_EXCEPTION),
+        );
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
+    let epoch_day = epoch_day(millis);
     Some(
         match (millis_to_naive(millis, parsed.nanos), parsed.epoch_millis()) {
             (Some(ts), Some(epoch_millis)) => {
-                SqlValue::rendered_with_epoch_millis(SqlValue::Timestamp(ts), text, epoch_millis)
+                SqlValue::java_timestamp(SqlValue::Timestamp(ts), text, epoch_millis, epoch_day)
                     .with_exception_class(PSQL_EXCEPTION)
             }
             (Some(ts), None) => rendered(SqlValue::Timestamp(ts), text.to_string()),
-            (None, _) => {
-                SqlValue::java_date_millis(millis, text).with_exception_class(PSQL_EXCEPTION)
-            }
+            (None, _) => SqlValue::java_date_millis(millis, epoch_day, text)
+                .with_exception_class(PSQL_EXCEPTION),
         },
     )
 }
@@ -59,19 +69,8 @@ fn java_date_millis(text: &str) -> Option<i64> {
 fn java_date(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
     Some(
-        SqlValue::java_sql_date(millis, java_sql_date_local_date(millis)?, text)
+        SqlValue::java_sql_date(millis, java_sql_date_epoch_day(millis), text)
             .with_exception_class(PSQL_EXCEPTION),
-    )
-}
-
-fn java_date_element(text: &str) -> Option<SqlValue> {
-    let millis = java_date_millis(text)?;
-    Some(
-        match java_sql_date_local_date(millis) {
-            Some(date) => SqlValue::java_sql_date(millis, date, text),
-            None => SqlValue::java_date_millis(millis, text),
-        }
-        .with_exception_class(PSQL_EXCEPTION),
     )
 }
 
@@ -186,7 +185,8 @@ impl Decoder {
             },
             Decoder::Date => java_date(&text).unwrap_or_else(|| invalid_date_time(text)),
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or_else(|| invalid_date_time(text))
+                java_timestamp(&text, *self == Decoder::TimestampTz)
+                    .unwrap_or_else(|| invalid_date_time(text))
             }
             Decoder::Bytea => decode_bytea(&text).map_or_else(|| unparsed(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
@@ -212,12 +212,13 @@ impl Decoder {
 
     fn decode_element(&self, text: String) -> SqlValue {
         match self {
-            Decoder::Date => java_date_element(&text).unwrap_or(SqlValue::String(text)),
+            Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
                 SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
             }
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+                java_timestamp(&text, *self == Decoder::TimestampTz)
+                    .unwrap_or(SqlValue::String(text))
             }
             _ => match self.decode_text(Cow::Owned(text)) {
                 SqlValue::Rendered { value, .. } => *value,
@@ -616,16 +617,15 @@ mod tests {
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
-        value
-            .to_date()
-            .unwrap()
-            .unwrap()
-            .signed_duration_since(NaiveDate::default())
-            .num_days()
+        value.to_epoch_day().unwrap().unwrap()
     }
 
     fn millis(value: &SqlValue) -> i64 {
         value.to_timestamp_millis().unwrap().unwrap()
+    }
+
+    fn millis_of(value: &SqlValue) -> i64 {
+        value.to_epoch_millis().unwrap().unwrap()
     }
 
     fn array_value(oid: u32, text: &str) -> athena_federation_sdk::data::Value {
@@ -642,16 +642,61 @@ mod tests {
     }
 
     #[test]
-    fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
+    fn dates_decode_to_the_java_sql_date_pgjdbc_produces() {
         let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
         assert_eq!(day("0001-01-01 BC"), -719_528);
-        assert_eq!(day("infinity"), 2_565_691);
-        assert_eq!(day("-infinity"), -4_026_098);
-        assert_eq!(day("10000-01-01"), -719_528);
+        assert_eq!(day("infinity"), 106_751_991_166);
+        assert_eq!(day("-infinity"), -106_749_799_148);
+        assert_eq!(day("10000-01-01"), 2_932_897);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn timestamps_decode_with_the_java_sql_date_calendar_day() {
+        let day = |decoder: Decoder, text: &str| epoch_day(&decoder.decode(Some(text.as_bytes())));
+        let expected = |y, m, d| {
+            NaiveDate::from_ymd_opt(y, m, d)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days()
+        };
+        assert_eq!(
+            day(Decoder::Timestamp, "1000-01-01 12:00:00"),
+            expected(1000, 1, 1)
+        );
+        assert_eq!(
+            day(Decoder::Timestamp, "0044-03-15 12:00:00 BC"),
+            expected(-43, 3, 15)
+        );
+        assert_eq!(
+            day(Decoder::Timestamp, "1582-10-04 23:59:59.999"),
+            expected(1582, 10, 4)
+        );
+        assert_eq!(
+            day(Decoder::TimestampTz, "2020-06-01 03:00:00+05:30"),
+            expected(2020, 5, 31)
+        );
+        assert_eq!(
+            day(Decoder::TimestampTz, "1582-10-15 03:00:00+05:30"),
+            expected(1582, 10, 4)
+        );
+        assert_eq!(day(Decoder::Timestamp, "infinity"), 106_751_991_166);
+        assert_eq!(day(Decoder::TimestampTz, "-infinity"), -106_749_799_148);
+    }
+
+    #[test]
+    fn bc_timestamptz_reads_the_same_instant_in_every_session_zone() {
+        for text in [
+            "0044-03-15 12:00:00+00 BC",
+            "0044-03-15 17:53:28+05:53:28 BC",
+            "0044-03-15 04:07:02-07:52:58 BC",
+        ] {
+            let value = Decoder::TimestampTz.decode(Some(text.as_bytes()));
+            assert_eq!(millis_of(&value), -63_517_780_800_000, "{text}");
+        }
     }
 
     #[test]

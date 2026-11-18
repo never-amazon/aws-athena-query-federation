@@ -1154,6 +1154,27 @@ async fn test_get_char_columns_with_character_columns() {
 }
 
 #[tokio::test]
+async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_timestamptz() {
+    let f = setup();
+    let h = &f.handler;
+    assert_eq!(
+        athena_jdbc::manager::JdbcArrowTypeConverter::to_arrow_type(
+            Types::TIMESTAMP,
+            0,
+            0,
+            &HashMap::new()
+        )
+        .unwrap()
+        .unwrap(),
+        h.get_array_arrow_type_from_type_name(Some("_timestamptz"), 0, 0)
+    );
+    assert_eq!(
+        DataType::Date64,
+        h.get_array_arrow_type_from_type_name(Some("_timestamptz"), 0, 0)
+    );
+}
+
+#[tokio::test]
 async fn test_get_array_arrow_type_from_type_name() {
     let f = setup();
     let h = &f.handler;

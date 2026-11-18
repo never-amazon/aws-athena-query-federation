@@ -1144,6 +1144,66 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
+    public void undoJulianAdjustmentRestoresTimestampsBefore3500Bc()
+    {
+        long example = java.time.Instant.parse("-5000-01-01T00:30:00Z").toEpochMilli();
+        long exampleAdjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(example)).getTime();
+        assertEquals(java.time.Instant.parse("-5001-12-18T07:27:12Z").toEpochMilli(), exampleAdjusted);
+        assertEquals(example, SnowflakeRecordHandler.undoJulianAdjustment(exampleAdjusted));
+        long step = 97 * 86_400_000L + 5 * 3_600_000L + 123L;
+        long start = java.time.Instant.parse("-20000-01-01T00:30:00Z").toEpochMilli();
+        long end = java.time.Instant.parse("0001-01-01T00:00:00Z").toEpochMilli();
+        int checked = 0;
+        int ambiguous = 0;
+        for (long millis = start; millis < end; millis += step) {
+            long adjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis)).getTime();
+            long restored = SnowflakeRecordHandler.undoJulianAdjustment(adjusted);
+            String instant = java.time.Instant.ofEpochMilli(millis).toString();
+            assertEquals(instant, adjusted, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(restored)).getTime());
+            assertTrue(restored <= millis, instant);
+            checked++;
+            if (restored != millis) {
+                ambiguous++;
+            }
+        }
+        assertTrue(checked > 70_000);
+        assertTrue(ambiguous * 100 < checked, String.valueOf(ambiguous));
+    }
+
+    @Test
+    public void julianAdjustmentMatchesTheDriverInEveryTimeZone()
+    {
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : new String[] {"UTC", "America/Los_Angeles", "Asia/Kolkata", "Pacific/Kiritimati"}) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                long step = 3 * 86_400_000L + 7 * 3_600_000L + 13 * 60_000L + 1_007L;
+                long end = java.time.Instant.parse("1583-01-01T00:00:00Z").toEpochMilli();
+                for (long millis = java.time.Instant.parse("-20000-01-01T00:00:00Z").toEpochMilli(); millis < end; millis += step) {
+                    assertEquals(zone + " " + millis, net.snowflake.client.internal.core.ResultUtil.msDiffJulianToGregorian(new java.util.Date(millis)),
+                            SnowflakeRecordHandler.julianAdjustment(millis));
+                }
+                java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+                for (int year = -20000; year <= 1582; year += 7) {
+                    for (int[] monthDay : new int[][] {{0, 1}, {1, 28}, {1, 29}, {2, 1}}) {
+                        calendar.clear();
+                        calendar.set(java.util.Calendar.ERA, year > 0 ? java.util.GregorianCalendar.AD : java.util.GregorianCalendar.BC);
+                        calendar.set(year > 0 ? year : 1 - year, monthDay[0], monthDay[1]);
+                        for (long delta : new long[] {-1, 0, 1}) {
+                            long millis = calendar.getTimeInMillis() + delta;
+                            assertEquals(zone + " " + millis, net.snowflake.client.internal.core.ResultUtil.msDiffJulianToGregorian(new java.util.Date(millis)),
+                                    SnowflakeRecordHandler.julianAdjustment(millis));
+                        }
+                    }
+                }
+            }
+        }
+        finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
     public void makeExtractorReadsBcDriverDatesOnTheProlepticCalendar() throws Throwable
     {
         class ExtractorHandler extends SnowflakeRecordHandler

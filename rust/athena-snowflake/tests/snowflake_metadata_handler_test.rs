@@ -34,7 +34,7 @@ use snowflake_support::{
 const CATALOG: &str = "testCatalog";
 const PARTITION: &str = "partition";
 const S3_COLUMN: &str = "s3_column_name_list";
-const DESC_TEST_INTEGRATION: &str = "DESC STORAGE INTEGRATION TEST_INTEGRATION";
+const DESC_TEST_INTEGRATION: &str = "DESC STORAGE INTEGRATION \"TEST_INTEGRATION\"";
 
 fn config() -> DatabaseConnectionConfig {
     DatabaseConnectionConfig::new(
@@ -1057,6 +1057,70 @@ async fn test_handle_s3_export_splits_empty_objects() {
 }
 
 #[tokio::test]
+async fn test_handle_s3_export_splits_escapes_export_path_and_integration_name() {
+    let f = fixture_with(
+        FakeS3Lister::default(),
+        options_with(&[
+            (SnowflakeConstants::SNOWFLAKE_ENABLE_S3_EXPORT, "true"),
+            (
+                SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY,
+                "test\"integration",
+            ),
+        ]),
+    );
+    f.connection.on_query(|_statement: &PreparedStatement| {
+        Ok(integration_rows(&[
+            &["STORAGE_ALLOWED_LOCATIONS", "s3://test-bucket/"],
+            &["STORAGE_PROVIDER", "S3"],
+        ]))
+    });
+    let mut table_builder = SchemaBuilder::new_builder();
+    table_builder
+        .add_string_field("col1")
+        .add_string_field("col2");
+    let mut partition_builder = SchemaBuilder::new_builder();
+    partition_builder
+        .add_string_field("col1")
+        .add_field_with_type(S3_COLUMN, DataType::Binary);
+    let mut partitions =
+        BlockAllocatorImpl::new().create_block_from_schema(&partition_builder.build());
+    partitions
+        .set_value(
+            S3_COLUMN,
+            0,
+            schema_to_bytes(&table_builder.build(), IpcFormat::ArrowDefault).unwrap(),
+        )
+        .unwrap();
+    partitions.set_row_count(1);
+    let request = GetSplitsRequest::new(
+        Some(identity()),
+        Some("query'id".to_string()),
+        CATALOG,
+        TableName::new("testSchema", "testTable"),
+        partitions,
+        Vec::new(),
+        constraints(),
+        None,
+    );
+    let response = f
+        .handler
+        .do_get_splits(&f.allocator, &request)
+        .await
+        .unwrap();
+    assert_eq!(1, response.splits().len());
+    let executed: Vec<String> = f
+        .connection
+        .executed()
+        .into_iter()
+        .map(|statement| statement.sql().to_string())
+        .collect();
+    assert!(executed.contains(&"DESC STORAGE INTEGRATION \"TEST\"\"INTEGRATION\"".to_string()));
+    let copy = executed.last().unwrap();
+    assert!(copy.starts_with("COPY INTO 's3://test-bucket/query''id/"));
+    assert!(copy.contains(" STORAGE_INTEGRATION = \"test\"\"integration\" HEADER = TRUE"));
+}
+
+#[tokio::test]
 async fn test_enhance_partition_schema_query_passthrough() {
     let f = fixture();
     let mut builder = SchemaBuilder::new_builder();
@@ -1116,7 +1180,7 @@ async fn test_get_storage_integration_properties_not_found() {
     let f = fixture();
     f.connection.on_query(|statement: &PreparedStatement| {
         assert_eq!(
-            "DESC STORAGE INTEGRATION NONEXISTENT_INTEGRATION",
+            "DESC STORAGE INTEGRATION \"NONEXISTENT_INTEGRATION\"",
             statement.sql()
         );
         Err(SqlException::new(
@@ -1557,4 +1621,48 @@ fn partition_values_follow_java_arithmetic() {
     assert_eq!(50, values.len());
     assert_eq!("partition-primary-\"id\"-limit-201-offset-0", values[0]);
     assert_eq!("partition-primary-\"id\"-limit-201-offset-9849", values[49]);
+}
+
+#[tokio::test]
+async fn get_partitions_escapes_quotes_in_primary_key_and_table_identifiers() {
+    let f = fixture();
+    f.connection.on_query(|statement: &PreparedStatement| {
+        let sql = statement.sql();
+        if sql.starts_with(SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY) {
+            return Ok(strings(&["column_name"], &[&["id\"x"]]));
+        }
+        if sql.contains("GROUP BY") {
+            return Ok(counts_rows(1));
+        }
+        if sql.contains("information_schema.tables") {
+            return Ok(count_rows(1_000_000));
+        }
+        Ok(ResultSetData::empty(&["TABLE_SCHEM", "TABLE_NAME"]))
+    });
+    let request = layout_request(
+        identity(),
+        TableName::new("sch\"ema", "ta\"ble"),
+        day_partition_schema(),
+        constraints(),
+    );
+    let response = f
+        .handler
+        .do_get_table_layout(&f.allocator, &request)
+        .await
+        .unwrap();
+    let executed: Vec<String> = f
+        .connection
+        .executed()
+        .into_iter()
+        .map(|statement| statement.sql().to_string())
+        .collect();
+    assert!(executed.contains(&"SHOW PRIMARY KEYS IN \"sch\"\"ema\".\"ta\"\"ble\"".to_string()));
+    assert!(executed.contains(
+        &"SELECT \"id\"\"x\", count(*) as COUNTS FROM \"sch\"\"ema\".\"ta\"\"ble\" GROUP BY \"id\"\"x\" ORDER BY COUNTS DESC LIMIT 1"
+            .to_string()
+    ));
+    assert_eq!(
+        Value::String("partition-primary-\"id\"\"x\"-limit-20000-offset-0".to_string()),
+        partition_values(response.partitions(), PARTITION)[0]
+    );
 }

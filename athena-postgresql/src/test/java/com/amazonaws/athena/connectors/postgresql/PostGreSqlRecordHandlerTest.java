@@ -1403,6 +1403,29 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Assert.assertEquals(-30_609_748_800_000L, this.postGreSqlRecordHandler.getTimestampMillis(text, 1, new java.sql.Timestamp(-30_609_748_800_000L)));
     }
 
+    @Test
+    public void getTimestampMillisReadsBcTimestamptzAsUtcInEveryDefaultZone() throws SQLException
+    {
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : new String[] {"UTC", "Asia/Kolkata", "America/Los_Angeles"}) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                for (String typeName : new String[] {"timestamp", "timestamptz"}) {
+                    java.time.OffsetDateTime timestamp = java.time.OffsetDateTime.parse("-0043-03-15T12:00:00Z");
+                    java.sql.ResultSet resultSet = dateTimeResultSet(java.sql.Types.TIMESTAMP, "0044-03-15 12:00:00 BC");
+                    Mockito.when(resultSet.getMetaData().getColumnTypeName(1)).thenReturn(typeName);
+                    Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenThrow(new java.time.DateTimeException(typeName));
+                    int pgjdbcType = typeName.equals("timestamp") ? java.sql.Types.TIMESTAMP : java.sql.Types.TIMESTAMP_WITH_TIMEZONE;
+                    Assert.assertEquals(zone + " " + typeName, -63_517_780_800_000L,
+                            this.postGreSqlRecordHandler.getTimestampMillis(resultSet, 1, pgjdbcTimestamp(pgjdbcType, timestamp)));
+                }
+            }
+        }
+        finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
     private static java.sql.Timestamp pgjdbcTimestamp(int columnType, java.time.OffsetDateTime value)
     {
         java.util.GregorianCalendar calendar = new java.util.GregorianCalendar(columnType == java.sql.Types.TIMESTAMP

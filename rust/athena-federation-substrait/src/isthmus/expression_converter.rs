@@ -178,9 +178,39 @@ fn char_length(value: &str) -> i32 {
 }
 
 fn millis_to_seconds_split(value: i64, unit_per_second: i64, nanos_per_unit: i64) -> (i64, u32) {
-    let seconds = value / unit_per_second;
-    let frac = (value - seconds * unit_per_second) * nanos_per_unit;
+    let seconds = value.div_euclid(unit_per_second);
+    let frac = value.rem_euclid(unit_per_second) * nanos_per_unit;
     (seconds, long_to_int(frac).cast_unsigned())
+}
+
+fn civil_from_days(epoch_day: i64) -> (i64, i64, i64) {
+    let z = epoch_day + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (year, month, day)
+}
+
+fn check_year(kind: &str, epoch_day: i64) -> Result<()> {
+    let (year, month, day) = civil_from_days(epoch_day);
+    if (1..=9999).contains(&year) {
+        return Ok(());
+    }
+    let year_text = if year > 9999 {
+        format!("+{year}")
+    } else if year < 0 {
+        format!("-{:04}", -year)
+    } else {
+        format!("{year:04}")
+    };
+    Err(SubstraitError::illegal_argument(format!(
+        "{kind}{year_text}-{month:02}-{day:02} is outside the years 0001 to 9999"
+    )))
 }
 
 fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
@@ -195,6 +225,7 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
             )))
         }
     };
+    check_year("Timestamp literal on ", seconds.div_euclid(86_400))?;
     Ok(TimestampString::from_millis_since_epoch(seconds * 1000).with_nanos(nanos))
 }
 
@@ -706,10 +737,13 @@ impl ExpressionConverter<'_> {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Binary, i32::try_from(v.len()).unwrap_or(i32::MAX));
                 Self::lit(LiteralValue::Binary(BitString::create_from_bytes(v)), ty)
             }
-            LiteralType::Date(d) => Self::lit(
-                LiteralValue::Date(DateString::from_days_since_epoch(*d)),
-                self.not_null(SqlTypeName::Date),
-            ),
+            LiteralType::Date(d) => {
+                check_year("Date literal ", i64::from(*d))?;
+                Self::lit(
+                    LiteralValue::Date(DateString::from_days_since_epoch(*d)),
+                    self.not_null(SqlTypeName::Date),
+                )
+            }
             LiteralType::Time(micros) => time_literal(s, *micros),
             LiteralType::Timestamp(micros) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Timestamp, 6);

@@ -618,6 +618,36 @@ mod tests {
     }
 
     #[test]
+    fn undo_julian_adjustment_restores_timestamps_before3500_bc() {
+        let example = snowflake_timestamp("-219951934200.000000000");
+        let value = decode_cell(
+            &column(SnowflakeColumnType::TimestampNtz { scale: 9 }),
+            RawCell::TimestampNtz(example),
+        )
+        .unwrap();
+        assert_eq!(Some(-219_951_934_200_000), value.to_epoch_millis().unwrap());
+        assert_eq!(-219_953_118_768_000, millis(&value));
+        let end = snowflake_timestamp("-62135596800.000000000");
+        let step = chrono::TimeDelta::days(97)
+            + chrono::TimeDelta::hours(5)
+            + chrono::TimeDelta::milliseconds(123);
+        let mut timestamp = snowflake_timestamp("-693306257400.000000000");
+        while timestamp < end {
+            let value = decode_cell(
+                &column(SnowflakeColumnType::TimestampNtz { scale: 9 }),
+                RawCell::TimestampNtz(timestamp),
+            )
+            .unwrap();
+            assert_eq!(
+                Some(timestamp.and_utc().timestamp_millis()),
+                value.to_epoch_millis().unwrap(),
+                "{timestamp}"
+            );
+            timestamp += step;
+        }
+    }
+
+    #[test]
     fn timestamp_tz_cells_match_the_jdbc_get_timestamp_millis() {
         let cases = [
             ("-30610224000.000000000", 0, -30_609_792_000_000),

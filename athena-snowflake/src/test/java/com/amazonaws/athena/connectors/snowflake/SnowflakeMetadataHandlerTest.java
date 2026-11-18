@@ -919,6 +919,84 @@ public class SnowflakeMetadataHandlerTest
     }
 
     @Test
+    public void testHandleS3ExportSplitsEscapesExportPathAndIntegrationName() throws Exception {
+        try (MockedStatic<SnowflakeConstants> snowflakeConstantsMockedStatic = mockStatic(SnowflakeConstants.class)) {
+            snowflakeConstantsMockedStatic.when(() -> SnowflakeConstants.isS3ExportEnabled(any())).thenReturn(true);
+
+            Schema tableSchema = SchemaBuilder.newBuilder()
+                .addStringField("col1")
+                .addStringField("col2")
+                .build();
+                
+            Schema partitionSchema = SchemaBuilder.newBuilder()
+                .addStringField("col1")
+                .addField(SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME, org.apache.arrow.vector.types.Types.MinorType.VARBINARY.getType())
+                .build();
+
+            Block partitions = allocator.createBlock(partitionSchema);
+            partitions.getFieldVector("col1").allocateNew();
+            partitions.getFieldVector(SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME).allocateNew();
+            byte[] serializedSchema = tableSchema.serializeAsMessage();
+            BlockUtils.setValue(partitions.getFieldVector(SnowflakeConstants.S3_ENHANCED_PARTITION_COLUMN_NAME), 0, serializedSchema);
+            partitions.setRowCount(1);
+            
+            Map<String, String> configOptions = new HashMap<>();
+            configOptions.put("snowflake_storage_integration_name", "test\"integration");
+            
+            software.amazon.awssdk.services.s3.S3Utilities mockS3Utilities = mock(software.amazon.awssdk.services.s3.S3Utilities.class);
+            software.amazon.awssdk.services.s3.S3Uri mockS3Uri = mock(software.amazon.awssdk.services.s3.S3Uri.class);
+            when(mockS3.utilities()).thenReturn(mockS3Utilities);
+            when(mockS3Utilities.parseUri(any())).thenReturn(mockS3Uri);
+            when(mockS3Uri.bucket()).thenReturn(java.util.Optional.of("test-bucket"));
+            when(mockS3Uri.key()).thenReturn(java.util.Optional.of("queryId/uuid/"));
+            
+            SnowflakeMetadataHandler handlerWithConfig = new SnowflakeMetadataHandler(
+                databaseConnectionConfig, secretsManager, athena, mockS3, jdbcConnectionFactory, configOptions);
+            SnowflakeMetadataHandler spyHandler = spy(handlerWithConfig);
+            
+            PreparedStatement mockPreparedStatement = mock(PreparedStatement.class);
+            when(connection.prepareStatement(anyString())).thenReturn(mockPreparedStatement);
+            when(mockPreparedStatement.execute()).thenReturn(true);
+            
+            String[] integrationSchema = {"property", "property_value"};
+            Object[][] integrationValues = {
+                {"STORAGE_ALLOWED_LOCATIONS", "s3://test-bucket/"},
+                {"STORAGE_PROVIDER", "S3"}
+            };
+            AtomicInteger integrationRowNumber = new AtomicInteger(-1);
+            ResultSet integrationResultSet = mockResultSet(integrationSchema, integrationValues, integrationRowNumber);
+            
+            AtomicInteger integrationRowNumber2 = new AtomicInteger(-1);
+            ResultSet integrationResultSet2 = mockResultSet(integrationSchema, integrationValues, integrationRowNumber2);
+            
+            Statement stmt = mock(Statement.class);
+            when(connection.createStatement()).thenReturn(stmt);
+            when(stmt.executeQuery(contains("DESC STORAGE INTEGRATION")))
+                .thenReturn(integrationResultSet)
+                .thenReturn(integrationResultSet2);
+            
+            ListObjectsResponse emptyResponse = ListObjectsResponse.builder()
+                .contents(Collections.emptyList())
+                .build();
+            when(mockS3.listObjects(any(ListObjectsRequest.class))).thenReturn(emptyResponse);
+            
+            GetSplitsRequest request = new GetSplitsRequest(
+                federatedIdentity, "query'id", "testCatalog",
+                new TableName("testSchema", "testTable"),
+                partitions, Collections.emptyList(),
+                new Constraints(Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(), DEFAULT_NO_LIMIT, Collections.emptyMap(), null),
+                null);
+            
+            GetSplitsResponse response = spyHandler.doGetSplits(allocator, request);
+            assertNotNull(response);
+            assertEquals(1, response.getSplits().size());
+            verify(stmt, atLeastOnce()).executeQuery("DESC STORAGE INTEGRATION \"TEST\"\"INTEGRATION\"");
+            verify(connection).prepareStatement(startsWith("COPY INTO 's3://test-bucket/query''id/"));
+            verify(connection).prepareStatement(contains(" STORAGE_INTEGRATION = \"test\"\"integration\" HEADER = TRUE"));
+        }
+    }
+
+    @Test
     public void testEnhancePartitionSchemaQueryPassthrough()
     {
         SchemaBuilder partitionSchemaBuilder = SchemaBuilder.newBuilder();
@@ -970,7 +1048,7 @@ public class SnowflakeMetadataHandlerTest
         
         Statement stmt = mock(Statement.class);
         when(connection.createStatement()).thenReturn(stmt);
-        when(stmt.executeQuery("DESC STORAGE INTEGRATION TEST_INTEGRATION")).thenReturn(resultSet);
+        when(stmt.executeQuery("DESC STORAGE INTEGRATION \"TEST_INTEGRATION\"")).thenReturn(resultSet);
         
         Optional<Map<String, String>> propertiesOpt = snowflakeMetadataHandler.getStorageIntegrationProperties(connection, integrationName);
         
@@ -988,7 +1066,7 @@ public class SnowflakeMetadataHandlerTest
         
         Statement stmt = mock(Statement.class);
         when(connection.createStatement()).thenReturn(stmt);
-        when(stmt.executeQuery("DESC STORAGE INTEGRATION NONEXISTENT_INTEGRATION"))
+        when(stmt.executeQuery("DESC STORAGE INTEGRATION \"NONEXISTENT_INTEGRATION\""))
             .thenThrow(new SQLException("Integration does not exist or not authorized"));
         
         Optional<Map<String, String>> propertiesOpt = snowflakeMetadataHandler.getStorageIntegrationProperties(connection, integrationName);
@@ -1002,7 +1080,7 @@ public class SnowflakeMetadataHandlerTest
         
         Statement stmt = mock(Statement.class);
         when(connection.createStatement()).thenReturn(stmt);
-        when(stmt.executeQuery("DESC STORAGE INTEGRATION TEST_INTEGRATION"))
+        when(stmt.executeQuery("DESC STORAGE INTEGRATION \"TEST_INTEGRATION\""))
             .thenThrow(new SQLException("Database connection error"));
         
         snowflakeMetadataHandler.getStorageIntegrationProperties(connection, integrationName);
@@ -1414,6 +1492,63 @@ public class SnowflakeMetadataHandlerTest
 
         assertNotNull(res.getPartitions());
         assertEquals(1, res.getPartitions().getRowCount());
+    }
+
+    @Test
+    public void getPartitions_escapesQuotesInPrimaryKeyAndTableIdentifiers() throws Exception
+    {
+        Set<String> partitionCols = new HashSet<>();
+        partitionCols.add(BLOCK_PARTITION_COLUMN_NAME);
+        ResultSet countResultSet = mockResultSet(
+                new String[]{"row_count"}, new int[]{Types.BIGINT},
+                new Object[][]{{1_000_000L}}, new AtomicInteger(-1));
+        ResultSet viewResultSet = mockResultSet(
+                new String[]{"TABLE_SCHEM", "TABLE_NAME"}, new int[]{Types.VARCHAR, Types.VARCHAR},
+                new Object[][]{}, new AtomicInteger(-1));
+        ResultSet primaryKeyResultSet = mockResultSet(
+                new String[]{"column_name"}, new int[]{Types.VARCHAR},
+                new Object[][]{{"id\"x"}}, new AtomicInteger(-1));
+        ResultSet uniquenessResultSet = mockResultSet(
+                new String[]{"COUNTS"}, new int[]{Types.INTEGER},
+                new Object[][]{{1}}, new AtomicInteger(-1));
+        PreparedStatement countStatement = mock(PreparedStatement.class);
+        PreparedStatement viewStatement = mock(PreparedStatement.class);
+        PreparedStatement primaryKeyStatement = mock(PreparedStatement.class);
+        PreparedStatement uniquenessStatement = mock(PreparedStatement.class);
+        when(countResultSet.getLong(1)).thenReturn(1_000_000L);
+        when(countStatement.executeQuery()).thenReturn(countResultSet);
+        when(viewStatement.executeQuery()).thenReturn(viewResultSet);
+        when(primaryKeyStatement.executeQuery()).thenReturn(primaryKeyResultSet);
+        when(uniquenessStatement.executeQuery()).thenReturn(uniquenessResultSet);
+        List<String> prepared = new ArrayList<>();
+        when(connection.prepareStatement(any())).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            prepared.add(sql);
+            if (sql.startsWith(SnowflakeConstants.SHOW_PRIMARY_KEYS_QUERY)) {
+                return primaryKeyStatement;
+            }
+            if (sql.contains("GROUP BY")) {
+                return uniquenessStatement;
+            }
+            if (sql.contains("information_schema.tables")) {
+                return countStatement;
+            }
+            return viewStatement;
+        });
+        ResultSet columnResultSet = mockResultSet(
+                new String[]{"TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "TYPE_NAME"},
+                new int[]{Types.VARCHAR, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR},
+                new Object[][]{{"sch\"ema", "ta\"ble", "day", "int"}}, new AtomicInteger(-1));
+        when(connection.getMetaData().getColumns(any(), eq("sch\"ema"), eq("ta\"ble"), any())).thenReturn(columnResultSet);
+        GetTableLayoutRequest req = new GetTableLayoutRequest(this.federatedIdentity, "queryId", "default",
+                new TableName("sch\"ema", "ta\"ble"), partitionConstraints(), partitionTableSchema(), partitionCols);
+
+        GetTableLayoutResponse res = snowflakeMetadataHandlerMocked.doGetTableLayout(allocator, req);
+
+        assertTrue(prepared.contains("SHOW PRIMARY KEYS IN \"sch\"\"ema\".\"ta\"\"ble\""));
+        assertTrue(prepared.contains("SELECT \"id\"\"x\", count(*) as COUNTS FROM \"sch\"\"ema\".\"ta\"\"ble\" GROUP BY \"id\"\"x\" ORDER BY COUNTS DESC LIMIT 1"));
+        assertEquals("partition-primary-\"id\"\"x\"-limit-20000-offset-0",
+                res.getPartitions().getFieldReader(BLOCK_PARTITION_COLUMN_NAME).readText().toString());
     }
 
     /**
