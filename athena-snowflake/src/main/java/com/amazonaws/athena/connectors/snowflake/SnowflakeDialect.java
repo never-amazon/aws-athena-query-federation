@@ -48,4 +48,10 @@ public class SnowflakeDialect extends org.apache.calcite.sql.dialect.SnowflakeSq
         }
         return super.quoteIdentifier(buf, identifier);
     }
+
+    @Override
+    public boolean supportsCharSet()
+    {
+        return false;
+    }
 }

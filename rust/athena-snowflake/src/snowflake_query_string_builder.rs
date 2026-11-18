@@ -357,7 +357,7 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
     }
 
     fn get_sql_dialect(&self) -> SqlDialect {
-        SnowflakeDialect::default_dialect()
+        SnowflakeDialect::new(false).into_sql_dialect()
     }
 
     fn get_sql_dialect_with_catalog_casing_filter(

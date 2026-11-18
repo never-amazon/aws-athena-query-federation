@@ -101,3 +101,14 @@ async fn test_build_split_sql_with_query_plan_no_where_clause() {
     );
     assert!(statement.parameters().is_empty());
 }
+
+const PLAN_CHARACTER_CASTS: &str = "Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRq9ARK6AQqxATquAQoGEgQKAgIDEnIScAoCCgASPQo7CgIKABIaCgJpZAoEbmFtZRIOCgQqAhACCgRiAhABGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaKxopCAEaBAoCEAIiFhoUWhIKBGICEAISCBIGCgISACIAGAIiBxoFCgNiATUaF1oVCgeyAQQIChgCEggSBgoCEgAiABgCGhdaFQoHqgEECAMYAhIIEgYKAhIAIgAYAhIBQxIBRDILEEoqB2lzdGhtdXM=";
+
+#[tokio::test]
+async fn test_build_split_sql_character_casts_have_no_character_set() {
+    let (sql, _) = build_sql(PLAN_CHARACTER_CASTS).await;
+    assert_eq!(
+        "SELECT CAST(\"id\" AS VARCHAR(10)) AS \"id0\", CAST(\"id\" AS CHAR(3)) AS \"id1\"\nFROM \"test_schema\".\"test_table\"\nWHERE CAST(\"id\" AS VARCHAR) = '5'",
+        sql
+    );
+}

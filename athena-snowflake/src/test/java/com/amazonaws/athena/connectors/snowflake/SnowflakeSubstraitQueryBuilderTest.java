@@ -57,6 +57,10 @@ class SnowflakeSubstraitQueryBuilderTest
     private static final String PLAN_LIMIT_10 =
             "GnkSdwprGmkKAgoAEl86XQoGEgQKAgIDEj0KOwoCCgASGgoCaWQKBG5hbWUSDgoEKgIQAgoEYgIQAhgCOhkKC3Rlc3Rfc2NoZW1hCgp0ZXN0X3RhYmxlGggSBgoCEgAiABoKEggKBBICCAEiABgAIAoSAklEEgROQU1FMgsQSioHaXN0aG11cw==";
 
+    // SELECT CAST(id AS VARCHAR(10)) AS c, CAST(id AS CHAR(3)) AS d FROM test_schema.test_table WHERE CAST(id AS VARCHAR) = '5'
+    private static final String PLAN_CHARACTER_CASTS =
+            "Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLnlhbWwSFRoTCAEQARoNZXF1YWw6YW55X2FueRq9ARK6AQqxATquAQoGEgQKAgIDEnIScAoCCgASPQo7CgIKABIaCgJpZAoEbmFtZRIOCgQqAhACCgRiAhABGAI6GQoLdGVzdF9zY2hlbWEKCnRlc3RfdGFibGUaKxopCAEaBAoCEAIiFhoUWhIKBGICEAISCBIGCgISACIAGAIiBxoFCgNiATUaF1oVCgeyAQQIChgCEggSBgoCEgAiABgCGhdaFQoHqgEECAMYAhIIEgYKAhIAIgAYAhIBQxIBRDILEEoqB2lzdGhtdXM=";
+
     private final SnowflakeQueryStringBuilder queryBuilder = new SnowflakeQueryStringBuilder("\"", null);
     private final Schema schema = SchemaBuilder.newBuilder().addIntField("id").addStringField("name").build();
     private Connection connection;
@@ -89,6 +93,13 @@ class SnowflakeSubstraitQueryBuilderTest
     {
         // AnsiSqlDialect renders FETCH NEXT 10 ROWS ONLY, so LIMIT 10 shows that the Snowflake dialect was used.
         assertEquals("SELECT *\nFROM \"test_schema\".\"test_table\"\nLIMIT 10", buildSql(PLAN_LIMIT_10));
+    }
+
+    @Test
+    void testBuildSplitSql_CharacterCastsHaveNoCharacterSet() throws SQLException
+    {
+        assertEquals("SELECT CAST(\"id\" AS VARCHAR(10)) AS \"id0\", CAST(\"id\" AS CHAR(3)) AS \"id1\"\n"
+                + "FROM \"test_schema\".\"test_table\"\nWHERE CAST(\"id\" AS VARCHAR) = '5'", buildSql(PLAN_CHARACTER_CASTS));
     }
 
     private String buildSql(String substraitPlan) throws SQLException

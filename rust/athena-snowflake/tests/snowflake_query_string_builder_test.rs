@@ -18,7 +18,7 @@ use athena_federation_sdk::domain::predicate::{
 };
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
-use athena_federation_substrait::{DatabaseProduct, SqlDialect};
+use athena_federation_substrait::DatabaseProduct;
 use athena_jdbc::manager::{JdbcSplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 use athena_snowflake::{
@@ -454,8 +454,8 @@ fn test_get_base_export_sql_string_with_order_by_and_limit() {
 fn test_get_sql_dialect() {
     let dialect = query_builder().get_sql_dialect();
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
-    assert_eq!(dialect, SqlDialect::snowflake());
-    assert_eq!(dialect, SnowflakeDialect::default_dialect());
+    assert_eq!(dialect, SnowflakeDialect::new(false).into_sql_dialect());
+    assert!(!dialect.supports_char_set());
 }
 
 #[test]

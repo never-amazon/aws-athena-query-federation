@@ -30,7 +30,6 @@ import org.apache.arrow.vector.types.Types;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.sql.SqlDialect;
-import org.apache.calcite.sql.dialect.SnowflakeSqlDialect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -317,7 +316,7 @@ public class SnowflakeQueryStringBuilder
     @Override
     protected SqlDialect getSqlDialect()
     {
-       return SnowflakeSqlDialect.DEFAULT;
+        return new SnowflakeDialect(false);
     }
     
     @Override
