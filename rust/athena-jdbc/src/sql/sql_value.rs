@@ -19,7 +19,6 @@ pub enum RenderedKind {
     JavaDateMillis { millis: i64, epoch_day: i64 },
     JavaSqlDate { millis: i64, epoch_day: i64 },
     JavaTimestamp { epoch_millis: i64, epoch_day: i64 },
-    EpochMillis(i64),
     InvalidElement(&'static str),
     InvalidDateTime,
 }
@@ -140,19 +139,6 @@ impl SqlValue {
         }
     }
 
-    pub fn rendered_with_epoch_millis(
-        value: SqlValue,
-        text: impl Into<String>,
-        epoch_millis: i64,
-    ) -> SqlValue {
-        SqlValue::Rendered {
-            value: Box::new(value),
-            text: text.into(),
-            exception_class: SQL_EXCEPTION_CLASS,
-            kind: RenderedKind::EpochMillis(epoch_millis),
-        }
-    }
-
     pub fn java_timestamp(
         value: SqlValue,
         text: impl Into<String>,
@@ -252,8 +238,7 @@ impl SqlValue {
     pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlException> {
         if let SqlValue::Rendered {
             kind:
-                RenderedKind::EpochMillis(millis)
-                | RenderedKind::JavaTimestamp {
+                RenderedKind::JavaTimestamp {
                     epoch_millis: millis,
                     ..
                 },
