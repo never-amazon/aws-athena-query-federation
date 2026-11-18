@@ -42,7 +42,7 @@ com.amazonaws.athena.connector.lambda.data.TimeZoneKey	athena-federation-sdk/src
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjector	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjectorImpl	athena-federation-sdk/src/data/projectors/arrow_value_projector_impl.rs::create_value_projection	merged	the abstract base class becomes the shared create_value_projection function used by each projector
 com.amazonaws.athena.connector.lambda.data.projectors.ListArrowValueProjector	athena-federation-sdk/src/data/projectors/list_arrow_value_projector.rs::ListArrowValueProjector	ported	
-com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-federation-sdk/src/data/projectors/projector_utils.rs::ProjectorUtils	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	merged	ArrowValueProjector::new picks the List, Struct or Simple variant, which was the only ProjectorUtils method
 com.amazonaws.athena.connector.lambda.data.projectors.SimpleArrowValueProjector	athena-federation-sdk/src/data/projectors/simple_arrow_value_projector.rs::SimpleArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.StructArrowValueProjector	athena-federation-sdk/src/data/projectors/struct_arrow_value_projector.rs::StructArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter	athena-federation-sdk/src/data/writers/generated_row_writer.rs::GeneratedRowWriter	ported	

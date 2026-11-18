@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use super::federation_capabilities::CAPABILITIES;
 use super::metadata_handler::java_class_of_request;
-use crate::data::projectors::{ArrowValueProjector, ProjectorUtils};
+use crate::data::projectors::ArrowValueProjector;
 use crate::data::writers::extractors::Extractor;
 use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use crate::data::writers::GeneratedRowWriter;
@@ -238,14 +238,14 @@ pub trait UserDefinedFunctionHandler: Send + Sync {
         output_schema: &Schema,
     ) -> Result<Block> {
         let row_count = input_records.row_count();
-        let mut value_projectors: Vec<Box<dyn ArrowValueProjector + '_>> = Vec::new();
+        let mut value_projectors: Vec<ArrowValueProjector<'_>> = Vec::new();
         for field in input_records.schema().fields() {
             let field_reader = input_records
                 .get_field_reader(field.name())
                 .ok_or_else(|| {
                     FederationError::null_pointer(format!("No field reader for {}", field.name()))
                 })?;
-            value_projectors.push(ProjectorUtils::create_arrow_value_projector(field_reader)?);
+            value_projectors.push(ArrowValueProjector::new(field_reader)?);
         }
         let output_field = output_schema.fields().first().ok_or_else(|| {
             FederationError::IndexOutOfBounds("Index 0 out of bounds for length 0".into())
