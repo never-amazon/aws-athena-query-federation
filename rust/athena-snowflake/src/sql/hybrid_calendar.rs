@@ -1,4 +1,4 @@
-use chrono::{Datelike, Days, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
+use chrono::{Days, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
 const MILLIS_PER_DAY_I32: i32 = 86_400_000;
@@ -16,7 +16,6 @@ fn gregorian_gap() -> Option<(NaiveDate, NaiveDate)> {
 pub(crate) enum DateLabel {
     Same,
     Shifted(NaiveDate),
-    Unparseable(String),
 }
 
 pub(crate) fn java_sql_date_label(date: NaiveDate) -> DateLabel {
@@ -27,18 +26,7 @@ pub(crate) fn java_sql_date_label(date: NaiveDate) -> DateLabel {
                 .map_or(DateLabel::Same, DateLabel::Shifted);
         }
     }
-    if date.year() > 0 {
-        return DateLabel::Same;
-    }
-    let era_year = 1 - date.year();
-    match NaiveDate::from_ymd_opt(era_year, date.month(), date.day()) {
-        Some(label) => DateLabel::Shifted(label),
-        None => DateLabel::Unparseable(format!(
-            "{era_year:04}-{:02}-{:02}",
-            date.month(),
-            date.day()
-        )),
-    }
+    DateLabel::Same
 }
 
 fn julian_calendar_fields(epoch_day: i64) -> (i64, u32, u32) {

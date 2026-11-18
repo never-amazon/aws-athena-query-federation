@@ -644,14 +644,32 @@ mod tests {
     #[test]
     fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
         let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
-        assert_eq!(day("0001-01-01 BC"), -719_162);
+        assert_eq!(day("0001-01-01 BC"), -719_528);
         assert_eq!(day("infinity"), 2_565_691);
-        assert_eq!(day("-infinity"), 2_588_078);
+        assert_eq!(day("-infinity"), -4_026_098);
         assert_eq!(day("10000-01-01"), -719_528);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
+    }
+
+    #[test]
+    fn bc_dates_decode_on_the_proleptic_calendar() {
+        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        for (text, (year, month, date)) in [
+            ("0001-01-01 BC", (0, 1, 1)),
+            ("0001-02-29 BC", (0, 2, 29)),
+            ("0002-03-01 BC", (-1, 3, 1)),
+            ("0044-03-15 BC", (-43, 3, 15)),
+            ("4713-11-24 BC", (-4712, 11, 24)),
+        ] {
+            let expected = NaiveDate::from_ymd_opt(year, month, date)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days();
+            assert_eq!(day(text), expected, "{text}");
+        }
     }
 
     #[test]
@@ -666,6 +684,7 @@ mod tests {
         let cases = [
             ("1000-01-01 12:00:00", -30_610_180_800_000),
             ("0044-03-15 12:00:00 BC", -63_517_780_800_000),
+            ("0001-02-29 06:30:00.5 BC", -62_162_098_199_500),
             ("1582-10-04 23:59:59.999", -12_220_156_800_001),
             ("1582-10-15 00:00:00", -12_219_292_800_000),
             ("2020-06-01 12:00:00.123456+05:30", 1_590_993_000_123),

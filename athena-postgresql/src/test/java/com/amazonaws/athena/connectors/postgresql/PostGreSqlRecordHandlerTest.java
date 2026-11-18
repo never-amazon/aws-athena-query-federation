@@ -1374,6 +1374,7 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Object[][] cases = {
                 {"1000-01-01T12:00:00Z", "1000-01-01 12:00:00", -30_610_180_800_000L},
                 {"-0043-03-15T12:00:00Z", "0044-03-15 12:00:00 BC", -63_517_780_800_000L},
+                {"0000-02-29T06:30:00.5Z", "0001-02-29 06:30:00.5 BC", -62_162_098_199_500L},
                 {"1582-10-04T23:59:59.999Z", "1582-10-04 23:59:59.999", -12_220_156_800_001L},
                 {"1582-10-15T00:00:00Z", "1582-10-15 00:00:00", -12_219_292_800_000L},
                 {"2020-06-01T12:00:00.123456+05:30", "2020-06-01 12:00:00.123456+05:30", 1_590_993_000_123L},
@@ -1382,9 +1383,14 @@ public class PostGreSqlRecordHandlerTest extends TestBase
             for (Object[] c : cases) {
                 java.time.OffsetDateTime timestamp = java.time.OffsetDateTime.parse((String) c[0]);
                 java.sql.ResultSet resultSet = dateTimeResultSet(columnType, (String) c[1]);
-                Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenReturn(timestamp);
+                if (timestamp.getYear() > 0) {
+                    Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenReturn(timestamp);
+                }
+                else {
+                    Mockito.when(resultSet.getObject(1, java.time.OffsetDateTime.class)).thenThrow(new java.time.DateTimeException((String) c[1]));
+                }
                 Assert.assertEquals((String) c[1], (long) c[2],
-                        this.postGreSqlRecordHandler.getTimestampMillis(resultSet, 1, java.sql.Timestamp.from(timestamp.toInstant())));
+                        this.postGreSqlRecordHandler.getTimestampMillis(resultSet, 1, pgjdbcTimestamp(columnType, timestamp)));
             }
             for (java.time.OffsetDateTime infinity : new java.time.OffsetDateTime[] {java.time.OffsetDateTime.MAX, java.time.OffsetDateTime.MIN}) {
                 long millis = infinity == java.time.OffsetDateTime.MAX ? 9_223_372_036_825_200_000L : -9_223_372_036_832_400_000L;
@@ -1395,6 +1401,19 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         }
         java.sql.ResultSet text = dateTimeResultSet(java.sql.Types.VARCHAR, "1000-01-01 12:00:00");
         Assert.assertEquals(-30_609_748_800_000L, this.postGreSqlRecordHandler.getTimestampMillis(text, 1, new java.sql.Timestamp(-30_609_748_800_000L)));
+    }
+
+    private static java.sql.Timestamp pgjdbcTimestamp(int columnType, java.time.OffsetDateTime value)
+    {
+        java.util.GregorianCalendar calendar = new java.util.GregorianCalendar(columnType == java.sql.Types.TIMESTAMP
+                ? java.util.TimeZone.getDefault() : java.util.TimeZone.getTimeZone(value.getOffset()));
+        calendar.clear();
+        calendar.set(java.util.Calendar.ERA, value.getYear() > 0 ? java.util.GregorianCalendar.AD : java.util.GregorianCalendar.BC);
+        calendar.set(value.getYear() > 0 ? value.getYear() : 1 - value.getYear(), value.getMonthValue() - 1, value.getDayOfMonth(),
+                value.getHour(), value.getMinute(), value.getSecond());
+        java.sql.Timestamp timestamp = new java.sql.Timestamp(calendar.getTimeInMillis());
+        timestamp.setNanos(value.getNano());
+        return timestamp;
     }
 
     private static java.sql.ResultSet dateTimeResultSet(int columnType, String text) throws SQLException

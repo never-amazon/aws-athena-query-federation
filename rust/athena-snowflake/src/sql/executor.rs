@@ -224,7 +224,6 @@ fn date_value(date: NaiveDate) -> SqlValue {
     match java_sql_date_label(date) {
         DateLabel::Same => SqlValue::Date(date),
         DateLabel::Shifted(label) => SqlValue::rendered(SqlValue::Date(label), text),
-        DateLabel::Unparseable(label) => SqlValue::rendered(SqlValue::String(label), text),
     }
 }
 
@@ -449,16 +448,16 @@ mod tests {
         (-141_438, Some(-141_438)),
         (-354_285, Some(-354_285)),
         (-719_162, Some(-719_162)),
-        (-719_468, Some(-719_103)),
-        (-719_469, None),
-        (-719_470, Some(-719_104)),
-        (-719_528, Some(-719_162)),
-        (-719_529, Some(-718_433)),
-        (-719_893, Some(-718_797)),
-        (-720_000, Some(-718_174)),
-        (-755_994, Some(-682_580)),
-        (-1_000_000, Some(-438_622)),
-        (-3_000_000, Some(1_561_513)),
+        (-719_468, Some(-719_468)),
+        (-719_469, Some(-719_469)),
+        (-719_470, Some(-719_470)),
+        (-719_528, Some(-719_528)),
+        (-719_529, Some(-719_529)),
+        (-719_893, Some(-719_893)),
+        (-720_000, Some(-720_000)),
+        (-755_994, Some(-755_994)),
+        (-1_000_000, Some(-1_000_000)),
+        (-3_000_000, Some(-3_000_000)),
     ];
 
     const JAVA_TIMESTAMP_MILLIS: [(&str, i64); 23] = [

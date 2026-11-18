@@ -412,6 +412,32 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeExtractorReadsBcDatesOnTheProlepticCalendar() throws Exception {
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        int[][] bcFields = {{1, 1, 1}, {1, 2, 29}, {2, 3, 1}, {44, 3, 15}, {4713, 11, 24}};
+        LocalDate[] expected = {LocalDate.of(0, 1, 1), LocalDate.of(0, 2, 29), LocalDate.of(-1, 3, 1), LocalDate.of(-43, 3, 15), LocalDate.of(-4712, 11, 24)};
+        for (int i = 0; i < bcFields.length; i++) {
+            java.util.GregorianCalendar calendar = new java.util.GregorianCalendar();
+            calendar.clear();
+            calendar.set(java.util.Calendar.ERA, java.util.GregorianCalendar.BC);
+            calendar.set(bcFields[i][0], bcFields[i][1] - 1, bcFields[i][2]);
+            Date date = new Date(calendar.getTimeInMillis());
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getObject("testCol")).thenReturn(date);
+            when(resultSet.getDate("testCol")).thenReturn(date);
+            when(resultSet.wasNull()).thenReturn(false);
+
+            NullableDateDayHolder day = new NullableDateDayHolder();
+            ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build(), resultSet, partitionMap)).extract(null, day);
+            NullableDateMilliHolder milli = new NullableDateMilliHolder();
+            ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build(), resultSet, partitionMap)).extract(null, milli);
+
+            Assert.assertEquals(expected[i].toString(), expected[i].toEpochDay(), day.value);
+            Assert.assertEquals(expected[i].toString(), expected[i].toEpochDay() * 86_400_000L, milli.value);
+        }
+    }
+
+    @Test
     public void makeFactoryReadsPre1582ArrayDatesByCalendarDate() throws Exception {
         LocalDate[] dates = {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1582, 10, 15), LocalDate.of(2025, 4, 22)};
         for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {

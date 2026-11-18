@@ -108,6 +108,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -447,7 +448,12 @@ public abstract class JdbcRecordHandler
 
     private static LocalDate toLocalDate(java.sql.Date date)
     {
-        return LocalDate.parse(date.toString());
+        String[] fields = date.toString().split("-");
+        int year = Integer.parseInt(fields[0]);
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(date);
+        return LocalDate.of(calendar.get(Calendar.ERA) == GregorianCalendar.BC ? 1 - year : year,
+                Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
     }
 
     protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException

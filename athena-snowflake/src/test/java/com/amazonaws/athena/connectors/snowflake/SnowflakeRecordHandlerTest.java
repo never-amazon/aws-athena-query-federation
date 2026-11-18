@@ -1143,6 +1143,36 @@ public class SnowflakeRecordHandlerTest
         }
     }
 
+    @Test
+    public void makeExtractorReadsBcDriverDatesOnTheProlepticCalendar() throws Throwable
+    {
+        class ExtractorHandler extends SnowflakeRecordHandler
+        {
+            ExtractorHandler()
+            {
+                super(new DatabaseConnectionConfig("testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
+                        "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx"), amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
+            }
+
+            com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor dateDay(java.sql.ResultSet resultSet) throws Exception
+            {
+                return (com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
+                        com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, java.util.Collections.emptyMap());
+            }
+        }
+        ExtractorHandler extractorHandler = new ExtractorHandler();
+        java.util.TimeZone utc = java.util.TimeZone.getTimeZone("UTC");
+        int[] days = {0, -719_162, -719_468, -719_469, -719_470, -719_528, -719_529, -719_893, -720_000, -755_994, -1_000_000, -3_000_000};
+        for (int day : days) {
+            java.sql.Date driverDate = net.snowflake.client.internal.core.arrow.DateConverter.getDate(day, utc, utc, false);
+            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
+            Mockito.when(resultSet.getDate("d")).thenReturn(driverDate);
+            org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
+            extractorHandler.dateDay(resultSet).extract(null, holder);
+            assertEquals(driverDate.toString(), day, holder.value);
+        }
+    }
+
     private void fail(String message) {
         org.junit.Assert.fail(message);
     }

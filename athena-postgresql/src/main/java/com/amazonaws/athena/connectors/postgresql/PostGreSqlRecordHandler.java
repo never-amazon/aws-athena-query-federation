@@ -39,6 +39,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.commons.lang3.Validate;
+import org.postgresql.PGStatement;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 import org.slf4j.Logger;
@@ -56,9 +57,12 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 
@@ -165,6 +169,15 @@ public class PostGreSqlRecordHandler
         int columnType = resultSet.getMetaData().getColumnType(column);
         if (columnType != Types.TIMESTAMP && columnType != Types.TIMESTAMP_WITH_TIMEZONE) {
             return super.getTimestampMillis(resultSet, column, timestamp);
+        }
+        if (timestamp.getTime() != PGStatement.DATE_NEGATIVE_INFINITY) {
+            GregorianCalendar fields = new GregorianCalendar(columnType == Types.TIMESTAMP ? TimeZone.getDefault() : TimeZone.getTimeZone("UTC"));
+            fields.setTimeInMillis(timestamp.getTime());
+            if (fields.get(Calendar.ERA) == GregorianCalendar.BC) {
+                return LocalDateTime.of(1 - fields.get(Calendar.YEAR), fields.get(Calendar.MONTH) + 1, fields.get(Calendar.DAY_OF_MONTH),
+                        fields.get(Calendar.HOUR_OF_DAY), fields.get(Calendar.MINUTE), fields.get(Calendar.SECOND))
+                        .toInstant(ZoneOffset.UTC).toEpochMilli() + fields.get(Calendar.MILLISECOND);
+            }
         }
         OffsetDateTime value = resultSet.getObject(column, OffsetDateTime.class);
         if (OffsetDateTime.MAX.equals(value) || OffsetDateTime.MIN.equals(value)) {
