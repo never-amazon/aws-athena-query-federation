@@ -713,10 +713,26 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         this.postGreSqlRecordHandler.buildSplitSql(this.connection, TEST_CATALOG, new TableName(TEST_SCHEMA, TEST_TABLE), schemaBuilder.build(),
                 constraints, createMockSplit(PARTITION_SCHEMA, PARTITION_NAME));
 
-        Mockito.verify(preparedStatement).setObject(1, timestamp);
+        Mockito.verify(preparedStatement).setObject(1, "1000-01-01 12:00:00+00", java.sql.Types.OTHER);
         Mockito.verify(preparedStatement).setObject(2, date);
         Mockito.verify(preparedStatement, Mockito.never()).setTimestamp(Mockito.anyInt(), Mockito.any(java.sql.Timestamp.class));
         Mockito.verify(preparedStatement, Mockito.never()).setDate(Mockito.anyInt(), Mockito.any(Date.class));
+    }
+
+    @Test
+    public void bindTimestampSendsUtcTextWithUnspecifiedType()
+    {
+        String[][] cases = {
+            {"1000-01-01T12:00", "1000-01-01 12:00:00+00"},
+            {"2020-06-01T06:30:00.123456789", "2020-06-01 06:30:00.123457+00"},
+            {"-0043-03-15T12:00", "0044-03-15 12:00:00+00 BC"},
+            {"0000-02-29T06:30:00.500", "0001-02-29 06:30:00.5+00 BC"},
+            {"+10000-01-01T00:00", "10000-01-01 00:00:00+00"},
+            {"-292275055-05-16T16:47:04.192", "-infinity"},
+        };
+        for (String[] c : cases) {
+            Assert.assertEquals(c[0], c[1], PostGreSqlQueryStringBuilder.utcTimestampText(java.time.LocalDateTime.parse(c[0])));
+        }
     }
 
     @Test

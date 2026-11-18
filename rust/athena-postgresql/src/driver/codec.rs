@@ -449,10 +449,10 @@ pub(crate) fn encode_parameter(
         SqlValue::Date(d) => (oid::DATE, Some(java_time_text(*d, ""))),
         SqlValue::Time(t) => (0, Some(t.format("%H:%M:%S%.f").to_string())),
         SqlValue::Timestamp(ts) => (
-            oid::TIMESTAMP,
+            0,
             Some(java_time_text(
                 ts.date(),
-                &ts.format(" %H:%M:%S%.f").to_string(),
+                &ts.format(" %H:%M:%S%.f+00").to_string(),
             )),
         ),
         SqlValue::TimestampTz(ts) => (
@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn date_and_timestamp_parameters_bind_like_pgjdbc_set_object() {
+    fn date_and_timestamp_parameters_bind_like_the_java_query_builder() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(
             encode_parameter(&SqlValue::Date(date(-43, 3, 15)), false),
@@ -602,18 +602,33 @@ mod tests {
                 &SqlValue::Timestamp(date(1000, 1, 1).and_hms_opt(12, 0, 0).unwrap()),
                 false
             ),
-            (oid::TIMESTAMP, Some("1000-01-01 12:00:00".to_string()))
+            (0, Some("1000-01-01 12:00:00+00".to_string()))
         );
         assert_eq!(
             encode_parameter(
                 &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
                 false
             ),
-            (
-                oid::TIMESTAMP,
-                Some("0044-03-15 12:00:00.500 BC".to_string())
-            )
+            (0, Some("0044-03-15 12:00:00.500+00 BC".to_string()))
         );
+    }
+
+    #[test]
+    fn bind_timestamp_sends_utc_text_with_unspecified_type() {
+        let cases = [
+            ("1000-01-01T12:00:00", "1000-01-01 12:00:00+00"),
+            (
+                "2020-06-01T06:30:00.123456789",
+                "2020-06-01 06:30:00.123456789+00",
+            ),
+            ("-0043-03-15T12:00:00", "0044-03-15 12:00:00+00 BC"),
+            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.500+00 BC"),
+            ("+10000-01-01T00:00:00", "10000-01-01 00:00:00+00"),
+        ];
+        for (timestamp, text) in cases {
+            let value = SqlValue::Timestamp(timestamp.parse().unwrap());
+            assert_eq!((0, Some(text.to_string())), encode_parameter(&value, false));
+        }
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
