@@ -71,7 +71,7 @@ async fn test_fast_termination() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -91,7 +91,7 @@ async fn test_slow_termination() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(3, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -108,7 +108,7 @@ async fn test_not_found() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -119,5 +119,5 @@ async fn test_other_error() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(2, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }

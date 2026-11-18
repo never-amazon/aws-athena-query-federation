@@ -820,7 +820,7 @@ impl<T: JdbcRecordHandler + ?Sized> JdbcRecordHandlerExt for T {
                 &query_status_checker,
             )
             .await;
-        query_status_checker.close();
+        drop(query_status_checker);
         Ok(FederationResponse::from(RemoteReadRecordsResponse::new(
             request.catalog_name(),
             derived_schema?,

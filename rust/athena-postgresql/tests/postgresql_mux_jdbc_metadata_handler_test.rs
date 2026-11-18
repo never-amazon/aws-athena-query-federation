@@ -438,7 +438,7 @@ async fn get_partitions() {
             &[addr(&request), addr(&checker)]
         )]
     );
-    checker.close();
+    drop(checker);
 }
 
 #[tokio::test]

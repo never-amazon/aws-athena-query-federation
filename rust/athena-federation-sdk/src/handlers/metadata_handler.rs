@@ -421,7 +421,7 @@ pub trait MetadataHandler: FederationRequestHandler {
         let result = self
             .get_partitions(&mut block_writer, request, &query_status_checker)
             .await;
-        query_status_checker.close();
+        drop(query_status_checker);
         result?;
         Ok(GetTableLayoutResponse::new(
             request.catalog_name(),

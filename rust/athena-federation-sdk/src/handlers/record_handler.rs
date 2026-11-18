@@ -201,7 +201,7 @@ pub async fn default_do_read_records<H: RecordHandler + ?Sized>(
     }
     .await;
     spiller.close().await;
-    query_status_checker.close();
+    drop(query_status_checker);
     result
 }
 

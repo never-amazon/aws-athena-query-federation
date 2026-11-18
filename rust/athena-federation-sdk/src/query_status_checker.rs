@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -57,8 +57,7 @@ pub struct QueryStatusChecker {
     athena: Arc<dyn AthenaClient>,
     athena_invoker: Arc<ThrottlingInvoker<AwsServiceError>>,
     query_id: String,
-    checker: Mutex<Option<JoinHandle<()>>>,
-    was_started: AtomicBool,
+    checker: OnceLock<Option<JoinHandle<()>>>,
 }
 
 impl QueryStatusChecker {
@@ -72,49 +71,36 @@ impl QueryStatusChecker {
             athena,
             athena_invoker,
             query_id: query_id.into(),
-            checker: Mutex::new(None),
-            was_started: AtomicBool::new(false),
+            checker: OnceLock::new(),
         }
     }
 
     pub fn is_query_running(&self) -> bool {
-        if !self.was_started.load(Ordering::SeqCst) {
-            let mut checker = self.lock_checker();
-            if !self.was_started.load(Ordering::SeqCst) {
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    let task = StatusTask {
-                        is_running: self.is_running.clone(),
-                        athena: self.athena.clone(),
-                        athena_invoker: self.athena_invoker.clone(),
-                        query_id: self.query_id.clone(),
-                    };
-                    *checker = Some(handle.spawn(task.run()));
-                } else {
-                    tracing::warn!("No async runtime available. Query status polling is disabled");
-                }
-                self.was_started.store(true, Ordering::SeqCst);
-            }
-        }
+        self.checker.get_or_init(|| self.start());
         self.is_running.load(Ordering::SeqCst)
     }
 
-    pub fn close(&self) {
-        if let Some(checker) = self.lock_checker().as_ref() {
-            checker.abort();
-        }
-        tracing::debug!("Interrupt signal sent to status checker thread");
-    }
-
-    fn lock_checker(&self) -> MutexGuard<'_, Option<JoinHandle<()>>> {
-        self.checker
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    fn start(&self) -> Option<JoinHandle<()>> {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("No async runtime available. Query status polling is disabled");
+            return None;
+        };
+        let task = StatusTask {
+            is_running: self.is_running.clone(),
+            athena: self.athena.clone(),
+            athena_invoker: self.athena_invoker.clone(),
+            query_id: self.query_id.clone(),
+        };
+        Some(handle.spawn(task.run()))
     }
 }
 
 impl Drop for QueryStatusChecker {
     fn drop(&mut self) {
-        self.close();
+        if let Some(Some(checker)) = self.checker.get() {
+            checker.abort();
+        }
+        tracing::debug!("Interrupt signal sent to status checker thread");
     }
 }
 
