@@ -478,6 +478,11 @@ public abstract class JdbcRecordHandler
     {
     }
 
+    protected LocalDate getLocalDate(ResultSet resultSet, String fieldName, java.sql.Date date) throws SQLException
+    {
+        return toLocalDate(date);
+    }
+
     protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
     {
         return timestamp.getTime();
@@ -587,7 +592,7 @@ public abstract class JdbcRecordHandler
                     checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
-                        dst.value = toDateDay(toLocalDate(resultSet.getDate(fieldName)));
+                        dst.value = toDateDay(getLocalDate(resultSet, fieldName, resultSet.getDate(fieldName)));
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };

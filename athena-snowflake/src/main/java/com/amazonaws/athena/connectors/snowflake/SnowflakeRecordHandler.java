@@ -84,6 +84,9 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -335,6 +338,16 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp)
     {
         return undoJulianAdjustment(timestamp.getTime());
+    }
+
+    @Override
+    protected LocalDate getLocalDate(ResultSet resultSet, String fieldName, java.sql.Date date) throws SQLException
+    {
+        if (!(resultSet.getObject(fieldName) instanceof Timestamp)) {
+            return super.getLocalDate(resultSet, fieldName, date);
+        }
+        long millis = undoJulianAdjustment(resultSet.getTimestamp(fieldName).getTime());
+        return LocalDate.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
     }
 
     @VisibleForTesting

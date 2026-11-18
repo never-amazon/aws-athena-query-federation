@@ -20,6 +20,7 @@ pub const SNOWFLAKE_SQL_EXCEPTION: &str =
     "net.snowflake.client.api.exception.SnowflakeSQLException";
 const NOT_FOUND_ERROR_CODE: &str = "002003";
 const BASE_TABLE_OR_VIEW_NOT_FOUND: &str = "42S02";
+const MILLIS_PER_DAY: i64 = 86_400_000;
 
 pub struct SnowflakeQueryResult {
     pub columns: Vec<SnowflakeColumn>,
@@ -233,10 +234,12 @@ fn timestamp_value(timestamp: NaiveDateTime) -> SqlValue {
         return SqlValue::Timestamp(timestamp);
     }
     let text = SqlValue::Timestamp(timestamp).to_string();
-    SqlValue::rendered_with_epoch_millis(
+    let epoch_millis = timestamp.and_utc().timestamp_millis();
+    SqlValue::java_timestamp(
         SqlValue::Timestamp(adjusted),
         text,
-        timestamp.and_utc().timestamp_millis(),
+        epoch_millis,
+        epoch_millis.div_euclid(MILLIS_PER_DAY),
     )
 }
 
@@ -247,10 +250,12 @@ fn timestamp_tz_value(timestamp: DateTime<FixedOffset>) -> SqlValue {
     }
     let text = SqlValue::TimestampTz(timestamp).to_string();
     let adjusted = adjusted.and_utc().with_timezone(timestamp.offset());
-    SqlValue::rendered_with_epoch_millis(
+    let epoch_millis = timestamp.timestamp_millis();
+    SqlValue::java_timestamp(
         SqlValue::TimestampTz(adjusted),
         text,
-        timestamp.timestamp_millis(),
+        epoch_millis,
+        epoch_millis.div_euclid(MILLIS_PER_DAY),
     )
 }
 
@@ -474,7 +479,7 @@ impl SnowflakeExecutor for ConnectorExecutor {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Days, FixedOffset, NaiveDate, NaiveDateTime};
+    use chrono::{DateTime, Datelike, Days, FixedOffset, NaiveDate, NaiveDateTime};
 
     use super::{
         decode_cell, RawCell, SnowflakeColumn, SnowflakeColumnType, SqlValue, TimestampTypeMapping,
@@ -585,6 +590,66 @@ mod tests {
                 value.to_java_string(),
                 "epoch day {epoch_day}"
             );
+        }
+    }
+
+    #[test]
+    fn make_extractor_reads_timestamp_columns_as_proleptic_dates() {
+        let listed = [
+            "2020-06-01T23:59:59.999",
+            "1969-12-31T23:59:59.999",
+            "1582-10-15T00:00:00",
+            "1582-10-04T23:59:59.999",
+            "1500-03-01T00:00:00",
+            "1000-01-01T00:00:00",
+            "-0043-03-15T12:00:00",
+            "0000-02-29T06:30:00.500",
+            "-5000-01-01T00:30:00",
+            "9999-12-31T23:59:59.999",
+            "+10000-01-01T00:00:00",
+        ];
+        let mut values: Vec<NaiveDateTime> = listed
+            .iter()
+            .map(|text| text.parse::<NaiveDateTime>().unwrap())
+            .collect();
+        let step = chrono::TimeDelta::days(97)
+            + chrono::TimeDelta::hours(5)
+            + chrono::TimeDelta::seconds(1);
+        let mut timestamp = NaiveDate::from_ymd_opt(-20000, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 30, 0)
+            .unwrap();
+        while timestamp.year() < 1582 {
+            values.push(timestamp);
+            timestamp += step;
+        }
+        assert!(values.len() > 80_000);
+        let offset = FixedOffset::east_opt(-8 * 3600).unwrap();
+        for timestamp in values {
+            let expected = Some(
+                timestamp
+                    .date()
+                    .signed_duration_since(NaiveDate::default())
+                    .num_days(),
+            );
+            let cells = [
+                (
+                    SnowflakeColumnType::TimestampNtz { scale: 9 },
+                    RawCell::TimestampNtz(timestamp),
+                ),
+                (
+                    SnowflakeColumnType::TimestampLtz { scale: 9 },
+                    RawCell::TimestampLtz(timestamp.and_utc()),
+                ),
+                (
+                    SnowflakeColumnType::TimestampTz { scale: 9 },
+                    RawCell::TimestampTz(timestamp.and_utc().with_timezone(&offset)),
+                ),
+            ];
+            for (column_type, cell) in cells {
+                let value = decode_cell(&column(column_type), cell).unwrap();
+                assert_eq!(expected, value.to_epoch_day().unwrap(), "{timestamp}");
+            }
         }
     }
 

@@ -1233,6 +1233,79 @@ public class SnowflakeRecordHandlerTest
         }
     }
 
+    @Test
+    public void makeExtractorReadsTimestampColumnsAsProlepticDates() throws Throwable
+    {
+        class ExtractorHandler extends SnowflakeRecordHandler
+        {
+            ExtractorHandler()
+            {
+                super(new DatabaseConnectionConfig("testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
+                        "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx"), amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
+            }
+
+            int dateDay(java.sql.ResultSet resultSet) throws Exception
+            {
+                org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
+                ((com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
+                        com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, java.util.Collections.emptyMap()))
+                        .extract(null, holder);
+                return holder.value;
+            }
+        }
+        ExtractorHandler extractorHandler = new ExtractorHandler();
+        net.snowflake.client.internal.core.json.DateTimeConverter converter = new net.snowflake.client.internal.core.json.DateTimeConverter(
+                java.util.TimeZone.getTimeZone("UTC"), null, 1, false, false, false, false);
+        int[][] subTypes = {{java.sql.Types.TIMESTAMP, 0}, {50000, 0}, {50001, 1}};
+        java.util.List<java.time.LocalDateTime> values = new ArrayList<>();
+        for (String value : new String[] {"2020-06-01T23:59:59.999", "1969-12-31T23:59:59.999", "1582-10-15T00:00", "1582-10-04T23:59:59.999",
+                "1500-03-01T00:00", "1000-01-01T00:00", "-0043-03-15T12:00", "0000-02-29T06:30:00.500", "-5000-01-01T00:30", "9999-12-31T23:59:59.999",
+                "+10000-01-01T00:00"}) {
+            values.add(java.time.LocalDateTime.parse(value));
+        }
+        int listed = values.size();
+        for (java.time.LocalDateTime value = java.time.LocalDateTime.of(-20000, 1, 1, 0, 30); value.getYear() < 1582; value = value.plusDays(97).plusHours(5).plusSeconds(1)) {
+            values.add(value);
+        }
+        int checked = 0;
+        int collapsed = 0;
+        for (int[] subType : subTypes) {
+            for (int i = 0; i < (subType[0] == java.sql.Types.TIMESTAMP ? values.size() : listed); i++) {
+                java.time.LocalDateTime value = values.get(i);
+                String cell = java.math.BigDecimal.valueOf(value.toEpochSecond(java.time.ZoneOffset.UTC)).add(java.math.BigDecimal.valueOf(value.getNano(), 9))
+                        .setScale(9).toPlainString() + (subType[1] == 1 ? " 1440" : "");
+                java.sql.Timestamp timestamp = converter.getTimestamp(cell, java.sql.Types.TIMESTAMP, subType[0], null, 9);
+                java.sql.Date date = converter.getDate(cell, java.sql.Types.TIMESTAMP, subType[0], null, 9);
+                java.sql.ResultSet resultSet = (java.sql.ResultSet) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                        new Class<?>[] {java.sql.ResultSet.class}, (proxy, method, args) -> {
+                            switch (method.getName()) {
+                                case "getObject":
+                                case "getTimestamp":
+                                    return timestamp;
+                                case "getDate":
+                                    return date;
+                                case "wasNull":
+                                    return false;
+                                case "findColumn":
+                                    return 1;
+                                default:
+                                    throw new UnsupportedOperationException(method.getName());
+                            }
+                        });
+                int day = extractorHandler.dateDay(resultSet);
+                if (i < listed) {
+                    assertEquals(value.toString(), value.toLocalDate().toEpochDay(), day);
+                }
+                else if (day != value.toLocalDate().toEpochDay()) {
+                    collapsed++;
+                }
+                checked++;
+            }
+        }
+        assertTrue(checked > 80_000);
+        assertTrue(collapsed * 1000 < checked, String.valueOf(collapsed));
+    }
+
     private void fail(String message) {
         org.junit.Assert.fail(message);
     }
