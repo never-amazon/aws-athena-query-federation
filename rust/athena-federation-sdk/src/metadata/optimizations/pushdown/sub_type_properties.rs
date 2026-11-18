@@ -22,4 +22,8 @@ impl SubTypeProperties {
     pub fn properties(&self) -> &[String] {
         &self.property_values
     }
+
+    pub fn into_parts(self) -> (String, Vec<String>) {
+        (self.property_name, self.property_values)
+    }
 }

@@ -17,11 +17,9 @@ use athena_federation_sdk::handlers::{
 };
 use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, LimitPushdownSubType,
-    PushdownSubTypes, TopNPushdownSubType,
+    TopNPushdownSubType,
 };
-use athena_federation_sdk::metadata::optimizations::{
-    DataSourceOptimizations, OptimizationSubType,
-};
+use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
@@ -860,32 +858,28 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = DataSourceOptimizations::SupportsFilterPushdown
-        .with_supported_sub_types(&[
-            PushdownSubTypes::from(FilterPushdownSubType::SortedRangeSet),
-            PushdownSubTypes::from(FilterPushdownSubType::NullableComparison),
-        ])?;
+    let (name, sub_types) = Capability::Filter(vec![
+        FilterPushdownSubType::SortedRangeSet,
+        FilterPushdownSubType::NullableComparison,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
-    let (name, sub_types) = DataSourceOptimizations::SupportsLimitPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            LimitPushdownSubType::IntegerConstant,
-        )])?;
+    let (name, sub_types) =
+        Capability::Limit(vec![LimitPushdownSubType::IntegerConstant]).into_entry();
     capabilities.insert(name, sub_types);
     let function_names: Vec<String> = StandardFunctions::values()
         .iter()
         .map(|f| f.function_name().function_name().to_string())
         .collect();
     let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-                .with_sub_type_properties(&function_names)?,
-        )])?;
+    let (name, sub_types) = Capability::ComplexExpression(vec![
+        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
+            .with_sub_type_properties(&function_names)?,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
-    let (name, sub_types) = DataSourceOptimizations::SupportsTopNPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            TopNPushdownSubType::SupportsOrderBy,
-        )])?;
+    let (name, sub_types) =
+        Capability::TopN(vec![TopNPushdownSubType::SupportsOrderBy]).into_entry();
     capabilities.insert(name, sub_types);
     JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);

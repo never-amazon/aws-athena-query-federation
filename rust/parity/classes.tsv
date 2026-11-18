@@ -139,7 +139,7 @@ com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.ComplexExp
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.FilterPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/filter_pushdown_sub_type.rs::FilterPushdownSubType	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.HintsSubtype	athena-federation-sdk/src/metadata/optimizations/pushdown/hints_subtype.rs::HintsSubtype	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.LimitPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/limit_pushdown_sub_type.rs::LimitPushdownSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.PushdownSubTypes	athena-federation-sdk/src/metadata/optimizations/pushdown/pushdown_sub_types.rs::PushdownSubTypes	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.PushdownSubTypes	athena-federation-sdk/src/metadata/optimizations/data_source_optimizations.rs::Capability	merged	the marker interface becomes the Capability enum, which pairs each optimization with its own sub-type enum
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.SubTypeProperties	athena-federation-sdk/src/metadata/optimizations/pushdown/sub_type_properties.rs::SubTypeProperties	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.TopNPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/top_n_pushdown_sub_type.rs::TopNPushdownSubType	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthrough	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough.rs::QueryPassthrough	ported	

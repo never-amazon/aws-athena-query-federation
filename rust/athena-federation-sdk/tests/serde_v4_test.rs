@@ -3,10 +3,8 @@ mod serde_support;
 use std::collections::HashMap;
 
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, PushdownSubTypes,
-};
-use athena_federation_sdk::metadata::optimizations::DataSourceOptimizations;
+use athena_federation_sdk::metadata::optimizations::pushdown::ComplexExpressionPushdownSubType;
+use athena_federation_sdk::metadata::optimizations::Capability;
 use athena_federation_sdk::metadata::GetDataSourceCapabilitiesResponse;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse};
 use indexmap::IndexMap;
@@ -21,9 +19,7 @@ mod get_data_source_capabilities_response_ser_de_test {
         let properties = ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
             .with_sub_type_properties(&[add.function_name(), subtract.function_name()])
             .expect("properties");
-        let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
-            .with_supported_sub_types(&[PushdownSubTypes::ComplexExpressionProperties(properties)])
-            .expect("capability");
+        let (name, sub_types) = Capability::ComplexExpression(vec![properties]).into_entry();
         let mut capabilities = IndexMap::new();
         capabilities.insert(name, sub_types);
         GetDataSourceCapabilitiesResponse::new("test-catalog", capabilities)

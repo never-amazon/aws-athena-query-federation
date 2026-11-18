@@ -1,8 +1,10 @@
 use std::fmt;
 
-use super::pushdown::PushdownSubTypes;
+use super::pushdown::{
+    FilterPushdownSubType, HintsSubtype, LimitPushdownSubType, SubTypeProperties,
+    TopNPushdownSubType,
+};
 use super::OptimizationSubType;
-use crate::exceptions::{FederationError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DataSourceOptimizations {
@@ -47,62 +49,64 @@ impl DataSourceOptimizations {
             DataSourceOptimizations::DataSourceHints => "data_source_hints",
         }
     }
-
-    pub fn with_supported_sub_types(
-        &self,
-        sub_types_list: &[PushdownSubTypes],
-    ) -> Result<(String, Vec<OptimizationSubType>)> {
-        let (valid, message) = match self {
-            DataSourceOptimizations::SupportsLimitPushdown => (
-                sub_types_list
-                    .iter()
-                    .all(|s| matches!(s, PushdownSubTypes::Limit(_))),
-                "Limit Pushdown Optimization must contain valid pushdown subtypes.",
-            ),
-            DataSourceOptimizations::SupportsTopNPushdown => (
-                sub_types_list
-                    .iter()
-                    .all(|s| matches!(s, PushdownSubTypes::TopN(_))),
-                "TopN Pushdown Optimization must contain valid pushdown subtypes.",
-            ),
-            DataSourceOptimizations::SupportsFilterPushdown => (
-                sub_types_list
-                    .iter()
-                    .all(|s| matches!(s, PushdownSubTypes::Filter(_))),
-                "Filter Pushdown Optimization must contain valid pushdown subtypes.",
-            ),
-            DataSourceOptimizations::SupportsComplexExpressionPushdown => (
-                sub_types_list.iter().all(|s| {
-                    matches!(
-                        s,
-                        PushdownSubTypes::ComplexExpression(_)
-                            | PushdownSubTypes::ComplexExpressionProperties(_)
-                    )
-                }),
-                "Complex Expression Pushdown Optimization must contain valid pushdown subtypes.",
-            ),
-            DataSourceOptimizations::DataSourceHints => (
-                sub_types_list
-                    .iter()
-                    .all(|s| matches!(s, PushdownSubTypes::Hints(_))),
-                "Data Source Hints  must contain valid data source hint subtypes.",
-            ),
-        };
-        if !valid {
-            return Err(FederationError::invalid_input(message));
-        }
-        Ok((
-            self.optimization().to_string(),
-            sub_types_list
-                .iter()
-                .map(|s| OptimizationSubType::new(s.sub_type(), s.properties()))
-                .collect(),
-        ))
-    }
 }
 
 impl fmt::Display for DataSourceOptimizations {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Capability {
+    Limit(Vec<LimitPushdownSubType>),
+    TopN(Vec<TopNPushdownSubType>),
+    Filter(Vec<FilterPushdownSubType>),
+    ComplexExpression(Vec<SubTypeProperties>),
+    Hints(Vec<HintsSubtype>),
+}
+
+fn without_properties(
+    sub_types: impl IntoIterator<Item = &'static str>,
+) -> Vec<OptimizationSubType> {
+    sub_types
+        .into_iter()
+        .map(|s| OptimizationSubType::new(s, Vec::new()))
+        .collect()
+}
+
+impl Capability {
+    pub fn optimization(&self) -> DataSourceOptimizations {
+        match self {
+            Capability::Limit(_) => DataSourceOptimizations::SupportsLimitPushdown,
+            Capability::TopN(_) => DataSourceOptimizations::SupportsTopNPushdown,
+            Capability::Filter(_) => DataSourceOptimizations::SupportsFilterPushdown,
+            Capability::ComplexExpression(_) => {
+                DataSourceOptimizations::SupportsComplexExpressionPushdown
+            }
+            Capability::Hints(_) => DataSourceOptimizations::DataSourceHints,
+        }
+    }
+
+    pub fn into_entry(self) -> (String, Vec<OptimizationSubType>) {
+        let name = self.optimization().optimization().to_string();
+        let sub_types = match self {
+            Capability::Limit(s) => {
+                without_properties(s.iter().map(LimitPushdownSubType::sub_type))
+            }
+            Capability::TopN(s) => without_properties(s.iter().map(TopNPushdownSubType::sub_type)),
+            Capability::Filter(s) => {
+                without_properties(s.iter().map(FilterPushdownSubType::sub_type))
+            }
+            Capability::Hints(s) => without_properties(s.iter().map(HintsSubtype::sub_type)),
+            Capability::ComplexExpression(s) => s
+                .into_iter()
+                .map(|p| {
+                    let (sub_type, properties) = p.into_parts();
+                    OptimizationSubType::new(sub_type, properties)
+                })
+                .collect(),
+        };
+        (name, sub_types)
     }
 }
