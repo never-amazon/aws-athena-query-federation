@@ -839,6 +839,14 @@ public final class CorpusGen
                         Split.newBuilder(spill(q, "split-0001"), null).add("partition_schema_name", "*").add("partition_name", "*")
                                 .add("CATALOG_CASING_FILTER", "UPPERCASE_ONLY").build(),
                         planConstraints(plain)));
+        String salesPlan = substraitPlan("SELECT sale_id, region, amount FROM sales WHERE sale_id > 100");
+        TableName salesTable = new TableName("parity", "sales");
+        String[][] salesSplits = {{"all", "*", "*"}, {"2023", "parity", "sales_2023"}, {"2024", "parity", "sales_2024"}, {"other", "parity", "sales_other"}};
+        for (String[] s : salesSplits) {
+            add("read_records", "substrait_partition_" + s[0], 6, "ReadRecords with a Substrait plan on the " + s[0] + " partition split of the partitioned table",
+                    q -> read(q, salesTable, Schemas.project(Schemas.sales(), "sale_id", "region", "amount"), split(q, s[1], s[2]),
+                            planConstraints(salesPlan)));
+        }
         add("read_records", "substrait_invalid_plan", 6, "ReadRecords with a Substrait plan that is not valid base64 protobuf (error)",
                 q -> read(q, allTypes, Schemas.project(Schemas.allTypes(), "id"), split(q, "*", "*"),
                         planConstraints(Base64.getEncoder().encodeToString("not a plan".getBytes(StandardCharsets.UTF_8)))));
@@ -890,12 +898,25 @@ public final class CorpusGen
                         Pair.of("date_col", nullable(factory, factory.createSqlType(SqlTypeName.DATE)))));
             }
         };
+        Table sales = new AbstractTable()
+        {
+            @Override
+            public RelDataType getRowType(RelDataTypeFactory factory)
+            {
+                return factory.createStructType(Arrays.asList(
+                        Pair.of("sale_id", factory.createTypeWithNullability(factory.createSqlType(SqlTypeName.INTEGER), false)),
+                        Pair.of("region", nullable(factory, factory.createSqlType(SqlTypeName.VARCHAR))),
+                        Pair.of("sale_date", factory.createTypeWithNullability(factory.createSqlType(SqlTypeName.DATE), false)),
+                        Pair.of("amount", nullable(factory, factory.createSqlType(SqlTypeName.DECIMAL, 12, 2))),
+                        Pair.of("note", nullable(factory, factory.createSqlType(SqlTypeName.VARCHAR)))));
+            }
+        };
         AbstractSchema schema = new AbstractSchema()
         {
             @Override
             protected Map<String, Table> getTableMap()
             {
-                return Map.of("all_types", table, "unicode_text", table);
+                return Map.of("all_types", table, "unicode_text", table, "sales", sales);
             }
         };
         CalciteSchema root = CalciteSchema.createRootSchema(false);

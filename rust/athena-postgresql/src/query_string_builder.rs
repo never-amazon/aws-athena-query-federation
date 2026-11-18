@@ -94,16 +94,24 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
             table_name.push('.');
         }
         table_name.push_str(&self.quote(table));
+        let split_table = self.get_split_table(split);
+        if split_table.is_empty() {
+            return format!(" FROM {table_name} ");
+        }
+        format!(" FROM {split_table} ")
+    }
+
+    fn get_split_table(&self, split: &Split) -> String {
         let partition_schema_name =
             split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME);
         let partition_name =
             split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME);
         let all = Some(PostGreSqlMetadataHandler::ALL_PARTITIONS);
         if partition_schema_name == all || partition_name == all {
-            return format!(" FROM {table_name} ");
+            return String::new();
         }
         format!(
-            " FROM {}.{} ",
+            "{}.{}",
             self.quote(partition_schema_name.unwrap_or_default()),
             self.quote(partition_name.unwrap_or_default())
         )

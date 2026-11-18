@@ -93,15 +93,25 @@ public class PostGreSqlQueryStringBuilder
         }
         tableName.append(quote(table));
 
+        String splitTable = getSplitTable(split);
+        if (splitTable.isEmpty()) {
+            return String.format(" FROM %s ", tableName);
+        }
+
+        return String.format(" FROM %s ", splitTable);
+    }
+
+    @Override
+    protected String getSplitTable(Split split)
+    {
         String partitionSchemaName = split.getProperty(PostGreSqlMetadataHandler.BLOCK_PARTITION_SCHEMA_COLUMN_NAME);
         String partitionName = split.getProperty(PostGreSqlMetadataHandler.BLOCK_PARTITION_COLUMN_NAME);
 
         if (PostGreSqlMetadataHandler.ALL_PARTITIONS.equals(partitionSchemaName) || PostGreSqlMetadataHandler.ALL_PARTITIONS.equals(partitionName)) {
-            // No partitions
-            return String.format(" FROM %s ", tableName);
+            return emptyString;
         }
 
-        return String.format(" FROM %s.%s ", quote(partitionSchemaName), quote(partitionName));
+        return quote(partitionSchemaName) + "." + quote(partitionName);
     }
 
     @Override
