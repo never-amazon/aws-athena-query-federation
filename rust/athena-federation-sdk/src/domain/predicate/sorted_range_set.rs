@@ -7,7 +7,7 @@ use crate::data::types::arrow_type_to_string;
 use crate::data::{ArrowType, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
-use super::marker::{objects_hash, Bound, Marker};
+use super::marker::{Bound, Marker};
 use super::range::Range;
 use super::ranges::Ranges;
 use super::value_marker::{LiteralValueMarker, ValueMarker};
@@ -351,13 +351,6 @@ impl SortedRangeSet {
             )));
         }
         Ok(())
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        let map_hash = self.low_indexed_ranges.iter().fold(0i32, |acc, r| {
-            acc.wrapping_add(r.low().hash_code() ^ r.hash_code())
-        });
-        objects_hash(&[map_hash, if self.null_allowed { 1231 } else { 1237 }])
     }
 }
 

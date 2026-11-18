@@ -4,7 +4,7 @@ use crate::data::types::{arrow_type_to_string, minor_type_of};
 use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, BlockUtils, Value};
 use crate::exceptions::{FederationError, Result};
 
-use super::marker::{objects_hash, type_hash, Marker};
+use super::marker::Marker;
 
 const DEFAULT_COLUMN: &str = "col1";
 
@@ -392,15 +392,6 @@ impl EquatableValueSet {
             )));
         }
         Ok(())
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[
-            type_hash(&self.get_type()),
-            if self.white_list { 1231 } else { 1237 },
-            self.value_block.hash_code(),
-            if self.null_allowed { 1231 } else { 1237 },
-        ])
     }
 }
 

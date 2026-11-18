@@ -273,26 +273,6 @@ impl Block {
         }
         Ok(true)
     }
-
-    pub fn hash_code(&self) -> i32 {
-        let mut hashcode: i32 = 0;
-        for (k, v) in self.schema.metadata() {
-            let entry =
-                super::java_format::java_string_hash(k) ^ super::java_format::java_string_hash(v);
-            hashcode = hashcode.wrapping_add(entry);
-        }
-        for next in self.schema.fields() {
-            if let Some(reader) = self.get_field_reader(next.name()) {
-                for i in 0..self.row_count {
-                    reader.set_position(i);
-                    hashcode = hashcode
-                        .wrapping_mul(31)
-                        .wrapping_add(reader.read_object().java_hash_code());
-                }
-            }
-        }
-        hashcode
-    }
 }
 
 impl PartialEq for Block {

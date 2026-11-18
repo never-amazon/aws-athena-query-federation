@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use arrow::datatypes::{Field, Schema};
 
-use crate::data::java_format::java_string_hash;
 use crate::data::types::arrow_type_to_string;
 use crate::data::{ArrowType, Block, BlockAllocator, BlockUtils, Value};
 use crate::exceptions::{FederationError, Result};
@@ -27,14 +26,6 @@ impl Bound {
             Bound::Above => "ABOVE",
         }
     }
-
-    pub fn ordinal(&self) -> i32 {
-        match self {
-            Bound::Below => 0,
-            Bound::Exactly => 1,
-            Bound::Above => 2,
-        }
-    }
 }
 
 impl fmt::Display for Bound {
@@ -50,16 +41,6 @@ pub struct Marker {
     null_value: bool,
     value: Value,
     allocator_id: Option<String>,
-}
-
-pub(crate) fn type_hash(arrow_type: &ArrowType) -> i32 {
-    java_string_hash(&arrow_type_to_string(arrow_type))
-}
-
-pub(crate) fn objects_hash(items: &[i32]) -> i32 {
-    items
-        .iter()
-        .fold(1i32, |acc, h| acc.wrapping_mul(31).wrapping_add(*h))
 }
 
 pub(crate) fn value_block_schema(arrow_type: &ArrowType) -> Arc<Schema> {
@@ -325,19 +306,6 @@ impl Marker {
 
     pub fn compare_to(&self, other: &dyn ValueMarker) -> Result<i32> {
         ValueMarkerComparator::do_compare(self, other)
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        let null_hash = if self.null_value { 1231 } else { 1237 };
-        if self.null_value {
-            return objects_hash(&[null_hash, type_hash(&self.arrow_type), self.bound.ordinal()]);
-        }
-        objects_hash(&[
-            null_hash,
-            type_hash(&self.arrow_type),
-            self.value.java_hash_code(),
-            self.bound.ordinal(),
-        ])
     }
 }
 

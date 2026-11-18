@@ -4,7 +4,7 @@ use crate::data::types::arrow_type_to_string;
 use crate::data::{ArrowType, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
-use super::marker::{objects_hash, Bound, Marker};
+use super::marker::{Bound, Marker};
 use super::value_marker::ValueMarker;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -184,10 +184,6 @@ impl Range {
         let low = Marker::max(&self.low, other.low())?;
         let high = Marker::min(&self.high, other.high())?;
         Range::new(low, high)
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[self.low.hash_code(), self.high.hash_code()])
     }
 }
 

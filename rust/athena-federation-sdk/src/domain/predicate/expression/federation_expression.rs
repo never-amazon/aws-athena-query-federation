@@ -36,14 +36,6 @@ impl FederationExpression {
             FederationExpression::Variable(_) | FederationExpression::Constant(_) => &[],
         }
     }
-
-    pub fn hash_code(&self) -> i32 {
-        match self {
-            FederationExpression::FunctionCall(e) => e.hash_code(),
-            FederationExpression::Variable(e) => e.hash_code(),
-            FederationExpression::Constant(e) => e.hash_code(),
-        }
-    }
 }
 
 impl From<FunctionCallExpression> for FederationExpression {

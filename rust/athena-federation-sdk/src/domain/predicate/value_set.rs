@@ -223,14 +223,6 @@ impl ValueSet {
     pub fn contains(&self, allocator: &dyn BlockAllocator, other: &ValueSet) -> Result<bool> {
         Ok(self.union(allocator, other)? == *self)
     }
-
-    pub fn hash_code(&self) -> i32 {
-        match self {
-            ValueSet::SortedRangeSet(v) => v.hash_code(),
-            ValueSet::EquatableValueSet(v) => v.hash_code(),
-            ValueSet::AllOrNoneValueSet(v) => v.hash_code(),
-        }
-    }
 }
 
 impl fmt::Display for ValueSet {

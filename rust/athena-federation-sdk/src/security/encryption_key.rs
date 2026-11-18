@@ -18,17 +18,6 @@ impl EncryptionKey {
     pub fn nonce(&self) -> &[u8] {
         &self.nonce
     }
-
-    pub fn hash_code(&self) -> i32 {
-        fn arrays_hash(b: &[u8]) -> i32 {
-            b.iter().fold(1i32, |h, x| {
-                h.wrapping_mul(31).wrapping_add(i32::from(x.cast_signed()))
-            })
-        }
-        arrays_hash(&self.key)
-            .wrapping_add(31)
-            .wrapping_add(arrays_hash(&self.nonce))
-    }
 }
 
 impl fmt::Debug for EncryptionKey {
