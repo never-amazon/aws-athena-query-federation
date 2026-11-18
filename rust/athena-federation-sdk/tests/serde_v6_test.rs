@@ -34,7 +34,7 @@ mod read_records_request_ser_de_v6_test {
         let text = fixture("serde/v6", "ReadRecordsRequest.json");
         let actual: FederationRequest = t
             .mapper_v6
-            .read_value(text.as_bytes())
+            .read_request(text.as_bytes())
             .expect("deserialize");
         assert_eq!(FederationRequest::from(expected(&t)), actual);
     }
@@ -43,7 +43,7 @@ mod read_records_request_ser_de_v6_test {
 mod object_mapper_factory_v6_test {
     use std::sync::Arc;
 
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::Schema;
     use athena_federation_sdk::data::BlockAllocatorImpl;
     use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
     use athena_federation_sdk::FederationError;
@@ -51,7 +51,7 @@ mod object_mapper_factory_v6_test {
     #[test]
     fn test_strict_serializer() {
         let mapper = ObjectMapper::new(SerdeVersion::V6, Arc::new(BlockAllocatorImpl::new()));
-        let result = mapper.write_value_as_string(&DataType::Null);
+        let result = mapper.write_schema(&Schema::empty());
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"
@@ -61,9 +61,7 @@ mod object_mapper_factory_v6_test {
     #[test]
     fn test_strict_deserializer() {
         let mapper = ObjectMapper::new(SerdeVersion::V6, Arc::new(BlockAllocatorImpl::new()));
-        let result = mapper.read_value_from_str::<DataType>(
-            "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
-        );
+        let result = mapper.read_schema(b"{\"fields\" : [ ]}");
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"

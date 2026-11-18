@@ -100,7 +100,9 @@ impl CompositeHandler {
     ) -> Result<Vec<u8>> {
         if let FederationRequest::Ping(ping) = raw_req {
             let response = self.metadata.do_ping(ping).await;
-            return object_mapper.write_value_as_bytes(&response);
+            return object_mapper
+                .write_response(&response.into())
+                .map(String::into_bytes);
         }
         match (raw_req, &self.udf) {
             (request, _) if request.is_metadata_request() => {

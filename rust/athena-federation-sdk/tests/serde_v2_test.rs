@@ -27,7 +27,7 @@ fn fixture_v2(name: &str) -> String {
 }
 
 fn assert_request_roundtrip_from_fixture(t: &TypedSerDe, text: &str, expected: &FederationRequest) {
-    let actual: FederationRequest = t.mapper.read_value(text.as_bytes()).expect("deserialize");
+    let actual: FederationRequest = t.mapper.read_request(text.as_bytes()).expect("deserialize");
     assert_eq!(expected.type_name(), actual.type_name());
     assert_eq!(*expected, actual);
 }
@@ -37,7 +37,10 @@ fn assert_response_roundtrip_from_fixture(
     text: &str,
     expected: &FederationResponse,
 ) {
-    let actual: FederationResponse = t.mapper.read_value(text.as_bytes()).expect("deserialize");
+    let actual: FederationResponse = t
+        .mapper
+        .read_response(text.as_bytes())
+        .expect("deserialize");
     assert_eq!(expected.type_name(), actual.type_name());
     assert_eq!(*expected, actual);
 }
@@ -595,7 +598,10 @@ mod lambda_function_exception_ser_de_test {
         let expected_message =
             format!("{error_message}. Stack trace: {stack_trace}\nErrorType: {error_type}");
         let text = fixture_v2("LambdaFunctionException.json");
-        let actual: LambdaException = t.mapper.read_value(text.as_bytes()).expect("deserialize");
+        let actual: LambdaException = t
+            .mapper
+            .read_lambda_exception(text.as_bytes())
+            .expect("deserialize");
         assert_eq!(Some(expected_message.as_str()), actual.message());
         assert!(actual.cause().is_none());
     }
@@ -647,7 +653,7 @@ mod arrow_ser_de_test {
 mod object_mapper_factory_v2_test {
     use std::sync::Arc;
 
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::Schema;
     use athena_federation_sdk::data::BlockAllocatorImpl;
     use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
     use athena_federation_sdk::FederationError;
@@ -655,7 +661,7 @@ mod object_mapper_factory_v2_test {
     #[test]
     fn test_strict_serializer() {
         let mapper = ObjectMapper::new(SerdeVersion::V2, Arc::new(BlockAllocatorImpl::new()));
-        let result = mapper.write_value_as_string(&DataType::Null);
+        let result = mapper.write_schema(&Schema::empty());
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"
@@ -665,9 +671,7 @@ mod object_mapper_factory_v2_test {
     #[test]
     fn test_strict_deserializer() {
         let mapper = ObjectMapper::new(SerdeVersion::V2, Arc::new(BlockAllocatorImpl::new()));
-        let result = mapper.read_value_from_str::<DataType>(
-            "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
-        );
+        let result = mapper.read_schema(b"{\"fields\" : [ ]}");
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"

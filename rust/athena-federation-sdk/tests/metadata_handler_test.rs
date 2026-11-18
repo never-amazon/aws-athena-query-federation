@@ -170,7 +170,9 @@ fn layout_request(
 async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<FederationResponse> {
     let object_mapper =
         ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&setup.block_allocator));
-    let input = object_mapper.write_value_as_bytes(&request)?;
+    let input = object_mapper
+        .write_request(&request)
+        .map(String::into_bytes)?;
     let output = setup.handler.handle_request(&input, None).await?;
     object_mapper.read_response(&output)
 }
@@ -393,7 +395,10 @@ async fn metadata_handler_runs_as_request_stream_handler() {
     let request: FederationRequest =
         GetDataSourceCapabilitiesRequest::new(Some(identity()), Some(QUERY_ID.into()), CATALOG)
             .into();
-    let input = object_mapper.write_value_as_bytes(&request).unwrap();
+    let input = object_mapper
+        .write_request(&request)
+        .map(String::into_bytes)
+        .unwrap();
     let output = RequestStreamHandler::handle_request(&stream_handler, &input, None)
         .await
         .unwrap();
@@ -413,7 +418,10 @@ async fn metadata_handler_runs_as_request_stream_handler() {
         100,
     )
     .into();
-    let input = object_mapper.write_value_as_bytes(&wrong).unwrap();
+    let input = object_mapper
+        .write_request(&wrong)
+        .map(String::into_bytes)
+        .unwrap();
     let err = RequestStreamHandler::handle_request(&stream_handler, &input, None)
         .await
         .unwrap_err();

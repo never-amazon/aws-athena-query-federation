@@ -306,7 +306,9 @@ impl<T: UserDefinedFunctionHandler + ?Sized> UserDefinedFunctionHandlerExt for T
             match &raw_request {
                 FederationRequest::Ping(ping) => {
                     let response = do_ping(self, ping).await;
-                    object_mapper.write_value_as_bytes(&response)
+                    object_mapper
+                        .write_response(&response.into())
+                        .map(String::into_bytes)
                 }
                 FederationRequest::UserDefinedFunction(request) => {
                     self.do_handle_request(&allocator, &object_mapper, request)
@@ -332,7 +334,9 @@ impl<T: UserDefinedFunctionHandler + ?Sized> UserDefinedFunctionHandlerExt for T
         tracing::info!("doHandleRequest: request[{}]", request);
         let response = self.process_function(allocator, request)?;
         tracing::info!("doHandleRequest: response[{}]", response);
-        object_mapper.write_value_as_bytes(&response)
+        object_mapper
+            .write_response(&response.into())
+            .map(String::into_bytes)
     }
 
     fn process_function(

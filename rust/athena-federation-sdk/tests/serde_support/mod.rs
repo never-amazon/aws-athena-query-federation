@@ -273,16 +273,12 @@ pub fn table_name() -> TableName {
 
 pub fn write_request(mapper: &ObjectMapper, request: impl Into<FederationRequest>) -> String {
     let request: FederationRequest = request.into();
-    let mut out: Vec<u8> = Vec::new();
-    mapper.write_value(&mut out, &request).expect("serialize");
-    String::from_utf8(out).expect("utf8")
+    mapper.write_request(&request).expect("serialize")
 }
 
 pub fn write_response(mapper: &ObjectMapper, response: impl Into<FederationResponse>) -> String {
     let response: FederationResponse = response.into();
-    let mut out: Vec<u8> = Vec::new();
-    mapper.write_value(&mut out, &response).expect("serialize");
-    String::from_utf8(out).expect("utf8")
+    mapper.write_response(&response).expect("serialize")
 }
 
 pub fn assert_serialized_matches(expected_text: &str, actual_text: &str, mapper: &ObjectMapper) {

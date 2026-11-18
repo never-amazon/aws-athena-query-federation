@@ -252,7 +252,9 @@ impl<T: RecordHandler + ?Sized> RecordHandlerExt for T {
             let raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = do_ping(self, ping).await;
-                return object_mapper.write_value_as_bytes(&response);
+                return object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes);
             }
             if !raw_req.is_record_request() {
                 return Err(FederationError::invalid_input(format!(
@@ -282,7 +284,9 @@ impl<T: RecordHandler + ?Sized> RecordHandlerExt for T {
             FederationRequest::ReadRecords(req) => {
                 let response = self.do_read_records(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response)
+                    .map(String::into_bytes)
             }
             other => Err(FederationError::invalid_input(format!(
                 "Unknown request type {}",

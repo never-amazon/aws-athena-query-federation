@@ -513,7 +513,9 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
             let mut raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = self.do_ping(ping).await;
-                return object_mapper.write_value_as_bytes(&response);
+                return object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes);
             }
             if !raw_req.is_metadata_request() {
                 return Err(FederationError::invalid_input(format!(
@@ -553,12 +555,16 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
             FederationRequest::ListSchemas(req) => {
                 let response = self.do_list_schema_names(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::ListTables(req) => {
                 let response = self.do_list_tables(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetTable(req) => {
                 tracing::info!(
@@ -572,12 +578,16 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                 };
                 tracing::info!("doHandleRequest: response[{}]", response);
                 assert_types(response.schema())?;
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetTableLayout(req) => {
                 let response = self.do_get_table_layout(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetSplits(req) => {
                 let base = self.metadata_base();
@@ -601,12 +611,16 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                     .await?;
                 let response = self.do_get_splits(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetDataSourceCapabilities(req) => {
                 let response = self.do_get_data_source_capabilities(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             other => Err(FederationError::invalid_input(format!(
                 "Unknown request type {}",

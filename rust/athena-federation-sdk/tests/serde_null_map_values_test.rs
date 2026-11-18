@@ -98,7 +98,7 @@ fn assert_get_table_request_round_trip(
     let actual = write_request(&mapper, get_table_request());
     assert_serialized_matches(&text, &actual, &mapper);
 
-    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    let parsed: FederationRequest = mapper.read_request(text.as_bytes()).expect("deserialize");
     let request = match parsed {
         FederationRequest::GetTable(r) => r,
         other => panic!("expected GetTableRequest, got {other:?}"),
@@ -123,7 +123,7 @@ fn assert_read_records_request_round_trip(version: SerdeVersion) {
     let actual = write_request(&mapper, read_records_request());
     assert_serialized_matches(&text, &actual, &mapper);
 
-    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    let parsed: FederationRequest = mapper.read_request(text.as_bytes()).expect("deserialize");
     assert_eq!(FederationRequest::from(read_records_request()), parsed);
     let request = match parsed {
         FederationRequest::ReadRecords(r) => r,
@@ -143,7 +143,7 @@ fn assert_split_null_property_rejected(version: SerdeVersion) {
     let mapper = indented(t.allocator.clone(), version);
     let text = fixture(DIR, &format!("ReadRecordsRequest-v{version}.json"))
         .replace("\"year\" : \"2017\"", "\"year\" : null");
-    let result = mapper.read_value::<FederationRequest>(text.as_bytes());
+    let result = mapper.read_request(text.as_bytes());
     match result {
         Err(FederationError::NullPointer(Some(message))) => {
             assert_eq!("null value in entry: year=null", message);
@@ -295,7 +295,7 @@ fn split_null_property_kept_v1() {
     let actual = write_request(&mapper, read_records_request_with_null_split_property());
     assert_serialized_matches(&text, &actual, &mapper);
 
-    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    let parsed: FederationRequest = mapper.read_request(text.as_bytes()).expect("deserialize");
     assert_eq!(
         FederationRequest::from(read_records_request_with_null_split_property()),
         parsed
@@ -328,7 +328,7 @@ fn assert_split_null_property_written_then_rejected(version: SerdeVersion) {
     let actual = write_request(&mapper, read_records_request_with_null_split_property());
     assert_serialized_matches(&text, &actual, &mapper);
 
-    match mapper.read_value::<FederationRequest>(text.as_bytes()) {
+    match mapper.read_request(text.as_bytes()) {
         Err(FederationError::NullPointer(Some(message))) => {
             assert_eq!("null value in entry: year=null", message);
         }
@@ -386,7 +386,7 @@ fn assert_null_group_round_trip(version: SerdeVersion) {
     let actual = write_request(&mapper, null_group_request());
     assert_serialized_matches(&text, &actual, &mapper);
 
-    let parsed: FederationRequest = mapper.read_value(text.as_bytes()).expect("deserialize");
+    let parsed: FederationRequest = mapper.read_request(text.as_bytes()).expect("deserialize");
     let request = match parsed {
         FederationRequest::GetTable(r) => r,
         other => panic!("expected GetTableRequest, got {other:?}"),
