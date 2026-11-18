@@ -60,7 +60,6 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.concurrent.TimeUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -234,7 +233,7 @@ public class PostGreSqlRecordHandlerTest extends TestBase
 
         Split split = createMockSplit("s0", PARTITION_NAME);
 
-        final long dateDays = TimeUnit.MILLISECONDS.toDays(Date.valueOf("2020-01-05").getTime());
+        final long dateDays = java.time.LocalDate.of(2020, 1, 5).toEpochDay();
         Constraints constraints = createConstraints("testDate", getSingleValueSet(dateDays));
 
         String expectedSql = "SELECT \"testDate\" FROM \"s0\".\"p0\"  WHERE (\"testDate\" = ?)";
@@ -662,8 +661,8 @@ public class PostGreSqlRecordHandlerTest extends TestBase
         Split split = createMockSplit(PARTITION_SCHEMA, PARTITION_NAME);
 
         // Complex constraints: date range, multiple categories, score bounds  
-        final long dateStart = TimeUnit.MILLISECONDS.toDays(Date.valueOf("2022-12-31").getTime());
-        final long dateEnd = TimeUnit.MILLISECONDS.toDays(Date.valueOf("2023-12-30").getTime());
+        final long dateStart = java.time.LocalDate.of(2022, 12, 31).toEpochDay();
+        final long dateEnd = java.time.LocalDate.of(2023, 12, 30).toEpochDay();
         ValueSet dateRange = getRangeSet(Marker.Bound.EXACTLY, dateStart, Marker.Bound.EXACTLY, dateEnd);
         ValueSet categories = createMultiValueSet(Arrays.asList("A", "B", "Premium"));
         ValueSet scoreRange = getRangeSet(Marker.Bound.EXACTLY, BigDecimal.valueOf(85.0), Marker.Bound.BELOW, BigDecimal.valueOf(100.0));
