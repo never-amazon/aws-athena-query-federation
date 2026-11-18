@@ -125,7 +125,6 @@ public abstract class JdbcRecordHandler
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcRecordHandler.class);
     private static final long MILLIS_PER_DAY = 86_400_000L;
-    private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private final JdbcConnectionFactory jdbcConnectionFactory;
     private final DatabaseConnectionConfig databaseConnectionConfig;
     // The base RecordHandler keeps these private; the export path needs them as getS3Client/getAthenaClient defaults.
@@ -434,13 +433,13 @@ public abstract class JdbcRecordHandler
         if (value instanceof Timestamp && (type == Types.MinorType.DATEMILLI || type == Types.MinorType.TIMESTAMPMILLITZ)) {
             return getTimestampMillis(resultSet, column, (Timestamp) value);
         }
-        if (value instanceof java.sql.Date && ((java.sql.Date) value).getTime() < GREGORIAN_CUTOVER_MILLIS) {
+        if (value instanceof java.sql.Date) {
             LocalDate date = toLocalDate((java.sql.Date) value);
             if (type == Types.MinorType.DATEDAY) {
-                return date;
+                return toDateDay(date);
             }
             if (type == Types.MinorType.DATEMILLI) {
-                return date.toEpochDay() * MILLIS_PER_DAY;
+                return toDateMillis(date);
             }
         }
         return value;

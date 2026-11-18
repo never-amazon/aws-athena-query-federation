@@ -485,6 +485,45 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeFactoryReadsArrayDatesLikeScalarDates() throws Exception {
+        Date[] dates = {new Date(9223372036825200000L), new Date(-9223372036832400000L), Date.valueOf(LocalDate.of(10000, 1, 1)), Date.valueOf(LocalDate.of(2025, 4, 22))};
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {
+                org.apache.arrow.vector.types.Types.MinorType.DATEDAY, org.apache.arrow.vector.types.Types.MinorType.DATEMILLI}) {
+            List<Object> expected = new ArrayList<>();
+            for (Date date : dates) {
+                ResultSet scalar = Mockito.mock(ResultSet.class);
+                when(scalar.getObject("testCol")).thenReturn(date);
+                when(scalar.getDate("testCol")).thenReturn(date);
+                Field field = FieldBuilder.newBuilder("testCol", elementType.getType()).build();
+                if (elementType == org.apache.arrow.vector.types.Types.MinorType.DATEDAY) {
+                    NullableDateDayHolder holder = new NullableDateDayHolder();
+                    ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(field, scalar, partitionMap)).extract(null, holder);
+                    expected.add(holder.value);
+                }
+                else {
+                    NullableDateMilliHolder holder = new NullableDateMilliHolder();
+                    ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(field, scalar, partitionMap)).extract(null, holder);
+                    expected.add(LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(holder.value), java.time.ZoneOffset.UTC));
+                }
+            }
+            Schema schema = SchemaBuilder.newBuilder().addListField("dates", elementType.getType()).build();
+            ResultSet elements = Mockito.mock(ResultSet.class);
+            when(elements.next()).thenReturn(true, true, true, true, false);
+            when(elements.getObject(2)).thenReturn(dates[0], dates[1], dates[2], dates[3]);
+            java.sql.Array array = Mockito.mock(java.sql.Array.class);
+            when(array.getResultSet()).thenReturn(elements);
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getArray("dates")).thenReturn(array);
+            try (BlockAllocatorImpl allocator = new BlockAllocatorImpl(); Block block = allocator.createBlock(schema)) {
+                this.jdbcRecordHandler.makeFactory(schema.getFields().get(0)).create(block.getFieldVector("dates"), null, null).write(resultSet, 0);
+                block.setRowCount(1);
+                Assert.assertEquals(elementType.toString(), expected, block.getFieldVector("dates").getObject(0));
+            }
+        }
+    }
+
+    @Test
     public void makeFactoryReadsArrayTimestampsThroughGetTimestampMillis() throws Exception {
         JdbcRecordHandler handler = new JdbcRecordHandler(this.amazonS3, this.secretsManager, this.athena,
                 new DatabaseConnectionConfig("testCatalog", "fakedatabase", "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}", "testSecret"),

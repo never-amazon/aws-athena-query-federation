@@ -235,13 +235,6 @@ fn extract_float8(row: &Row, index: usize, dst: &mut NullableFloat8Holder) -> Re
 }
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
-const GREGORIAN_CUTOVER_MILLIS: i64 = -12_219_292_800_000;
-
-fn epoch_day(date: chrono::NaiveDate) -> i64 {
-    date.signed_duration_since(chrono::NaiveDate::default())
-        .num_days()
-}
-
 fn date_day(epoch_day: i64) -> i32 {
     i32::try_from(epoch_day).unwrap_or(if epoch_day < 0 { i32::MIN } else { i32::MAX })
 }
@@ -356,14 +349,11 @@ fn calendar_value(value: &SqlValue, minor_type: MinorType) -> Result<Value> {
             }
         }
         (SqlValue::Date(_), MinorType::DATEDAY | MinorType::DATEMILLI) => {
-            let pre_cutover = value
-                .to_timestamp_millis()?
-                .is_some_and(|millis| millis < GREGORIAN_CUTOVER_MILLIS);
-            if let (true, Some(date)) = (pre_cutover, value.to_date()?) {
+            if let Some(day) = value.to_epoch_day()? {
                 return Ok(if minor_type == MinorType::DATEDAY {
-                    Value::LocalDate(date)
+                    Value::Int(date_day(day))
                 } else {
-                    Value::Long(epoch_day(date) * MILLIS_PER_DAY)
+                    Value::Long(day.saturating_mul(MILLIS_PER_DAY))
                 });
             }
         }

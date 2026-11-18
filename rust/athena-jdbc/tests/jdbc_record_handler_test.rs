@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
+use athena_federation_sdk::data::local_date_time_of_epoch_milli_utc;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::writers::holders::{
@@ -715,6 +716,52 @@ async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
     assert_eq!(
         expected_millis,
         write_array(&s.handler, DataType::Date64, elements())
+    );
+}
+
+#[tokio::test]
+async fn make_factory_reads_array_dates_like_scalar_dates() {
+    let s = set_up();
+    let dates = || {
+        vec![
+            SqlValue::java_sql_date(9_223_372_036_825_200_000, 106_751_991_166, "infinity"),
+            SqlValue::java_sql_date(-9_223_372_036_832_400_000, -106_749_799_148, "-infinity"),
+            SqlValue::java_sql_date(253_402_300_800_000, 2_932_897, "+10000-01-01"),
+            SqlValue::java_sql_date(1_745_280_000_000, 20_200, "2025-04-22"),
+        ]
+    };
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
+    let extractor = |data_type| {
+        s.handler
+            .make_extractor(&field("testCol", data_type), &metadata, &partition_map())
+            .unwrap()
+    };
+    let (day_extractor, milli_extractor) =
+        (extractor(DataType::Date32), extractor(DataType::Date64));
+    let scalar = |date: SqlValue| row(metadata.clone(), vec![date]);
+    let expected_days = Value::List(
+        dates()
+            .into_iter()
+            .map(|date| Value::Int(date_day_holder(&day_extractor, &scalar(date)).value))
+            .collect(),
+    );
+    assert_eq!(
+        expected_days,
+        write_array(&s.handler, DataType::Date32, dates())
+    );
+    let expected_millis = Value::List(
+        dates()
+            .into_iter()
+            .map(|date| {
+                Value::LocalDateTime(local_date_time_of_epoch_milli_utc(
+                    date_milli_holder(&milli_extractor, &scalar(date)).value,
+                ))
+            })
+            .collect(),
+    );
+    assert_eq!(
+        expected_millis,
+        write_array(&s.handler, DataType::Date64, dates())
     );
 }
 
