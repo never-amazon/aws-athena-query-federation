@@ -438,6 +438,26 @@ public class JdbcRecordHandlerTest
     }
 
     @Test
+    public void makeExtractorReadsDatesFromYearTenThousand() throws Exception {
+        Map<String, String> partitionMap = Collections.singletonMap("testPartitionCol", "testPartitionValue");
+        for (LocalDate localDate : new LocalDate[] {LocalDate.of(9999, 12, 31), LocalDate.of(10000, 1, 1), LocalDate.of(123456, 7, 8), LocalDate.of(5874897, 12, 31)}) {
+            Date date = new Date(localDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+            ResultSet resultSet = Mockito.mock(ResultSet.class);
+            when(resultSet.getObject("testCol")).thenReturn(date);
+            when(resultSet.getDate("testCol")).thenReturn(date);
+            when(resultSet.wasNull()).thenReturn(false);
+
+            NullableDateDayHolder day = new NullableDateDayHolder();
+            ((DateDayExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEDAY.getType()).build(), resultSet, partitionMap)).extract(null, day);
+            NullableDateMilliHolder milli = new NullableDateMilliHolder();
+            ((DateMilliExtractor) this.jdbcRecordHandler.makeExtractor(FieldBuilder.newBuilder("testCol", org.apache.arrow.vector.types.Types.MinorType.DATEMILLI.getType()).build(), resultSet, partitionMap)).extract(null, milli);
+
+            Assert.assertEquals(localDate.toString(), localDate.toEpochDay(), day.value);
+            Assert.assertEquals(localDate.toString(), localDate.toEpochDay() * 86_400_000L, milli.value);
+        }
+    }
+
+    @Test
     public void makeFactoryReadsPre1582ArrayDatesByCalendarDate() throws Exception {
         LocalDate[] dates = {LocalDate.of(1000, 1, 1), LocalDate.of(1582, 10, 4), LocalDate.of(1582, 10, 15), LocalDate.of(2025, 4, 22)};
         for (org.apache.arrow.vector.types.Types.MinorType elementType : new org.apache.arrow.vector.types.Types.MinorType[] {

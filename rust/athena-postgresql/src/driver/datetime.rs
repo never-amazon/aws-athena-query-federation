@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDateTime};
 
 pub(crate) const DATE_POSITIVE_INFINITY: i64 = 9_223_372_036_825_200_000;
 pub(crate) const DATE_NEGATIVE_INFINITY: i64 = -9_223_372_036_832_400_000;
@@ -247,23 +247,15 @@ pub(crate) fn millis_to_naive(millis: i64, nanos: u32) -> Option<NaiveDateTime> 
     DateTime::from_timestamp(millis.div_euclid(1000), nanos).map(|dt| dt.naive_utc())
 }
 
-pub(crate) fn java_sql_date_local_date(millis: i64) -> Option<NaiveDate> {
+pub(crate) fn java_sql_date_epoch_day(millis: i64) -> i64 {
     let (year, month, day) = hybrid_fields(millis.div_euclid(MILLIS_PER_DAY));
-    let label_year = if year <= 0 {
-        1 - (1 - year) % 10_000
-    } else {
-        year % 10_000
-    };
-    NaiveDate::from_ymd_opt(
-        i32::try_from(label_year).ok()?,
-        u32::try_from(month).ok()?,
-        u32::try_from(day).ok()?,
-    )
+    gregorian_epoch_day(year, month, day)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDate;
 
     fn epoch_day(date: NaiveDate) -> i64 {
         date.signed_duration_since(NaiveDate::default()).num_days()
@@ -356,32 +348,29 @@ mod tests {
     }
 
     #[test]
-    fn java_sql_date_strings_keep_four_year_digits_and_the_era() {
+    fn java_sql_dates_keep_every_year_digit_and_the_era() {
         let day = |text: &str| {
-            epoch_day(
-                java_sql_date_local_date(
-                    parse_backend_timestamp(text)
-                        .unwrap()
-                        .java_date_millis()
-                        .unwrap(),
-                )
-                .unwrap(),
+            java_sql_date_epoch_day(
+                parse_backend_timestamp(text)
+                    .unwrap()
+                    .java_date_millis()
+                    .unwrap(),
             )
         };
         assert_eq!(day("0001-01-01 BC"), -719_528);
-        assert_eq!(day("10000-01-01"), -719_528);
+        assert_eq!(day("10000-01-01"), 2_932_897);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(
             day("1000-01-01"),
             epoch_day(NaiveDate::from_ymd_opt(1000, 1, 1).unwrap())
         );
         assert_eq!(
-            epoch_day(java_sql_date_local_date(DATE_POSITIVE_INFINITY).unwrap()),
-            2_565_691
+            java_sql_date_epoch_day(DATE_POSITIVE_INFINITY),
+            106_751_991_166
         );
         assert_eq!(
-            epoch_day(java_sql_date_local_date(DATE_NEGATIVE_INFINITY).unwrap()),
-            -4_026_098
+            java_sql_date_epoch_day(DATE_NEGATIVE_INFINITY),
+            -106_749_799_148
         );
     }
 }

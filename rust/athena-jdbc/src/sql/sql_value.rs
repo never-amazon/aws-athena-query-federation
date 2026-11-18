@@ -6,15 +6,18 @@ use athena_federation_sdk::data::java_format::{
 };
 use athena_federation_sdk::data::{local_date_to_string, Value};
 use bigdecimal::BigDecimal;
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use super::sql_exception::{SqlException, SQL_EXCEPTION_CLASS};
+
+const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderedKind {
     Typed,
     JavaDateMillis(i64),
+    JavaSqlDate { millis: i64, epoch_day: i64 },
     EpochMillis(i64),
     InvalidElement(&'static str),
     InvalidDateTime,
@@ -159,12 +162,20 @@ impl SqlValue {
         }
     }
 
-    pub fn java_sql_date(millis: i64, date: NaiveDate, text: impl Into<String>) -> SqlValue {
+    pub fn java_sql_date(millis: i64, epoch_day: i64, text: impl Into<String>) -> SqlValue {
+        let date = i32::try_from(epoch_day + DAYS_FROM_CE_TO_EPOCH)
+            .ok()
+            .and_then(NaiveDate::from_num_days_from_ce_opt)
+            .unwrap_or(if epoch_day < 0 {
+                NaiveDate::MIN
+            } else {
+                NaiveDate::MAX
+            });
         SqlValue::Rendered {
             value: Box::new(SqlValue::Date(date)),
             text: text.into(),
             exception_class: SQL_EXCEPTION_CLASS,
-            kind: RenderedKind::JavaDateMillis(millis),
+            kind: RenderedKind::JavaSqlDate { millis, epoch_day },
         }
     }
 
@@ -208,7 +219,7 @@ impl SqlValue {
             return Err(error);
         }
         if let SqlValue::Rendered {
-            kind: RenderedKind::JavaDateMillis(millis),
+            kind: RenderedKind::JavaDateMillis(millis) | RenderedKind::JavaSqlDate { millis, .. },
             ..
         } = self
         {
@@ -396,6 +407,18 @@ impl SqlValue {
         }
     }
 
+    pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlException> {
+        let date = self.to_date()?;
+        if let SqlValue::Rendered {
+            kind: RenderedKind::JavaSqlDate { epoch_day, .. },
+            ..
+        } = self
+        {
+            return Ok(date.map(|_| *epoch_day));
+        }
+        Ok(date.map(|date| i64::from(date.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH))
+    }
+
     pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlException> {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
@@ -476,7 +499,8 @@ impl SqlValue {
             SqlValue::TimestampTz(ts) => Value::Date(ts.timestamp_millis()),
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
             SqlValue::Rendered {
-                kind: RenderedKind::JavaDateMillis(millis),
+                kind:
+                    RenderedKind::JavaDateMillis(millis) | RenderedKind::JavaSqlDate { millis, .. },
                 ..
             } => Value::Date(*millis),
             SqlValue::Rendered { value, text, .. } => match value.as_ref() {

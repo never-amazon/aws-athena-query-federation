@@ -242,6 +242,10 @@ fn epoch_day(date: chrono::NaiveDate) -> i64 {
         .num_days()
 }
 
+fn date_day(epoch_day: i64) -> i32 {
+    i32::try_from(epoch_day).unwrap_or(if epoch_day < 0 { i32::MIN } else { i32::MAX })
+}
+
 fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
     let extractor = match field_type {
         MinorType::BIT => Extractor::bit(move |context: &dyn Any, dst: &mut _| {
@@ -292,15 +296,9 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
             Ok(())
         }),
         MinorType::DATEDAY => Extractor::date_day(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_date(index)?;
-            if let Some(date) = value {
-                let days = epoch_day(date);
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    reason = "the (int) cast of toEpochDay narrows the same way"
-                )]
-                let days = days as i32;
-                dst.value = days;
+            let value = row_of(context)?.get_object(index)?.to_epoch_day()?;
+            if let Some(day) = value {
+                dst.value = date_day(day);
             }
             dst.is_set = i32::from(value.is_some());
             Ok(())
@@ -308,8 +306,9 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
         MinorType::DATEMILLI => Extractor::date_milli(move |context: &dyn Any, dst: &mut _| {
             let row = row_of(context)?;
             let value = if row.metadata().column_type(index)? == Types::DATE {
-                row.get_date(index)?
-                    .map(|date| epoch_day(date) * MILLIS_PER_DAY)
+                row.get_object(index)?
+                    .to_epoch_day()?
+                    .map(|day| day.saturating_mul(MILLIS_PER_DAY))
             } else {
                 row.get_object(index)?.to_epoch_millis()?
             };

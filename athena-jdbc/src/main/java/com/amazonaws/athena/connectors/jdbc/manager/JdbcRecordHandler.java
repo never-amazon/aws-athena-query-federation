@@ -446,14 +446,30 @@ public abstract class JdbcRecordHandler
         return value;
     }
 
+    private static int toDateDay(LocalDate date)
+    {
+        return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, date.toEpochDay()));
+    }
+
+    private static long toDateMillis(LocalDate date)
+    {
+        long day = date.toEpochDay();
+        if (day > Long.MAX_VALUE / MILLIS_PER_DAY) {
+            return Long.MAX_VALUE;
+        }
+        if (day < Long.MIN_VALUE / MILLIS_PER_DAY) {
+            return Long.MIN_VALUE;
+        }
+        return day * MILLIS_PER_DAY;
+    }
+
     private static LocalDate toLocalDate(java.sql.Date date)
     {
-        String[] fields = date.toString().split("-");
-        int year = Integer.parseInt(fields[0]);
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(date);
+        int year = calendar.get(Calendar.YEAR);
         return LocalDate.of(calendar.get(Calendar.ERA) == GregorianCalendar.BC ? 1 - year : year,
-                Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
+                calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH));
     }
 
     protected void checkDateTimeText(ResultSet resultSet, String fieldName) throws SQLException
@@ -569,7 +585,7 @@ public abstract class JdbcRecordHandler
                     checkDateTimeText(resultSet, fieldName);
                     //Issue fix for getting different date (offset by 1) for any dates prior to 1/1/1970.
                     if (resultSet.getDate(fieldName) != null) {
-                        dst.value = (int) toLocalDate(resultSet.getDate(fieldName)).toEpochDay();
+                        dst.value = toDateDay(toLocalDate(resultSet.getDate(fieldName)));
                     }
                     dst.isSet = resultSet.wasNull() ? 0 : 1;
                 };
@@ -578,7 +594,7 @@ public abstract class JdbcRecordHandler
                 {
                     checkDateTimeText(resultSet, fieldName);
                     if (resultSet.getObject(fieldName) instanceof java.sql.Date) {
-                        dst.value = toLocalDate(resultSet.getDate(fieldName)).toEpochDay() * MILLIS_PER_DAY;
+                        dst.value = toDateMillis(toLocalDate(resultSet.getDate(fieldName)));
                     }
                     else if (resultSet.getTimestamp(fieldName) != null) {
                         dst.value = getTimestampMillis(resultSet, resultSet.findColumn(fieldName), resultSet.getTimestamp(fieldName));

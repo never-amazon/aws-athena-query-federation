@@ -7,7 +7,7 @@ use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
-    java_sql_date_local_date, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
+    java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
     DATE_POSITIVE_INFINITY,
 };
 use super::error::PSQL_EXCEPTION;
@@ -59,19 +59,8 @@ fn java_date_millis(text: &str) -> Option<i64> {
 fn java_date(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
     Some(
-        SqlValue::java_sql_date(millis, java_sql_date_local_date(millis)?, text)
+        SqlValue::java_sql_date(millis, java_sql_date_epoch_day(millis), text)
             .with_exception_class(PSQL_EXCEPTION),
-    )
-}
-
-fn java_date_element(text: &str) -> Option<SqlValue> {
-    let millis = java_date_millis(text)?;
-    Some(
-        match java_sql_date_local_date(millis) {
-            Some(date) => SqlValue::java_sql_date(millis, date, text),
-            None => SqlValue::java_date_millis(millis, text),
-        }
-        .with_exception_class(PSQL_EXCEPTION),
     )
 }
 
@@ -212,7 +201,7 @@ impl Decoder {
 
     fn decode_element(&self, text: String) -> SqlValue {
         match self {
-            Decoder::Date => java_date_element(&text).unwrap_or(SqlValue::String(text)),
+            Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
                 SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
             }
@@ -616,12 +605,7 @@ mod tests {
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
-        value
-            .to_date()
-            .unwrap()
-            .unwrap()
-            .signed_duration_since(NaiveDate::default())
-            .num_days()
+        value.to_epoch_day().unwrap().unwrap()
     }
 
     fn millis(value: &SqlValue) -> i64 {
@@ -642,12 +626,12 @@ mod tests {
     }
 
     #[test]
-    fn dates_decode_to_the_java_sql_date_string_pgjdbc_produces() {
+    fn dates_decode_to_the_java_sql_date_pgjdbc_produces() {
         let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
         assert_eq!(day("0001-01-01 BC"), -719_528);
-        assert_eq!(day("infinity"), 2_565_691);
-        assert_eq!(day("-infinity"), -4_026_098);
-        assert_eq!(day("10000-01-01"), -719_528);
+        assert_eq!(day("infinity"), 106_751_991_166);
+        assert_eq!(day("-infinity"), -106_749_799_148);
+        assert_eq!(day("10000-01-01"), 2_932_897);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(day("9999-12-31"), 2_932_896);
         let value = Decoder::Date.decode(Some(b"infinity"));

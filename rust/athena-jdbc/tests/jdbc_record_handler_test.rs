@@ -601,6 +601,39 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
     }
 }
 
+#[tokio::test]
+async fn make_extractor_reads_dates_from_year_ten_thousand() {
+    let s = set_up();
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
+    let extractor = |data_type| {
+        s.handler
+            .make_extractor(&field("testCol", data_type), &metadata, &partition_map())
+            .unwrap()
+    };
+    let (day_extractor, milli_extractor) =
+        (extractor(DataType::Date32), extractor(DataType::Date64));
+    for (year, month, day, expected) in [
+        (9999, 12, 31, 2_932_896_i64),
+        (10000, 1, 1, 2_932_897),
+        (123_456, 7, 8, 44_372_039),
+        (5_874_897, 12, 31, 2_145_042_905),
+    ] {
+        let label = format!("+{year}-{month:02}-{day:02}");
+        let context = row(
+            metadata.clone(),
+            vec![SqlValue::java_sql_date(
+                expected * 86_400_000,
+                expected,
+                label.clone(),
+            )],
+        );
+        let h = date_day_holder(&day_extractor, &context);
+        assert_eq!((i64::from(h.value), 1), (expected, h.is_set), "{label}");
+        let h = date_milli_holder(&milli_extractor, &context);
+        assert_eq!((expected * 86_400_000, 1), (h.value, h.is_set), "{label}");
+    }
+}
+
 fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<SqlValue>) -> Value {
     let mut schema_builder = SchemaBuilder::new_builder();
     schema_builder.add_list_field("values", element);
@@ -632,7 +665,7 @@ async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
             .iter()
             .map(|&((year, month, day), java_day)| {
                 let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
-                SqlValue::java_sql_date(java_day * 86_400_000, date, date.to_string())
+                SqlValue::java_sql_date(java_day * 86_400_000, epoch_day(date), date.to_string())
             })
             .collect();
         elements.insert(2, SqlValue::Null);
@@ -1085,7 +1118,11 @@ async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
     };
     let java_date = |i: usize| {
         let label = timestamps[i].date();
-        SqlValue::java_sql_date(java_days[i] * 86_400_000, label, label.to_string())
+        SqlValue::java_sql_date(
+            java_days[i] * 86_400_000,
+            epoch_day(label),
+            label.to_string(),
+        )
     };
     let data = ResultSetData::of_columns(
         vec![
