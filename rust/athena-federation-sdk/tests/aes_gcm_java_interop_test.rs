@@ -1,3 +1,4 @@
+use athena_federation_sdk::data::block_utils;
 use std::fmt::Write as _;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value,
 };
 use athena_federation_sdk::security::{BlockCrypto, EncryptionKey};
 use bigdecimal::BigDecimal;
@@ -53,7 +54,7 @@ fn schema() -> Arc<Schema> {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: &Value) {
-    BlockUtils::set_value(block.get_field_vector_mut(field).unwrap(), row, value).unwrap();
+    block_utils::set_value(block.get_field_vector_mut(field).unwrap(), row, value).unwrap();
 }
 
 fn date(y: i32, m: u32, d: u32) -> Value {

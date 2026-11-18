@@ -1,9 +1,10 @@
+use athena_federation_sdk::data::block_utils;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, GetObjectRequest, PutObjectRequest,
+    Block, BlockAllocator, BlockAllocatorImpl, GetObjectRequest, PutObjectRequest,
     S3BlockSpillReader, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -81,7 +82,7 @@ impl Drop for Setup {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut(field).unwrap(),
         row,
         &value.into(),

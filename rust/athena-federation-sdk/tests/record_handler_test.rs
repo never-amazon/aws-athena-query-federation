@@ -1,13 +1,13 @@
 mod handler_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, S3BlockSpillReader, S3Client,
-    SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpillReader, S3Client, SchemaBuilder,
 };
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -198,7 +198,7 @@ async fn do_read_records_spill() {
             )
             .await
             .unwrap();
-        assert!(BlockUtils::row_to_string(&block, 0).is_ok());
+        assert!(block_utils::row_to_string(&block, 0).is_ok());
     }
 }
 

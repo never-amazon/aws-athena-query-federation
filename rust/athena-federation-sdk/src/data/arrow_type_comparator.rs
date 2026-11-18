@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::date_time_formatter_util::DateTimeFormatterUtil;
+use super::date_time_formatter_util;
 use super::types::{minor_type_of, ArrowType, MinorType};
 use super::value::{java_double_compare, java_float_compare, Value};
 use super::vector::FieldReader;
@@ -123,8 +123,8 @@ impl ArrowTypeComparator {
                 Value::Long(a),
                 Value::Long(b),
             ) => {
-                let l = DateTimeFormatterUtil::construct_zoned_date_time(*a, arrow_type)?;
-                let r = DateTimeFormatterUtil::construct_zoned_date_time(*b, arrow_type)?;
+                let l = date_time_formatter_util::construct_zoned_date_time(*a, arrow_type)?;
+                let r = date_time_formatter_util::construct_zoned_date_time(*b, arrow_type)?;
                 Ok(ord(l.compare_to(&r)))
             }
             (

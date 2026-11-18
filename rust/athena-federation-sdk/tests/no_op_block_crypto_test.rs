@@ -1,8 +1,9 @@
+use athena_federation_sdk::data::block_utils;
 use std::sync::Arc;
 
 use arrow::array::Int32Array;
 use arrow::datatypes::{DataType, Field, Schema};
-use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, BlockUtils, Value};
+use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, Value};
 use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, KeySource};
 
 struct Setup {
@@ -86,7 +87,7 @@ async fn decrypt_with_schema() {
     let s = setup().await;
     let schema = int_schema();
     let mut block = s.allocator.create_block(schema.clone());
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut("id").unwrap(),
         0,
         &Value::Int(42),

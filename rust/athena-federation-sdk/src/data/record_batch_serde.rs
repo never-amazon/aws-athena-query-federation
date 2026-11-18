@@ -13,12 +13,8 @@ use crate::exceptions::{FederationError, Result};
 
 const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
-pub struct AthenaFederationIpcOption;
-
-impl AthenaFederationIpcOption {
-    pub fn default_option() -> Result<IpcWriteOptions> {
-        Ok(IpcWriteOptions::try_new(8, true, MetadataVersion::V4)?)
-    }
+fn ipc_write_options() -> Result<IpcWriteOptions> {
+    Ok(IpcWriteOptions::try_new(8, true, MetadataVersion::V4)?)
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +27,7 @@ pub struct ArrowRecordBatch {
 
 impl ArrowRecordBatch {
     pub fn from_record_batch(batch: &RecordBatch) -> Result<ArrowRecordBatch> {
-        let options = AthenaFederationIpcOption::default_option()?;
+        let options = ipc_write_options()?;
         let generator = IpcDataGenerator::default();
         let mut tracker = DictionaryTracker::new(false);
         let mut ctx = IpcWriteContext::default();
@@ -101,7 +97,7 @@ impl ArrowRecordBatch {
     }
 
     pub fn serialize(&self, out: &mut dyn Write) -> Result<()> {
-        let options = AthenaFederationIpcOption::default_option()?;
+        let options = ipc_write_options()?;
         let encoded = arrow::ipc::writer::EncodedData {
             ipc_message: self.metadata.clone(),
             arrow_data: self.body.as_slice().to_vec(),
@@ -185,25 +181,8 @@ impl<'a> RecordBatchSerDe<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SchemaSerDe;
-
-impl SchemaSerDe {
-    pub fn new() -> SchemaSerDe {
-        SchemaSerDe
-    }
-
-    pub fn serialize(&self, schema: &Schema, out: &mut dyn Write) -> Result<()> {
-        serialize_schema(schema, out)
-    }
-
-    pub fn deserialize(&self, input: &mut dyn Read) -> Result<Schema> {
-        deserialize_schema(input)
-    }
-}
-
 pub fn serialize_schema(schema: &Schema, out: &mut dyn Write) -> Result<()> {
-    let options = AthenaFederationIpcOption::default_option()?;
+    let options = ipc_write_options()?;
     let generator = IpcDataGenerator::default();
     let mut tracker = DictionaryTracker::new(false);
     let encoded = generator.schema_to_bytes_with_dictionary_tracker(schema, &mut tracker, &options);

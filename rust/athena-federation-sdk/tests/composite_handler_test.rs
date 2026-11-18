@@ -1,5 +1,6 @@
 mod handler_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, SchemaBuilder, SimpleBlockWriter,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -121,7 +122,7 @@ impl MetadataHandler for MockMetadataHandler {
         Ok(GetTableLayoutResponse::new(
             "catalog",
             TableName::new("schema", "table"),
-            BlockUtils::new_block(self.allocator.as_ref(), "col1", &DataType::Int64, [1i64])?,
+            block_utils::new_block(self.allocator.as_ref(), "col1", &DataType::Int64, [1i64])?,
         ))
     }
 
@@ -183,7 +184,7 @@ impl RecordHandler for MockRecordHandler {
         self.calls.read_records.fetch_add(1, Ordering::SeqCst);
         Ok(ReadRecordsResponse::new(
             "catalog",
-            BlockUtils::new_empty_block(self.allocator.as_ref(), "col", &DataType::Int32),
+            block_utils::new_empty_block(self.allocator.as_ref(), "col", &DataType::Int32),
         )
         .into())
     }
@@ -322,7 +323,7 @@ async fn do_get_table_layout() {
 #[tokio::test]
 async fn do_get_splits() {
     let s = set_up();
-    let partitions = BlockUtils::new_empty_block(s.allocator.as_ref(), "p", &DataType::Int32);
+    let partitions = block_utils::new_empty_block(s.allocator.as_ref(), "p", &DataType::Int32);
     let req = GetSplitsRequest::new(
         Some(fake_identity()),
         None,
@@ -416,7 +417,7 @@ async fn handle_request_with_invalid_input() {
 #[tokio::test]
 async fn handle_request_with_unknown_request_throws_invalid_input_exception() {
     let s = set_up();
-    let block = BlockUtils::new_empty_block(s.allocator.as_ref(), "col", &DataType::Int32);
+    let block = block_utils::new_empty_block(s.allocator.as_ref(), "col", &DataType::Int32);
     let unknown_request = UserDefinedFunctionRequest::new(
         None,
         block,

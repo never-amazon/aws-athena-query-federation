@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Fields, Metadata};
 use athena_federation_sdk::data::get_children;
-use athena_federation_sdk::data::ArrowSchemaUtils;
+use athena_federation_sdk::data::remap_arrow_types_within_field;
 
 fn meta(k: &str, v: &str) -> Metadata {
     Metadata::from(HashMap::from([(k.to_string(), v.to_string())]))
@@ -53,7 +53,7 @@ fn test_remap_type_in_struct() {
             arrow_type.clone()
         }
     };
-    let output_field = ArrowSchemaUtils::remap_arrow_types_within_field(&outer, &mapper);
+    let output_field = remap_arrow_types_within_field(&outer, &mapper);
     assert_eq!(
         "aasdf: Struct<asdf: Struct<bsdf: Decimal(24, 6, 32), csdf: Decimal(12, 3, 32)>, bsdf: Decimal(24, 6, 32), csdf: Decimal(12, 3, 32)>",
         render(&output_field)

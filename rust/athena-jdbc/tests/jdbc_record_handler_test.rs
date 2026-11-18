@@ -1,5 +1,6 @@
 mod jdbc_support;
 
+use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,8 +10,8 @@ use athena_federation_sdk::data::local_date_time_of_epoch_milli_utc;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, DateTimeFormatterUtil, FieldBuilder,
-    S3BlockSpiller, SchemaBuilder, Value,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, FieldBuilder, S3BlockSpiller, SchemaBuilder,
+    Value,
 };
 use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints};
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -1107,7 +1108,7 @@ async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() 
     assert!(created_on.contains(&Value::Long(customers.and_utc().timestamp_millis())));
     assert_ne!(
         orders_created_on,
-        DateTimeFormatterUtil::timestamp_milli_tz_holder_from_object(
+        date_time_formatter_util::timestamp_milli_tz_holder_from_object(
             &Value::Date(orders_created_on),
             Some("UTC")
         )

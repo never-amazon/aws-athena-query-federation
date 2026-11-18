@@ -67,13 +67,8 @@ fn round_trip(expected_block: &Block, orig_schema: &Schema) -> Block {
     assert_serialization_overhead(&block_out);
 
     let mut schema_out = Vec::new();
-    let schema_serde = SchemaSerDe::new();
-    schema_serde
-        .serialize(orig_schema, &mut schema_out)
-        .unwrap();
-    let actual_schema = schema_serde
-        .deserialize(&mut schema_out.as_slice())
-        .unwrap();
+    serialize_schema(orig_schema, &mut schema_out).unwrap();
+    let actual_schema = deserialize_schema(&mut schema_out.as_slice()).unwrap();
 
     let actual_allocator = BlockAllocatorImpl::new();
     let actual_serde = RecordBatchSerDe::new(&actual_allocator);
@@ -253,7 +248,7 @@ fn end_to_end_block_test() {
 
     let mut actual_block = round_trip(&expected_block, &orig_schema);
     for i in 0..actual_block.row_count() {
-        BlockUtils::row_to_string(&actual_block, i).unwrap();
+        block_utils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
@@ -266,7 +261,7 @@ fn end_to_end_block_test() {
         assert_field_values(&actual_block, actual_field_count, &vector);
     }
 
-    BlockUtils::unset_row(0, &mut actual_block).unwrap();
+    block_utils::unset_row(0, &mut actual_block).unwrap();
 
     for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
@@ -514,7 +509,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
         MinorType::STRUCT => {
             for i in 0..expected_rows {
                 let resolver = struct_resolver(i);
-                BlockUtils::set_complex_value(
+                block_utils::set_complex_value(
                     vector,
                     i,
                     &resolver,
@@ -529,7 +524,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
                 let Some(values) = list_values(minor_type_of(child.data_type()), i) else {
                     continue;
                 };
-                BlockUtils::set_complex_value(
+                block_utils::set_complex_value(
                     vector,
                     i,
                     &DefaultFieldResolver,
@@ -541,7 +536,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
         MinorType::MAP => {
             for i in 0..expected_rows {
                 let resolver = struct_resolver(i);
-                BlockUtils::set_complex_value(vector, i, &resolver, &Value::Map(Vec::new()))
+                block_utils::set_complex_value(vector, i, &resolver, &Value::Map(Vec::new()))
                     .unwrap();
             }
             assert_map_schema(vector);
@@ -596,7 +591,7 @@ fn list_of_lists_test() {
                         }
                         _ => panic!("{} is not supported", vector.minor_type()),
                     }
-                    BlockUtils::set_complex_value(
+                    block_utils::set_complex_value(
                         vector,
                         i,
                         &DefaultFieldResolver,
@@ -612,7 +607,7 @@ fn list_of_lists_test() {
 
     let actual_block = round_trip(&expected_block, &orig_schema);
     for i in 0..actual_block.row_count() {
-        BlockUtils::row_to_string(&actual_block, i).unwrap();
+        block_utils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
@@ -691,7 +686,7 @@ fn list_of_structs_test() {
                         }
                         _ => panic!("{} is not supported", vector.minor_type()),
                     }
-                    BlockUtils::set_complex_value(
+                    block_utils::set_complex_value(
                         vector,
                         i,
                         &DefaultFieldResolver,
@@ -707,7 +702,7 @@ fn list_of_structs_test() {
 
     let actual_block = round_trip(&expected_block, &orig_schema);
     for i in 0..actual_block.row_count() {
-        BlockUtils::row_to_string(&actual_block, i).unwrap();
+        block_utils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,
@@ -775,7 +770,7 @@ fn struct_of_lists_test() {
                     };
                     let value =
                         Value::struct_of([("varchar", Value::from("chars")), ("list", list)]);
-                    BlockUtils::set_complex_value(vector, i, &DefaultFieldResolver, &value)
+                    block_utils::set_complex_value(vector, i, &DefaultFieldResolver, &value)
                         .unwrap();
                 }
                 other => panic!("{other} is not supported"),
@@ -786,7 +781,7 @@ fn struct_of_lists_test() {
 
     let actual_block = round_trip(&expected_block, &orig_schema);
     for i in 0..actual_block.row_count() {
-        BlockUtils::row_to_string(&actual_block, i).unwrap();
+        block_utils::row_to_string(&actual_block, i).unwrap();
     }
     assert_eq!(
         expected_rows,

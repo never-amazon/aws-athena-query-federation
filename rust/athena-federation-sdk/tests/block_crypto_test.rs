@@ -1,8 +1,9 @@
+use athena_federation_sdk::data::block_utils;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value,
 };
 use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, KeySource};
 
@@ -26,7 +27,7 @@ async fn setup() -> Setup {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut(field).unwrap(),
         row,
         &value.into(),

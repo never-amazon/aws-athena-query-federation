@@ -10,8 +10,6 @@ use super::oauth_credentials_provider::{OAuthCredentialsProvider, OAuthFlow};
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::security::{AwsRequestOverrideConfiguration, CachableSecretsManager};
 
-pub struct CredentialsProviderFactory;
-
 fn to_string_map(map: serde_json::Map<String, JsonValue>) -> HashMap<String, String> {
     map.into_iter()
         .filter_map(|(k, v)| match v {
@@ -22,67 +20,51 @@ fn to_string_map(map: serde_json::Map<String, JsonValue>) -> HashMap<String, Str
         .collect()
 }
 
-impl CredentialsProviderFactory {
-    pub async fn create_credential_provider(
-        secret_name: Option<&str>,
-        secrets_manager: &Arc<CachableSecretsManager>,
-        oauth_flow: Option<Box<dyn OAuthFlow>>,
-    ) -> Result<Option<Box<dyn CredentialsProvider>>> {
-        Self::create_credential_provider_with_request_override_configuration(
-            secret_name,
-            secrets_manager,
-            oauth_flow,
-            None,
-        )
-        .await
-    }
+pub async fn create_credential_provider(
+    secret_name: Option<&str>,
+    secrets_manager: &Arc<CachableSecretsManager>,
+    oauth_flow: Option<Box<dyn OAuthFlow>>,
+    request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
+) -> Result<Option<Box<dyn CredentialsProvider>>> {
+    let Some(secret_name) = secret_name.filter(|s| !s.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let secret_string = secrets_manager
+        .get_secret_with_override_configuration(secret_name, request_override_configuration)
+        .await?;
+    let secret_map = serde_json::from_str::<serde_json::Map<String, JsonValue>>(&secret_string)
+        .map(to_string_map)
+        .map_err(|e| {
+            FederationError::connector_with_details(
+                FederationSourceErrorCode::InternalServiceException,
+                "Could not deserialize credentials into HashMap: ",
+                e.to_string(),
+            )
+        })?;
 
-    pub async fn create_credential_provider_with_request_override_configuration(
-        secret_name: Option<&str>,
-        secrets_manager: &Arc<CachableSecretsManager>,
-        oauth_flow: Option<Box<dyn OAuthFlow>>,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Result<Option<Box<dyn CredentialsProvider>>> {
-        let Some(secret_name) = secret_name.filter(|s| !s.trim().is_empty()) else {
-            return Ok(None);
-        };
-        let secret_string = secrets_manager
-            .get_secret_with_override_configuration(secret_name, request_override_configuration)
-            .await?;
-        let secret_map = serde_json::from_str::<serde_json::Map<String, JsonValue>>(&secret_string)
-            .map(to_string_map)
-            .map_err(|e| {
-                FederationError::connector_with_details(
+    if let Some(flow) = oauth_flow {
+        match flow.is_oauth_configured(&secret_map) {
+            Ok(true) => {
+                return Ok(Some(Box::new(OAuthCredentialsProvider::new(
+                    flow,
+                    secret_name,
+                    secret_map,
+                    Arc::clone(secrets_manager),
+                    Arc::new(ReqwestHttpClient::new()),
+                ))))
+            }
+            Ok(false) => {}
+            Err(e) => {
+                let message = e.to_string();
+                return Err(FederationError::connector_with_details(
                     FederationSourceErrorCode::InternalServiceException,
-                    "Could not deserialize credentials into HashMap: ",
-                    e.to_string(),
-                )
-            })?;
-
-        if let Some(flow) = oauth_flow {
-            match flow.is_oauth_configured(&secret_map) {
-                Ok(true) => {
-                    return Ok(Some(Box::new(OAuthCredentialsProvider::new(
-                        flow,
-                        secret_name,
-                        secret_map,
-                        Arc::clone(secrets_manager),
-                        Arc::new(ReqwestHttpClient::new()),
-                    ))))
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    let message = e.to_string();
-                    return Err(FederationError::connector_with_details(
-                        FederationSourceErrorCode::InternalServiceException,
-                        format!("Failed to create OAuth provider: {message}"),
-                        message,
-                    ));
-                }
+                    format!("Failed to create OAuth provider: {message}"),
+                    message,
+                ));
             }
         }
-        Ok(Some(Box::new(DefaultCredentialsProvider::new(
-            &secret_string,
-        )?)))
     }
+    Ok(Some(Box::new(DefaultCredentialsProvider::new(
+        &secret_string,
+    )?)))
 }

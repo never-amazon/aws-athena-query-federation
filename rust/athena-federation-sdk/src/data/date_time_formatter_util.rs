@@ -41,236 +41,231 @@ pub struct TimeStampMicroTzHolder {
     pub timezone: String,
 }
 
-pub struct DateTimeFormatterUtil;
+pub fn override_timezone_packing(enabled: bool) {
+    PACK_TIMEZONE_OVERRIDE.with(|c| c.set(Some(enabled)));
+}
 
-impl DateTimeFormatterUtil {
-    pub fn override_timezone_packing(enabled: bool) {
-        PACK_TIMEZONE_OVERRIDE.with(|c| c.set(Some(enabled)));
-    }
+pub fn clear_timezone_packing_override() {
+    PACK_TIMEZONE_OVERRIDE.with(|c| c.set(None));
+}
 
-    pub fn clear_timezone_packing_override() {
-        PACK_TIMEZONE_OVERRIDE.with(|c| c.set(None));
-    }
+pub fn is_pack_timezone() -> bool {
+    PACK_TIMEZONE_OVERRIDE
+        .with(std::cell::Cell::get)
+        .unwrap_or_else(|| PACK_TIMEZONE.load(Ordering::SeqCst))
+}
 
-    pub fn is_pack_timezone() -> bool {
-        PACK_TIMEZONE_OVERRIDE
-            .with(std::cell::Cell::get)
-            .unwrap_or_else(|| PACK_TIMEZONE.load(Ordering::SeqCst))
-    }
+pub fn disable_timezone_packing() {
+    tracing::info!("Timezone packing disabled");
+    PACK_TIMEZONE.store(false, Ordering::SeqCst);
+}
 
-    pub fn disable_timezone_packing() {
-        tracing::info!("Timezone packing disabled");
-        PACK_TIMEZONE.store(false, Ordering::SeqCst);
-    }
+pub fn enable_timezone_packing() {
+    tracing::info!("Timezone packing enabled");
+    PACK_TIMEZONE.store(true, Ordering::SeqCst);
+}
 
-    pub fn enable_timezone_packing() {
-        tracing::info!("Timezone packing enabled");
-        PACK_TIMEZONE.store(true, Ordering::SeqCst);
-    }
-
-    pub fn string_to_local_date(
-        value: &str,
-        date_format: Option<&str>,
-        default_time_zone: &ZoneId,
-    ) -> Option<NaiveDate> {
-        let fmt = match date_format {
-            Some(f) if !f.is_empty() => f,
-            _ => {
-                tracing::info!(
-                    "Unable to parse {} as Date type due to invalid dateformat",
-                    value
-                );
-                return None;
-            }
-        };
-        let instant = string_to_date(value, fmt)?;
-        Some(ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date())
-    }
-
-    pub fn string_to_zoned_date_time(
-        value: &str,
-        date_format: Option<&str>,
-        default_time_zone: Option<&ZoneId>,
-    ) -> Value {
-        match ZonedDateTime::parse(value) {
-            Ok(zdt) => {
-                tracing::info!("Parsed {} to ZonedDateTime {}", value, zdt);
-                return Value::ZonedDateTime(zdt);
-            }
-            Err(_) => {
-                tracing::warn!(
-                    "Unable to parse {} as ZonedDateTime type due to invalid date format, Falling back to LocalDateTime using timezone {:?}",
-                    value,
-                    default_time_zone.map(|z| z.id().to_string())
-                );
-            }
+pub fn string_to_local_date(
+    value: &str,
+    date_format: Option<&str>,
+    default_time_zone: &ZoneId,
+) -> Option<NaiveDate> {
+    let fmt = match date_format {
+        Some(f) if !f.is_empty() => f,
+        _ => {
+            tracing::info!(
+                "Unable to parse {} as Date type due to invalid dateformat",
+                value
+            );
+            return None;
         }
-        match default_time_zone {
-            Some(zone) => DateTimeFormatterUtil::string_to_date_time(value, date_format, zone),
-            None => Value::Null,
+    };
+    let instant = string_to_date(value, fmt)?;
+    Some(ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date())
+}
+
+pub fn string_to_zoned_date_time(
+    value: &str,
+    date_format: Option<&str>,
+    default_time_zone: Option<&ZoneId>,
+) -> Value {
+    match ZonedDateTime::parse(value) {
+        Ok(zdt) => {
+            tracing::info!("Parsed {} to ZonedDateTime {}", value, zdt);
+            return Value::ZonedDateTime(zdt);
+        }
+        Err(_) => {
+            tracing::warn!(
+                "Unable to parse {} as ZonedDateTime type due to invalid date format, Falling back to LocalDateTime using timezone {:?}",
+                value,
+                default_time_zone.map(|z| z.id().to_string())
+            );
         }
     }
+    match default_time_zone {
+        Some(zone) => string_to_date_time(value, date_format, zone),
+        None => Value::Null,
+    }
+}
 
-    pub fn string_to_date_time(
-        value: &str,
-        date_format: Option<&str>,
-        default_time_zone: &ZoneId,
-    ) -> Value {
-        let fmt = match date_format {
-            Some(f) if !f.is_empty() => f,
-            _ => {
-                tracing::warn!(
-                    "Unable to parse {} as DateTime type due to invalid date format",
-                    value
-                );
-                return Value::Null;
-            }
-        };
-        match string_to_date(value, fmt) {
-            Some(instant) => Value::LocalDateTime(
-                ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date_time(),
-            ),
-            None => Value::Null,
+pub fn string_to_date_time(
+    value: &str,
+    date_format: Option<&str>,
+    default_time_zone: &ZoneId,
+) -> Value {
+    let fmt = match date_format {
+        Some(f) if !f.is_empty() => f,
+        _ => {
+            tracing::warn!(
+                "Unable to parse {} as DateTime type due to invalid date format",
+                value
+            );
+            return Value::Null;
+        }
+    };
+    match string_to_date(value, fmt) {
+        Some(instant) => Value::LocalDateTime(
+            ZonedDateTime::of_instant(instant, default_time_zone.clone()).to_local_date_time(),
+        ),
+        None => Value::Null,
+    }
+}
+
+pub fn big_decimal_to_local_date(
+    value: Option<&BigDecimal>,
+    default_time_zone: Option<&ZoneId>,
+) -> Option<NaiveDate> {
+    let instant = big_decimal_to_date(value?)?;
+    Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date())
+}
+
+pub fn big_decimal_to_local_date_time(
+    value: Option<&BigDecimal>,
+    default_time_zone: Option<&ZoneId>,
+) -> Option<NaiveDateTime> {
+    let instant = big_decimal_to_date(value?)?;
+    Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date_time())
+}
+
+pub fn infer_date_time_format(value: &str) -> Option<&'static str> {
+    for fmt in SUPPORTED_DATETIME_FORMAT {
+        if parse_date_with_pattern(value, fmt).is_some() {
+            tracing::info!("Inferred format {} for value {}", fmt, value);
+            return Some(fmt);
         }
     }
+    tracing::warn!("Failed to infer format for {}", value);
+    None
+}
 
-    pub fn big_decimal_to_local_date(
-        value: Option<&BigDecimal>,
-        default_time_zone: Option<&ZoneId>,
-    ) -> Option<NaiveDate> {
-        let instant = big_decimal_to_date(value?)?;
-        Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date())
-    }
+pub fn pack_date_time_with_zone(zdt: &ZonedDateTime) -> Result<i64> {
+    pack_millis_with_zone(zdt.to_epoch_milli(), zdt.zone().id())
+}
 
-    pub fn big_decimal_to_local_date_time(
-        value: Option<&BigDecimal>,
-        default_time_zone: Option<&ZoneId>,
-    ) -> Option<NaiveDateTime> {
-        let instant = big_decimal_to_date(value?)?;
-        Some(ZonedDateTime::of_instant(instant, default_time_zone?.clone()).to_local_date_time())
-    }
+pub fn pack_millis_with_zone(millis_utc: i64, zone_id: &str) -> Result<i64> {
+    let key = TimeZoneKey::get_time_zone_key_for_id(zone_id)?;
+    Ok(pack(millis_utc, key.key()))
+}
 
-    pub fn infer_date_time_format(value: &str) -> Option<&'static str> {
-        for fmt in SUPPORTED_DATETIME_FORMAT {
-            if parse_date_with_pattern(value, fmt).is_some() {
-                tracing::info!("Inferred format {} for value {}", fmt, value);
-                return Some(fmt);
-            }
+pub fn pack(millis_utc: i64, time_zone_key: i16) -> i64 {
+    (millis_utc << MILLIS_SHIFT) | (i64::from(time_zone_key) & TIME_ZONE_MASK)
+}
+
+pub fn unpack_millis_utc(date_time_with_time_zone: i64) -> i64 {
+    date_time_with_time_zone >> MILLIS_SHIFT
+}
+
+pub fn unpack_zone_key(date_time_with_time_zone: i64) -> Result<TimeZoneKey> {
+    TimeZoneKey::get_time_zone_key((date_time_with_time_zone & TIME_ZONE_MASK) as i16)
+}
+
+pub fn construct_zoned_date_time(
+    epoch_timestamp: i64,
+    arrow_type: &ArrowType,
+) -> Result<ZonedDateTime> {
+    let (unit, tz) = match arrow_type {
+        DataType::Timestamp(unit, tz) => (*unit, tz.clone()),
+        other => {
+            return Err(FederationError::ClassCast(format!(
+                "{other:?} cannot be cast to ArrowType.Timestamp"
+            )))
         }
-        tracing::warn!("Failed to infer format for {}", value);
-        None
-    }
-
-    pub fn pack_date_time_with_zone(zdt: &ZonedDateTime) -> Result<i64> {
-        DateTimeFormatterUtil::pack_millis_with_zone(zdt.to_epoch_milli(), zdt.zone().id())
-    }
-
-    pub fn pack_millis_with_zone(millis_utc: i64, zone_id: &str) -> Result<i64> {
-        let key = TimeZoneKey::get_time_zone_key_for_id(zone_id)?;
-        Ok(DateTimeFormatterUtil::pack(millis_utc, key.key()))
-    }
-
-    pub fn pack(millis_utc: i64, time_zone_key: i16) -> i64 {
-        (millis_utc << MILLIS_SHIFT) | (i64::from(time_zone_key) & TIME_ZONE_MASK)
-    }
-
-    pub fn unpack_millis_utc(date_time_with_time_zone: i64) -> i64 {
-        date_time_with_time_zone >> MILLIS_SHIFT
-    }
-
-    pub fn unpack_zone_key(date_time_with_time_zone: i64) -> Result<TimeZoneKey> {
-        TimeZoneKey::get_time_zone_key((date_time_with_time_zone & TIME_ZONE_MASK) as i16)
-    }
-
-    pub fn construct_zoned_date_time(
-        epoch_timestamp: i64,
-        arrow_type: &ArrowType,
-    ) -> Result<ZonedDateTime> {
-        let (unit, tz) = match arrow_type {
-            DataType::Timestamp(unit, tz) => (*unit, tz.clone()),
-            other => {
-                return Err(FederationError::ClassCast(format!(
-                    "{other:?} cannot be cast to ArrowType.Timestamp"
-                )))
-            }
-        };
-        let tz = tz.ok_or_else(|| FederationError::null_pointer("timezone is null"))?;
-        let mut zone = ZoneId::of(&tz)?;
-        let mut epoch = epoch_timestamp;
-        if DateTimeFormatterUtil::is_pack_timezone() {
-            if unit != TimeUnit::Millisecond {
-                return Err(FederationError::not_supported(
-                    "Unpacking is only supported for milliseconds",
-                ));
-            }
-            let key = DateTimeFormatterUtil::unpack_zone_key(epoch)?;
-            epoch = DateTimeFormatterUtil::unpack_millis_utc(epoch);
-            zone = ZoneId::of(key.id())?;
-        }
-        let instant = instant_plus(epoch, unit)?;
-        Ok(ZonedDateTime::of_instant(instant, zone))
-    }
-
-    pub fn arrow_time_unit_to_nanos(unit: TimeUnit) -> i64 {
-        match unit {
-            TimeUnit::Second => 1_000_000_000,
-            TimeUnit::Millisecond => 1_000_000,
-            TimeUnit::Microsecond => 1_000,
-            TimeUnit::Nanosecond => 1,
-        }
-    }
-
-    pub fn zoned_date_time_from_object(value: &Value) -> Result<ZonedDateTime> {
-        match value {
-            Value::ZonedDateTime(z) => Ok(z.clone()),
-            Value::LocalDateTime(ldt) => Ok(ZonedDateTime::of_local(*ldt, ZoneId::utc())),
-            Value::Date(ms) => ZonedDateTime::of_epoch_milli(*ms, ZoneId::utc()),
-            other => Err(FederationError::not_supported(format!(
-                "Type: class {} not supported",
-                other.java_class_name()
-            ))),
-        }
-    }
-
-    pub fn timestamp_milli_tz_holder_from_object(
-        value: &Value,
-        target_time_zone_id: Option<&str>,
-    ) -> Result<TimeStampMilliTzHolder> {
-        let zdt = DateTimeFormatterUtil::zoned_date_time_from_object(value)?;
-        let mut holder = TimeStampMilliTzHolder {
-            timezone: zdt.zone().id().to_string(),
-            value: zdt.to_epoch_milli(),
-        };
-        if DateTimeFormatterUtil::is_pack_timezone() {
-            holder.value =
-                DateTimeFormatterUtil::pack_millis_with_zone(holder.value, &holder.timezone)?;
-        }
-        if let Some(tz) = target_time_zone_id {
-            holder.timezone = tz.to_string();
-        }
-        Ok(holder)
-    }
-
-    pub fn timestamp_micro_tz_holder_from_object(
-        value: &Value,
-        target_time_zone_id: Option<&str>,
-    ) -> Result<TimeStampMicroTzHolder> {
-        if DateTimeFormatterUtil::is_pack_timezone() {
+    };
+    let tz = tz.ok_or_else(|| FederationError::null_pointer("timezone is null"))?;
+    let mut zone = ZoneId::of(&tz)?;
+    let mut epoch = epoch_timestamp;
+    if is_pack_timezone() {
+        if unit != TimeUnit::Millisecond {
             return Err(FederationError::not_supported(
-                "Packing for TimeStampMicroTZ is not currently supported",
+                "Unpacking is only supported for milliseconds",
             ));
         }
-        let zdt = DateTimeFormatterUtil::zoned_date_time_from_object(value)?;
-        let zone = target_time_zone_id.map_or_else(
-            || zdt.zone().id().to_string(),
-            std::string::ToString::to_string,
-        );
-        let micros = zdt.epoch_second() * 1_000_000 + i64::from(zdt.nano() / 1000);
-        Ok(TimeStampMicroTzHolder {
-            timezone: zone,
-            value: micros,
-        })
+        let key = unpack_zone_key(epoch)?;
+        epoch = unpack_millis_utc(epoch);
+        zone = ZoneId::of(key.id())?;
     }
+    let instant = instant_plus(epoch, unit)?;
+    Ok(ZonedDateTime::of_instant(instant, zone))
+}
+
+pub fn arrow_time_unit_to_nanos(unit: TimeUnit) -> i64 {
+    match unit {
+        TimeUnit::Second => 1_000_000_000,
+        TimeUnit::Millisecond => 1_000_000,
+        TimeUnit::Microsecond => 1_000,
+        TimeUnit::Nanosecond => 1,
+    }
+}
+
+pub fn zoned_date_time_from_object(value: &Value) -> Result<ZonedDateTime> {
+    match value {
+        Value::ZonedDateTime(z) => Ok(z.clone()),
+        Value::LocalDateTime(ldt) => Ok(ZonedDateTime::of_local(*ldt, ZoneId::utc())),
+        Value::Date(ms) => ZonedDateTime::of_epoch_milli(*ms, ZoneId::utc()),
+        other => Err(FederationError::not_supported(format!(
+            "Type: class {} not supported",
+            other.java_class_name()
+        ))),
+    }
+}
+
+pub fn timestamp_milli_tz_holder_from_object(
+    value: &Value,
+    target_time_zone_id: Option<&str>,
+) -> Result<TimeStampMilliTzHolder> {
+    let zdt = zoned_date_time_from_object(value)?;
+    let mut holder = TimeStampMilliTzHolder {
+        timezone: zdt.zone().id().to_string(),
+        value: zdt.to_epoch_milli(),
+    };
+    if is_pack_timezone() {
+        holder.value = pack_millis_with_zone(holder.value, &holder.timezone)?;
+    }
+    if let Some(tz) = target_time_zone_id {
+        holder.timezone = tz.to_string();
+    }
+    Ok(holder)
+}
+
+pub fn timestamp_micro_tz_holder_from_object(
+    value: &Value,
+    target_time_zone_id: Option<&str>,
+) -> Result<TimeStampMicroTzHolder> {
+    if is_pack_timezone() {
+        return Err(FederationError::not_supported(
+            "Packing for TimeStampMicroTZ is not currently supported",
+        ));
+    }
+    let zdt = zoned_date_time_from_object(value)?;
+    let zone = target_time_zone_id.map_or_else(
+        || zdt.zone().id().to_string(),
+        std::string::ToString::to_string,
+    );
+    let micros = zdt.epoch_second() * 1_000_000 + i64::from(zdt.nano() / 1000);
+    Ok(TimeStampMicroTzHolder {
+        timezone: zone,
+        value: micros,
+    })
 }
 
 fn instant_plus(amount: i64, unit: TimeUnit) -> Result<DateTime<Utc>> {

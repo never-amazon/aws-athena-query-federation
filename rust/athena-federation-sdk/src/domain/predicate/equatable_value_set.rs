@@ -1,7 +1,8 @@
+use crate::data::block_utils;
 use std::fmt;
 
 use crate::data::types::{arrow_type_to_string, minor_type_of};
-use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, BlockUtils, Value};
+use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
 use super::marker::Marker;
@@ -45,11 +46,11 @@ fn build_block(
     arrow_type: &ArrowType,
     values: &[Value],
 ) -> Result<Block> {
-    let mut block = BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type);
+    let mut block = block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type);
     let count = values.len();
     if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
         for (i, v) in values.iter().enumerate() {
-            BlockUtils::set_value(vector, i, v)?;
+            block_utils::set_value(vector, i, v)?;
         }
     }
     block.set_row_count(count);
@@ -82,7 +83,7 @@ impl EquatableValueSet {
 
     pub fn none(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             true,
             false,
         )
@@ -90,7 +91,7 @@ impl EquatableValueSet {
 
     pub fn all(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             true,
         )
@@ -98,7 +99,7 @@ impl EquatableValueSet {
 
     pub fn only_null(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             true,
         )
@@ -106,7 +107,7 @@ impl EquatableValueSet {
 
     pub fn not_null(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             false,
         )
@@ -122,7 +123,7 @@ impl EquatableValueSet {
         V: Into<Value>,
     {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
+            block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
             true,
             false,
         ))
@@ -139,7 +140,7 @@ impl EquatableValueSet {
         V: Into<Value>,
     {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
+            block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
             true,
             null_allowed,
         ))
@@ -445,7 +446,7 @@ impl EquatableValueSetBuilder<'_> {
 
     pub fn build(&self) -> Result<EquatableValueSet> {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(
+            block_utils::new_block(
                 self.allocator,
                 DEFAULT_COLUMN,
                 &self.arrow_type,

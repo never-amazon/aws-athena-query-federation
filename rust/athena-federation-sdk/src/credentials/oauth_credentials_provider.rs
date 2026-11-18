@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
 use super::credentials::Credentials;
-use super::credentials_constants::CredentialsConstants;
+use super::credentials_constants;
 use super::credentials_provider::CredentialsProvider;
 use super::http_client::{HttpClient, HttpClientError, HttpRequest};
 use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
@@ -107,15 +107,15 @@ impl OAuthCredentialsProvider {
     }
 
     fn cached_access_token(snapshot: &HashMap<String, String>) -> Result<Option<String>> {
-        if let Some(cached) = snapshot.get(CredentialsConstants::ACCESS_TOKEN) {
+        if let Some(cached) = snapshot.get(credentials_constants::ACCESS_TOKEN) {
             let expires_in = parse_long(
                 snapshot
-                    .get(CredentialsConstants::EXPIRES_IN)
+                    .get(credentials_constants::EXPIRES_IN)
                     .map_or("0", String::as_str),
             )?;
             let fetched_at = parse_long(
                 snapshot
-                    .get(CredentialsConstants::FETCHED_AT)
+                    .get(credentials_constants::FETCHED_AT)
                     .map_or("0", String::as_str),
             )?;
             if now_seconds() - fetched_at < expires_in - 60 {
@@ -188,15 +188,15 @@ impl OAuthCredentialsProvider {
         let secret_string = {
             let mut secret_map = self.lock_secret_map();
             secret_map.insert(
-                CredentialsConstants::ACCESS_TOKEN.to_string(),
+                credentials_constants::ACCESS_TOKEN.to_string(),
                 access_token.to_string(),
             );
             secret_map.insert(
-                CredentialsConstants::EXPIRES_IN.to_string(),
+                credentials_constants::EXPIRES_IN.to_string(),
                 expires_in.to_string(),
             );
             secret_map.insert(
-                CredentialsConstants::FETCHED_AT.to_string(),
+                credentials_constants::FETCHED_AT.to_string(),
                 fetched_at.to_string(),
             );
             serde_json::to_string(&*secret_map).map_err(|e| {
@@ -240,8 +240,8 @@ impl OAuthCredentialsProvider {
         }
         let token_response = self.fetch_token_response(&snapshot).await?;
         let (Some(access_token_node), Some(expires_in_node)) = (
-            token_response.get(CredentialsConstants::ACCESS_TOKEN),
-            token_response.get(CredentialsConstants::EXPIRES_IN),
+            token_response.get(credentials_constants::ACCESS_TOKEN),
+            token_response.get(credentials_constants::EXPIRES_IN),
         ) else {
             return Err(connector_error(
                 FederationSourceErrorCode::InvalidResponseException,

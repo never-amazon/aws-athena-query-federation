@@ -1,7 +1,8 @@
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 
 use arrow::datatypes::DataType;
-use athena_federation_sdk::data::{ArrowType, BlockAllocatorImpl, BlockUtils, Value};
+use athena_federation_sdk::data::{ArrowType, BlockAllocatorImpl, Value};
 use athena_federation_sdk::domain::predicate::expression::{
     ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
     DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
@@ -46,7 +47,7 @@ fn constant<V: Into<Value> + Clone>(
     arrow_type: ArrowType,
 ) -> ConstantExpression {
     let allocator = BlockAllocatorImpl::new();
-    let block = BlockUtils::new_block(
+    let block = block_utils::new_block(
         &allocator,
         DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
         &arrow_type,

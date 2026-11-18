@@ -1,13 +1,14 @@
 #[path = "../../athena-jdbc/tests/jdbc_support/mod.rs"]
 mod jdbc_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::connection::EnvironmentConstants;
-use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder};
+use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -187,7 +188,7 @@ async fn table_layout(
 fn partition_strings(response: &GetTableLayoutResponse) -> Vec<String> {
     let block = response.partitions();
     (0..block.row_count())
-        .map(|i| BlockUtils::row_to_string(block, i).unwrap())
+        .map(|i| block_utils::row_to_string(block, i).unwrap())
         .collect()
 }
 

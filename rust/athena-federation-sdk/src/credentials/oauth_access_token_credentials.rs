@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::credentials_constants::CredentialsConstants;
+use super::credentials_constants;
 use crate::exceptions::{FederationError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -26,7 +26,7 @@ impl OAuthAccessTokenCredentials {
 
     pub fn properties(&self) -> HashMap<String, String> {
         HashMap::from([(
-            CredentialsConstants::ACCESS_TOKEN_PROPERTY.to_string(),
+            credentials_constants::ACCESS_TOKEN_PROPERTY.to_string(),
             self.access_token.clone(),
         )])
     }

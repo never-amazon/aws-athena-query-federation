@@ -1,3 +1,5 @@
+use athena_federation_sdk::data::block_utils;
+use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,8 +11,8 @@ use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockSpiller, BlockUtils, DateTimeFormatterUtil, DefaultFieldResolver,
-    FieldVector, MinorType, PutObjectRequest, S3BlockSpiller, S3Client, Value,
+    Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector, MinorType,
+    PutObjectRequest, S3BlockSpiller, S3Client, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -267,7 +269,7 @@ impl FieldWriter<Row> for ArrayFieldWriter {
                     .map(|value| array_element_value(value, self.element_type))
                     .collect::<Result<_>>()?,
             );
-            BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, &list)?;
+            block_utils::set_complex_value(vector, row_num, &DefaultFieldResolver, &list)?;
         }
         Ok(true)
     }
@@ -560,9 +562,9 @@ async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Si
                 let row = result_set.take_current_row()?;
                 spiller
                     .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
-                        DateTimeFormatterUtil::override_timezone_packing(false);
+                        date_time_formatter_util::override_timezone_packing(false);
                         let written = write_export_row(block, row_num, &row, column_count);
-                        DateTimeFormatterUtil::clear_timezone_packing_override();
+                        date_time_formatter_util::clear_timezone_packing_override();
                         written
                     })
                     .await?;
@@ -598,7 +600,7 @@ fn write_export_row(
     let vectors = block.field_vectors_mut();
     for (i, vector) in vectors.iter_mut().enumerate().take(column_count) {
         let value = calendar_value(row.get_object(i + 1)?, vector.minor_type())?;
-        BlockUtils::set_value(vector, row_num, &value)?;
+        block_utils::set_value(vector, row_num, &value)?;
     }
     Ok(1)
 }

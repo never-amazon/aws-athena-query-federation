@@ -1,3 +1,4 @@
+use crate::data::block_utils;
 use std::fmt;
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use crate::data::writers::GeneratedRowWriter;
 use crate::data::{
     local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, Block, BlockAllocator,
-    BlockAllocatorImpl, BlockUtils, DefaultFieldResolver, FieldVector, MinorType, Value,
+    BlockAllocatorImpl, DefaultFieldResolver, FieldVector, MinorType, Value,
 };
 use crate::domain::predicate::ConstraintProjector;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
@@ -507,7 +508,7 @@ struct ComplexValueWriter;
 
 impl FieldWriter<Value> for ComplexValueWriter {
     fn write(&mut self, vector: &mut FieldVector, value: &Value, row_num: usize) -> Result<bool> {
-        BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, value)?;
+        block_utils::set_complex_value(vector, row_num, &DefaultFieldResolver, value)?;
         Ok(true)
     }
 }

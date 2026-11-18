@@ -1,3 +1,4 @@
+use crate::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,7 +14,7 @@ use super::federation_request_handler::{ConfigOptions, FederationRequestHandler}
 use crate::connection::EnvironmentConstants;
 use crate::data::types::java_field_to_string;
 use crate::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockUtils, S3Client, S3HeadBucketClient, SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, S3Client, S3HeadBucketClient, SchemaBuilder,
     SimpleBlockWriter, SupportedTypes,
 };
 use crate::domain::predicate::ConstraintEvaluator;
@@ -384,7 +385,7 @@ pub trait MetadataHandler: FederationRequestHandler {
         self.enhance_partition_schema(&mut partition_schema_builder, request);
         let partition_schema = partition_schema_builder.build();
         if partition_schema.fields().is_empty() && partition_schema.metadata().is_empty() {
-            let partitions = BlockUtils::new_block(
+            let partitions = block_utils::new_block(
                 allocator.as_ref(),
                 PARTITION_ID_COL,
                 &DataType::Int32,

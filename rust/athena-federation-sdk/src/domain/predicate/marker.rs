@@ -1,3 +1,4 @@
+use crate::data::block_utils;
 use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 use arrow::datatypes::{Field, Schema};
 
 use crate::data::types::arrow_type_to_string;
-use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, BlockUtils, Value};
+use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
 pub const DEFAULT_COLUMN: &str = "col1";
@@ -53,7 +54,7 @@ pub(crate) fn value_block_schema(arrow_type: &ArrowType) -> Arc<Schema> {
 pub(crate) fn coerce_value(arrow_type: &ArrowType, value: &Value) -> Result<Value> {
     let mut block = Block::new("marker", value_block_schema(arrow_type));
     if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
-        BlockUtils::set_value(vector, 0, value)?;
+        block_utils::set_value(vector, 0, value)?;
     }
     block.set_row_count(1);
     Ok(block
@@ -234,7 +235,7 @@ impl Marker {
         value: Value,
         bound: Bound,
     ) -> Result<Marker> {
-        let block = BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, vec![value])?;
+        let block = block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, vec![value])?;
         Marker::from_block_position(&block, 0, bound, false)
     }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::credentials_constants::CredentialsConstants;
+use super::credentials_constants;
 use crate::exceptions::{FederationError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,9 +41,9 @@ impl DefaultCredentials {
 
     pub fn properties(&self) -> HashMap<String, String> {
         HashMap::from([
-            (CredentialsConstants::USER.to_string(), self.user.clone()),
+            (credentials_constants::USER.to_string(), self.user.clone()),
             (
-                CredentialsConstants::PASSWORD.to_string(),
+                credentials_constants::PASSWORD.to_string(),
                 self.password.clone(),
             ),
         ])

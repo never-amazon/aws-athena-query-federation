@@ -6,7 +6,7 @@ use arrow::datatypes::SchemaRef;
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::arrow_type_comparator::ArrowTypeComparator;
-use super::block_utils::BlockUtils;
+use super::block_utils;
 use super::field_resolver::FieldResolver;
 use super::record_batch_serde::ArrowRecordBatch;
 use super::value::Value;
@@ -72,7 +72,7 @@ impl Block {
             let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
                 FederationError::null_pointer(format!("No vector found for field {field_name}"))
             })?;
-            BlockUtils::set_value(vector, row, &value)?;
+            block_utils::set_value(vector, row, &value)?;
             return Ok(true);
         }
         Ok(false)
@@ -87,7 +87,7 @@ impl Block {
         let value = value.into();
         if self.constraint_evaluator.apply(field_name, &value)? {
             if let Some(vector) = self.get_field_vector_mut(field_name) {
-                BlockUtils::set_value(vector, row, &value)?;
+                block_utils::set_value(vector, row, &value)?;
             }
             return Ok(true);
         }
@@ -105,7 +105,7 @@ impl Block {
         let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
             FederationError::null_pointer(format!("No vector found for field {field_name}"))
         })?;
-        BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
+        block_utils::set_complex_value(vector, row, field_resolver, &value)?;
         Ok(true)
     }
 
@@ -118,7 +118,7 @@ impl Block {
     ) -> Result<bool> {
         let value = value.into();
         if let Some(vector) = self.get_field_vector_mut(field_name) {
-            BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
+            block_utils::set_complex_value(vector, row, field_resolver, &value)?;
         }
         Ok(true)
     }
@@ -300,7 +300,7 @@ impl fmt::Display for Block {
                 for i in 0..rows_to_print {
                     reader.set_position(i);
                     values.push(
-                        BlockUtils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
+                        block_utils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
                     );
                 }
             }
