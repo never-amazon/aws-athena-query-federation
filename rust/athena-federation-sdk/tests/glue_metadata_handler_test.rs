@@ -24,7 +24,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, FederatedIdentity,
-    KmsEncryptionProvider, LocalKeyFactory,
+    KeySource, KmsEncryptionProvider,
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use aws_sdk_glue::operation::get_databases::{GetDatabasesInput, GetDatabasesOutput};
@@ -239,7 +239,7 @@ fn set_up_with_glue(glue: FakeGlue) -> Setup {
     let glue = Arc::new(glue);
     let base = MetadataHandlerBase::builder("glue-test", Fakes::new().clients())
         .config_options(HashMap::new())
-        .encryption_key_factory(Some(Arc::new(LocalKeyFactory::new())))
+        .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(Some("spill-bucket".into()))
         .spill_prefix(Some("spill-prefix".into()))
         .build()

@@ -3,9 +3,7 @@ use std::sync::Arc;
 use arrow::array::Int32Array;
 use arrow::datatypes::{DataType, Field, Schema};
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, BlockUtils, Value};
-use athena_federation_sdk::security::{
-    BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, KeySource};
 
 struct Setup {
     allocator: Arc<BlockAllocatorImpl>,
@@ -26,7 +24,7 @@ async fn setup() -> Setup {
         no_op_block_crypto: BlockCrypto::for_key(None),
         allocator,
         test_schema: Arc::new(Schema::empty()),
-        encryption_key: LocalKeyFactory::new().create().await.unwrap(),
+        encryption_key: KeySource::Local.create(None).await.unwrap(),
     }
 }
 

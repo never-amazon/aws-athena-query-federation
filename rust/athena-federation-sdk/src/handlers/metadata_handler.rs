@@ -31,7 +31,7 @@ use crate::metadata::{
 use crate::request::{FederationRequest, PingRequest, PingResponse};
 use crate::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, EncryptionKey,
-    EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider, KmsKeyFactory, LocalKeyFactory,
+    FederatedIdentity, KeySource, KmsEncryptionProvider,
 };
 use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
 use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
@@ -50,7 +50,7 @@ pub struct MetadataHandlerBase {
     athena: Arc<dyn AthenaClient>,
     s3_client: Arc<dyn S3Client>,
     athena_invoker: Arc<ThrottlingInvoker<AwsServiceError>>,
-    encryption_key_factory: Option<Arc<dyn EncryptionKeyFactory>>,
+    encryption_key_factory: Option<KeySource>,
     spill_bucket: Option<String>,
     spill_prefix: Option<String>,
     source_type: String,
@@ -62,7 +62,7 @@ pub struct MetadataHandlerBaseBuilder {
     source_type: String,
     clients: AwsClients,
     config_options: HashMap<String, String>,
-    encryption_key_factory: Setting<Option<Arc<dyn EncryptionKeyFactory>>>,
+    encryption_key_factory: Setting<Option<KeySource>>,
     spill_bucket: Setting<Option<String>>,
     spill_prefix: Setting<Option<String>>,
 }
@@ -89,10 +89,7 @@ impl MetadataHandlerBaseBuilder {
     }
 
     #[must_use]
-    pub fn encryption_key_factory(
-        mut self,
-        encryption_key_factory: Option<Arc<dyn EncryptionKeyFactory>>,
-    ) -> Self {
+    pub fn encryption_key_factory(mut self, encryption_key_factory: Option<KeySource>) -> Self {
         self.encryption_key_factory = Setting::Explicit(encryption_key_factory);
         self
     }
@@ -151,7 +148,7 @@ impl MetadataHandlerBaseBuilder {
 fn default_encryption_key_factory(
     config_options: &HashMap<String, String>,
     clients: &AwsClients,
-) -> Option<Arc<dyn EncryptionKeyFactory>> {
+) -> Option<KeySource> {
     let disable = config_options
         .get(DISABLE_SPILL_ENCRYPTION)
         .map_or("false", String::as_str);
@@ -159,14 +156,13 @@ fn default_encryption_key_factory(
         tracing::debug!("DISABLE_SPILL_ENCRYPTION");
         return None;
     }
-    let factory: Arc<dyn EncryptionKeyFactory> =
-        if let Some(key_id) = config_options.get(KMS_KEY_ID_ENV) {
-            tracing::debug!("ENABLE_SPILL_ENCRYPTION with encryption factory: KmsKeyFactory");
-            Arc::new(KmsKeyFactory::new(Arc::clone(&clients.kms), key_id.clone()))
-        } else {
-            tracing::debug!("ENABLE_SPILL_ENCRYPTION with encryption factory: LocalKeyFactory");
-            Arc::new(LocalKeyFactory::new())
-        };
+    let factory = if let Some(key_id) = config_options.get(KMS_KEY_ID_ENV) {
+        tracing::debug!("ENABLE_SPILL_ENCRYPTION with encryption factory: KmsKeyFactory");
+        KeySource::kms(Arc::clone(&clients.kms), key_id.clone())
+    } else {
+        tracing::debug!("ENABLE_SPILL_ENCRYPTION with encryption factory: LocalKeyFactory");
+        KeySource::Local
+    };
     Some(factory)
 }
 
@@ -218,7 +214,7 @@ impl MetadataHandlerBase {
         &self.athena_invoker
     }
 
-    pub fn encryption_key_factory(&self) -> Option<&Arc<dyn EncryptionKeyFactory>> {
+    pub fn encryption_key_factory(&self) -> Option<&KeySource> {
         self.encryption_key_factory.as_ref()
     }
 
@@ -282,7 +278,7 @@ pub trait MetadataHandler: FederationRequestHandler {
 
     async fn make_encryption_key(&self) -> Result<Option<EncryptionKey>> {
         match self.metadata_base().encryption_key_factory() {
-            Some(factory) => factory.create().await.map(Some),
+            Some(factory) => factory.create(None).await.map(Some),
             None => Ok(None),
         }
     }
@@ -293,7 +289,7 @@ pub trait MetadataHandler: FederationRequestHandler {
     ) -> Result<Option<EncryptionKey>> {
         match self.metadata_base().encryption_key_factory() {
             Some(factory) => factory
-                .create_with_override_configuration(aws_request_override_configuration)
+                .create(aws_request_override_configuration)
                 .await
                 .map(Some),
             None => Ok(None),

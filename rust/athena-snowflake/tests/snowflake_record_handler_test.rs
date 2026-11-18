@@ -21,8 +21,7 @@ use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, EncryptionKey, EncryptionKeyFactory, FederatedIdentity,
-    LocalKeyFactory,
+    AwsRequestOverrideConfiguration, EncryptionKey, FederatedIdentity, KeySource,
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker};
 use athena_jdbc::connection::DatabaseConnectionConfig;
@@ -136,7 +135,7 @@ fn spill_location() -> S3SpillLocation {
 }
 
 async fn key() -> EncryptionKey {
-    LocalKeyFactory::new().create().await.unwrap()
+    KeySource::Local.create(None).await.unwrap()
 }
 
 async fn export_split(bucket: Option<&str>, object_key: Option<&str>) -> Split {

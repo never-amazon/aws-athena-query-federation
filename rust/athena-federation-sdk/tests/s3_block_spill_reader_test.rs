@@ -8,7 +8,7 @@ use athena_federation_sdk::data::{
 };
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::security::{
-    AwsService, AwsServiceError, BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
+    AwsService, AwsServiceError, BlockCrypto, EncryptionKey, KeySource,
 };
 use athena_federation_sdk::FederationError;
 use aws_credential_types::Credentials;
@@ -99,7 +99,7 @@ async fn setup() -> Setup {
             .add_field_with_type("col2", DataType::Utf8)
             .build(),
     );
-    let encryption_key = LocalKeyFactory::new().create().await.unwrap();
+    let encryption_key = KeySource::Local.create(None).await.unwrap();
     let spill_location = S3SpillLocation::new_builder()
         .with_bucket(BUCKET)
         .with_prefix(PREFIX)
@@ -227,7 +227,7 @@ async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
     let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
         .encrypt(&s.expected)
         .unwrap();
-    let wrong_key = LocalKeyFactory::new().create().await.unwrap();
+    let wrong_key = KeySource::Local.create(None).await.unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
     let ex = s

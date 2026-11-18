@@ -21,8 +21,8 @@ use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler, R
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::{
-    BlockCrypto, CachableSecretsManager, EncryptionKey, EncryptionKeyFactory, FederatedIdentity,
-    KmsEncryptionProvider, LocalKeyFactory,
+    BlockCrypto, CachableSecretsManager, EncryptionKey, FederatedIdentity, KeySource,
+    KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::schema_from_bytes;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -1045,7 +1045,7 @@ fn crypto(key: &EncryptionKey) -> BlockCrypto {
 
 #[tokio::test]
 async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() {
-    let key = LocalKeyFactory::new().create().await.unwrap();
+    let key = KeySource::Local.create(None).await.unwrap();
     let orders = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
     let customers =
         NaiveDateTime::parse_from_str("2021-02-02 12:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
@@ -1118,7 +1118,7 @@ async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() 
 
 #[tokio::test]
 async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
-    let key = LocalKeyFactory::new().create().await.unwrap();
+    let key = KeySource::Local.create(None).await.unwrap();
     let data = ResultSetData::of_columns(
         vec![
             ColumnMetadata::new("ID", Types::INTEGER),
@@ -1148,7 +1148,7 @@ async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
 
 #[tokio::test]
 async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
-    let key = LocalKeyFactory::new().create().await.unwrap();
+    let key = KeySource::Local.create(None).await.unwrap();
     let timestamps = [
         NaiveDate::from_ymd_opt(1000, 1, 1)
             .unwrap()
@@ -1229,7 +1229,7 @@ fn epoch_day(date: NaiveDate) -> i64 {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_do_read_records_direct_query_returns_every_block_with_async_spill() {
-    let key = LocalKeyFactory::new().create().await.unwrap();
+    let key = KeySource::Local.create(None).await.unwrap();
     let row_count = 200;
     let data = ResultSetData::of_columns(
         vec![ColumnMetadata::new("ID", Types::INTEGER)],

@@ -24,7 +24,7 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::{
-    CachableSecretsManager, FederatedIdentity, KmsEncryptionProvider, LocalKeyFactory,
+    CachableSecretsManager, FederatedIdentity, KeySource, KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::VersionedObjectMapperFactory;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -137,7 +137,7 @@ fn set_up() -> Setup {
     ]);
     let base = MetadataHandlerBase::builder("test", Fakes::new().clients())
         .config_options(config_options)
-        .encryption_key_factory(Some(Arc::new(LocalKeyFactory::new())))
+        .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(Some("bucket".into()))
         .spill_prefix(Some("prefix".into()))
         .build()

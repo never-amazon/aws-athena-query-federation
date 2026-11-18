@@ -7,8 +7,8 @@ use athena_federation_sdk::data::{GetObjectRequest, PutObjectRequest, S3Client};
 use athena_federation_sdk::handlers::{AwsClients, CompositeHandler, MetadataHandlerBase};
 use athena_federation_sdk::lambda::{LambdaContext, LambdaError};
 use athena_federation_sdk::security::{
-    AwsCrypto, AwsRequestOverrideConfiguration, AwsService, AwsServiceError, KmsClient,
-    KmsEncryptionProvider, LocalKeyFactory, SecretsManagerClient,
+    AwsCrypto, AwsRequestOverrideConfiguration, AwsService, AwsServiceError, KeySource, KmsClient,
+    KmsEncryptionProvider, SecretsManagerClient,
 };
 use athena_federation_sdk::{AthenaClient, FederationError};
 use athena_jdbc::connection::{
@@ -251,7 +251,7 @@ fn metadata_handler(
     }
     let metadata_base = MetadataHandlerBase::builder(db_config.engine(), clients.clone())
         .config_options(config.clone())
-        .encryption_key_factory(Some(Arc::new(LocalKeyFactory::new())))
+        .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(None)
         .spill_prefix(None)
         .build()?;

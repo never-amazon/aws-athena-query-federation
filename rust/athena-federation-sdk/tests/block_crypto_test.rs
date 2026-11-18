@@ -4,9 +4,7 @@ use arrow::datatypes::DataType;
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
 };
-use athena_federation_sdk::security::{
-    BlockCrypto, EncryptionKey, EncryptionKeyFactory, LocalKeyFactory,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, KeySource};
 
 struct Setup {
     allocator: Arc<BlockAllocatorImpl>,
@@ -20,10 +18,10 @@ impl Drop for Setup {
 }
 
 async fn setup() -> Setup {
-    let key_factory = LocalKeyFactory::new();
+    let key_factory = KeySource::Local;
     Setup {
         allocator: Arc::new(BlockAllocatorImpl::new()),
-        key: key_factory.create().await.unwrap(),
+        key: key_factory.create(None).await.unwrap(),
     }
 }
 
@@ -80,7 +78,7 @@ async fn encrypt_raw_bytes_round_trip() {
 
 #[tokio::test]
 async fn decrypt_with_invalid_bytes() {
-    let key = LocalKeyFactory::new().create().await.unwrap();
+    let key = KeySource::Local.create(None).await.unwrap();
     let invalid_bytes = [0u8; 16];
     let ex = BlockCrypto::AesGcm(key)
         .decrypt(&invalid_bytes)

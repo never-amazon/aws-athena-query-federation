@@ -22,8 +22,7 @@ use athena_federation_sdk::metadata::{GetDataSourceCapabilitiesRequest, ListSche
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::{
-    CachableSecretsManager, EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider,
-    LocalKeyFactory,
+    CachableSecretsManager, FederatedIdentity, KeySource, KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::VersionedObjectMapperFactory;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -154,7 +153,7 @@ async fn do_read_records_spill() {
         .build();
     let split = Split::new_builder(
         Some(spill_location.into()),
-        Some(LocalKeyFactory::new().create().await.unwrap()),
+        Some(KeySource::Local.create(None).await.unwrap()),
     )
     .add("splitNum", "0")
     .add("totalNumberSplits", "10000")

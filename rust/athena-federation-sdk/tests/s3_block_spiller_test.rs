@@ -10,7 +10,7 @@ use athena_federation_sdk::data::{
 };
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::security::{AwsServiceError, EncryptionKeyFactory, LocalKeyFactory};
+use athena_federation_sdk::security::{AwsServiceError, KeySource};
 use athena_federation_sdk::FederationError;
 use aws_credential_types::Credentials;
 
@@ -154,7 +154,7 @@ async fn setup() -> Setup {
     let mock_s3 = Arc::new(MockS3::default());
     let schema = two_column_schema();
     let spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_request_id(REQUEST_ID)
@@ -186,7 +186,7 @@ async fn setup() -> Setup {
 
 async fn async_spill_config(max_block_bytes: i64, num_spill_threads: i32) -> SpillConfig {
     SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_request_id(REQUEST_ID)
@@ -379,7 +379,7 @@ async fn get_spill_locations_throws_on_async_s3_error() {
 async fn get_spill_locations_rethrows_sync_final_spill_error() {
     let s = setup().await;
     let sync_spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_max_block_bytes(1_000_000)
