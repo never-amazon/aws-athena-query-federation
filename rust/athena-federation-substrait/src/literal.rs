@@ -65,13 +65,13 @@ const DECIMAL_BYTE_WIDTH: usize = 16;
 )]
 pub fn extract(expr: &Expression) -> Result<(LiteralValue, DataType)> {
     let Some(RexType::Literal(literal)) = &expr.rex_type else {
-        return Err(SubstraitError::illegal_argument(
-            "Expected literal value in expression",
+        return Err(SubstraitError::IllegalArgument(
+            "Expected literal value in expression".into(),
         ));
     };
     let Some(literal_type) = &literal.literal_type else {
-        return Err(SubstraitError::unsupported(
-            "Unsupported literal type: LITERALTYPE_NOT_SET",
+        return Err(SubstraitError::Unsupported(
+            "Unsupported literal type: LITERALTYPE_NOT_SET".into(),
         ));
     };
     match literal_type {
@@ -85,13 +85,13 @@ pub fn extract(expr: &Expression) -> Result<(LiteralValue, DataType)> {
         LiteralType::Binary(v) => Ok((LiteralValue::Bytes(v.clone()), DataType::Binary)),
         LiteralType::Decimal(d) => {
             let precision = u8::try_from(d.precision).map_err(|_| {
-                SubstraitError::illegal_argument(format!(
+                SubstraitError::IllegalArgument(format!(
                     "Invalid decimal precision: {}",
                     d.precision
                 ))
             })?;
             let scale = i8::try_from(d.scale).map_err(|_| {
-                SubstraitError::illegal_argument(format!("Invalid decimal scale: {}", d.scale))
+                SubstraitError::IllegalArgument(format!("Invalid decimal scale: {}", d.scale))
             })?;
             let value = big_decimal_from_bytes(&d.value, i64::from(d.scale));
             Ok((
@@ -108,7 +108,7 @@ pub fn extract(expr: &Expression) -> Result<(LiteralValue, DataType)> {
         LiteralType::String(v) | LiteralType::FixedChar(v) => {
             Ok((LiteralValue::String(v.clone()), DataType::Utf8))
         }
-        other => Err(SubstraitError::unsupported(format!(
+        other => Err(SubstraitError::Unsupported(format!(
             "Unsupported literal type: {}",
             literal_type_case_name(other)
         ))),
@@ -183,7 +183,7 @@ pub fn to_expression(value: &LiteralValue, arrow_type: &DataType) -> Result<Expr
             other => return Err(class_cast(other, "java.lang.Long")),
         },
         other => {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "Unsupported arrow type: {other}"
             )))
         }
@@ -197,8 +197,11 @@ pub fn to_expression(value: &LiteralValue, arrow_type: &DataType) -> Result<Expr
     })
 }
 
-fn class_cast(value: &LiteralValue, target: &str) -> SubstraitError {
-    SubstraitError::class_cast(value.java_class_name(), target)
+fn class_cast(value: &LiteralValue, target: &'static str) -> SubstraitError {
+    SubstraitError::ClassCast {
+        from: value.java_class_name(),
+        to: target,
+    }
 }
 
 pub fn big_decimal_from_bytes(value: &[u8], scale: i64) -> BigDecimal {
@@ -214,7 +217,7 @@ fn decimal_literal(value: &BigDecimal) -> Result<LiteralType> {
     };
     let mut bytes = unscaled.to_signed_bytes_le();
     if bytes.len() > DECIMAL_BYTE_WIDTH {
-        return Err(SubstraitError::illegal_argument(format!(
+        return Err(SubstraitError::IllegalArgument(format!(
             "Decimal value {} does not fit in {} bytes",
             java_format::big_decimal_to_string(value),
             DECIMAL_BYTE_WIDTH
@@ -227,9 +230,9 @@ fn decimal_literal(value: &BigDecimal) -> Result<LiteralType> {
     };
     bytes.resize(DECIMAL_BYTE_WIDTH, fill);
     let scale = i32::try_from(scale)
-        .map_err(|_| SubstraitError::illegal_argument(format!("Invalid decimal scale: {scale}")))?;
+        .map_err(|_| SubstraitError::IllegalArgument(format!("Invalid decimal scale: {scale}")))?;
     let precision = i32::try_from(precision)
-        .map_err(|_| SubstraitError::illegal_argument("Invalid decimal precision"))?;
+        .map_err(|_| SubstraitError::IllegalArgument("Invalid decimal precision".into()))?;
     Ok(LiteralType::Decimal(Decimal {
         value: bytes,
         precision,

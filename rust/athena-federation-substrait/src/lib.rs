@@ -43,7 +43,7 @@ pub use calcite::sql_node::{
 };
 pub use calcite::sql_type_name::SqlTypeName;
 pub use calcite::values::{BitString, DateString, TimeString, TimestampString};
-pub use error::{ErrorKind, Result, SubstraitError};
+pub use error::{Result, SubstraitError};
 pub use literal::LiteralValue;
 pub use model::column_predicate::{ColumnPredicate, PredicateValue};
 pub use model::logical_expression::LogicalExpression;

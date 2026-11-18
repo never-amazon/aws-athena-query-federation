@@ -37,7 +37,9 @@ fn resolve_group_sets(
         let mut set = Vec::with_capacity(list.len());
         for e in list {
             let idx = extra.iter().position(|x| x == e).ok_or_else(|| {
-                SubstraitError::illegal_argument("group set element must be a subset of group key")
+                SubstraitError::IllegalArgument(
+                    "group set element must be a subset of group key".into(),
+                )
             })?;
             set.push(idx);
         }
@@ -47,9 +49,7 @@ fn resolve_group_sets(
     }
     sets.sort_by(|a, b| bit_set_compare(a, b));
     if sets.windows(2).any(|w| w[0] == w[1]) {
-        return Err(SubstraitError::unsupported(
-            "Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter",
-        ));
+        return Err(SubstraitError::Unsupported("Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter".into()));
     }
     Ok(sets)
 }
@@ -247,11 +247,11 @@ impl RelBuilder {
         let mut inputs = inputs;
         if inputs.len() == 1 {
             return inputs.pop().ok_or_else(|| {
-                SubstraitError::illegal_argument("bad INTERSECT/UNION/EXCEPT input count")
+                SubstraitError::IllegalArgument("bad INTERSECT/UNION/EXCEPT input count".into())
             });
         }
         let first = inputs.first().ok_or_else(|| {
-            SubstraitError::illegal_argument("bad INTERSECT/UNION/EXCEPT input count")
+            SubstraitError::IllegalArgument("bad INTERSECT/UNION/EXCEPT input count".into())
         })?;
         let mut fields: Vec<(String, RelDataType)> = first
             .row_type()
@@ -262,8 +262,8 @@ impl RelBuilder {
         for other in inputs.iter().skip(1) {
             let other_fields = other.row_type().field_list();
             if other_fields.len() != fields.len() {
-                return Err(SubstraitError::illegal_argument(
-                    "set op inputs must have the same number of fields",
+                return Err(SubstraitError::IllegalArgument(
+                    "set op inputs must have the same number of fields".into(),
                 ));
             }
             for (f, o) in fields.iter_mut().zip(other_fields) {

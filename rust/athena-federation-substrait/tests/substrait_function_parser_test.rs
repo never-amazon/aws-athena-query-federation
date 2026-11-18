@@ -14,8 +14,8 @@ use athena_federation_substrait::proto::extensions::simple_extension_declaration
 use athena_federation_substrait::proto::extensions::SimpleExtensionDeclaration;
 use athena_federation_substrait::proto::function_argument::ArgType;
 use athena_federation_substrait::proto::{Expression, FunctionArgument};
-use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::LiteralValue;
+use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::SubstraitOperator;
 use athena_federation_substrait::{ColumnPredicate, PredicateValue};
 
@@ -229,7 +229,7 @@ fn test_parse_column_predicates_with_unsupported_operator() {
     let extensions = vec![create_extension_declaration(1, "unsupported:function")];
     let expression = create_binary_expression(1, 0, 123);
     let err = predicate::column_predicates(&extensions, &expression, &column_names()).unwrap_err();
-    assert_eq!(ErrorKind::UnsupportedOperation, err.kind());
+    assert!(matches!(err, SubstraitError::Unsupported(_)));
 }
 
 #[test]

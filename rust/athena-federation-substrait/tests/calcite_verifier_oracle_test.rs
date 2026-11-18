@@ -66,7 +66,7 @@ fn esc(s: &str) -> String {
 }
 
 fn error_text(e: &athena_federation_substrait::SubstraitError) -> String {
-    format!("ERROR {}", esc(e.message()))
+    format!("ERROR {}", esc(&e.to_string()))
 }
 
 fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {

@@ -24,7 +24,7 @@ fn check_precision(
 ) -> Result<()> {
     let max = system.max_precision(name);
     if precision > max {
-        return Err(SubstraitError::unsupported(format!(
+        return Err(SubstraitError::Unsupported(format!(
             "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
         )));
     }
@@ -34,7 +34,7 @@ fn check_precision(
 pub(crate) fn kind_of(ty: &Type) -> Result<&Kind> {
     ty.kind
         .as_ref()
-        .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))
+        .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))
 }
 
 pub(crate) fn type_nullable(ty: &Type) -> bool {
@@ -188,42 +188,39 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
             RelDataType::row(fields, n)
         }
         Kind::List(l) => {
-            let element = l
-                .r#type
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            let element = l.r#type.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
             RelDataType::array(to_calcite(system, element)?, n)
         }
         Kind::Map(m) => {
-            let key = m
-                .key
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
-            let value = m
-                .value
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            let key = m.key.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
+            let value = m.value.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
             RelDataType::map(to_calcite(system, key)?, to_calcite(system, value)?, n)
         }
         Kind::UserDefined(u) => {
-            return Err(SubstraitError::unsupported(format!(
+            return Err(SubstraitError::Unsupported(format!(
                 "Unable to map user-defined type: {}",
                 u.type_reference
             )))
         }
         Kind::IntervalCompound(_) | Kind::Uuid(_) => {
-            return Err(SubstraitError::runtime("Unknown expression type."))
+            return Err(SubstraitError::Runtime("Unknown expression type.".into()))
         }
         Kind::UserDefinedTypeReference(_) => {
-            return Err(SubstraitError::unsupported(
-                "Unsupported type: USER_DEFINED_TYPE_REFERENCE",
+            return Err(SubstraitError::Unsupported(
+                "Unsupported type: USER_DEFINED_TYPE_REFERENCE".into(),
             ))
         }
         #[allow(
             unreachable_patterns,
             reason = "keeps the Java default branch for proto kinds added later"
         )]
-        _ => return Err(SubstraitError::unsupported("Unsupported type")),
+        _ => return Err(SubstraitError::Unsupported("Unsupported type".into())),
     };
     Ok(out)
 }
@@ -238,7 +235,7 @@ pub(crate) fn named_struct_to_calcite(
     let mut fields = Vec::with_capacity(types.len());
     for ty in types {
         let name = names.get(position).cloned().ok_or_else(|| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {position} out of bounds for length {}",
                 names.len()
             ))
@@ -263,7 +260,7 @@ fn to_calcite_named(
             let mut fields = Vec::with_capacity(s.types.len());
             for f in &s.types {
                 let name = names.get(pos).cloned().ok_or_else(|| {
-                    SubstraitError::index_out_of_bounds(format!(
+                    SubstraitError::IndexOutOfBounds(format!(
                         "Index {pos} out of bounds for length {}",
                         names.len()
                     ))
@@ -276,22 +273,19 @@ fn to_calcite_named(
             Ok((RelDataType::row(fields, type_nullable(ty)), pos))
         }
         Kind::List(l) => {
-            let element = l
-                .r#type
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            let element = l.r#type.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
             let (e, next) = to_calcite_named(system, element, names, position)?;
             Ok((RelDataType::array(e, type_nullable(ty)), next))
         }
         Kind::Map(m) => {
-            let key = m
-                .key
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
-            let value = m
-                .value
-                .as_deref()
-                .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            let key = m.key.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
+            let value = m.value.as_deref().ok_or_else(|| {
+                SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into())
+            })?;
             let (k, next) = to_calcite_named(system, key, names, position)?;
             let (v, next) = to_calcite_named(system, value, names, next)?;
             Ok((RelDataType::map(k, v, type_nullable(ty)), next))

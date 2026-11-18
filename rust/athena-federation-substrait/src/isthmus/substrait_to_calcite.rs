@@ -9,7 +9,7 @@ use crate::calcite::rel_builder::{RelBuilder, SortKey};
 use crate::calcite::rel_data_type::{RelDataType, RelDataTypeBuilder, RelDataTypeSystem};
 use crate::calcite::rex::{Direction, NullDirection, RexBuilder, RexLiteral, RexNode};
 use crate::calcite::sql_dialect::SqlDialect;
-use crate::error::{Result, SubstraitError};
+use crate::error::{Result, SubstraitError, REX_CALL, REX_INPUT_REF, REX_SLOT};
 use crate::java_cast::long_to_int;
 use crate::proto::aggregate_function::AggregationInvocation;
 use crate::proto::aggregate_rel::Measure;
@@ -151,7 +151,7 @@ impl SubstraitToCalcite {
             .filter(|s| *s >= 1 && *s <= len)
             .map(|s| len - s)
             .ok_or_else(|| {
-                SubstraitError::illegal_argument(format!(
+                SubstraitError::IllegalArgument(format!(
                     "No outer row type found for steps out {steps_out}"
                 ))
             })?;
@@ -161,7 +161,7 @@ impl SubstraitToCalcite {
             .get(index)
             .map(|f| f.get_type().clone())
             .ok_or_else(|| {
-                SubstraitError::index_out_of_bounds(format!(
+                SubstraitError::IndexOutOfBounds(format!(
                     "Index {index} out of bounds for length {}",
                     fields.len()
                 ))
@@ -197,7 +197,7 @@ impl SubstraitToCalcite {
             roots.push(converter.convert(input_of(input))?);
         }
         roots.into_iter().next().ok_or_else(|| {
-            SubstraitError::index_out_of_bounds("Index 0 out of bounds for length 0")
+            SubstraitError::IndexOutOfBounds("Index 0 out of bounds for length 0".into())
         })
     }
 
@@ -232,12 +232,12 @@ impl SubstraitToCalcite {
                 | RelType::Write(_)
                 | RelType::Ddl(_)
                 | RelType::Update(_),
-            ) => Err(SubstraitError::unsupported(format!(
+            ) => Err(SubstraitError::Unsupported(format!(
                 "Rel of type {} is not supported by the Rust Substrait converter",
                 rel_type_case_name(rel)
             ))),
             Some(RelType::Reference(_) | RelType::Exchange(_)) | None => {
-                Err(SubstraitError::unsupported(format!(
+                Err(SubstraitError::Unsupported(format!(
                     "Unsupported RelTypeCase of {}",
                     rel_type_case_name(rel)
                 )))
@@ -253,13 +253,13 @@ impl SubstraitToCalcite {
         let mut exprs = Vec::with_capacity(indices.len());
         for i in indices {
             let index = usize::try_from(i).map_err(|_| {
-                SubstraitError::index_out_of_bounds(format!(
+                SubstraitError::IndexOutOfBounds(format!(
                     "Index {i} out of bounds for length {}",
                     fields.len()
                 ))
             })?;
             let f = fields.get(index).ok_or_else(|| {
-                SubstraitError::index_out_of_bounds(format!(
+                SubstraitError::IndexOutOfBounds(format!(
                     "Index {index} out of bounds for length {}",
                     fields.len()
                 ))
@@ -296,9 +296,7 @@ impl SubstraitToCalcite {
                         match ex.literal(l)? {
                             RexNode::Literal(lit) => tuple.push(lit),
                             _ => {
-                                return Err(SubstraitError::unsupported(
-                                    "VirtualTableScan only supports literal values, found: org.apache.calcite.rex.RexCall",
-                                ))
+                                return Err(SubstraitError::Unsupported("VirtualTableScan only supports literal values, found: org.apache.calcite.rex.RexCall".into()))
                             }
                         }
                     }
@@ -307,14 +305,10 @@ impl SubstraitToCalcite {
                 return Ok(RelBuilder::values(row_type, tuples));
             }
             Some(ReadType::LocalFiles(_)) => {
-                return Err(SubstraitError::unsupported(
-                    "Rel LocalFiles of type io.substrait.relation.LocalFiles not handled by visitor type io.substrait.isthmus.SubstraitRelNodeConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Rel LocalFiles of type io.substrait.relation.LocalFiles not handled by visitor type io.substrait.isthmus.SubstraitRelNodeConverter.".into()))
             }
             Some(ReadType::ExtensionTable(_) | ReadType::IcebergTable(_)) => {
-                return Err(SubstraitError::unsupported(
-                    "Rel ExtensionTable of type io.substrait.relation.ExtensionTable not handled by visitor type io.substrait.isthmus.SubstraitRelNodeConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Rel ExtensionTable of type io.substrait.relation.ExtensionTable not handled by visitor type io.substrait.isthmus.SubstraitRelNodeConverter.".into()))
             }
             None => RelBuilder::values(row_type, Vec::new()),
         };
@@ -323,10 +317,9 @@ impl SubstraitToCalcite {
 
     fn filter(&self, f: &FilterRel) -> Result<RelNode> {
         let input = self.convert(input_of(f.input.as_deref()))?;
-        let condition = f
-            .condition
-            .as_deref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
+        let condition = f.condition.as_deref().ok_or_else(|| {
+            SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
+        })?;
         let input_type = expression_row_type(&input);
         let before = self.used_correl.borrow().len();
         let converted = self.expressions().convert(condition, &input_type);
@@ -349,14 +342,14 @@ impl SubstraitToCalcite {
             Ok(ProtoJoinType::LeftSemi) => JoinType::Semi,
             Ok(ProtoJoinType::LeftAnti) => JoinType::Anti,
             Ok(other) => {
-                return Err(SubstraitError::unsupported(format!(
+                return Err(SubstraitError::Unsupported(format!(
                     "Unsupported join type: {}",
                     other.as_str_name()
                 )))
             }
             Err(_) => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unknown type: UNRECOGNIZED",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unknown type: UNRECOGNIZED".into(),
                 ))
             }
         };
@@ -396,8 +389,8 @@ impl SubstraitToCalcite {
             Ok(SetOp::UnionDistinct) => (SetOpKind::Union, false),
             Ok(SetOp::UnionAll) => (SetOpKind::Union, true),
             Ok(SetOp::Unspecified) | Err(_) => {
-                return Err(SubstraitError::unsupported(
-                    "Unknown set operation is not supported",
+                return Err(SubstraitError::Unsupported(
+                    "Unknown set operation is not supported".into(),
                 ))
             }
         };
@@ -440,12 +433,12 @@ impl SubstraitToCalcite {
             _ => 0,
         };
         if offset > i64::from(i32::MAX) {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "offset is overflowed as an integer: {offset}"
             )));
         }
         if count > i64::from(i32::MAX) {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "count is overflowed as an integer: {count}"
             )));
         }
@@ -462,13 +455,14 @@ impl SubstraitToCalcite {
         let ex = self.expressions();
         let mut keys = Vec::with_capacity(s.sorts.len());
         for field in &s.sorts {
-            let expr = field
-                .expr
-                .as_ref()
-                .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
+            let expr = field.expr.as_ref().ok_or_else(|| {
+                SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
+            })?;
             let rex = ex.convert(expr, &expression_row_type(&child))?;
             let (direction, null_direction) = sort_direction(field)?.ok_or_else(|| {
-                SubstraitError::unsupported("Unexpected Expression.SortDirection: Clustered!")
+                SubstraitError::Unsupported(
+                    "Unexpected Expression.SortDirection: Clustered!".into(),
+                )
             })?;
             keys.push(SortKey {
                 expr: rex,
@@ -624,8 +618,8 @@ impl SubstraitToCalcite {
                             }
                         }
                         _ => {
-                            return Err(SubstraitError::illegal_argument(
-                                "cannot handle non-expression argument for aggregate",
+                            return Err(SubstraitError::IllegalArgument(
+                                "cannot handle non-expression argument for aggregate".into(),
                             ))
                         }
                     }
@@ -676,7 +670,7 @@ impl SubstraitToCalcite {
         let f = m
             .measure
             .as_ref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan."))?;
+            .ok_or_else(|| SubstraitError::IllegalArgument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.".into()))?;
         let (decl, op) = ex.aggregate_operator_for(f.function_reference)?;
         let args = ex.convert_arguments(decl, &f.arguments, row_type)?;
         let mut arg_index = Vec::with_capacity(args.len());
@@ -684,51 +678,51 @@ impl SubstraitToCalcite {
             match a.input_ref_index() {
                 Some(i) => arg_index.push(i),
                 None => {
-                    return Err(SubstraitError::class_cast(
-                        "org.apache.calcite.rex.RexCall",
-                        "org.apache.calcite.rex.RexInputRef",
-                    ))
+                    return Err(SubstraitError::ClassCast {
+                        from: REX_CALL,
+                        to: REX_INPUT_REF,
+                    })
                 }
             }
         }
         if !op.aggregate {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "Unable to convert non-aggregate operator: {} for substrait aggregate function {}",
                 op.name, decl.name
             )));
         }
         let distinct = AggregationInvocation::try_from(f.invocation)
             .map(|i| i == AggregationInvocation::Distinct)
-            .map_err(|_| SubstraitError::illegal_argument("Unknown type: UNRECOGNIZED"))?;
+            .map_err(|_| SubstraitError::IllegalArgument("Unknown type: UNRECOGNIZED".into()))?;
         let output = f
             .output_type
             .as_ref()
-            .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
         let filter_arg = match &m.filter {
             Some(e) => match ex.convert(e, row_type)?.input_ref_index() {
                 Some(i) => Some(i),
                 None => {
-                    return Err(SubstraitError::class_cast(
-                        "org.apache.calcite.rex.RexCall",
-                        "org.apache.calcite.rex.RexInputRef",
-                    ))
+                    return Err(SubstraitError::ClassCast {
+                        from: REX_CALL,
+                        to: REX_INPUT_REF,
+                    })
                 }
             },
             None => None,
         };
         let mut collation = Vec::with_capacity(f.sorts.len());
         for s in &f.sorts {
-            let e = s
-                .expr
-                .as_ref()
-                .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
-            let index = ex.convert(e, row_type)?.input_ref_index().ok_or_else(|| {
-                SubstraitError::class_cast(
-                    "org.apache.calcite.rex.RexCall",
-                    "org.apache.calcite.rex.RexSlot",
-                )
+            let e = s.expr.as_ref().ok_or_else(|| {
+                SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
             })?;
+            let index =
+                ex.convert(e, row_type)?
+                    .input_ref_index()
+                    .ok_or(SubstraitError::ClassCast {
+                        from: REX_CALL,
+                        to: REX_SLOT,
+                    })?;
             let (direction, null_direction) =
                 sort_direction(s)?.unwrap_or((Direction::Ascending, NullDirection::Unspecified));
             collation.push(RelFieldCollation::new(index, direction, null_direction));

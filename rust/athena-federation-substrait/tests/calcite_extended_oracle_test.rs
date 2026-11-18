@@ -63,7 +63,7 @@ fn dialect(name: &str) -> SqlDialect {
 }
 
 fn error_text(e: &athena_federation_substrait::SubstraitError) -> String {
-    format!("ERROR {}", e.message().replace('\n', "\\n"))
+    format!("ERROR {}", e.to_string().replace('\n', "\\n"))
 }
 
 fn calcite_row(plan: &str, d: &SqlDialect) -> String {

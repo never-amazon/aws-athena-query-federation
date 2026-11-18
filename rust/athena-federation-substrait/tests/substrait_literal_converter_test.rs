@@ -2,7 +2,7 @@ use arrow_schema::{DataType, TimeUnit};
 use athena_federation_substrait::proto::expression::literal::{Decimal, LiteralType, VarChar};
 use athena_federation_substrait::proto::expression::{Literal, RexType};
 use athena_federation_substrait::proto::Expression;
-use athena_federation_substrait::ErrorKind;
+use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::{literal, LiteralValue};
 use bigdecimal::BigDecimal;
 use chrono::{FixedOffset, TimeZone};
@@ -118,7 +118,7 @@ fn test_create_decimal_literal() {
 #[test]
 fn test_extract_non_literal_expression() {
     let err = literal::extract(&Expression::default()).unwrap_err();
-    assert_eq!(ErrorKind::IllegalArgument, err.kind());
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
 }
 
 #[test]
@@ -307,11 +307,11 @@ fn test_create_unsupported_arrow_type() {
     )));
     let err =
         literal::to_expression(&LiteralValue::String("test".to_string()), &list_type).unwrap_err();
-    assert_eq!(ErrorKind::IllegalArgument, err.kind());
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
 }
 
 #[test]
 fn test_extract_unsupported_literal_type() {
     let err = literal::extract(&literal_expr(None)).unwrap_err();
-    assert_eq!(ErrorKind::UnsupportedOperation, err.kind());
+    assert!(matches!(err, SubstraitError::Unsupported(_)));
 }

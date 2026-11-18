@@ -511,7 +511,7 @@ impl Context {
             .find(|(id, _)| *id == correl)
             .map(|(_, a)| a.clone())
             .ok_or_else(|| {
-                SubstraitError::illegal_state(format!("unknown correlation variable $cor{correl}"))
+                SubstraitError::IllegalState(format!("unknown correlation variable $cor{correl}"))
             })?;
         Context::alias_context(&self.dialect, aliases, true).field(index)
     }
@@ -523,7 +523,9 @@ impl Context {
             .find(|(k, _)| k == q)
             .map(|(_, v)| v.clone())
             .ok_or_else(|| {
-                SubstraitError::illegal_state("sub-query was not converted before its expression")
+                SubstraitError::IllegalState(
+                    "sub-query was not converted before its expression".into(),
+                )
             })?;
         match q.kind {
             SubQueryKind::In => {
@@ -557,13 +559,13 @@ impl Context {
                     }
                     ord -= fields.len();
                 }
-                Err(SubstraitError::illegal_state(format!(
+                Err(SubstraitError::IllegalState(format!(
                     "field ordinal {ordinal} out of range"
                 )))
             }
             ContextKind::SelectList { items, alias_ref } => {
                 let item = items.get(ordinal).ok_or_else(|| {
-                    SubstraitError::index_out_of_bounds(format!("Index {ordinal} out of bounds"))
+                    SubstraitError::IndexOutOfBounds(format!("Index {ordinal} out of bounds"))
                 })?;
                 match item {
                     SqlNode::Call(c) if c.op.kind == SqlKind::As => {
@@ -657,8 +659,8 @@ impl Context {
                         value: LiteralValue::Sarg(sarg),
                         ty,
                     })) => self.sarg_to_sql(&call.operands[0], ty, sarg),
-                    _ => Err(SubstraitError::illegal_state(
-                        "SEARCH without a Sarg literal",
+                    _ => Err(SubstraitError::IllegalState(
+                        "SEARCH without a Sarg literal".into(),
                     )),
                 },
                 SqlKind::Not => {
@@ -781,7 +783,7 @@ impl Context {
         }
         if not {
             op = op.not().ok_or_else(|| {
-                SubstraitError::illegal_state(format!("unable to negate {:?}", call.op.kind))
+                SubstraitError::IllegalState(format!("unable to negate {:?}", call.op.kind))
             })?;
         }
         let mut nodes = self.to_sql_list(&call.operands)?;
@@ -1067,8 +1069,8 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
         LiteralValue::Symbol(Symbol::TimeUnit(t)) => SqlLiteral::symbol(t.name()),
         LiteralValue::Symbol(Symbol::Trim(t)) => SqlLiteral::symbol(t.name()),
         LiteralValue::Sarg(_) => {
-            return Err(SubstraitError::illegal_state(
-                "sargs should be handled as part of predicates, not as literals",
+            return Err(SubstraitError::IllegalState(
+                "sargs should be handled as part of predicates, not as literals".into(),
             ))
         }
         LiteralValue::Null => SqlLiteral::null(),
@@ -1499,7 +1501,7 @@ impl RelToSqlConverter {
                 JoinType::Right => &operators::RIGHT_JOIN,
                 JoinType::Full => &operators::FULL_JOIN,
                 JoinType::Semi | JoinType::Anti => {
-                    return Err(SubstraitError::unsupported(format!(
+                    return Err(SubstraitError::Unsupported(format!(
                         "join type {join_type:?} is not supported"
                     )))
                 }
@@ -1547,8 +1549,9 @@ impl RelToSqlConverter {
                 Some(n) => SqlNode::call(op, vec![n, select]),
             });
         }
-        let node = node
-            .ok_or_else(|| SubstraitError::illegal_state("set op must have at least one input"))?;
+        let node = node.ok_or_else(|| {
+            SubstraitError::IllegalState("set op must have at least one input".into())
+        })?;
         let row_type = rel.row_type().clone();
         Ok(self.result(node, vec![Clause::SetOp], &row_type, None))
     }

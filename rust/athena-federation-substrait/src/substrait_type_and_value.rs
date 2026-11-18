@@ -172,14 +172,14 @@ impl SubstraitTypeAndValueBuilder {
     pub fn build(self) -> Result<SubstraitTypeAndValue> {
         let type_name = self
             .type_name
-            .ok_or_else(|| SubstraitError::null_pointer("type is null"))?;
+            .ok_or_else(|| SubstraitError::NullPointer("type is null".into()))?;
         let value = self
             .value
             .filter(|v| !v.is_null())
-            .ok_or_else(|| SubstraitError::null_pointer("value is null"))?;
+            .ok_or_else(|| SubstraitError::NullPointer("value is null".into()))?;
         let column_name = self
             .column_name
-            .ok_or_else(|| SubstraitError::null_pointer("value is null"))?;
+            .ok_or_else(|| SubstraitError::NullPointer("value is null".into()))?;
         Ok(SubstraitTypeAndValue {
             type_name,
             value,

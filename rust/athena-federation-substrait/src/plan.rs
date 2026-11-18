@@ -11,7 +11,7 @@ use crate::calcite::rel_to_sql::RelToSqlConverter;
 use crate::calcite::rex::RexNode;
 use crate::calcite::sql_dialect::SqlDialect;
 use crate::calcite::sql_node::SqlNode;
-use crate::error::{ErrorKind, Result, SubstraitError};
+use crate::error::{Result, SubstraitError};
 use crate::isthmus::SubstraitToCalcite;
 use crate::proto::plan_rel::RelType as PlanRelType;
 use crate::proto::r#type::Kind;
@@ -87,12 +87,11 @@ pub fn decode(plan_string: &str) -> Result<Plan> {
         |cause: SubstraitError| SubstraitError::wrap("Failed to parse Substrait plan", cause);
     let bytes = JAVA_BASE64
         .decode(plan_string)
-        .map_err(|e| wrap(SubstraitError::from_source(ErrorKind::IllegalArgument, e)))?;
+        .map_err(|e| wrap(e.into()))?;
     if let Err(DepthCheck::TooDeep) = check_message_depth(&bytes, 0) {
-        return Err(wrap(SubstraitError::runtime(TOO_DEEP_MESSAGE)));
+        return Err(wrap(SubstraitError::Runtime(TOO_DEEP_MESSAGE.into())));
     }
-    Plan::decode(bytes.as_slice())
-        .map_err(|e| wrap(SubstraitError::from_source(ErrorKind::Runtime, e)))
+    Plan::decode(bytes.as_slice()).map_err(|e| wrap(e.into()))
 }
 
 pub fn table_columns(read_rel: &ReadRel) -> Result<Vec<String>> {
@@ -116,7 +115,7 @@ fn collect_column_names(
 ) -> Result<usize> {
     for t in types {
         let name = names.get(name_idx).ok_or_else(|| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {} out of bounds for length {}",
                 name_idx,
                 names.len()
@@ -151,15 +150,15 @@ pub fn table_schema(plan_string: &str, sql_dialect: &SqlDialect) -> Result<RelDa
     let attempt = || -> Result<RelDataType> {
         let plan = decode(plan_string)?;
         let first = plan.relations.first().ok_or_else(|| {
-            SubstraitError::index_out_of_bounds("Index 0 out of bounds for length 0")
+            SubstraitError::IndexOutOfBounds("Index 0 out of bounds for length 0".into())
         })?;
         let read = match &first.rel_type {
             Some(PlanRelType::Root(root)) => root.input.as_ref().and_then(read_rel),
             _ => None,
         };
         if read.is_none_or(|r| r.base_schema.is_none()) {
-            return Err(SubstraitError::runtime(
-                "Unable to extract base table schema from Substrait plan",
+            return Err(SubstraitError::Runtime(
+                "Unable to extract base table schema from Substrait plan".into(),
             ));
         }
         let rel_node = rel_node(&plan, sql_dialect)?;

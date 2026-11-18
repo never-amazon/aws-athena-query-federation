@@ -3,6 +3,7 @@ use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::SubstraitValue;
 use base64::Engine;
+use std::error::Error;
 
 fn dialect() -> SqlDialect {
     SqlDialect::ansi()
@@ -85,13 +86,13 @@ fn test_get_table_schema_from_substrait_plan_complex_query() {
 fn test_get_sql_node_from_substrait_plan_invalid_base64() {
     let err = plan::to_sql_node("This is not valid base64!!!@#$", &dialect())
         .expect_err("invalid base64");
-    assert!(err.message().contains("Failed to parse Substrait plan"));
+    assert!(err.to_string().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_empty_string() {
     let err = plan::to_sql_node("", &dialect()).expect_err("empty");
-    assert!(err.message().contains("Failed to parse Substrait plan"));
+    assert!(err.to_string().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
@@ -99,9 +100,9 @@ fn test_get_sql_node_from_substrait_plan_invalid_protobuf() {
     let encoded = base64::engine::general_purpose::STANDARD.encode(b"invalid protobuf data");
     let err = plan::to_sql_node(&encoded, &dialect()).expect_err("invalid proto");
     assert!(
-        err.message().contains("Failed to parse Substrait plan")
+        err.to_string().contains("Failed to parse Substrait plan")
             || err
-                .message()
+                .to_string()
                 .contains("Failed to convert from Substrait plan to RelNode")
     );
 }
@@ -111,7 +112,7 @@ fn test_get_table_schema_from_substrait_plan_invalid_base64() {
     let err =
         plan::table_schema("Not valid base64 content!!!", &dialect()).expect_err("invalid base64");
     assert!(err
-        .message()
+        .to_string()
         .contains("Failed to extract table schema from Substrait plan"));
 }
 
@@ -119,7 +120,7 @@ fn test_get_table_schema_from_substrait_plan_invalid_base64() {
 fn test_get_table_schema_from_substrait_plan_empty_plan() {
     let err = plan::table_schema("", &dialect()).expect_err("empty");
     assert!(err
-        .message()
+        .to_string()
         .contains("Failed to extract table schema from Substrait plan"));
 }
 
@@ -180,12 +181,12 @@ fn test_sql_conversion_rejects_date_time_literals_outside_years_one_to9999() {
     let d = dialect();
     for (plan, message) in cases {
         let error = plan::to_sql_node(plan, &d).unwrap_err();
-        let cause = error.cause().expect("cause");
+        let cause = error.source().expect("cause");
         assert_eq!(
             "Failed to convert from Substrait plan to RelNode",
-            cause.message()
+            cause.to_string()
         );
-        assert_eq!(message, cause.cause().expect("root").message());
+        assert_eq!(message, cause.source().expect("root").to_string());
     }
 }
 

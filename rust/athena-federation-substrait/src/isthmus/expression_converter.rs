@@ -39,7 +39,7 @@ pub(crate) struct ExpressionConverter<'a> {
 }
 
 fn required<'b, T>(v: Option<&'b T>, what: &str) -> Result<&'b T> {
-    v.ok_or_else(|| SubstraitError::illegal_argument(format!("Unknown type: {what}")))
+    v.ok_or_else(|| SubstraitError::IllegalArgument(format!("Unknown type: {what}")))
 }
 
 pub(crate) fn sort_direction(field: &SortField) -> Result<Option<(Direction, NullDirection)>> {
@@ -55,12 +55,12 @@ pub(crate) fn sort_direction(field: &SortField) -> Result<Option<(Direction, Nul
         }
         Ok(SortDirection::DescNullsLast) => Ok(Some((Direction::Descending, NullDirection::Last))),
         Ok(SortDirection::Clustered) => Ok(None),
-        Ok(d @ SortDirection::Unspecified) => Err(SubstraitError::illegal_argument(format!(
+        Ok(d @ SortDirection::Unspecified) => Err(SubstraitError::IllegalArgument(format!(
             "Unknown type: {}",
             d.as_str_name()
         ))),
-        Err(_) => Err(SubstraitError::illegal_argument(
-            "Unknown type: UNRECOGNIZED",
+        Err(_) => Err(SubstraitError::IllegalArgument(
+            "Unknown type: UNRECOGNIZED".into(),
         )),
     }
 }
@@ -82,7 +82,7 @@ fn time_unit(name: &str) -> Result<TimeUnit> {
         "DOY" => TimeUnit::Doy,
         "EPOCH" => TimeUnit::Epoch,
         other => {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "No enum constant org.apache.calcite.avatica.util.TimeUnitRange.{other}"
             )))
         }
@@ -95,7 +95,7 @@ fn trim_flag(name: &str) -> Result<TrimFlag> {
         "BOTH" => Ok(TrimFlag::Both),
         "LEADING" => Ok(TrimFlag::Leading),
         "TRAILING" => Ok(TrimFlag::Trailing),
-        other => Err(SubstraitError::illegal_argument(format!(
+        other => Err(SubstraitError::IllegalArgument(format!(
             "No enum constant org.apache.calcite.sql.fun.SqlTrimFunction.Flag.{other}"
         ))),
     }
@@ -106,8 +106,8 @@ fn decimal_literal(
     d: &crate::proto::expression::literal::Decimal,
 ) -> Result<RexNode> {
     if d.value.len() != 16 {
-        return Err(SubstraitError::illegal_argument(
-            "Decimal value must be 16 bytes",
+        return Err(SubstraitError::IllegalArgument(
+            "Decimal value must be 16 bytes".into(),
         ));
     }
     let value = big_decimal_from_bytes(&d.value, i64::from(d.scale));
@@ -119,7 +119,7 @@ fn empty_list_literal(s: RelDataTypeSystem, l: &crate::proto::r#type::List) -> R
     let element = l
         .r#type
         .as_deref()
-        .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+        .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
     let ty = RelDataType::array(
         to_calcite(s, element)?,
         super::type_converter::is_nullable(l.nullability),
@@ -140,7 +140,7 @@ fn precision_timestamp_literal(
 ) -> Result<RexNode> {
     let max = s.max_precision(type_name);
     if precision > max {
-        return Err(SubstraitError::unsupported(format!(
+        return Err(SubstraitError::Unsupported(format!(
             "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
         )));
     }
@@ -217,7 +217,7 @@ fn check_year(kind: &str, epoch_day: i64) -> Result<()> {
     } else {
         format!("{year:04}")
     };
-    Err(SubstraitError::illegal_argument(format!(
+    Err(SubstraitError::IllegalArgument(format!(
         "{kind}{year_text}-{month:02}-{day:02} is outside the years 0001 to 9999"
     )))
 }
@@ -229,7 +229,7 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
         6 => millis_to_seconds_split(value, 1_000_000, 1_000),
         9 => millis_to_seconds_split(value, 1_000_000_000, 1),
         other => {
-            return Err(SubstraitError::unsupported(format!(
+            return Err(SubstraitError::Unsupported(format!(
                 "Cannot handle PrecisionTimestamp with precision {other}."
             )))
         }
@@ -240,7 +240,8 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
 
 impl ExpressionConverter<'_> {
     fn ty(&self, t: Option<&Type>) -> Result<RelDataType> {
-        let t = t.ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+        let t =
+            t.ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         to_calcite(self.system, t)
     }
 
@@ -253,10 +254,9 @@ impl ExpressionConverter<'_> {
     }
 
     pub(crate) fn convert(&self, expr: &Expression, input: &RelDataType) -> Result<RexNode> {
-        let rex = expr
-            .rex_type
-            .as_ref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
+        let rex = expr.rex_type.as_ref().ok_or_else(|| {
+            SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
+        })?;
         match rex {
             RexType::Literal(l) => self.literal(l),
             RexType::Selection(f) => self.field_reference(f, input),
@@ -298,14 +298,12 @@ impl ExpressionConverter<'_> {
                 let safe = c.failure_behavior == crate::proto::expression::cast::FailureBehavior::ReturnNull as i32;
                 Ok(RexBuilder::make_cast(ty, operand, safe))
             }
-            RexType::MultiOrList(_) => Err(SubstraitError::unsupported(
-                "Expression MultiOrList not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-            )),
+            RexType::MultiOrList(_) => Err(SubstraitError::Unsupported("Expression MultiOrList not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into())),
             RexType::Subquery(q) => self.subquery(q, input),
-            RexType::Nested(_) => Err(SubstraitError::illegal_argument("Unknown type: NESTED")),
-            RexType::DynamicParameter(_) => Err(SubstraitError::illegal_argument("Unknown type: DYNAMIC_PARAMETER")),
+            RexType::Nested(_) => Err(SubstraitError::IllegalArgument("Unknown type: NESTED".into())),
+            RexType::DynamicParameter(_) => Err(SubstraitError::IllegalArgument("Unknown type: DYNAMIC_PARAMETER".into())),
             #[allow(deprecated, reason = "reads deprecated Substrait proto fields that the Java converter still reads")]
-            RexType::Enum(_) => Err(SubstraitError::unsupported("Unsupported type: ENUM")),
+            RexType::Enum(_) => Err(SubstraitError::Unsupported("Unsupported type: ENUM".into())),
         }
     }
 
@@ -318,7 +316,7 @@ impl ExpressionConverter<'_> {
         use crate::proto::expression::subquery::SubqueryType;
         let rel_of = |r: Option<&crate::proto::Rel>| -> Result<RelNode> {
             let r = r.ok_or_else(|| {
-                SubstraitError::illegal_argument("Unsupported RelTypeCase of RELTYPE_NOT_SET")
+                SubstraitError::IllegalArgument("Unsupported RelTypeCase of RELTYPE_NOT_SET".into())
             })?;
             self.rels.convert_sub_query(r, input)
         };
@@ -326,7 +324,7 @@ impl ExpressionConverter<'_> {
         let node = match q
             .subquery_type
             .as_ref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: SUBQUERYTYPE_NOT_SET"))?
+            .ok_or_else(|| SubstraitError::IllegalArgument("Unknown type: SUBQUERYTYPE_NOT_SET".into()))?
         {
             SubqueryType::Scalar(s) => {
                 let rel = rel_of(s.input.as_deref())?;
@@ -335,7 +333,7 @@ impl ExpressionConverter<'_> {
                     .field_list()
                     .first()
                     .map(|f| f.get_type().with_nullability(true))
-                    .ok_or_else(|| SubstraitError::illegal_argument("scalar sub-query must return one column"))?;
+                    .ok_or_else(|| SubstraitError::IllegalArgument("scalar sub-query must return one column".into()))?;
                 RexSubQuery {
                     kind: SubQueryKind::Scalar,
                     operands: Vec::new(),
@@ -363,7 +361,7 @@ impl ExpressionConverter<'_> {
                     Ok(PredicateOp::Exists) => SubQueryKind::Exists,
                     Ok(PredicateOp::Unique) => SubQueryKind::Unique,
                     _ => {
-                        return Err(SubstraitError::unsupported(format!(
+                        return Err(SubstraitError::Unsupported(format!(
                             "Unsupported set predicate operation: {}",
                             p.predicate_op
                         )))
@@ -378,9 +376,7 @@ impl ExpressionConverter<'_> {
                 }
             }
             SubqueryType::SetComparison(_) => {
-                return Err(SubstraitError::unsupported(
-                    "Expression SetComparison of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Expression SetComparison of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into()))
             }
         };
         Ok(RexNode::SubQuery(Box::new(node)))
@@ -440,20 +436,20 @@ impl ExpressionConverter<'_> {
         let segment = match &f.reference_type {
             Some(ReferenceType::DirectReference(s)) => s,
             Some(ReferenceType::MaskedReference(_)) => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unsupported type: MASKED_REFERENCE",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unsupported type: MASKED_REFERENCE".into(),
                 ))
             }
             None => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unhandled type: REFERENCETYPE_NOT_SET",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unhandled type: REFERENCETYPE_NOT_SET".into(),
                 ))
             }
         };
         match &f.root_type {
             Some(RootType::RootReference(_) | RootType::OuterReference(_)) => {}
             Some(RootType::Expression(_)) | None => {
-                return Err(SubstraitError::unsupported(format!(
+                return Err(SubstraitError::Unsupported(format!(
                     "Expression {f:?} of type io.substrait.expression.FieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                 )))
             }
@@ -461,31 +457,27 @@ impl ExpressionConverter<'_> {
         let field = match &segment.reference_type {
             Some(reference_segment::ReferenceType::StructField(sf)) if sf.child.is_none() => sf.field,
             Some(_) => {
-                return Err(SubstraitError::unsupported(
-                    "Expression FieldReference with nested segments not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Expression FieldReference with nested segments not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into()))
             }
             None => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unhandled type: REFERENCETYPE_NOT_SET",
-                ))
+                return Err(SubstraitError::IllegalArgument("Unhandled type: REFERENCETYPE_NOT_SET".into()))
             }
         };
         if let Some(RootType::OuterReference(o)) = &f.root_type {
             let index = usize::try_from(field).map_err(|_| {
-                SubstraitError::index_out_of_bounds(format!("Index {field} out of bounds"))
+                SubstraitError::IndexOutOfBounds(format!("Index {field} out of bounds"))
             })?;
             return self.rels.outer_field(o.steps_out, index);
         }
         let fields = input.field_list();
         let index = usize::try_from(field).map_err(|_| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {field} out of bounds for length {}",
                 fields.len()
             ))
         })?;
         let f = fields.get(index).ok_or_else(|| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {index} out of bounds for length {}",
                 fields.len()
             ))
@@ -495,9 +487,7 @@ impl ExpressionConverter<'_> {
 
     fn function_decl(&self, reference: u32) -> Result<&FunctionDecl> {
         self.functions.get(&reference).ok_or_else(|| {
-            SubstraitError::illegal_argument(
-                "Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.",
-            )
+            SubstraitError::IllegalArgument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.".into())
         })
     }
 
@@ -519,11 +509,11 @@ impl ExpressionConverter<'_> {
                 Some(ArgType::Value(e)) => out.push(self.convert(e, input)?),
                 Some(ArgType::Enum(v)) => out.push(self.enum_arg(decl, index, v)?),
                 Some(ArgType::Type(t)) => {
-                    return Err(SubstraitError::unsupported(format!(
+                    return Err(SubstraitError::Unsupported(format!(
                         "FunctionArg {t:?} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                     )))
                 }
-                None => return Err(SubstraitError::illegal_argument("Unknown type: ARGTYPE_NOT_SET")),
+                None => return Err(SubstraitError::IllegalArgument("Unknown type: ARGTYPE_NOT_SET".into())),
             }
             index += 1;
         }
@@ -532,7 +522,7 @@ impl ExpressionConverter<'_> {
 
     fn enum_arg(&self, decl: &FunctionDecl, index: usize, value: &str) -> Result<RexNode> {
         let not_handled = || {
-            SubstraitError::unsupported(format!(
+            SubstraitError::Unsupported(format!(
                 "EnumArg(value={value}) not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
             ))
         };
@@ -555,10 +545,10 @@ impl ExpressionConverter<'_> {
         let output = f
             .output_type
             .as_ref()
-            .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
         let op = scalar_operator(&decl.name, type_string(output)).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
+            SubstraitError::IllegalArgument(format!(
                 "Unable to convert scalar function {}({}).",
                 decl.name,
                 Self::describe_args(&f.arguments)
@@ -588,7 +578,7 @@ impl ExpressionConverter<'_> {
     fn window_function(&self, w: &WindowFunction, input: &RelDataType) -> Result<RexNode> {
         let decl = self.function_decl(w.function_reference)?;
         let op = window_operator(&decl.name).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
+            SubstraitError::IllegalArgument(format!(
                 "Unable to convert window function {}({}).",
                 decl.name,
                 Self::describe_args(&w.arguments)
@@ -604,7 +594,7 @@ impl ExpressionConverter<'_> {
         for s in &w.sorts {
             let expr = self.convert(required(s.expr.as_ref(), "EXPR")?, input)?;
             let (direction, null_direction) = sort_direction(s)?.ok_or_else(|| {
-                SubstraitError::illegal_argument("SORT_DIRECTION_CLUSTERED is not supported")
+                SubstraitError::IllegalArgument("SORT_DIRECTION_CLUSTERED is not supported".into())
             })?;
             order_keys.push(RexFieldCollation {
                 expr,
@@ -620,13 +610,13 @@ impl ExpressionConverter<'_> {
             Ok(window_function::BoundsType::Rows) => true,
             Ok(window_function::BoundsType::Range) => false,
             Ok(window_function::BoundsType::Unspecified) => {
-                return Err(SubstraitError::illegal_argument(
-                    "bounds type on window function must be specified",
+                return Err(SubstraitError::IllegalArgument(
+                    "bounds type on window function must be specified".into(),
                 ))
             }
             Err(_) => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unknown type: UNRECOGNIZED",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unknown type: UNRECOGNIZED".into(),
                 ))
             }
         };
@@ -635,8 +625,8 @@ impl ExpressionConverter<'_> {
                 Ok(crate::proto::aggregate_function::AggregationInvocation::Distinct) => true,
                 Ok(_) => false,
                 Err(_) => {
-                    return Err(SubstraitError::illegal_argument(
-                        "Unknown type: UNRECOGNIZED",
+                    return Err(SubstraitError::IllegalArgument(
+                        "Unknown type: UNRECOGNIZED".into(),
                     ))
                 }
             };
@@ -679,7 +669,7 @@ impl ExpressionConverter<'_> {
     ) -> Result<(&FunctionDecl, &'static SqlOperator)> {
         let decl = self.function_decl(reference)?;
         let op = aggregate_operator(&decl.name).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
+            SubstraitError::IllegalArgument(format!(
                 "Unable to find binding for call {}",
                 decl.name
             ))
@@ -703,7 +693,7 @@ impl ExpressionConverter<'_> {
     pub(crate) fn literal(&self, l: &Literal) -> Result<RexNode> {
         let nullable = l.nullable;
         let lt = l.literal_type.as_ref().ok_or_else(|| {
-            SubstraitError::illegal_state("Unexpected value: LITERALTYPE_NOT_SET")
+            SubstraitError::IllegalState("Unexpected value: LITERALTYPE_NOT_SET".into())
         })?;
         let s = self.system;
         let exact = |v: i64, name: SqlTypeName| -> RexNode {
@@ -784,7 +774,7 @@ impl ExpressionConverter<'_> {
             LiteralType::List(list) => self.list_literal(list)?,
             LiteralType::EmptyList(l) => empty_list_literal(s, l)?,
             other => {
-                return Err(SubstraitError::unsupported(format!(
+                return Err(SubstraitError::Unsupported(format!(
                     "Expression {} of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
                     crate::literal::literal_type_case_name(other)
                 )))

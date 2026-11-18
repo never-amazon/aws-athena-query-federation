@@ -421,7 +421,7 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
             .schema
             .get_field(column_name, true, true)
             .ok_or_else(|| {
-                SubstraitError::illegal_argument(format!(
+                SubstraitError::IllegalArgument(format!(
                     "field {column_name} not found in schema with fields: [{}]",
                     self.schema.field_names().join(", ")
                 ))

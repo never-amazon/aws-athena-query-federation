@@ -10,6 +10,7 @@ use athena_federation_substrait::proto::{
 };
 use base64::Engine;
 use prost::Message;
+use std::error::Error;
 
 fn rel(rel_type: RelType) -> Rel {
     Rel {
@@ -115,14 +116,14 @@ fn test_deserialize_substrait_plan_valid() {
 #[test]
 fn test_deserialize_substrait_plan_invalid_base64() {
     let err = plan::decode("invalid-base64-string!@#").unwrap_err();
-    assert_eq!("Failed to parse Substrait plan", err.message());
+    assert_eq!("Failed to parse Substrait plan", err.to_string());
 }
 
 #[test]
 fn test_deserialize_substrait_plan_invalid_protobuf() {
     let encoded = encode(b"invalid protobuf data");
     let err = plan::decode(&encoded).unwrap_err();
-    assert_eq!("Failed to parse Substrait plan", err.message());
+    assert_eq!("Failed to parse Substrait plan", err.to_string());
 }
 
 #[test]
@@ -199,11 +200,11 @@ fn deserialize_substrait_plan_rejects_nesting_past_java_limit() {
             let plan = plan_with_condition(nested_condition(700));
             let encoded = encode(&plan.encode_to_vec());
             let err = plan::decode(&encoded).unwrap_err();
-            assert_eq!("Failed to parse Substrait plan", err.message());
-            assert!(err
-                .root_cause()
-                .message()
-                .contains("too many levels of nesting"));
+            assert_eq!("Failed to parse Substrait plan", err.to_string());
+            let root = std::iter::successors(Some(&err as &dyn Error), |e| (*e).source())
+                .last()
+                .map(ToString::to_string);
+            assert!(root.is_some_and(|m| m.contains("too many levels of nesting")));
         })
         .expect("spawn");
     handle.join().expect("thread");

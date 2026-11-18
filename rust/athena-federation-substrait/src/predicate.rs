@@ -179,7 +179,7 @@ fn extract_column_name(expr: &Expression, schema_names: &[String]) -> Result<Str
         .and_then(|i| schema_names.get(i))
         .cloned()
         .ok_or_else(|| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {} out of bounds for length {}",
                 field_index,
                 schema_names.len()
@@ -244,7 +244,7 @@ fn is_logical_operator(name: Option<&str>) -> bool {
 }
 
 fn map_to_operator(name: Option<&str>) -> Result<SubstraitOperator> {
-    let name = name.ok_or_else(|| SubstraitError::null_pointer("function name is null"))?;
+    let name = name.ok_or_else(|| SubstraitError::NullPointer("function name is null".into()))?;
     Ok(match name {
         N::GT_ANY_ANY | N::GT_PTS_PTS => SubstraitOperator::GreaterThan,
         N::GTE_ANY_ANY | N::GTE_PTS_PTS => SubstraitOperator::GreaterThanOrEqualTo,
@@ -258,7 +258,7 @@ fn map_to_operator(name: Option<&str>) -> Result<SubstraitOperator> {
         N::OR_BOOL => SubstraitOperator::Or,
         N::NOT_BOOL => SubstraitOperator::Not,
         other => {
-            return Err(SubstraitError::unsupported(format!(
+            return Err(SubstraitError::Unsupported(format!(
                 "Unsupported operator function: {other}"
             )))
         }

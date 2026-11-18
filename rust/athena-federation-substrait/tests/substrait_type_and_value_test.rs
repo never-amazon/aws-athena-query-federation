@@ -1,5 +1,5 @@
-use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
+use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
 use bigdecimal::BigDecimal;
 use std::str::FromStr;
@@ -27,16 +27,16 @@ fn test_constructor_with_null_type() {
         .column_name("test_column")
         .build()
         .expect_err("null type");
-    assert_eq!(err.kind(), ErrorKind::NullPointer);
-    assert_eq!(err.message(), "type is null");
+    assert!(matches!(err, SubstraitError::NullPointer(_)));
+    assert_eq!(err.to_string(), "type is null");
 }
 
 #[test]
 fn test_constructor_with_null_value() {
     let err = SubstraitTypeAndValue::new(SqlTypeName::Integer, SubstraitValue::Null, "test_column")
         .expect_err("null value");
-    assert_eq!(err.kind(), ErrorKind::NullPointer);
-    assert_eq!(err.message(), "value is null");
+    assert!(matches!(err, SubstraitError::NullPointer(_)));
+    assert_eq!(err.to_string(), "value is null");
 }
 
 #[test]
@@ -46,8 +46,8 @@ fn test_constructor_with_null_column_name() {
         .value(SubstraitValue::Integer(123))
         .build()
         .expect_err("null column");
-    assert_eq!(err.kind(), ErrorKind::NullPointer);
-    assert_eq!(err.message(), "value is null");
+    assert!(matches!(err, SubstraitError::NullPointer(_)));
+    assert_eq!(err.to_string(), "value is null");
 }
 
 #[test]

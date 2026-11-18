@@ -1,6 +1,6 @@
-use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
+use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::{operators, SqlKind, SqlOperator};
 use athena_federation_substrait::{plan, SqlDialect};
 use athena_federation_substrait::{RelDataType, RelDataTypeSystem};
@@ -133,10 +133,10 @@ fn test_accumulator_field_not_found_throws() {
             vec![id("no_such_col"), chars("x")],
         ))
         .expect_err("missing field");
-    assert_eq!(err.kind(), ErrorKind::IllegalArgument);
-    assert!(err.message().contains("field no_such_col not found"));
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
+    assert!(err.to_string().contains("field no_such_col not found"));
     assert_eq!(
-        err.message(),
+        err.to_string(),
         "field no_such_col not found in schema with fields: [int_col, bigint_col, varchar_col, bool_col, float_col]"
     );
 }
@@ -151,8 +151,8 @@ fn test_accumulator_null_value_throws() {
             vec![id("null_col"), SqlNode::literal(SqlLiteral::null())],
         ))
         .expect_err("null value");
-    assert_eq!(err.kind(), ErrorKind::NullPointer);
-    assert!(err.message().contains("value is null"));
+    assert!(matches!(err, SubstraitError::NullPointer(_)));
+    assert!(err.to_string().contains("value is null"));
 }
 
 #[test]
