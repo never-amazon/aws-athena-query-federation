@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use arrow_schema::DataType;
 
 use crate::error::{Result, SubstraitError};
+use crate::literal::{self, LiteralValue};
 use crate::model::column_predicate::{ColumnPredicate, PredicateValue};
 use crate::model::logical_expression::LogicalExpression;
-use crate::model::substrait_function_names::SubstraitFunctionNames as N;
 use crate::model::substrait_operator::SubstraitOperator;
 use crate::proto::expression::field_reference::ReferenceType;
 use crate::proto::expression::reference_segment;
@@ -14,115 +14,127 @@ use crate::proto::extensions::simple_extension_declaration::MappingType;
 use crate::proto::extensions::SimpleExtensionDeclaration;
 use crate::proto::function_argument::ArgType;
 use crate::proto::{Expression, FunctionArgument};
-use crate::substrait_literal_converter::{LiteralValue, SubstraitLiteralConverter};
 
-pub struct SubstraitFunctionParser;
+pub mod function_names {
+    pub const NOT_BOOL: &str = "not:bool";
+    pub const AND_BOOL: &str = "and:bool";
+    pub const OR_BOOL: &str = "or:bool";
+    pub const GT_ANY_ANY: &str = "gt:any_any";
+    pub const GT_PTS_PTS: &str = "gt:pts_pts";
+    pub const GTE_ANY_ANY: &str = "gte:any_any";
+    pub const GTE_PTS_PTS: &str = "gte:pts_pts";
+    pub const LT_ANY_ANY: &str = "lt:any_any";
+    pub const LT_PTS_PTS: &str = "lt:pts_pts";
+    pub const LTE_ANY_ANY: &str = "lte:any_any";
+    pub const LTE_PTS_PTS: &str = "lte:pts_pts";
+    pub const EQUAL_ANY_ANY: &str = "equal:any_any";
+    pub const NOT_EQUAL_ANY_ANY: &str = "not_equal:any_any";
+    pub const IS_NULL_ANY: &str = "is_null:any";
+    pub const IS_NOT_NULL_ANY: &str = "is_not_null:any";
+}
+
+use function_names as N;
 
 struct ScalarFunctionInfo<'a> {
     function_name: Option<String>,
     arguments: &'a [FunctionArgument],
 }
 
-impl SubstraitFunctionParser {
-    pub fn get_column_predicates_map(
-        extension_declaration_list: &[SimpleExtensionDeclaration],
-        expression: &Expression,
-        column_names: &[String],
-    ) -> Result<HashMap<Option<String>, Vec<ColumnPredicate>>> {
-        let column_predicates =
-            Self::parse_column_predicates(extension_declaration_list, expression, column_names)?;
-        let mut map: HashMap<Option<String>, Vec<ColumnPredicate>> = HashMap::new();
-        for p in column_predicates {
-            map.entry(p.column().map(str::to_string))
-                .or_default()
-                .push(p);
-        }
-        Ok(map)
+pub fn column_predicates_map(
+    extension_declaration_list: &[SimpleExtensionDeclaration],
+    expression: &Expression,
+    column_names: &[String],
+) -> Result<HashMap<Option<String>, Vec<ColumnPredicate>>> {
+    let predicates = column_predicates(extension_declaration_list, expression, column_names)?;
+    let mut map: HashMap<Option<String>, Vec<ColumnPredicate>> = HashMap::new();
+    for p in predicates {
+        map.entry(p.column().map(str::to_string))
+            .or_default()
+            .push(p);
     }
+    Ok(map)
+}
 
-    pub fn parse_column_predicates(
-        extension_declaration_list: &[SimpleExtensionDeclaration],
-        expression: &Expression,
-        column_names: &[String],
-    ) -> Result<Vec<ColumnPredicate>> {
-        let mut column_predicates = Vec::new();
-        let Some(info) = extract_scalar_function_info(expression, extension_declaration_list)
-        else {
-            return Ok(column_predicates);
-        };
-        let name = info.function_name.as_deref();
-        if name == Some(N::NOT_BOOL) {
-            if let Some(p) = handle_not_operator(&info, extension_declaration_list, column_names)? {
-                column_predicates.push(p);
-            }
-            return Ok(column_predicates);
+pub fn column_predicates(
+    extension_declaration_list: &[SimpleExtensionDeclaration],
+    expression: &Expression,
+    column_names: &[String],
+) -> Result<Vec<ColumnPredicate>> {
+    let mut predicates = Vec::new();
+    let Some(info) = extract_scalar_function_info(expression, extension_declaration_list) else {
+        return Ok(predicates);
+    };
+    let name = info.function_name.as_deref();
+    if name == Some(N::NOT_BOOL) {
+        if let Some(p) = handle_not_operator(&info, extension_declaration_list, column_names)? {
+            predicates.push(p);
         }
-        if is_logical_operator(name) {
-            for argument in info.arguments {
-                column_predicates.extend(Self::parse_column_predicates(
-                    extension_declaration_list,
-                    argument_value(argument),
-                    column_names,
-                )?);
-            }
-            return Ok(column_predicates);
-        }
-        if info.arguments.len() == 2 {
-            column_predicates.push(create_binary_column_predicate(&info, column_names)?);
-        }
-        if info.arguments.len() == 1 {
-            column_predicates.push(create_unary_column_predicate(&info, column_names)?);
-        }
-        Ok(column_predicates)
+        return Ok(predicates);
     }
+    if is_logical_operator(name) {
+        for argument in info.arguments {
+            predicates.extend(column_predicates(
+                extension_declaration_list,
+                argument_value(argument),
+                column_names,
+            )?);
+        }
+        return Ok(predicates);
+    }
+    if info.arguments.len() == 2 {
+        predicates.push(create_binary_column_predicate(&info, column_names)?);
+    }
+    if info.arguments.len() == 1 {
+        predicates.push(create_unary_column_predicate(&info, column_names)?);
+    }
+    Ok(predicates)
+}
 
-    pub fn parse_logical_expression(
-        extension_declaration_list: &[SimpleExtensionDeclaration],
-        expression: Option<&Expression>,
-        column_names: &[String],
-    ) -> Result<Option<LogicalExpression>> {
-        let Some(expression) = expression else {
-            return Ok(None);
-        };
-        let Some(info) = extract_scalar_function_info(expression, extension_declaration_list)
-        else {
-            return Ok(None);
-        };
-        let name = info.function_name.as_deref();
-        if name == Some(N::NOT_BOOL) {
-            return Ok(
-                handle_not_operator(&info, extension_declaration_list, column_names)?
-                    .map(LogicalExpression::from_leaf),
-            );
-        }
-        if is_logical_operator(name) {
-            let mut children = Vec::new();
-            for argument in info.arguments {
-                if let Some(child) = Self::parse_logical_expression(
-                    extension_declaration_list,
-                    Some(argument_value(argument)),
-                    column_names,
-                )? {
-                    children.push(child);
-                }
-            }
-            return Ok(Some(LogicalExpression::new(
-                map_to_operator(name)?,
-                children,
-            )));
-        }
-        if info.arguments.len() == 2 {
-            return Ok(Some(LogicalExpression::from_leaf(
-                create_binary_column_predicate(&info, column_names)?,
-            )));
-        }
-        if info.arguments.len() == 1 {
-            return Ok(Some(LogicalExpression::from_leaf(
-                create_unary_column_predicate(&info, column_names)?,
-            )));
-        }
-        Ok(None)
+pub fn logical_expression(
+    extension_declaration_list: &[SimpleExtensionDeclaration],
+    expression: Option<&Expression>,
+    column_names: &[String],
+) -> Result<Option<LogicalExpression>> {
+    let Some(expression) = expression else {
+        return Ok(None);
+    };
+    let Some(info) = extract_scalar_function_info(expression, extension_declaration_list) else {
+        return Ok(None);
+    };
+    let name = info.function_name.as_deref();
+    if name == Some(N::NOT_BOOL) {
+        return Ok(
+            handle_not_operator(&info, extension_declaration_list, column_names)?
+                .map(LogicalExpression::from_leaf),
+        );
     }
+    if is_logical_operator(name) {
+        let mut children = Vec::new();
+        for argument in info.arguments {
+            if let Some(child) = logical_expression(
+                extension_declaration_list,
+                Some(argument_value(argument)),
+                column_names,
+            )? {
+                children.push(child);
+            }
+        }
+        return Ok(Some(LogicalExpression::new(
+            map_to_operator(name)?,
+            children,
+        )));
+    }
+    if info.arguments.len() == 2 {
+        return Ok(Some(LogicalExpression::from_leaf(
+            create_binary_column_predicate(&info, column_names)?,
+        )));
+    }
+    if info.arguments.len() == 1 {
+        return Ok(Some(LogicalExpression::from_leaf(
+            create_unary_column_predicate(&info, column_names)?,
+        )));
+    }
+    Ok(None)
 }
 
 fn default_expression() -> &'static Expression {
@@ -177,11 +189,9 @@ fn extract_column_name(expr: &Expression, schema_names: &[String]) -> Result<Str
 
 fn extract_value_with_possible_cast(expr: &Expression) -> Result<(LiteralValue, DataType)> {
     if let Some(RexType::Cast(cast)) = &expr.rex_type {
-        return SubstraitLiteralConverter::extract_literal_value(
-            cast.input.as_deref().unwrap_or(default_expression()),
-        );
+        return literal::extract(cast.input.as_deref().unwrap_or(default_expression()));
     }
-    SubstraitLiteralConverter::extract_literal_value(expr)
+    literal::extract(expr)
 }
 
 fn extract_scalar_function_info<'a>(
@@ -267,8 +277,7 @@ fn handle_not_operator(
     let inner_info = extract_scalar_function_info(inner_expression, list);
     let inner_name = inner_info.as_ref().and_then(|i| i.function_name.as_deref());
     if inner_name == Some(N::AND_BOOL) || inner_name == Some(N::OR_BOOL) {
-        let children =
-            SubstraitFunctionParser::parse_column_predicates(list, inner_expression, column_names)?;
+        let children = column_predicates(list, inner_expression, column_names)?;
         let operator = if inner_name == Some(N::AND_BOOL) {
             SubstraitOperator::Nand
         } else {
@@ -281,8 +290,7 @@ fn handle_not_operator(
             None,
         )));
     }
-    let inner_predicates =
-        SubstraitFunctionParser::parse_column_predicates(list, inner_expression, column_names)?;
+    let inner_predicates = column_predicates(list, inner_expression, column_names)?;
     if is_not_in_pattern(&inner_predicates) {
         return Ok(create_not_in_predicate(&inner_predicates));
     }

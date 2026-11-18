@@ -2,8 +2,8 @@ use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
 use athena_federation_substrait::{operators, SqlKind, SqlOperator};
+use athena_federation_substrait::{plan, SqlDialect};
 use athena_federation_substrait::{RelDataType, RelDataTypeSystem};
-use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
 use athena_federation_substrait::{SqlIdentifier, SqlLiteral, SqlNode, SqlSelect};
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
 
@@ -455,8 +455,8 @@ fn test_visit_like_with_concat() {
 fn scalar_subquery_binds_each_literal_once() {
     let plan = include_str!("fixtures/scalar-subquery-bool-where.plan").trim();
     let dialect = SqlDialect::ansi();
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
+    let node = plan::to_sql_node(plan, &dialect).unwrap();
+    let schema = plan::table_schema(plan, &dialect).unwrap();
     let mut accumulator = Vec::new();
     let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
         .visit(&node)
@@ -486,8 +486,8 @@ fn extended_plan(query: &str) -> String {
 
 fn parameterize(plan: &str) -> (String, Vec<SubstraitTypeAndValue>) {
     let dialect = SqlDialect::ansi();
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
+    let node = plan::to_sql_node(plan, &dialect).unwrap();
+    let schema = plan::table_schema(plan, &dialect).unwrap();
     let mut accumulator = Vec::new();
     let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
         .visit(&node)

@@ -1,6 +1,6 @@
+use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
-use athena_federation_substrait::SubstraitSqlUtils;
 use std::fmt::Write;
 
 #[derive(Default)]
@@ -67,16 +67,16 @@ fn error_text(e: &athena_federation_substrait::SubstraitError) -> String {
 }
 
 fn calcite_row(plan: &str, d: &SqlDialect) -> String {
-    match SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, d) {
+    match plan::to_sql_node(plan, d) {
         Ok(node) => node.to_sql_string(d).replace('\n', "\\n"),
         Err(e) => error_text(&e),
     }
 }
 
 fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, d).ok()?;
+    let node = plan::to_sql_node(plan, d).ok()?;
     let run = || -> athena_federation_substrait::Result<String> {
-        let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, d)?;
+        let schema = plan::table_schema(plan, d)?;
         let mut accumulator = Vec::new();
         let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema).visit(&node)?;
         let mut out = rewritten.to_sql_string(d).replace('\n', "\\n");
@@ -99,14 +99,14 @@ fn param_row(plan: &str, d: &SqlDialect) -> Option<String> {
 }
 
 fn schema_row(plan: &str) -> String {
-    match SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &SqlDialect::ansi()) {
+    match plan::table_schema(plan, &SqlDialect::ansi()) {
         Ok(t) => t.get_full_type_string(),
         Err(e) => error_text(&e),
     }
 }
 
 fn remap_row(plan: &str) -> String {
-    match SubstraitSqlUtils::get_column_remapping(plan, &SqlDialect::ansi()) {
+    match plan::column_remapping(plan, &SqlDialect::ansi()) {
         Ok(m) => m
             .iter()
             .map(|(k, v)| format!("{k}={}", v.as_deref().unwrap_or("null")))

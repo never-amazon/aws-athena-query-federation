@@ -19,6 +19,7 @@ use crate::calcite::sql_type_name::{SqlTypeFamily, SqlTypeName};
 use crate::calcite::values::{BitString, DateString, TimeString, TimestampString};
 use crate::error::{Result, SubstraitError};
 use crate::java_cast::{int_to_byte, int_to_short, long_to_int};
+use crate::literal::big_decimal_from_bytes;
 use crate::proto::expression::field_reference::{ReferenceType, RootType};
 use crate::proto::expression::literal::LiteralType;
 use crate::proto::expression::reference_segment;
@@ -29,7 +30,6 @@ use crate::proto::expression::{
 use crate::proto::function_argument::ArgType;
 use crate::proto::sort_field::{SortDirection, SortKind};
 use crate::proto::{Expression, FunctionArgument, SortField, Type};
-use crate::substrait_literal_converter::big_decimal_from_bytes;
 
 pub(crate) struct ExpressionConverter<'a> {
     pub(crate) system: RelDataTypeSystem,
@@ -786,7 +786,7 @@ impl ExpressionConverter<'_> {
             other => {
                 return Err(SubstraitError::unsupported(format!(
                     "Expression {} of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                    crate::substrait_literal_converter::literal_type_case_name(other)
+                    crate::literal::literal_type_case_name(other)
                 )))
             }
         };

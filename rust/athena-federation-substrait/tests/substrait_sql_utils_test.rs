@@ -1,7 +1,6 @@
+use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SubstraitAccumulatorVisitor;
-use athena_federation_substrait::SubstraitRelUtils;
-use athena_federation_substrait::SubstraitSqlUtils;
 use athena_federation_substrait::SubstraitValue;
 use base64::Engine;
 
@@ -25,14 +24,14 @@ fn encoded_plan(query: &str) -> String {
 
 fn sql(query: &str) -> String {
     let d = dialect();
-    SubstraitSqlUtils::get_sql_node_from_substrait_plan(&encoded_plan(query), &d)
+    plan::to_sql_node(&encoded_plan(query), &d)
         .expect("sql node")
         .to_sql_string(&d)
 }
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_all_arrow_types() {
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
+    let schema = plan::table_schema(
         &encoded_plan("SELECT * FROM test_table LIMIT 1"),
         &dialect(),
     )
@@ -52,11 +51,8 @@ fn test_get_table_schema_from_substrait_plan_all_arrow_types() {
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_basic_types() {
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
-        &encoded_plan("SELECT * FROM test_table"),
-        &dialect(),
-    )
-    .expect("schema");
+    let schema =
+        plan::table_schema(&encoded_plan("SELECT * FROM test_table"), &dialect()).expect("schema");
     assert!(!schema.field_list().is_empty());
     let names = schema.field_names();
     assert!(names.contains(&"varchar_col".to_string()));
@@ -65,7 +61,7 @@ fn test_get_table_schema_from_substrait_plan_basic_types() {
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_with_where_clause() {
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
+    let schema = plan::table_schema(
         &encoded_plan("SELECT * FROM test_table WHERE varchar_col = 'test'"),
         &dialect(),
     )
@@ -75,7 +71,7 @@ fn test_get_table_schema_from_substrait_plan_with_where_clause() {
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_complex_query() {
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
+    let schema = plan::table_schema(
         &encoded_plan(
             "SELECT * FROM test_table WHERE varchar_col LIKE 'A%' ORDER BY int_col DESC LIMIT 10",
         ),
@@ -87,26 +83,21 @@ fn test_get_table_schema_from_substrait_plan_complex_query() {
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_invalid_base64() {
-    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan(
-        "This is not valid base64!!!@#$",
-        &dialect(),
-    )
-    .expect_err("invalid base64");
+    let err = plan::to_sql_node("This is not valid base64!!!@#$", &dialect())
+        .expect_err("invalid base64");
     assert!(err.message().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_empty_string() {
-    let err =
-        SubstraitSqlUtils::get_sql_node_from_substrait_plan("", &dialect()).expect_err("empty");
+    let err = plan::to_sql_node("", &dialect()).expect_err("empty");
     assert!(err.message().contains("Failed to parse Substrait plan"));
 }
 
 #[test]
 fn test_get_sql_node_from_substrait_plan_invalid_protobuf() {
     let encoded = base64::engine::general_purpose::STANDARD.encode(b"invalid protobuf data");
-    let err = SubstraitSqlUtils::get_sql_node_from_substrait_plan(&encoded, &dialect())
-        .expect_err("invalid proto");
+    let err = plan::to_sql_node(&encoded, &dialect()).expect_err("invalid proto");
     assert!(
         err.message().contains("Failed to parse Substrait plan")
             || err
@@ -117,11 +108,8 @@ fn test_get_sql_node_from_substrait_plan_invalid_protobuf() {
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_invalid_base64() {
-    let err = SubstraitSqlUtils::get_table_schema_from_substrait_plan(
-        "Not valid base64 content!!!",
-        &dialect(),
-    )
-    .expect_err("invalid base64");
+    let err =
+        plan::table_schema("Not valid base64 content!!!", &dialect()).expect_err("invalid base64");
     assert!(err
         .message()
         .contains("Failed to extract table schema from Substrait plan"));
@@ -129,8 +117,7 @@ fn test_get_table_schema_from_substrait_plan_invalid_base64() {
 
 #[test]
 fn test_get_table_schema_from_substrait_plan_empty_plan() {
-    let err =
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan("", &dialect()).expect_err("empty");
+    let err = plan::table_schema("", &dialect()).expect_err("empty");
     assert!(err
         .message()
         .contains("Failed to extract table schema from Substrait plan"));
@@ -163,7 +150,7 @@ fn test_sql_conversion_keeps_fractions_of_timestamps_before_the_epoch() {
     ];
     let d = dialect();
     for (plan, literal) in cases {
-        let sql = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &d)
+        let sql = plan::to_sql_node(plan, &d)
             .expect("sql node")
             .to_sql_string(&d);
         assert!(sql.contains(literal), "{sql}");
@@ -192,7 +179,7 @@ fn test_sql_conversion_rejects_date_time_literals_outside_years_one_to9999() {
     ];
     let d = dialect();
     for (plan, message) in cases {
-        let error = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &d).unwrap_err();
+        let error = plan::to_sql_node(plan, &d).unwrap_err();
         let cause = error.cause().expect("cause");
         assert_eq!(
             "Failed to convert from Substrait plan to RelNode",
@@ -324,14 +311,14 @@ fn test_sql_conversion() {
     for (input, expected) in provide_sql_test_cases() {
         let plan = encoded_plan(input);
         assert_eq!(sql(input), expected, "{input}");
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan(&plan, &dialect()).expect("schema");
+        plan::table_schema(&plan, &dialect()).expect("schema");
     }
 }
 
 #[test]
 fn test_substrait_plan_generation() {
     let encoded = encoded_plan("SELECT * FROM test_table LIMIT 10");
-    let plan = SubstraitRelUtils::deserialize_substrait_plan(&encoded).expect("plan");
+    let plan = plan::decode(&encoded).expect("plan");
     assert!(!plan.relations.is_empty());
 }
 
@@ -350,13 +337,11 @@ fn test_sql_conversion_non_latin1_string_literals() {
         "SELECT * FROM test_table WHERE varchar_col = 'UNICODE1'",
         "日本語",
     ));
-    let node =
-        SubstraitSqlUtils::get_sql_node_from_substrait_plan(&equality, &d).expect("sql node");
+    let node = plan::to_sql_node(&equality, &d).expect("sql node");
     let s = node.to_sql_string(&d);
     assert!(s.ends_with("WHERE `varchar_col` = '日本語'"), "{s}");
 
-    let schema =
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan(&equality, &d).expect("schema");
+    let schema = plan::table_schema(&equality, &d).expect("schema");
     let mut accumulator = Vec::new();
     let parameterized = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
         .visit(&node)

@@ -2,8 +2,8 @@ use std::fmt;
 
 use arrow_schema::DataType;
 
+use crate::literal::LiteralValue;
 use crate::model::substrait_operator::SubstraitOperator;
-use crate::substrait_literal_converter::LiteralValue;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PredicateValue {

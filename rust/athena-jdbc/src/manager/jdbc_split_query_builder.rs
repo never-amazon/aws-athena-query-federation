@@ -11,8 +11,8 @@ use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::{
-    SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName, SubstraitAccumulatorVisitor,
-    SubstraitSqlUtils, SubstraitTypeAndValue, SubstraitValue,
+    plan, SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName, SubstraitAccumulatorVisitor,
+    SubstraitTypeAndValue, SubstraitValue,
 };
 
 use super::default_jdbc_federation_expression_parser::DefaultJdbcFederationExpressionParser;
@@ -399,15 +399,13 @@ fn build_calcite_sql(
     split_table: &str,
     split_restriction: &str,
 ) -> Result<(String, Vec<SubstraitTypeAndValue>)> {
-    let sql_node =
-        SubstraitSqlUtils::get_sql_node_from_substrait_plan(base64_encoded_plan, sql_dialect)?;
+    let sql_node = plan::to_sql_node(base64_encoded_plan, sql_dialect)?;
     if sql_node.as_select().is_none() {
         return Err(FederationError::Runtime(
             "Unsupported Query Type. Only SELECT Query is supported.".to_string(),
         ));
     }
-    let table_schema =
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan(base64_encoded_plan, sql_dialect)?;
+    let table_schema = plan::table_schema(base64_encoded_plan, sql_dialect)?;
     let mut accumulator = Vec::new();
     let mut parameterized_node =
         SubstraitAccumulatorVisitor::new(&mut accumulator, &table_schema).visit(&sql_node)?;

@@ -23,13 +23,11 @@ mod calcite;
 mod error;
 mod isthmus;
 mod java_cast;
+pub mod literal;
 mod model;
+pub mod plan;
+pub mod predicate;
 mod substrait_accumulator_visitor;
-mod substrait_function_parser;
-mod substrait_literal_converter;
-mod substrait_metadata_parser;
-mod substrait_rel_utils;
-mod substrait_sql_utils;
 mod substrait_type_and_value;
 
 pub use calcite::operators;
@@ -46,18 +44,12 @@ pub use calcite::sql_node::{
 pub use calcite::sql_type_name::SqlTypeName;
 pub use calcite::values::{BitString, DateString, TimeString, TimestampString};
 pub use error::{ErrorKind, Result, SubstraitError};
+pub use literal::LiteralValue;
 pub use model::column_predicate::{ColumnPredicate, PredicateValue};
 pub use model::logical_expression::LogicalExpression;
-pub use model::substrait_field::SubstraitField;
-pub use model::substrait_function_names::SubstraitFunctionNames;
 pub use model::substrait_operator::SubstraitOperator;
-pub use model::substrait_rel_model::SubstraitRelModel;
+pub use plan::PLAN_PARSER_RECURSION_LIMIT;
 pub use substrait_accumulator_visitor::SubstraitAccumulatorVisitor;
-pub use substrait_function_parser::SubstraitFunctionParser;
-pub use substrait_literal_converter::{LiteralValue, SubstraitLiteralConverter};
-pub use substrait_metadata_parser::SubstraitMetadataParser;
-pub use substrait_rel_utils::{SubstraitRelUtils, PLAN_PARSER_RECURSION_LIMIT};
-pub use substrait_sql_utils::SubstraitSqlUtils;
 pub use substrait_type_and_value::{
     SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue,
 };

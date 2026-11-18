@@ -251,18 +251,18 @@ com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-fede
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf/user_defined_function_response.rs::UserDefinedFunctionResponse	ported	
 com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType	athena-federation-sdk/src/udf/user_defined_function_type.rs::UserDefinedFunctionType	ported	
 com.amazonaws.athena.connector.substrait.SubstraitAccumulatorVisitor	athena-federation-substrait/src/substrait_accumulator_visitor.rs::SubstraitAccumulatorVisitor	ported	
-com.amazonaws.athena.connector.substrait.SubstraitFunctionParser	athena-federation-substrait/src/substrait_function_parser.rs::SubstraitFunctionParser	ported	
-com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federation-substrait/src/substrait_literal_converter.rs::SubstraitLiteralConverter	ported	
-com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federation-substrait/src/substrait_metadata_parser.rs::SubstraitMetadataParser	ported	
-com.amazonaws.athena.connector.substrait.SubstraitRelUtils	athena-federation-substrait/src/substrait_rel_utils.rs::SubstraitRelUtils	ported	
-com.amazonaws.athena.connector.substrait.SubstraitSqlUtils	athena-federation-substrait/src/substrait_sql_utils.rs::SubstraitSqlUtils	ported	
+com.amazonaws.athena.connector.substrait.SubstraitFunctionParser	athena-federation-substrait/src/lib.rs::predicate	ported	
+com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federation-substrait/src/lib.rs::literal	ported	
+com.amazonaws.athena.connector.substrait.SubstraitMetadataParser	athena-federation-substrait/src/plan.rs::table_columns	merged	the only method, getTableColumns, is plan::table_columns
+com.amazonaws.athena.connector.substrait.SubstraitRelUtils	athena-federation-substrait/src/lib.rs::plan	ported	
+com.amazonaws.athena.connector.substrait.SubstraitSqlUtils	athena-federation-substrait/src/lib.rs::plan	merged	the static methods are free functions in the plan module, beside the rel lookups
 com.amazonaws.athena.connector.substrait.SubstraitTypeAndValue	athena-federation-substrait/src/substrait_type_and_value.rs::SubstraitTypeAndValue	ported	
 com.amazonaws.athena.connector.substrait.model.ColumnPredicate	athena-federation-substrait/src/model/column_predicate.rs::ColumnPredicate	ported	
 com.amazonaws.athena.connector.substrait.model.LogicalExpression	athena-federation-substrait/src/model/logical_expression.rs::LogicalExpression	ported	
-com.amazonaws.athena.connector.substrait.model.SubstraitField	athena-federation-substrait/src/model/substrait_field.rs::SubstraitField	ported	
-com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-federation-substrait/src/model/substrait_function_names.rs::SubstraitFunctionNames	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitField	-	not_ported	plan::table_columns returns the column names directly, so no field tree is built
+com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-federation-substrait/src/predicate.rs::function_names	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/model/substrait_operator.rs::SubstraitOperator	ported	
-com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	athena-federation-substrait/src/model/substrait_rel_model.rs::SubstraitRelModel	ported	
+com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	-	not_ported	the only reader, plan::table_columns, takes the ReadRel directly
 com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no Rust connector reads the limit or sort from the plan through this helper
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
 com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::PaginationHelper	ported	
