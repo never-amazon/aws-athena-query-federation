@@ -11,6 +11,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
+use crate::driver::check_parameters;
 use crate::metadata_handler::PostGreSqlMetadataHandler;
 use crate::sql_dialect::PostgresqlSqlDialect;
 
@@ -64,17 +65,20 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        self.prepare_statement_with_sql(
-            jdbc_connection,
-            catalog,
-            schema,
-            table,
-            table_schema,
-            constraints,
-            split,
-            &column_names,
-        )
-        .await
+        let statement = self
+            .prepare_statement_with_sql(
+                jdbc_connection,
+                catalog,
+                schema,
+                table,
+                table_schema,
+                constraints,
+                split,
+                &column_names,
+            )
+            .await?;
+        check_parameters(statement.parameters())?;
+        Ok(statement)
     }
 
     fn get_from_clause_with_split(

@@ -654,6 +654,49 @@ mod tests {
     }
 
     #[test]
+    fn make_extractor_reads_timestamp_columns_as_utc_wall_clock_millis_in_every_zone() {
+        let values = [
+            "2020-06-01T23:59:59.999",
+            "2020-06-01T00:00:00",
+            "2020-03-29T02:30:00",
+            "2020-10-25T02:30:00",
+            "1969-12-31T23:59:59.999",
+            "1748-12-14T23:59:15.786",
+            "1582-10-15T00:00:00",
+            "1582-10-04T23:59:59.999",
+            "1000-01-01T00:00:00",
+            "-0043-03-15T12:00:00",
+            "9999-12-31T23:59:59.999",
+        ];
+        let offsets = [-8 * 3600, 3600, 19_800, 37_800]
+            .map(|seconds| FixedOffset::east_opt(seconds).unwrap());
+        for text in values {
+            let timestamp = text.parse::<NaiveDateTime>().unwrap();
+            let expected = Some(timestamp.and_utc().timestamp_millis());
+            let mut cells = vec![
+                (
+                    SnowflakeColumnType::TimestampNtz { scale: 9 },
+                    RawCell::TimestampNtz(timestamp),
+                ),
+                (
+                    SnowflakeColumnType::TimestampLtz { scale: 9 },
+                    RawCell::TimestampLtz(timestamp.and_utc()),
+                ),
+            ];
+            cells.extend(offsets.iter().map(|offset| {
+                (
+                    SnowflakeColumnType::TimestampTz { scale: 9 },
+                    RawCell::TimestampTz(timestamp.and_utc().with_timezone(offset)),
+                )
+            }));
+            for (column_type, cell) in cells {
+                let value = decode_cell(&column(column_type), cell).unwrap();
+                assert_eq!(expected, value.to_epoch_millis().unwrap(), "{text}");
+            }
+        }
+    }
+
+    #[test]
     fn timestamp_cells_match_the_jdbc_get_timestamp_millis() {
         for (raw, expected) in JAVA_TIMESTAMP_MILLIS {
             let timestamp = snowflake_timestamp(raw);

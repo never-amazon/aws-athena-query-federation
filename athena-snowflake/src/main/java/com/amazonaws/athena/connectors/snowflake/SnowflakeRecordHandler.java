@@ -84,10 +84,9 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Optional;
 import java.util.TimeZone;
@@ -107,6 +106,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private static final int DECIMAL128_BIT_WIDTH = 128;
     private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private static final long MILLIS_PER_DAY = 86_400_000L;
+    private static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     private static final long JULIAN_ADJUSTMENT_REACH_MILLIS = 25 * MILLIS_PER_DAY;
     private static final long JULIAN_ADJUSTMENT_LIMIT_MILLIS = -12_220_156_800_000L;
     private static final long UNIX_EPOCH_JULIAN_DAY = 2_440_588;
@@ -335,9 +335,9 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     @Override
-    protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp)
+    protected long getTimestampMillis(ResultSet resultSet, int column, Timestamp timestamp) throws SQLException
     {
-        return undoJulianAdjustment(timestamp.getTime());
+        return undoJulianAdjustment(resultSet.getTimestamp(column, Calendar.getInstance(UTC)).getTime());
     }
 
     @Override
@@ -346,8 +346,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         if (!(resultSet.getObject(column) instanceof Timestamp)) {
             return super.getLocalDate(resultSet, column, date);
         }
-        long millis = undoJulianAdjustment(resultSet.getTimestamp(column).getTime());
-        return LocalDate.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
+        return LocalDate.ofEpochDay(Math.floorDiv(getTimestampMillis(resultSet, column, null), MILLIS_PER_DAY));
     }
 
     @VisibleForTesting

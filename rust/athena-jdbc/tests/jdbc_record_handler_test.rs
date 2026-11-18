@@ -826,16 +826,24 @@ async fn make_factory_reads_array_timestamps_through_get_timestamp_millis() {
             .and_hms_milli_opt(12, 0, 0, 123)
             .unwrap(),
     ];
+    let driver_timestamp = |timestamp: NaiveDateTime, label: NaiveDateTime, text: &str| {
+        SqlValue::java_timestamp(
+            SqlValue::Timestamp(label),
+            text,
+            timestamp.and_utc().timestamp_millis(),
+            epoch_day(label.date()),
+        )
+    };
     let elements = vec![
-        SqlValue::rendered_with_epoch_millis(
-            SqlValue::Timestamp(timestamps[0] + chrono::TimeDelta::days(5)),
+        driver_timestamp(
+            timestamps[0],
+            timestamps[0] + chrono::TimeDelta::days(5),
             "1000-01-01 12:00:00",
-            timestamps[0].and_utc().timestamp_millis(),
         ),
-        SqlValue::rendered_with_epoch_millis(
-            SqlValue::Timestamp(timestamps[1] - chrono::TimeDelta::days(2)),
+        driver_timestamp(
+            timestamps[1],
+            timestamps[1] - chrono::TimeDelta::days(2),
             "0044-03-15 12:00:00 BC",
-            timestamps[1].and_utc().timestamp_millis(),
         ),
         SqlValue::Null,
         SqlValue::Timestamp(timestamps[2]),
@@ -1201,10 +1209,11 @@ async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
     let java_days = [-354_280, -141_428, 18_414];
     let timestamp = |i: usize| {
         let ts: NaiveDateTime = timestamps[i];
-        SqlValue::rendered_with_epoch_millis(
+        SqlValue::java_timestamp(
             SqlValue::Timestamp(ts + chrono::TimeDelta::days(java_days[i] - epoch_day(ts.date()))),
             ts.to_string(),
             ts.and_utc().timestamp_millis(),
+            java_days[i],
         )
     };
     let java_date = |i: usize| {

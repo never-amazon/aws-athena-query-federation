@@ -1125,7 +1125,9 @@ public class SnowflakeRecordHandlerTest
         for (String instant : instants) {
             long millis = java.time.Instant.parse(instant).toEpochMilli();
             java.sql.Timestamp driverTimestamp = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis));
-            assertEquals(instant, millis, handler.getTimestampMillis(Mockito.mock(java.sql.ResultSet.class), 1, driverTimestamp));
+            java.sql.ResultSet resultSet = Mockito.mock(java.sql.ResultSet.class);
+            Mockito.when(resultSet.getTimestamp(org.mockito.ArgumentMatchers.eq(1), org.mockito.ArgumentMatchers.any(java.util.Calendar.class))).thenReturn(driverTimestamp);
+            assertEquals(instant, millis, handler.getTimestampMillis(resultSet, 1, driverTimestamp));
         }
         assertEquals(-30_609_748_800_000L, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(
                 new java.sql.Timestamp(java.time.Instant.parse("1000-01-01T12:00:00Z").toEpochMilli())).getTime());
@@ -1236,74 +1238,133 @@ public class SnowflakeRecordHandlerTest
     @Test
     public void makeExtractorReadsTimestampColumnsAsProlepticDates() throws Throwable
     {
-        class ExtractorHandler extends SnowflakeRecordHandler
-        {
-            ExtractorHandler()
-            {
-                super(new DatabaseConnectionConfig("testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
-                        "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx"), amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
-            }
-
-            int dateDay(java.sql.ResultSet resultSet) throws Exception
-            {
-                org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
-                ((com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
-                        com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, java.util.Collections.emptyMap()))
-                        .extract(null, holder);
-                return holder.value;
-            }
-        }
-        ExtractorHandler extractorHandler = new ExtractorHandler();
-        net.snowflake.client.internal.core.json.DateTimeConverter converter = new net.snowflake.client.internal.core.json.DateTimeConverter(
-                java.util.TimeZone.getTimeZone("UTC"), null, 1, false, false, false, false);
-        int[][] subTypes = {{java.sql.Types.TIMESTAMP, 0}, {50000, 0}, {50001, 1}};
         java.util.List<java.time.LocalDateTime> values = new ArrayList<>();
-        for (String value : new String[] {"2020-06-01T23:59:59.999", "1969-12-31T23:59:59.999", "1582-10-15T00:00", "1582-10-04T23:59:59.999",
-                "1500-03-01T00:00", "1000-01-01T00:00", "-0043-03-15T12:00", "0000-02-29T06:30:00.500", "-5000-01-01T00:30", "9999-12-31T23:59:59.999",
-                "+10000-01-01T00:00"}) {
+        for (String value : new String[] {"2020-06-01T23:59:59.999", "2020-06-01T00:00", "1969-12-31T23:59:59.999", "1748-12-14T23:59:15.786", "1582-10-15T00:00",
+                "1582-10-04T23:59:59.999", "1500-03-01T00:00", "1000-01-01T00:00", "-0043-03-15T12:00", "0000-02-29T06:30:00.500", "-5000-01-01T00:30",
+                "9999-12-31T23:59:59.999", "+10000-01-01T00:00"}) {
             values.add(java.time.LocalDateTime.parse(value));
         }
         int listed = values.size();
         for (java.time.LocalDateTime value = java.time.LocalDateTime.of(-20000, 1, 1, 0, 30); value.getYear() < 1582; value = value.plusDays(97).plusHours(5).plusSeconds(1)) {
             values.add(value);
         }
-        int checked = 0;
-        int collapsed = 0;
-        for (int[] subType : subTypes) {
-            for (int i = 0; i < (subType[0] == java.sql.Types.TIMESTAMP ? values.size() : listed); i++) {
-                java.time.LocalDateTime value = values.get(i);
-                String cell = java.math.BigDecimal.valueOf(value.toEpochSecond(java.time.ZoneOffset.UTC)).add(java.math.BigDecimal.valueOf(value.getNano(), 9))
-                        .setScale(9).toPlainString() + (subType[1] == 1 ? " 1440" : "");
-                java.sql.Timestamp timestamp = converter.getTimestamp(cell, java.sql.Types.TIMESTAMP, subType[0], null, 9);
-                java.sql.Date date = converter.getDate(cell, java.sql.Types.TIMESTAMP, subType[0], null, 9);
-                java.sql.ResultSet resultSet = (java.sql.ResultSet) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
-                        new Class<?>[] {java.sql.ResultSet.class}, (proxy, method, args) -> {
-                            switch (method.getName()) {
-                                case "getObject":
-                                case "getTimestamp":
-                                    return timestamp;
-                                case "getDate":
-                                    return date;
-                                case "wasNull":
-                                    return false;
-                                case "findColumn":
-                                    return 1;
-                                default:
-                                    throw new UnsupportedOperationException(method.getName());
+        TimestampExtractorHandler extractorHandler = new TimestampExtractorHandler();
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : TIMESTAMP_TEST_ZONES) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                for (boolean honorClientTimeZone : new boolean[] {true, false}) {
+                    int checked = 0;
+                    int collapsed = 0;
+                    for (int[] subType : TIMESTAMP_SUB_TYPES) {
+                        for (int i = 0; i < (subType[0] == java.sql.Types.TIMESTAMP ? values.size() : listed); i++) {
+                            java.time.LocalDateTime value = values.get(i);
+                            java.sql.ResultSet resultSet = driverTimestampResultSet(value, subType, honorClientTimeZone);
+                            if (i < listed) {
+                                assertEquals(zone + " " + honorClientTimeZone + " " + value, value.toLocalDate().toEpochDay(), extractorHandler.dateDay(resultSet));
                             }
-                        });
-                int day = extractorHandler.dateDay(resultSet);
-                if (i < listed) {
-                    assertEquals(value.toString(), value.toLocalDate().toEpochDay(), day);
+                            else {
+                                try {
+                                    if (extractorHandler.dateDay(resultSet) != value.toLocalDate().toEpochDay()) {
+                                        collapsed++;
+                                    }
+                                }
+                                catch (IllegalArgumentException driverRejected) {
+                                    collapsed++;
+                                }
+                            }
+                            checked++;
+                        }
+                    }
+                    assertTrue(checked > 80_000);
+                    assertTrue(collapsed * 1000 < checked, zone + " " + collapsed);
                 }
-                else if (day != value.toLocalDate().toEpochDay()) {
-                    collapsed++;
-                }
-                checked++;
             }
         }
-        assertTrue(checked > 80_000);
-        assertTrue(collapsed * 1000 < checked, String.valueOf(collapsed));
+        finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
+    public void makeExtractorReadsTimestampColumnsAsUtcWallClockMillisInEveryZone() throws Throwable
+    {
+        String[] values = {"2020-06-01T23:59:59.999", "2020-06-01T00:00", "2020-03-29T02:30", "2020-10-25T02:30", "1969-12-31T23:59:59.999",
+                "1748-12-14T23:59:15.786", "1582-10-15T00:00", "1582-10-04T23:59:59.999", "1000-01-01T00:00", "-0043-03-15T12:00", "9999-12-31T23:59:59.999"};
+        TimestampExtractorHandler extractorHandler = new TimestampExtractorHandler();
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : TIMESTAMP_TEST_ZONES) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                for (boolean honorClientTimeZone : new boolean[] {true, false}) {
+                    for (int[] subType : TIMESTAMP_SUB_TYPES) {
+                        for (String text : values) {
+                            java.time.LocalDateTime value = java.time.LocalDateTime.parse(text);
+                            long millis = extractorHandler.dateMilli(driverTimestampResultSet(value, subType, honorClientTimeZone));
+                            assertEquals(zone + " " + honorClientTimeZone + " " + subType[0] + " " + value, value.toInstant(java.time.ZoneOffset.UTC).toEpochMilli(), millis);
+                        }
+                    }
+                }
+            }
+        }
+        finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
+    private static final String[] TIMESTAMP_TEST_ZONES = {"UTC", "Europe/Berlin", "America/Los_Angeles", "Asia/Kolkata", "Australia/Lord_Howe"};
+
+    private static final int[][] TIMESTAMP_SUB_TYPES = {{java.sql.Types.TIMESTAMP, 0}, {50000, 0}, {50001, 1}};
+
+    private class TimestampExtractorHandler extends SnowflakeRecordHandler
+    {
+        TimestampExtractorHandler()
+        {
+            super(new DatabaseConnectionConfig("testCatalog", SnowflakeConstants.SNOWFLAKE_NAME,
+                    "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx"), amazonS3, secretsManager, athena, jdbcConnectionFactory, jdbcSplitQueryBuilder, com.google.common.collect.ImmutableMap.of());
+        }
+
+        int dateDay(java.sql.ResultSet resultSet) throws Exception
+        {
+            org.apache.arrow.vector.holders.NullableDateDayHolder holder = new org.apache.arrow.vector.holders.NullableDateDayHolder();
+            ((com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor) makeExtractor(
+                    com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEDAY.getType()).build(), resultSet, java.util.Collections.emptyMap()))
+                    .extract(null, holder);
+            return holder.value;
+        }
+
+        long dateMilli(java.sql.ResultSet resultSet) throws Exception
+        {
+            org.apache.arrow.vector.holders.NullableDateMilliHolder holder = new org.apache.arrow.vector.holders.NullableDateMilliHolder();
+            ((com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor) makeExtractor(
+                    com.amazonaws.athena.connector.lambda.data.FieldBuilder.newBuilder("d", Types.MinorType.DATEMILLI.getType()).build(), resultSet, java.util.Collections.emptyMap()))
+                    .extract(null, holder);
+            return holder.value;
+        }
+    }
+
+    private java.sql.ResultSet driverTimestampResultSet(java.time.LocalDateTime value, int[] subType, boolean honorClientTimeZone)
+    {
+        net.snowflake.client.internal.core.json.DateTimeConverter converter = new net.snowflake.client.internal.core.json.DateTimeConverter(
+                java.util.TimeZone.getTimeZone("UTC"), null, 1, honorClientTimeZone, false, false, false);
+        String cell = java.math.BigDecimal.valueOf(value.toEpochSecond(java.time.ZoneOffset.UTC)).add(java.math.BigDecimal.valueOf(value.getNano(), 9))
+                .setScale(9).toPlainString() + (subType[1] == 1 ? " 1440" : "");
+        return (java.sql.ResultSet) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {java.sql.ResultSet.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getObject":
+                        case "getTimestamp":
+                            return converter.getTimestamp(cell, java.sql.Types.TIMESTAMP, subType[0], args.length == 2 ? ((java.util.Calendar) args[1]).getTimeZone() : null, 9);
+                        case "getDate":
+                            return converter.getDate(cell, java.sql.Types.TIMESTAMP, subType[0], null, 9);
+                        case "wasNull":
+                            return false;
+                        case "findColumn":
+                            return 1;
+                        default:
+                            throw new UnsupportedOperationException(method.getName());
+                    }
+                });
     }
 
     private void fail(String message) {

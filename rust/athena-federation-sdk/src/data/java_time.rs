@@ -173,7 +173,11 @@ impl ZoneId {
     pub fn offset_at(&self, instant: &DateTime<Utc>) -> FixedOffset {
         match self.rules {
             ZoneRules::Fixed(off) => off,
-            ZoneRules::Region(tz) => tz.offset_from_utc_datetime(&instant.naive_utc()).fix(),
+            ZoneRules::Region(tz) => {
+                let utc = instant.naive_utc();
+                tz.offset_from_utc_datetime(&(utc + rule_year_shift(&utc)))
+                    .fix()
+            }
         }
     }
 
@@ -181,20 +185,42 @@ impl ZoneId {
         match self.rules {
             ZoneRules::Fixed(off) => Utc
                 .from_utc_datetime(&(*local - Duration::seconds(i64::from(off.local_minus_utc())))),
-            ZoneRules::Region(tz) => match tz.from_local_datetime(local) {
-                LocalResult::Single(dt) => dt.with_timezone(&Utc),
-                LocalResult::Ambiguous(early, _) => early.with_timezone(&Utc),
-                LocalResult::None => {
-                    let before = tz
-                        .offset_from_utc_datetime(&(*local - Duration::days(1)))
-                        .fix();
-                    Utc.from_utc_datetime(
-                        &(*local - Duration::seconds(i64::from(before.local_minus_utc()))),
-                    )
-                }
-            },
+            ZoneRules::Region(tz) => {
+                let shift = rule_year_shift(local);
+                let shifted = *local + shift;
+                let offset = match tz.from_local_datetime(&shifted) {
+                    LocalResult::Single(dt) | LocalResult::Ambiguous(dt, _) => dt.offset().fix(),
+                    LocalResult::None => tz
+                        .offset_from_utc_datetime(&(shifted - Duration::days(1)))
+                        .fix(),
+                };
+                Utc.from_utc_datetime(
+                    &(*local - Duration::seconds(i64::from(offset.local_minus_utc()))),
+                )
+            }
         }
     }
+}
+
+const FIRST_YEAR_PAST_RULE_TABLE: i32 = 2100;
+const RULE_TABLE_CYCLE_YEARS: i32 = 28;
+
+fn rule_year_shift(date_time: &NaiveDateTime) -> Duration {
+    let year = date_time.year();
+    if year < FIRST_YEAR_PAST_RULE_TABLE {
+        return Duration::zero();
+    }
+    let layout = |y: i32| {
+        NaiveDate::from_ymd_opt(y, 1, 1).map(|first| (first.weekday(), first.leap_year(), first))
+    };
+    let Some((weekday, leap, first)) = layout(year) else {
+        return Duration::zero();
+    };
+    (FIRST_YEAR_PAST_RULE_TABLE - RULE_TABLE_CYCLE_YEARS..FIRST_YEAR_PAST_RULE_TABLE)
+        .rev()
+        .filter_map(layout)
+        .find(|(w, l, _)| *w == weekday && *l == leap)
+        .map_or_else(Duration::zero, |(_, _, same)| same - first)
 }
 
 impl fmt::Display for ZoneId {
@@ -436,4 +462,93 @@ pub(crate) fn local_date_time_of_epoch_micro_utc(micros: i64) -> NaiveDateTime {
 
 pub fn local_date_time_to_epoch_milli_utc(dt: &NaiveDateTime) -> i64 {
     dt.and_utc().timestamp_millis()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn utc(text: &str) -> DateTime<Utc> {
+        text.parse::<NaiveDateTime>().unwrap().and_utc()
+    }
+
+    #[test]
+    fn region_zones_apply_their_last_rules_after_2099() {
+        let cases = [
+            (
+                "America/Los_Angeles",
+                "2100-07-01T07:30:00",
+                -25_200,
+                "2100-07-01T14:30:00",
+            ),
+            (
+                "America/Los_Angeles",
+                "2100-12-01T12:00:00",
+                -28_800,
+                "2100-12-01T20:00:00",
+            ),
+            (
+                "America/Los_Angeles",
+                "2100-03-14T09:59:59",
+                -28_800,
+                "2100-03-14T16:59:59",
+            ),
+            (
+                "America/Los_Angeles",
+                "2100-03-14T10:00:00",
+                -25_200,
+                "2100-03-14T17:00:00",
+            ),
+            (
+                "Europe/Berlin",
+                "2200-07-01T12:00:00",
+                7_200,
+                "2200-07-01T10:00:00",
+            ),
+            (
+                "Europe/Berlin",
+                "2200-01-01T12:00:00",
+                3_600,
+                "2200-01-01T11:00:00",
+            ),
+            (
+                "Australia/Lord_Howe",
+                "2150-01-01T00:00:00",
+                39_600,
+                "2149-12-31T13:00:00",
+            ),
+            (
+                "Australia/Lord_Howe",
+                "2150-07-01T00:00:00",
+                37_800,
+                "2150-06-30T13:30:00",
+            ),
+            (
+                "America/New_York",
+                "9999-07-01T00:00:00",
+                -14_400,
+                "9999-07-01T04:00:00",
+            ),
+            (
+                "Asia/Kolkata",
+                "3000-07-01T00:00:00",
+                19_800,
+                "3000-06-30T18:30:00",
+            ),
+        ];
+        for (id, instant, offset, local_to_utc) in cases {
+            let zone = ZoneId::of(id).unwrap();
+            let instant = utc(instant);
+            assert_eq!(
+                offset,
+                zone.offset_at(&instant).local_minus_utc(),
+                "{id} {instant}"
+            );
+            assert_eq!(
+                utc(local_to_utc),
+                zone.instant_of_local(&instant.naive_utc()),
+                "{id} {instant}"
+            );
+        }
+    }
 }

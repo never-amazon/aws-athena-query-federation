@@ -579,11 +579,13 @@ impl Session {
         suppress_begin: bool,
         fetch_size: i32,
     ) -> Result<Executed, SqlException> {
-        self.prepare().await?;
         let (oids, values): (Vec<u32>, Vec<Option<String>>) = parameters
             .iter()
             .map(|p| encode_parameter(p, self.options.string_type_unspecified))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .unzip();
+        self.prepare().await?;
         let use_portal = fetch_size > 0 && !self.auto_commit;
         let mut retried = false;
         loop {

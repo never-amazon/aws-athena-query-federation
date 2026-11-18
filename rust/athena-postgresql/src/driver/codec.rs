@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
-use athena_jdbc::sql::SqlValue;
+use athena_jdbc::sql::{SqlException, SqlValue};
 use bigdecimal::BigDecimal;
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
 
 use super::datetime::{
     java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, proleptic_epoch_day,
@@ -14,6 +14,10 @@ use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
+const NANOS_PER_MICRO: u32 = 1000;
+const MIN_TIMESTAMP_DATE: Option<NaiveDate> = NaiveDate::from_ymd_opt(-4713, 11, 24);
+const TIMESTAMP_OUT_OF_RANGE: &str =
+    "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999";
 pub(crate) const MAX_ARRAY_DEPTH: usize = 6;
 
 fn rendered(value: SqlValue, text: String) -> SqlValue {
@@ -418,11 +422,42 @@ fn java_time_text(date: NaiveDate, time: &str) -> String {
     format!("{year:04}-{:02}-{:02}{time}{era}", date.month(), date.day())
 }
 
+fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlException> {
+    let out_of_range = || SqlException::new(TIMESTAMP_OUT_OF_RANGE);
+    let rounded = if timestamp.nanosecond() % NANOS_PER_MICRO >= NANOS_PER_MICRO / 2 {
+        timestamp
+            .checked_add_signed(TimeDelta::microseconds(1))
+            .ok_or_else(out_of_range)?
+    } else {
+        *timestamp
+    };
+    if Some(rounded.date()) < MIN_TIMESTAMP_DATE {
+        return Err(out_of_range());
+    }
+    let micros = rounded.nanosecond() / NANOS_PER_MICRO;
+    let fraction = if micros == 0 {
+        String::new()
+    } else {
+        format!(".{micros:06}").trim_end_matches('0').to_string()
+    };
+    Ok(java_time_text(
+        rounded.date(),
+        &format!(" {}{fraction}+00", rounded.format("%H:%M:%S")),
+    ))
+}
+
+pub(crate) fn check_parameters(parameters: &[SqlValue]) -> Result<(), SqlException> {
+    for parameter in parameters {
+        encode_parameter(parameter, false)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn encode_parameter(
     value: &SqlValue,
     string_unspecified: bool,
-) -> (u32, Option<String>) {
-    match value {
+) -> Result<(u32, Option<String>), SqlException> {
+    Ok(match value {
         SqlValue::Null => (0, None),
         SqlValue::Boolean(b) => (
             oid::BOOL,
@@ -442,27 +477,25 @@ pub(crate) fn encode_parameter(
         SqlValue::Bytes(b) => (oid::BYTEA, Some(hex_bytes(b))),
         SqlValue::Date(d) => (oid::DATE, Some(java_time_text(*d, ""))),
         SqlValue::Time(t) => (0, Some(t.format("%H:%M:%S%.f").to_string())),
-        SqlValue::Timestamp(ts) => (
-            0,
-            Some(java_time_text(
-                ts.date(),
-                &ts.format(" %H:%M:%S%.f+00").to_string(),
-            )),
-        ),
+        SqlValue::Timestamp(ts) => (0, Some(timestamp_text(ts)?)),
         SqlValue::TimestampTz(ts) => (
             0,
             Some(format!("{}+00", ts.naive_utc().format(TIMESTAMP_FORMAT))),
         ),
         SqlValue::Array(_) => (0, Some(value.to_string())),
-        SqlValue::Rendered { value, .. } => encode_parameter(value, string_unspecified),
-    }
+        SqlValue::Rendered { value, .. } => encode_parameter(value, string_unspecified)?,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    fn encoded(value: &SqlValue, string_unspecified: bool) -> (u32, Option<String>) {
+        encode_parameter(value, string_unspecified).unwrap()
+    }
+
     use super::*;
     use athena_jdbc::sql::Types;
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, NaiveDateTime};
 
     fn cache() -> TypeCache {
         TypeCache::default()
@@ -556,25 +589,22 @@ mod tests {
 
     #[test]
     fn parameters_use_pgjdbc_type_oids() {
-        assert_eq!(encode_parameter(&SqlValue::Real(0.1), false).0, oid::FLOAT4);
+        assert_eq!(encoded(&SqlValue::Real(0.1), false).0, oid::FLOAT4);
+        assert_eq!(encoded(&SqlValue::Double(0.1), false).0, oid::FLOAT8);
         assert_eq!(
-            encode_parameter(&SqlValue::Double(0.1), false).0,
-            oid::FLOAT8
-        );
-        assert_eq!(
-            encode_parameter(&SqlValue::String("x".into()), false),
+            encoded(&SqlValue::String("x".into()), false),
             (oid::VARCHAR, Some("x".to_string()))
         );
-        assert_eq!(encode_parameter(&SqlValue::String("x".into()), true).0, 0);
+        assert_eq!(encoded(&SqlValue::String("x".into()), true).0, 0);
         assert_eq!(
-            encode_parameter(
+            encoded(
                 &SqlValue::Date(NaiveDate::from_ymd_opt(2020, 1, 2).unwrap()),
                 false
             ),
             (oid::DATE, Some("2020-01-02".to_string()))
         );
         assert_eq!(
-            encode_parameter(&SqlValue::Boolean(true), false),
+            encoded(&SqlValue::Boolean(true), false),
             (oid::BOOL, Some("TRUE".to_string()))
         );
         assert_eq!(Types::ARRAY, cache().sql_type(1007));
@@ -584,26 +614,26 @@ mod tests {
     fn date_and_timestamp_parameters_bind_like_the_java_query_builder() {
         let date = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(
-            encode_parameter(&SqlValue::Date(date(-43, 3, 15)), false),
+            encoded(&SqlValue::Date(date(-43, 3, 15)), false),
             (oid::DATE, Some("0044-03-15 BC".to_string()))
         );
         assert_eq!(
-            encode_parameter(&SqlValue::Date(date(0, 2, 29)), false),
+            encoded(&SqlValue::Date(date(0, 2, 29)), false),
             (oid::DATE, Some("0001-02-29 BC".to_string()))
         );
         assert_eq!(
-            encode_parameter(
+            encoded(
                 &SqlValue::Timestamp(date(1000, 1, 1).and_hms_opt(12, 0, 0).unwrap()),
                 false
             ),
             (0, Some("1000-01-01 12:00:00+00".to_string()))
         );
         assert_eq!(
-            encode_parameter(
+            encoded(
                 &SqlValue::Timestamp(date(-43, 3, 15).and_hms_milli_opt(12, 0, 0, 500).unwrap()),
                 false
             ),
-            (0, Some("0044-03-15 12:00:00.500+00 BC".to_string()))
+            (0, Some("0044-03-15 12:00:00.5+00 BC".to_string()))
         );
     }
 
@@ -613,20 +643,111 @@ mod tests {
             ("1000-01-01T12:00:00", "1000-01-01 12:00:00+00"),
             (
                 "2020-06-01T06:30:00.123456789",
-                "2020-06-01 06:30:00.123456789+00",
+                "2020-06-01 06:30:00.123457+00",
             ),
             ("-0043-03-15T12:00:00", "0044-03-15 12:00:00+00 BC"),
-            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.500+00 BC"),
+            ("0000-02-29T06:30:00.500", "0001-02-29 06:30:00.5+00 BC"),
+            (
+                "2020-06-01T06:30:00.000002500",
+                "2020-06-01 06:30:00.000003+00",
+            ),
+            (
+                "2020-06-01T06:30:00.000002499",
+                "2020-06-01 06:30:00.000002+00",
+            ),
+            ("2020-06-01T06:30:00.000000400", "2020-06-01 06:30:00+00"),
+            ("2020-06-01T06:30:00.999999500", "2020-06-01 06:30:01+00"),
+            ("2020-06-01T23:59:59.999999700", "2020-06-02 00:00:00+00"),
+            (
+                "-4713-11-23T23:59:59.999999500",
+                "4714-11-24 00:00:00+00 BC",
+            ),
             ("+10000-01-01T00:00:00", "10000-01-01 00:00:00+00"),
+            ("-4712-01-01T00:00:00", "4713-01-01 00:00:00+00 BC"),
+            ("-4713-12-31T23:59:59", "4714-12-31 23:59:59+00 BC"),
+            ("-4713-11-24T00:00:00", "4714-11-24 00:00:00+00 BC"),
         ];
         for (timestamp, text) in cases {
             let value = SqlValue::Timestamp(timestamp.parse().unwrap());
-            assert_eq!((0, Some(text.to_string())), encode_parameter(&value, false));
+            assert_eq!((0, Some(text.to_string())), encoded(&value, false));
         }
+    }
+
+    #[test]
+    fn bind_timestamp_rejects_values_outside_the_postgre_sql_range() {
+        let cases = [
+            "-4713-11-23T23:59:59.999999",
+            "-4714-11-24T00:00:00",
+            "-5000-01-01T00:00:00",
+            "-262143-01-01T00:00:00",
+        ];
+        let mut values: Vec<NaiveDateTime> =
+            cases.iter().map(|text| text.parse().unwrap()).collect();
+        values.extend([NaiveDateTime::MIN, NaiveDateTime::MAX]);
+        for value in values {
+            let error = encode_parameter(&SqlValue::Timestamp(value), false).unwrap_err();
+            assert_eq!(
+                "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999",
+                error.message(),
+                "{value}"
+            );
+            assert!(check_parameters(&[SqlValue::Integer(1), SqlValue::Timestamp(value)]).is_err());
+        }
+        assert!(
+            check_parameters(&[SqlValue::Timestamp("-4713-11-24T00:00:00".parse().unwrap())])
+                .is_ok()
+        );
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {
         value.to_epoch_day().unwrap().unwrap()
+    }
+
+    #[test]
+    fn timestamptz_dateday_uses_the_default_zone() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "driver::codec::tests::timestamptz_dateday_in_los_angeles",
+                "--ignored",
+            ])
+            .env("TZ", "America/Los_Angeles")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(output.status.success(), "{stdout}");
+        assert!(stdout.contains("test result: ok. 1 passed"), "{stdout}");
+    }
+
+    #[test]
+    #[ignore = "timestamptz_dateday_uses_the_default_zone runs it with TZ=America/Los_Angeles"]
+    fn timestamptz_dateday_in_los_angeles() {
+        assert_eq!(Ok("America/Los_Angeles"), std::env::var("TZ").as_deref());
+        let day = |y, m, d| {
+            NaiveDate::from_ymd_opt(y, m, d)
+                .unwrap()
+                .signed_duration_since(NaiveDate::default())
+                .num_days()
+        };
+        let cases = [
+            ("2020-06-01 03:00:00+00", day(2020, 5, 31), day(2020, 6, 1)),
+            ("2020-06-01 08:00:00+00", day(2020, 6, 1), day(2020, 6, 1)),
+            ("2100-07-01 07:30:00+00", day(2100, 7, 1), day(2100, 7, 1)),
+            ("2100-01-01 07:30:00+00", day(2099, 12, 31), day(2100, 1, 1)),
+        ];
+        for (text, zoned, unzoned) in cases {
+            assert_eq!(
+                zoned,
+                epoch_day(&Decoder::TimestampTz.decode(Some(text.as_bytes()))),
+                "{text}"
+            );
+            let local = text.trim_end_matches("+00");
+            assert_eq!(
+                unzoned,
+                epoch_day(&Decoder::Timestamp.decode(Some(local.as_bytes()))),
+                "{text}"
+            );
+        }
     }
 
     fn millis(value: &SqlValue) -> i64 {
