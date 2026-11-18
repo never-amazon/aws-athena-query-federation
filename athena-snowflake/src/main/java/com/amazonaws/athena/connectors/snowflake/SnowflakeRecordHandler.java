@@ -341,12 +341,12 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     }
 
     @Override
-    protected LocalDate getLocalDate(ResultSet resultSet, String fieldName, java.sql.Date date) throws SQLException
+    protected LocalDate getLocalDate(ResultSet resultSet, int column, java.sql.Date date) throws SQLException
     {
-        if (!(resultSet.getObject(fieldName) instanceof Timestamp)) {
-            return super.getLocalDate(resultSet, fieldName, date);
+        if (!(resultSet.getObject(column) instanceof Timestamp)) {
+            return super.getLocalDate(resultSet, column, date);
         }
-        long millis = undoJulianAdjustment(resultSet.getTimestamp(fieldName).getTime());
+        long millis = undoJulianAdjustment(resultSet.getTimestamp(column).getTime());
         return LocalDate.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
     }
 

@@ -57,8 +57,11 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -161,6 +164,18 @@ public class PostGreSqlRecordHandler
         if (text != null && !PostGreSqlDateTimeText.isValid(text)) {
             throw new PSQLException("Bad value for type timestamp/date/time: " + text, PSQLState.BAD_DATETIME_FORMAT);
         }
+    }
+
+    @Override
+    protected LocalDate getLocalDate(ResultSet resultSet, int column, java.sql.Date date) throws SQLException
+    {
+        int columnType = resultSet.getMetaData().getColumnType(column);
+        if (columnType != Types.TIMESTAMP && columnType != Types.TIMESTAMP_WITH_TIMEZONE) {
+            return super.getLocalDate(resultSet, column, date);
+        }
+        boolean zoned = columnType == Types.TIMESTAMP_WITH_TIMEZONE || "timestamptz".equals(resultSet.getMetaData().getColumnTypeName(column));
+        long millis = getTimestampMillis(resultSet, column, resultSet.getTimestamp(column));
+        return LocalDate.ofInstant(Instant.ofEpochMilli(millis), zoned ? ZoneId.systemDefault() : ZoneOffset.UTC);
     }
 
     @Override
