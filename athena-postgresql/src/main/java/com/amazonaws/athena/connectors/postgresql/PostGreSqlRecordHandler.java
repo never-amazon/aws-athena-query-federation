@@ -171,7 +171,8 @@ public class PostGreSqlRecordHandler
             return super.getTimestampMillis(resultSet, column, timestamp);
         }
         if (timestamp.getTime() != PGStatement.DATE_NEGATIVE_INFINITY) {
-            GregorianCalendar fields = new GregorianCalendar(columnType == Types.TIMESTAMP ? TimeZone.getDefault() : TimeZone.getTimeZone("UTC"));
+            boolean zoned = columnType == Types.TIMESTAMP_WITH_TIMEZONE || "timestamptz".equals(resultSet.getMetaData().getColumnTypeName(column));
+            GregorianCalendar fields = new GregorianCalendar(zoned ? TimeZone.getTimeZone("UTC") : TimeZone.getDefault());
             fields.setTimeInMillis(timestamp.getTime());
             if (fields.get(Calendar.ERA) == GregorianCalendar.BC) {
                 return LocalDateTime.of(1 - fields.get(Calendar.YEAR), fields.get(Calendar.MONTH) + 1, fields.get(Calendar.DAY_OF_MONTH),

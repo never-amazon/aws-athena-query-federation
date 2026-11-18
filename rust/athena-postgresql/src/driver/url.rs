@@ -352,7 +352,7 @@ fn flag(properties: &HashMap<String, String>, key: &str, default: bool) -> bool 
         .map_or(default, |v| v.eq_ignore_ascii_case("true"))
 }
 
-fn default_time_zone() -> String {
+pub(crate) fn default_time_zone() -> String {
     std::env::var("TZ")
         .ok()
         .map(|tz| tz.trim_start_matches(':').to_string())

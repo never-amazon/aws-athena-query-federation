@@ -1,4 +1,9 @@
+use std::sync::LazyLock;
+
+use athena_federation_sdk::data::ZoneId;
 use chrono::{DateTime, NaiveDateTime};
+
+use super::url::default_time_zone;
 
 pub(crate) const DATE_POSITIVE_INFINITY: i64 = 9_223_372_036_825_200_000;
 pub(crate) const DATE_NEGATIVE_INFINITY: i64 = -9_223_372_036_832_400_000;
@@ -7,6 +12,9 @@ const MILLIS_PER_DAY: i64 = 86_400_000;
 const UNIX_EPOCH_JDN: i64 = 2_440_588;
 const GREGORIAN_CUTOVER_DAY: i64 = -141_427;
 const MAX_FRACTION_DIGITS: usize = 9;
+
+static DEFAULT_ZONE: LazyLock<ZoneId> =
+    LazyLock::new(|| ZoneId::of(&default_time_zone()).unwrap_or_else(|_| ZoneId::utc()));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ParsedTimestamp {
@@ -252,6 +260,17 @@ pub(crate) fn java_sql_date_epoch_day(millis: i64) -> i64 {
     gregorian_epoch_day(year, month, day)
 }
 
+pub(crate) fn default_zone_epoch_day(millis: i64) -> i64 {
+    zone_epoch_day(millis, &DEFAULT_ZONE)
+}
+
+fn zone_epoch_day(millis: i64, zone: &ZoneId) -> i64 {
+    let offset = DateTime::from_timestamp_millis(millis).map_or(0, |instant| {
+        i64::from(zone.offset_at(&instant).local_minus_utc()) * 1000
+    });
+    java_sql_date_epoch_day(millis.saturating_add(offset))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,6 +364,48 @@ mod tests {
             assert!(parsed.java_millis().is_none(), "{text}");
             assert!(parsed.java_date_millis().is_none(), "{text}");
         }
+    }
+
+    #[test]
+    fn zoned_timestamps_take_the_calendar_day_of_the_default_zone() {
+        let zone = |id: &str| ZoneId::of(id).unwrap();
+        let instant = |text: &str| {
+            parse_backend_timestamp(text)
+                .unwrap()
+                .java_millis()
+                .unwrap()
+        };
+        let expected = |y, m, d| epoch_day(NaiveDate::from_ymd_opt(y, m, d).unwrap());
+        let late = instant("2020-06-01 20:00:00+00");
+        assert_eq!(zone_epoch_day(late, &zone("UTC")), expected(2020, 6, 1));
+        assert_eq!(
+            zone_epoch_day(late, &zone("Asia/Kolkata")),
+            expected(2020, 6, 2)
+        );
+        assert_eq!(
+            zone_epoch_day(late, &zone("America/Los_Angeles")),
+            expected(2020, 6, 1)
+        );
+        let early = instant("2020-06-01 03:00:00+00");
+        assert_eq!(
+            zone_epoch_day(early, &zone("America/Los_Angeles")),
+            expected(2020, 5, 31)
+        );
+        let cutover = instant("1582-10-04 23:59:59.999+00");
+        assert_eq!(zone_epoch_day(cutover, &zone("UTC")), expected(1582, 10, 4));
+        assert_eq!(
+            zone_epoch_day(cutover, &zone("Asia/Kolkata")),
+            expected(1582, 10, 15)
+        );
+        let bc = instant("0044-03-15 20:00:00+00 BC");
+        assert_eq!(
+            zone_epoch_day(bc, &zone("Asia/Kolkata")),
+            expected(-43, 3, 16)
+        );
+        assert_eq!(
+            zone_epoch_day(DATE_POSITIVE_INFINITY, &zone("Asia/Kolkata")),
+            106_751_991_166
+        );
     }
 
     #[test]

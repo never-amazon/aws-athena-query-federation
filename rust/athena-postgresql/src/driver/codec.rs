@@ -7,8 +7,8 @@ use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate};
 
 use super::datetime::{
-    java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, DATE_NEGATIVE_INFINITY,
-    DATE_POSITIVE_INFINITY,
+    default_zone_epoch_day, java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp,
+    DATE_NEGATIVE_INFINITY, DATE_POSITIVE_INFINITY,
 };
 use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
@@ -32,16 +32,23 @@ fn infinity_millis(text: &str) -> Option<i64> {
     }
 }
 
-fn java_timestamp(text: &str) -> Option<SqlValue> {
+fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
+    let epoch_day = |millis| {
+        if zoned {
+            default_zone_epoch_day(millis)
+        } else {
+            java_sql_date_epoch_day(millis)
+        }
+    };
     if let Some(millis) = infinity_millis(text) {
         return Some(
-            SqlValue::java_date_millis(millis, java_sql_date_epoch_day(millis), text)
+            SqlValue::java_date_millis(millis, epoch_day(millis), text)
                 .with_exception_class(PSQL_EXCEPTION),
         );
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
-    let epoch_day = java_sql_date_epoch_day(millis);
+    let epoch_day = epoch_day(millis);
     Some(
         match (millis_to_naive(millis, parsed.nanos), parsed.epoch_millis()) {
             (Some(ts), Some(epoch_millis)) => {
@@ -178,7 +185,8 @@ impl Decoder {
             },
             Decoder::Date => java_date(&text).unwrap_or_else(|| invalid_date_time(text)),
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or_else(|| invalid_date_time(text))
+                java_timestamp(&text, *self == Decoder::TimestampTz)
+                    .unwrap_or_else(|| invalid_date_time(text))
             }
             Decoder::Bytea => decode_bytea(&text).map_or_else(|| unparsed(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
@@ -209,7 +217,8 @@ impl Decoder {
                 SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
             }
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text).unwrap_or(SqlValue::String(text))
+                java_timestamp(&text, *self == Decoder::TimestampTz)
+                    .unwrap_or(SqlValue::String(text))
             }
             _ => match self.decode_text(Cow::Owned(text)) {
                 SqlValue::Rendered { value, .. } => *value,
@@ -615,6 +624,10 @@ mod tests {
         value.to_timestamp_millis().unwrap().unwrap()
     }
 
+    fn millis_of(value: &SqlValue) -> i64 {
+        value.to_epoch_millis().unwrap().unwrap()
+    }
+
     fn array_value(oid: u32, text: &str) -> athena_federation_sdk::data::Value {
         let value = Decoder::for_type(&cache(), oid).decode(Some(text.as_bytes()));
         athena_federation_sdk::data::Value::List(
@@ -672,6 +685,18 @@ mod tests {
         );
         assert_eq!(day(Decoder::Timestamp, "infinity"), 106_751_991_166);
         assert_eq!(day(Decoder::TimestampTz, "-infinity"), -106_749_799_148);
+    }
+
+    #[test]
+    fn bc_timestamptz_reads_the_same_instant_in_every_session_zone() {
+        for text in [
+            "0044-03-15 12:00:00+00 BC",
+            "0044-03-15 17:53:28+05:53:28 BC",
+            "0044-03-15 04:07:02-07:52:58 BC",
+        ] {
+            let value = Decoder::TimestampTz.decode(Some(text.as_bytes()));
+            assert_eq!(millis_of(&value), -63_517_780_800_000, "{text}");
+        }
     }
 
     #[test]

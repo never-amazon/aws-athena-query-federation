@@ -6,11 +6,12 @@ MVN="${MVN:-$HOME/opt/apache-maven-3.9.9/bin/mvn}"
 PG_IMAGE="${PG_IMAGE:-postgres:16}"
 RUST_CMD=""
 FILTER=""
+ZONE="UTC"
 KEEP_CONTAINER=0
 
 usage() {
     cat <<EOF
-usage: run.sh [--rust <command>] [--filter <substring>] [--keep-container]
+usage: run.sh [--rust <command>] [--filter <substring>] [--zone <time zone>] [--keep-container]
 
 Starts a seeded PostgreSQL container on 127.0.0.1, regenerates the request
 corpus in corpus/, runs every case through the Java PostgreSQL handler and
@@ -22,6 +23,8 @@ writes out/java/ and out/java-normalized/.
                   rust-error.txt, and rust-aws.json when it touched the AWS
                   stubs. diff.py then compares out/java with out/rust.
 --filter <text>   Run only cases whose directory name contains <text>.
+--zone <zone>     Run both handlers with this default time zone (JVM
+                  user.timezone and TZ). The corpus is still generated in UTC.
 --keep-container  Leave the container running (for debugging).
 EOF
 }
@@ -30,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --rust) RUST_CMD="$2"; shift 2 ;;
         --filter) FILTER="$2"; shift 2 ;;
+        --zone) ZONE="$2"; shift 2 ;;
         --keep-container) KEEP_CONTAINER=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -88,6 +92,7 @@ JAVA_OPTS=(
 )
 
 java "${JAVA_OPTS[@]}" -Dparity.log.file="$OUT/corpus-gen.log" com.amazonaws.athena.parity.wire.CorpusGen "$CORPUS"
+JAVA_OPTS[1]="-Duser.timezone=$ZONE"
 
 JDBC_URL="jdbc:postgresql://127.0.0.1:$PORT/paritydb?user=parity&password=$PG_PASSWORD"
 CONNECTOR_ENV=(
@@ -102,7 +107,7 @@ CONNECTOR_ENV=(
     "AWS_ACCESS_KEY_ID=parity-stub"
     "AWS_SECRET_ACCESS_KEY=parity-stub"
     "AWS_EC2_METADATA_DISABLED=true"
-    "TZ=UTC"
+    "TZ=$ZONE"
 )
 
 rm -rf "$OUT/java" "$OUT/java-normalized"
