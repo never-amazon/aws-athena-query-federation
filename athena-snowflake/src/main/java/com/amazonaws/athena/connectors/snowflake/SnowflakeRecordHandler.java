@@ -104,7 +104,7 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
     private static final int DECIMAL128_BIT_WIDTH = 128;
     private static final long GREGORIAN_CUTOVER_MILLIS = -12_219_292_800_000L;
     private static final long MILLIS_PER_DAY = 86_400_000L;
-    private static final long MAX_JULIAN_ADJUSTMENT_DAYS = 64;
+    private static final long JULIAN_ADJUSTMENT_REACH_MILLIS = 25 * MILLIS_PER_DAY;
     private final JdbcSplitQueryBuilder jdbcSplitQueryBuilder;
 
     /**
@@ -343,14 +343,27 @@ public class SnowflakeRecordHandler extends JdbcRecordHandler
         }
         long result = adjusted;
         boolean found = false;
-        for (long day = -MAX_JULIAN_ADJUSTMENT_DAYS; day <= MAX_JULIAN_ADJUSTMENT_DAYS; day++) {
-            long millis = adjusted - julianAdjustment(adjusted + day * MILLIS_PER_DAY);
-            if (millis + julianAdjustment(millis) == adjusted && (!found || millis < result)) {
+        for (long sample : new long[] {adjusted - JULIAN_ADJUSTMENT_REACH_MILLIS, adjusted, adjusted + JULIAN_ADJUSTMENT_REACH_MILLIS}) {
+            long adjustment = julianAdjustment(sample);
+            long millis = adjusted - adjustment;
+            if (adjustment != 0) {
+                millis = Math.floorDiv(adjusted, 1000L) * 1000L - adjustment + Math.floorMod(Math.floorMod(adjusted, 1000L) + adjustment, 1000L);
+            }
+            if (driverAdjusted(millis) == adjusted && (!found || millis < result)) {
                 result = millis;
                 found = true;
             }
         }
         return result;
+    }
+
+    private static long driverAdjusted(long millis)
+    {
+        long adjustment = julianAdjustment(millis);
+        if (adjustment == 0) {
+            return millis;
+        }
+        return Math.floorDiv(millis + adjustment, 1000L) * 1000L + Math.floorMod(millis, 1000L);
     }
 
     static long julianAdjustment(long millis)

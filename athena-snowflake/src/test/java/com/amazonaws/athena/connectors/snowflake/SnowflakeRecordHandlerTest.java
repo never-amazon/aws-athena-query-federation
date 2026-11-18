@@ -1144,6 +1144,33 @@ public class SnowflakeRecordHandlerTest
     }
 
     @Test
+    public void undoJulianAdjustmentRestoresTimestampsBefore3500Bc()
+    {
+        long example = java.time.Instant.parse("-5000-01-01T00:30:00Z").toEpochMilli();
+        long exampleAdjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(example)).getTime();
+        assertEquals(java.time.Instant.parse("-5001-12-18T07:27:12Z").toEpochMilli(), exampleAdjusted);
+        assertEquals(example, SnowflakeRecordHandler.undoJulianAdjustment(exampleAdjusted));
+        long step = 97 * 86_400_000L + 5 * 3_600_000L + 123L;
+        long start = java.time.Instant.parse("-20000-01-01T00:30:00Z").toEpochMilli();
+        long end = java.time.Instant.parse("0001-01-01T00:00:00Z").toEpochMilli();
+        int checked = 0;
+        int ambiguous = 0;
+        for (long millis = start; millis < end; millis += step) {
+            long adjusted = net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(millis)).getTime();
+            long restored = SnowflakeRecordHandler.undoJulianAdjustment(adjusted);
+            String instant = java.time.Instant.ofEpochMilli(millis).toString();
+            assertEquals(instant, adjusted, net.snowflake.client.internal.core.ResultUtil.adjustTimestamp(new java.sql.Timestamp(restored)).getTime());
+            assertTrue(restored <= millis, instant);
+            checked++;
+            if (restored != millis) {
+                ambiguous++;
+            }
+        }
+        assertTrue(checked > 70_000);
+        assertTrue(ambiguous * 100 < checked, String.valueOf(ambiguous));
+    }
+
+    @Test
     public void makeExtractorReadsBcDriverDatesOnTheProlepticCalendar() throws Throwable
     {
         class ExtractorHandler extends SnowflakeRecordHandler

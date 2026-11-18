@@ -627,17 +627,37 @@ fn test_expand_sql_keeps_question_marks_inside_literals_and_identifiers() {
 
 #[tokio::test]
 async fn bind_timestamp_and_date_send_exact_epoch_values_through_the_driver() {
+    let timestamp = chrono::NaiveDate::from_ymd_opt(1582, 9, 29)
+        .unwrap()
+        .and_hms_milli_opt(6, 2, 56, 643)
+        .unwrap();
+    assert_exact_binds(
+        timestamp,
+        chrono::NaiveDate::from_ymd_opt(-43, 3, 15).unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn bind_timestamp_and_date_send_exact_epoch_values_before3500_bc() {
+    let timestamp = chrono::NaiveDate::from_ymd_opt(-5000, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 30, 0)
+        .unwrap();
+    assert_exact_binds(
+        timestamp,
+        chrono::NaiveDate::from_ymd_opt(-5000, 1, 1).unwrap(),
+    )
+    .await;
+}
+
+async fn assert_exact_binds(timestamp: chrono::NaiveDateTime, date: chrono::NaiveDate) {
     let allocator = BlockAllocatorImpl::new();
     let connection = FakeConnection::new();
     let schema = Schema::new(vec![
         Field::new("ts", DataType::Date64, true),
         Field::new("d", DataType::Date32, true),
     ]);
-    let timestamp = chrono::NaiveDate::from_ymd_opt(1582, 9, 29)
-        .unwrap()
-        .and_hms_milli_opt(6, 2, 56, 643)
-        .unwrap();
-    let date = chrono::NaiveDate::from_ymd_opt(-43, 3, 15).unwrap();
     let epoch_day = date
         .signed_duration_since(chrono::NaiveDate::default())
         .num_days();
