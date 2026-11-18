@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt;
 
 use arrow::datatypes::DataType;
@@ -407,17 +406,17 @@ impl SortedRangeSetBuilder {
         Ok(self)
     }
 
-    pub fn build(&self) -> Result<SortedRangeSet> {
-        let error: RefCell<Option<FederationError>> = RefCell::new(None);
-        let mut ranges = self.ranges.clone();
+    pub fn build(self) -> Result<SortedRangeSet> {
+        let mut error: Option<FederationError> = None;
+        let mut ranges = self.ranges;
         ranges.sort_by(|a, b| match a.low().try_cmp(b.low()) {
             Ok(c) => c,
             Err(e) => {
-                error.borrow_mut().get_or_insert(e);
+                error.get_or_insert(e);
                 std::cmp::Ordering::Equal
             }
         });
-        if let Some(e) = error.into_inner() {
+        if let Some(e) = error {
             return Err(e);
         }
         let mut result: Vec<Range> = Vec::new();
@@ -440,7 +439,7 @@ impl SortedRangeSetBuilder {
         }
         Ok(SortedRangeSet {
             null_allowed: self.null_allowed,
-            arrow_type: self.arrow_type.clone(),
+            arrow_type: self.arrow_type,
             low_indexed_ranges: result,
         })
     }
