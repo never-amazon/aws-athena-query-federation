@@ -236,7 +236,7 @@ fn contains_over_node(node: &SqlNode) -> bool {
     }
 }
 
-fn visit_calls(node: &SqlNode, pred: &dyn Fn(&SqlCall) -> bool) -> bool {
+fn visit_calls(node: &SqlNode, pred: &impl Fn(&SqlCall) -> bool) -> bool {
     match node {
         SqlNode::Call(c) => pred(c) || c.operands.iter().any(|o| visit_calls(o, pred)),
         SqlNode::Case(c) => {
@@ -392,7 +392,7 @@ impl SqlResult {
         false
     }
 
-    fn has_nested(&self, agg_calls: &[AggregateCall], pred: &dyn Fn(&SqlCall) -> bool) -> bool {
+    fn has_nested(&self, agg_calls: &[AggregateCall], pred: &impl Fn(&SqlCall) -> bool) -> bool {
         let SqlNode::Select(s) = &self.node else {
             return false;
         };

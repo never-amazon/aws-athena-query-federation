@@ -364,7 +364,7 @@ impl RexNode {
         }
     }
 
-    pub fn shift_refs(&self, map: &dyn Fn(usize) -> RexNode) -> RexNode {
+    pub fn shift_refs(&self, map: &impl Fn(usize) -> RexNode) -> RexNode {
         match self {
             RexNode::InputRef { index, .. } => map(*index),
             RexNode::Literal(_) | RexNode::CorrelField { .. } => self.clone(),

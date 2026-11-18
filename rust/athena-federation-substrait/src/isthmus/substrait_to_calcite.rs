@@ -20,7 +20,6 @@ use crate::proto::read_rel::ReadType;
 use crate::proto::rel::RelType;
 use crate::proto::rel_common::EmitKind;
 use crate::proto::set_rel::SetOp;
-use crate::proto::sort_field::SortDirection;
 use crate::proto::{
     AggregateRel, Expression, FetchRel, FilterRel, JoinRel, Plan, ProjectRel, ReadRel, Rel,
     RelCommon, SetRel, SortRel,
@@ -202,44 +201,7 @@ impl SubstraitToCalcite {
         })
     }
 
-    fn check(rel: &Rel) -> Result<&Rel> {
-        match &rel.rel_type {
-            Some(
-                RelType::Read(_)
-                | RelType::Filter(_)
-                | RelType::Fetch(_)
-                | RelType::Aggregate(_)
-                | RelType::Sort(_)
-                | RelType::Project(_)
-                | RelType::Join(_)
-                | RelType::Cross(_)
-                | RelType::Set(_),
-            ) => Ok(rel),
-            Some(
-                RelType::Expand(_)
-                | RelType::ExtensionSingle(_)
-                | RelType::ExtensionMulti(_)
-                | RelType::ExtensionLeaf(_)
-                | RelType::HashJoin(_)
-                | RelType::MergeJoin(_)
-                | RelType::NestedLoopJoin(_)
-                | RelType::Window(_)
-                | RelType::Write(_)
-                | RelType::Ddl(_)
-                | RelType::Update(_),
-            ) => Err(SubstraitError::unsupported(format!(
-                "Rel of type {} is not supported by the Rust Substrait converter",
-                rel_type_case_name(rel)
-            ))),
-            _ => Err(SubstraitError::unsupported(format!(
-                "Unsupported RelTypeCase of {}",
-                rel_type_case_name(rel)
-            ))),
-        }
-    }
-
     pub(crate) fn convert(&self, rel: &Rel) -> Result<RelNode> {
-        let rel = Self::check(rel)?;
         match &rel.rel_type {
             Some(RelType::Read(r)) => self.read(r),
             Some(RelType::Filter(f)) => self.filter(f),
@@ -258,10 +220,28 @@ impl SubstraitToCalcite {
                 self.apply_remap(node, remap_of(c.common.as_ref()))
             }
             Some(RelType::Set(s)) => self.set(s),
-            _ => Err(SubstraitError::unsupported(format!(
-                "Unsupported RelTypeCase of {}",
+            Some(
+                RelType::Expand(_)
+                | RelType::ExtensionSingle(_)
+                | RelType::ExtensionMulti(_)
+                | RelType::ExtensionLeaf(_)
+                | RelType::HashJoin(_)
+                | RelType::MergeJoin(_)
+                | RelType::NestedLoopJoin(_)
+                | RelType::Window(_)
+                | RelType::Write(_)
+                | RelType::Ddl(_)
+                | RelType::Update(_),
+            ) => Err(SubstraitError::unsupported(format!(
+                "Rel of type {} is not supported by the Rust Substrait converter",
                 rel_type_case_name(rel)
             ))),
+            Some(RelType::Reference(_) | RelType::Exchange(_)) | None => {
+                Err(SubstraitError::unsupported(format!(
+                    "Unsupported RelTypeCase of {}",
+                    rel_type_case_name(rel)
+                )))
+            }
         }
     }
 
@@ -455,11 +435,10 @@ impl SubstraitToCalcite {
             Some(OffsetMode::Offset(o)) => *o,
             _ => 0,
         };
-        let raw_count = match &f.count_mode {
+        let count = match &f.count_mode {
             Some(CountMode::Count(c)) => *c,
             _ => 0,
         };
-        let count = if raw_count == -1 { -1 } else { raw_count };
         if offset > i64::from(i32::MAX) {
             return Err(SubstraitError::illegal_argument(format!(
                 "offset is overflowed as an integer: {offset}"
@@ -488,17 +467,9 @@ impl SubstraitToCalcite {
                 .as_ref()
                 .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
             let rex = ex.convert(expr, &expression_row_type(&child))?;
-            let (direction, null_direction) = match sort_direction(field)? {
-                SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
-                SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),
-                SortDirection::DescNullsFirst => (Direction::Descending, NullDirection::First),
-                SortDirection::DescNullsLast => (Direction::Descending, NullDirection::Last),
-                _ => {
-                    return Err(SubstraitError::unsupported(
-                        "Unexpected Expression.SortDirection: Clustered!",
-                    ))
-                }
-            };
+            let (direction, null_direction) = sort_direction(field)?.ok_or_else(|| {
+                SubstraitError::unsupported("Unexpected Expression.SortDirection: Clustered!")
+            })?;
             keys.push(SortKey {
                 expr: rex,
                 direction,
@@ -758,13 +729,8 @@ impl SubstraitToCalcite {
                     "org.apache.calcite.rex.RexSlot",
                 )
             })?;
-            let (direction, null_direction) = match sort_direction(s)? {
-                SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
-                SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),
-                SortDirection::DescNullsFirst => (Direction::Descending, NullDirection::First),
-                SortDirection::DescNullsLast => (Direction::Descending, NullDirection::Last),
-                _ => (Direction::Ascending, NullDirection::Unspecified),
-            };
+            let (direction, null_direction) =
+                sort_direction(s)?.unwrap_or((Direction::Ascending, NullDirection::Unspecified));
             collation.push(RelFieldCollation::new(index, direction, null_direction));
         }
         Ok(AggregateCall {

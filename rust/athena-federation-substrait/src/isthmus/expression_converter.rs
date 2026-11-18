@@ -42,17 +42,26 @@ fn required<'b, T>(v: Option<&'b T>, what: &str) -> Result<&'b T> {
     v.ok_or_else(|| SubstraitError::illegal_argument(format!("Unknown type: {what}")))
 }
 
-pub(crate) fn sort_direction(field: &SortField) -> Result<SortDirection> {
+pub(crate) fn sort_direction(field: &SortField) -> Result<Option<(Direction, NullDirection)>> {
     let raw = match field.sort_kind {
         Some(SortKind::Direction(d)) => d,
         _ => 0,
     };
     match SortDirection::try_from(raw) {
-        Ok(SortDirection::Unspecified) | Err(_) => Err(SubstraitError::illegal_argument(format!(
+        Ok(SortDirection::AscNullsFirst) => Ok(Some((Direction::Ascending, NullDirection::First))),
+        Ok(SortDirection::AscNullsLast) => Ok(Some((Direction::Ascending, NullDirection::Last))),
+        Ok(SortDirection::DescNullsFirst) => {
+            Ok(Some((Direction::Descending, NullDirection::First)))
+        }
+        Ok(SortDirection::DescNullsLast) => Ok(Some((Direction::Descending, NullDirection::Last))),
+        Ok(SortDirection::Clustered) => Ok(None),
+        Ok(d @ SortDirection::Unspecified) => Err(SubstraitError::illegal_argument(format!(
             "Unknown type: {}",
-            SortDirection::try_from(raw).map_or("UNRECOGNIZED", |d| d.as_str_name())
+            d.as_str_name()
         ))),
-        Ok(d) => Ok(d),
+        Err(_) => Err(SubstraitError::illegal_argument(
+            "Unknown type: UNRECOGNIZED",
+        )),
     }
 }
 
@@ -594,17 +603,9 @@ impl ExpressionConverter<'_> {
         let mut order_keys = Vec::with_capacity(w.sorts.len());
         for s in &w.sorts {
             let expr = self.convert(required(s.expr.as_ref(), "EXPR")?, input)?;
-            let (direction, null_direction) = match sort_direction(s)? {
-                SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
-                SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),
-                SortDirection::DescNullsFirst => (Direction::Descending, NullDirection::First),
-                SortDirection::DescNullsLast => (Direction::Descending, NullDirection::Last),
-                _ => {
-                    return Err(SubstraitError::illegal_argument(
-                        "SORT_DIRECTION_CLUSTERED is not supported",
-                    ))
-                }
-            };
+            let (direction, null_direction) = sort_direction(s)?.ok_or_else(|| {
+                SubstraitError::illegal_argument("SORT_DIRECTION_CLUSTERED is not supported")
+            })?;
             order_keys.push(RexFieldCollation {
                 expr,
                 direction,

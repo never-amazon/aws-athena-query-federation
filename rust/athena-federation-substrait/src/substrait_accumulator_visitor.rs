@@ -209,8 +209,6 @@ impl<'a> SubstraitAccumulatorVisitor<'a> {
         if self.in_where_clause && self.is_boolean_column(name) {
             return self.bool_equals(node, name, true).map(Some);
         }
-        self.column_stack.push(name.to_string());
-        self.column_stack.pop();
         Ok(None)
     }
 

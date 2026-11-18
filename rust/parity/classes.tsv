@@ -263,7 +263,7 @@ com.amazonaws.athena.connector.substrait.model.SubstraitField	athena-federation-
 com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-federation-substrait/src/model/substrait_function_names.rs::SubstraitFunctionNames	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/model/substrait_operator.rs::SubstraitOperator	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	athena-federation-substrait/src/model/substrait_rel_model.rs::SubstraitRelModel	ported	
-com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	athena-federation-substrait/src/util/limit_and_sort_helper.rs::LimitAndSortHelper	ported	
+com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no Rust connector reads the limit or sort from the plan through this helper
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
 com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::PaginationHelper	ported	
 com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::JdbcEnvironmentProperties	ported	

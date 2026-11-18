@@ -31,7 +31,6 @@ mod substrait_metadata_parser;
 mod substrait_rel_utils;
 mod substrait_sql_utils;
 mod substrait_type_and_value;
-mod util;
 
 pub use calcite::operators;
 pub use calcite::operators::{SqlKind, SqlOperator, SqlSyntax};
@@ -62,4 +61,3 @@ pub use substrait_sql_utils::SubstraitSqlUtils;
 pub use substrait_type_and_value::{
     SubstraitTypeAndValue, SubstraitTypeAndValueBuilder, SubstraitValue,
 };
-pub use util::limit_and_sort_helper::{GenericSortField, LimitAndSortHelper};
