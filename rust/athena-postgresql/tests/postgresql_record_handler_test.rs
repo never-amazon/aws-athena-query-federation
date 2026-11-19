@@ -813,7 +813,7 @@ async fn build_sql_with_order_by_test() {
     let schema = schema_with(&[("id", DataType::Utf8), ("name", DataType::Utf8)]);
     let c = constraints_full(
         Vec::new(),
-        vec![OrderByField::new("name", Direction::ASC_NULLS_FIRST)],
+        vec![OrderByField::new("name", Direction::AscNullsFirst)],
         DEFAULT_NO_LIMIT,
     );
     assert_build(
@@ -837,9 +837,9 @@ async fn build_sql_with_multiple_order_by_columns_test() {
     let c = constraints_full(
         Vec::new(),
         vec![
-            OrderByField::new("category", Direction::ASC_NULLS_FIRST),
-            OrderByField::new("priority", Direction::DESC_NULLS_LAST),
-            OrderByField::new("created_date", Direction::DESC_NULLS_FIRST),
+            OrderByField::new("category", Direction::AscNullsFirst),
+            OrderByField::new("priority", Direction::DescNullsLast),
+            OrderByField::new("created_date", Direction::DescNullsFirst),
         ],
         DEFAULT_NO_LIMIT,
     );
@@ -873,8 +873,8 @@ async fn test_order_by_with_constraints() {
             ),
         ],
         vec![
-            OrderByField::new("score", Direction::DESC_NULLS_LAST),
-            OrderByField::new("id", Direction::ASC_NULLS_FIRST),
+            OrderByField::new("score", Direction::DescNullsLast),
+            OrderByField::new("id", Direction::AscNullsFirst),
         ],
         DEFAULT_NO_LIMIT,
     );
@@ -926,9 +926,9 @@ async fn build_sql_with_all_features_test() {
             ("active", f.single(&DataType::Boolean, true)),
         ],
         vec![
-            OrderByField::new("category", Direction::ASC_NULLS_FIRST),
-            OrderByField::new("rating", Direction::DESC_NULLS_LAST),
-            OrderByField::new("price", Direction::ASC_NULLS_LAST),
+            OrderByField::new("category", Direction::AscNullsFirst),
+            OrderByField::new("rating", Direction::DescNullsLast),
+            OrderByField::new("price", Direction::AscNullsLast),
         ],
         20,
     );
@@ -972,8 +972,8 @@ async fn test_top_n_with_order_by_scenario() {
             ),
         ],
         vec![
-            OrderByField::new("salary", Direction::DESC_NULLS_LAST),
-            OrderByField::new("hire_date", Direction::ASC_NULLS_FIRST),
+            OrderByField::new("salary", Direction::DescNullsLast),
+            OrderByField::new("hire_date", Direction::AscNullsFirst),
         ],
         5,
     );

@@ -209,11 +209,11 @@ pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpres
         block_utils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
     FunctionCallExpression::new(
         DataType::Boolean,
-        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME.function_name(),
+        StandardFunctions::GreaterThan.function_name(),
         vec![
             FunctionCallExpression::new(
                 DataType::Float64,
-                StandardFunctions::ADD_FUNCTION_NAME.function_name(),
+                StandardFunctions::Add.function_name(),
                 vec![
                     VariableExpression::new("col3", DataType::Float64)
                         .expect("variable")
@@ -232,8 +232,8 @@ pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpres
 
 pub fn order_by_clause() -> Vec<OrderByField> {
     vec![
-        OrderByField::new("col3", Direction::ASC_NULLS_FIRST),
-        OrderByField::new("col2", Direction::DESC_NULLS_FIRST),
+        OrderByField::new("col3", Direction::AscNullsFirst),
+        OrderByField::new("col2", Direction::DescNullsFirst),
     ]
 }
 

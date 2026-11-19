@@ -262,7 +262,7 @@ pub fn serialize_marker(marker: &Marker, jgen: &mut JsonGenerator) -> Result<()>
     jgen.write_start_object()?;
     jgen.write_field_name("valueBlock")?;
     serialize_block(Some(&marker.get_value_block()?), jgen)?;
-    jgen.write_string_field("bound", Some(marker.bound().name()))?;
+    jgen.write_string_field("bound", Some(marker.bound().as_str()))?;
     jgen.write_boolean_field("nullValue", marker.is_null_value())?;
     jgen.write_end_object()
 }
@@ -366,7 +366,7 @@ fn serialize_constraints(constraints: &Constraints, jgen: &mut JsonGenerator) ->
     for o in constraints.order_by_clause() {
         jgen.write_start_object()?;
         jgen.write_string_field("columnName", Some(o.column_name()))?;
-        jgen.write_string_field("direction", Some(o.direction().name()))?;
+        jgen.write_string_field("direction", Some(o.direction().as_str()))?;
         jgen.write_end_object()?;
     }
     jgen.write_end_array()?;
@@ -1095,15 +1095,12 @@ fn expression_from(node: &Json, ctx: &SerDeContext<'_>) -> Result<FederationExpr
 }
 
 fn direction_from(value: &Json) -> Result<Direction> {
-    match enum_text(value, "OrderByField.Direction")? {
-        "ASC_NULLS_FIRST" => Ok(Direction::ASC_NULLS_FIRST),
-        "ASC_NULLS_LAST" => Ok(Direction::ASC_NULLS_LAST),
-        "DESC_NULLS_FIRST" => Ok(Direction::DESC_NULLS_FIRST),
-        "DESC_NULLS_LAST" => Ok(Direction::DESC_NULLS_LAST),
-        other => Err(io(format!(
-            "Cannot deserialize value of type `OrderByField$Direction` from String \"{other}\": not one of the values accepted for Enum class"
-        ))),
-    }
+    let text = enum_text(value, "OrderByField.Direction")?;
+    Direction::from_name(text).ok_or_else(|| {
+        io(format!(
+            "Cannot deserialize value of type `OrderByField$Direction` from String \"{text}\": not one of the values accepted for Enum class"
+        ))
+    })
 }
 
 fn constraints_from(value: Option<&Json>, ctx: &SerDeContext<'_>) -> Result<Option<Constraints>> {

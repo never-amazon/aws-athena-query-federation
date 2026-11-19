@@ -7,7 +7,7 @@ use indexmap::IndexSet;
 
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
-    ArrowType, FieldBuilder, SchemaBuilder, SimpleBlockWriter, SupportedTypes,
+    minor_type_of, ArrowType, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
@@ -342,7 +342,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
             )?;
             let column_name = column.name.or_java_null();
             match column_type {
-                Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
+                Some(arrow_type) if minor_type_of(&arrow_type).is_supported() => {
                     if matches!(arrow_type, DataType::List(_)) {
                         schema_builder.add_list_field(
                             &column_name,
@@ -549,7 +549,7 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
                     .dialect
                     .convert_datasource_type(column, config_options)?;
                 match column_type {
-                    Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
+                    Some(arrow_type) if minor_type_of(&arrow_type).is_supported() => {
                         if matches!(arrow_type, DataType::List(_)) {
                             schema_builder.add_list_field(
                                 &column_name,

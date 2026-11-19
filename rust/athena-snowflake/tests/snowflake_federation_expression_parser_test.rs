@@ -104,7 +104,7 @@ fn write_array_constructor_clause_with_null_arguments_throws_null_pointer_except
     };
     let call = FunctionCallExpression::new(
         DataType::Utf8,
-        StandardFunctions::ARRAY_CONSTRUCTOR_FUNCTION_NAME.function_name(),
+        StandardFunctions::ArrayConstructor.function_name(),
         vec![
             variable(TEST_ARG_1),
             FederationExpression::Constant(ConstantExpression::new(None, DataType::Utf8)),

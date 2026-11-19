@@ -24,7 +24,7 @@ impl FieldResolver for DefaultFieldResolver {
         let minor_type = minor_type_of(field.data_type());
         if let Value::Map(_) = value {
             return Ok(value.map_get(field.name()).cloned().unwrap_or(Value::Null));
-        } else if minor_type == MinorType::LIST {
+        } else if minor_type == MinorType::List {
             if let Value::List(_) = value {
                 return Ok(value.clone());
             }

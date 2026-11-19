@@ -163,8 +163,8 @@ async fn test_build_sql_with_simple_constraints() {
 async fn test_build_sql_with_order_by() {
     let connection = FakeConnection::new();
     let order_by = vec![
-        OrderByField::new("col1", Direction::ASC_NULLS_FIRST),
-        OrderByField::new("col2", Direction::DESC_NULLS_LAST),
+        OrderByField::new("col1", Direction::AscNullsFirst),
+        OrderByField::new("col2", Direction::DescNullsLast),
     ];
     let constraints = constraints(IndexMap::new(), order_by, -1);
     let split = partition_split("partition-primary-col1-limit-1000-offset-0");
@@ -250,7 +250,7 @@ fn test_get_base_export_sql_string_with_constraints() {
 
 #[test]
 fn test_get_base_export_sql_string_with_order_by() {
-    let order_by = vec![OrderByField::new("col1", Direction::ASC_NULLS_FIRST)];
+    let order_by = vec![OrderByField::new("col1", Direction::AscNullsFirst)];
     let constraints = constraints(IndexMap::new(), order_by, -1);
 
     let result = base_export("testCatalog", &two_column_schema(), &constraints);
@@ -418,7 +418,7 @@ async fn test_build_sql_with_order_by_limit_and_pagination() {
     let allocator = BlockAllocatorImpl::new();
     let connection = FakeConnection::new();
     let range = Range::greater_than(&allocator, &DataType::Int32, 10_i32).unwrap();
-    let order_by = vec![OrderByField::new("col2", Direction::DESC_NULLS_LAST)];
+    let order_by = vec![OrderByField::new("col2", Direction::DescNullsLast)];
     let constraints = constraints(int_summary(range), order_by, 5000);
     let split = partition_split("partition-primary-\"id\"-limit-1000-offset-3000");
 
@@ -448,7 +448,7 @@ async fn test_build_sql_with_limit_below_page_size_and_pagination() {
 
 #[test]
 fn test_get_base_export_sql_string_with_order_by_and_limit() {
-    let order_by = vec![OrderByField::new("col1", Direction::ASC_NULLS_FIRST)];
+    let order_by = vec![OrderByField::new("col1", Direction::AscNullsFirst)];
     let constraints = constraints(IndexMap::new(), order_by, 10);
 
     let result = base_export("testCatalog", &two_column_schema(), &constraints);
@@ -512,26 +512,26 @@ fn complex_expression_constraints(allocator: &BlockAllocatorImpl) -> Constraints
     let col2 =
         FederationExpression::Variable(VariableExpression::new("col2", DataType::Int32).unwrap());
     let greater = function(
-        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME,
+        StandardFunctions::GreaterThan,
         vec![
             col2,
             constant(allocator, Value::from(10_i32), DataType::Int32),
         ],
     );
     let equal = function(
-        StandardFunctions::EQUAL_OPERATOR_FUNCTION_NAME,
+        StandardFunctions::Equal,
         vec![
             col1(),
             constant(allocator, Value::from("it's"), DataType::Utf8),
         ],
     );
-    let is_null = function(StandardFunctions::IS_NULL_FUNCTION_NAME, vec![col1()]);
-    let or = function(StandardFunctions::OR_FUNCTION_NAME, vec![equal, is_null]);
+    let is_null = function(StandardFunctions::IsNull, vec![col1()]);
+    let or = function(StandardFunctions::Or, vec![equal, is_null]);
     let range = Range::less_than_or_equal(allocator, &DataType::Int32, 100_i32).unwrap();
     Constraints::new(
         int_summary(range),
         vec![greater, or],
-        vec![OrderByField::new("col1", Direction::DESC_NULLS_LAST)],
+        vec![OrderByField::new("col1", Direction::DescNullsLast)],
         5,
         HashMap::new(),
         None,

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use athena_federation_sdk::data::{MinorType, SchemaBuilder, SimpleBlockWriter};
+use athena_federation_sdk::data::{minor_type_of, MinorType, SchemaBuilder, SimpleBlockWriter};
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
     get_source_table_name, populate_source_table_name_if_available, GlueMetadataHandler,
@@ -257,7 +257,7 @@ fn column(name: &str, glue_type: &str, comment: &str) -> Column {
 
 fn minor_type(response: &GetTableResponse, name: &str) -> MinorType {
     let field = response.schema().field_with_name(name).unwrap();
-    MinorType::get_minor_type_for_arrow_type(field.data_type())
+    minor_type_of(field.data_type())
 }
 
 #[tokio::test]
@@ -413,14 +413,14 @@ async fn do_get_table() {
         assert!(schema.field_with_name(name).is_ok(), "{name}");
     }
 
-    assert_eq!(MinorType::INT, minor_type(&res, "partition_col1"));
-    assert_eq!(MinorType::INT, minor_type(&res, "col1"));
-    assert_eq!(MinorType::BIGINT, minor_type(&res, "Col2"));
-    assert_eq!(MinorType::VARCHAR, minor_type(&res, "Col3"));
-    assert_eq!(MinorType::DATEMILLI, minor_type(&res, "Col4"));
-    assert_eq!(MinorType::DATEDAY, minor_type(&res, "col5"));
-    assert_eq!(MinorType::TIMESTAMPMILLITZ, minor_type(&res, "col6"));
-    assert_eq!(MinorType::TIMESTAMPMILLITZ, minor_type(&res, "col7"));
+    assert_eq!(MinorType::Int, minor_type(&res, "partition_col1"));
+    assert_eq!(MinorType::Int, minor_type(&res, "col1"));
+    assert_eq!(MinorType::BigInt, minor_type(&res, "Col2"));
+    assert_eq!(MinorType::VarChar, minor_type(&res, "Col3"));
+    assert_eq!(MinorType::DateMilli, minor_type(&res, "Col4"));
+    assert_eq!(MinorType::DateDay, minor_type(&res, "col5"));
+    assert_eq!(MinorType::TimestampMilliTz, minor_type(&res, "col6"));
+    assert_eq!(MinorType::TimestampMilliTz, minor_type(&res, "col7"));
 }
 
 #[test]
@@ -510,7 +510,7 @@ async fn do_get_table_empty_comment() {
     let res = s.handler.get_table(&get_table_request()).await.unwrap();
 
     assert!(res.schema().field_with_name("col1").is_ok());
-    assert_eq!(MinorType::INT, minor_type(&res, "col1"));
+    assert_eq!(MinorType::Int, minor_type(&res, "col1"));
 }
 
 #[test]

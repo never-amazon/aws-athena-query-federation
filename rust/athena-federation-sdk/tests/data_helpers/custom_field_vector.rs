@@ -26,7 +26,7 @@ impl CustomFieldVector {
             return;
         };
         match minor_type_of(self.field.data_type()) {
-            MinorType::STRUCT => {
+            MinorType::Struct => {
                 let child_name = child.field.name().clone();
                 for (i, v) in child.obj_list.into_iter().enumerate() {
                     if i >= self.obj_list.len() {

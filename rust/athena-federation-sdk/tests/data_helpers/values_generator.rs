@@ -54,9 +54,9 @@ impl ValuesGenerator {
         unique: bool,
     ) -> Result<usize> {
         match vector.minor_type() {
-            MinorType::LIST => self.set_list(vector, custom, length),
-            MinorType::MAP => self.set_map(vector, custom, length),
-            MinorType::STRUCT => self.set_struct(vector, custom, length),
+            MinorType::List => self.set_list(vector, custom, length),
+            MinorType::Map => self.set_map(vector, custom, length),
+            MinorType::Struct => self.set_struct(vector, custom, length),
             _ => self.set_primitive(vector, custom, length, unique),
         }
     }
@@ -133,7 +133,7 @@ impl ValuesGenerator {
             assert_eq!(entries.children().len(), 2);
             let key_minor = entries.get_child("key").expect("key").minor_type();
             let mut kv_length = self.get_length(0);
-            if key_minor == MinorType::VARBINARY || key_minor == MinorType::BIT {
+            if key_minor == MinorType::VarBinary || key_minor == MinorType::Bit {
                 kv_length = 2;
             }
             let keys = entries.get_child_mut("key").expect("key");
@@ -162,40 +162,40 @@ impl ValuesGenerator {
     fn random_value(&mut self, vector: &FieldVector) -> Value {
         let field = vector.field().clone();
         match vector.minor_type() {
-            MinorType::BIGINT => Value::Long(self.rng.next_u64().cast_signed()),
-            MinorType::BIT => Value::Int(i32::try_from(self.rng.between(0, 1)).unwrap()),
-            MinorType::DATEDAY => {
+            MinorType::BigInt => Value::Long(self.rng.next_u64().cast_signed()),
+            MinorType::Bit => Value::Int(i32::try_from(self.rng.between(0, 1)).unwrap()),
+            MinorType::DateDay => {
                 Value::Int(i32::try_from(self.rng.between(MIN_DATE_DAY, MAX_DATE_DAY)).unwrap())
             }
-            MinorType::DATEMILLI
-            | MinorType::TIMESTAMPMICROTZ
-            | MinorType::TIMESTAMPMILLITZ
-            | MinorType::TIMESTAMPNANOTZ
-            | MinorType::TIMESTAMPSECTZ => Value::Long(self.rng.between(MIN_TIME, MAX_TIME)),
-            MinorType::DECIMAL => {
+            MinorType::DateMilli
+            | MinorType::TimestampMicroTz
+            | MinorType::TimestampMilliTz
+            | MinorType::TimestampNanoTz
+            | MinorType::TimestampSecTz => Value::Long(self.rng.between(MIN_TIME, MAX_TIME)),
+            MinorType::Decimal => {
                 let (precision, scale) =
                     decimal_precision_scale(field.data_type()).unwrap_or((10, 0));
                 let bound = 10i128.pow(u32::from(precision)) - 1;
                 let unscaled = self.rng.between_i128(-bound, bound);
                 Value::Decimal(BigDecimal::new(BigInt::from(unscaled), i64::from(scale)))
             }
-            MinorType::FLOAT4 => Value::Float(self.random_float()),
-            MinorType::FLOAT8 => Value::Double(f64::from(self.random_float())),
-            MinorType::INT => Value::Int(self.rng.next_u64() as i32),
-            MinorType::SMALLINT => Value::Short(self.rng.next_u64() as i16),
-            MinorType::TINYINT => Value::Byte(self.rng.next_u64() as i8),
-            MinorType::UINT1 => {
+            MinorType::Float4 => Value::Float(self.random_float()),
+            MinorType::Float8 => Value::Double(f64::from(self.random_float())),
+            MinorType::Int => Value::Int(self.rng.next_u64() as i32),
+            MinorType::SmallInt => Value::Short(self.rng.next_u64() as i16),
+            MinorType::TinyInt => Value::Byte(self.rng.next_u64() as i8),
+            MinorType::UInt1 => {
                 Value::Byte(i8::try_from(self.rng.between(0, i64::from(i8::MAX))).unwrap())
             }
-            MinorType::UINT2 => {
+            MinorType::UInt2 => {
                 Value::Short(i16::try_from(self.rng.between(0, i64::from(i16::MAX))).unwrap())
             }
-            MinorType::UINT4 => {
+            MinorType::UInt4 => {
                 Value::Int(i32::try_from(self.rng.between(0, i64::from(i32::MAX))).unwrap())
             }
-            MinorType::UINT8 => Value::Long(self.rng.between(0, i64::MAX)),
-            MinorType::VARBINARY => Value::Bytes(self.rng.string(0).into_bytes()),
-            MinorType::VARCHAR => Value::String(self.rng.string(1)),
+            MinorType::UInt8 => Value::Long(self.rng.between(0, i64::MAX)),
+            MinorType::VarBinary => Value::Bytes(self.rng.string(0).into_bytes()),
+            MinorType::VarChar => Value::String(self.rng.string(1)),
             other => panic!("Not yet implemented for typeId {other}"),
         }
     }

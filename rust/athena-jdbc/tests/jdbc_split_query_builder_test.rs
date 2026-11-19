@@ -225,7 +225,7 @@ fn test_extract_order_by_clause_asc_nulls_first() {
     let f = Fixture::new();
     let constraints = create_constraints_with_order_by(vec![OrderByField::new(
         TEST_COL1,
-        Direction::ASC_NULLS_FIRST,
+        Direction::AscNullsFirst,
     )]);
     assert_eq!(
         f.builder.extract_order_by_clause(&constraints),
@@ -449,8 +449,8 @@ async fn test_append_limit_offset_with_constraints() {
 fn test_extract_order_by_clause_multiple_fields() {
     let f = Fixture::new();
     let constraints = create_constraints_with_order_by(vec![
-        OrderByField::new(TEST_COL1, Direction::ASC_NULLS_LAST),
-        OrderByField::new(TEST_COL2, Direction::DESC_NULLS_FIRST),
+        OrderByField::new(TEST_COL1, Direction::AscNullsLast),
+        OrderByField::new(TEST_COL2, Direction::DescNullsFirst),
     ]);
     assert_eq!(
         f.builder.extract_order_by_clause(&constraints),
@@ -484,7 +484,7 @@ async fn test_build_sql_with_empty_constraints() {
 async fn test_build_sql_with_order_by_and_limit() {
     let f = Fixture::new();
     let constraints = create_constraints_with_order_by_and_limit(
-        vec![OrderByField::new(TEST_COL1, Direction::ASC_NULLS_FIRST)],
+        vec![OrderByField::new(TEST_COL1, Direction::AscNullsFirst)],
         50,
     );
     let stmt = f
@@ -502,7 +502,7 @@ async fn test_build_sql_with_complex_expressions_and_order_by() {
     f.set_expressions(&["(col1 + col2)", "CASE WHEN col3 > 0 THEN col4 ELSE 0 END"]);
     let constraints = create_constraints_with_order_by(vec![OrderByField::new(
         TEST_COL1,
-        Direction::DESC_NULLS_LAST,
+        Direction::DescNullsLast,
     )]);
     let stmt = f
         .build(&int_schema(&[TEST_COL1]), &constraints)
@@ -523,8 +523,8 @@ async fn test_build_sql_with_order_by_limit_and_complex_expressions() {
     ]);
     let constraints = create_constraints_with_order_by_and_limit(
         vec![
-            OrderByField::new(TEST_COL1, Direction::ASC_NULLS_FIRST),
-            OrderByField::new(TEST_COL2, Direction::DESC_NULLS_LAST),
+            OrderByField::new(TEST_COL1, Direction::AscNullsFirst),
+            OrderByField::new(TEST_COL2, Direction::DescNullsLast),
         ],
         25,
     );
@@ -550,7 +550,7 @@ async fn test_build_sql_with_complex_nested_expressions() {
         "NULLIF(COALESCE(col11, col12), col13)",
     ]);
     let constraints = create_constraints_with_order_by_and_limit(
-        vec![OrderByField::new(TEST_COL1, Direction::ASC_NULLS_FIRST)],
+        vec![OrderByField::new(TEST_COL1, Direction::AscNullsFirst)],
         10,
     );
     let stmt = f
@@ -572,7 +572,7 @@ async fn test_build_sql_with_aggregate_functions_in_order_by() {
         "COUNT(DISTINCT col5)",
     ]);
     let constraints = create_constraints_with_order_by_and_limit(
-        vec![OrderByField::new("SUM(col1)", Direction::DESC_NULLS_LAST)],
+        vec![OrderByField::new("SUM(col1)", Direction::DescNullsLast)],
         100,
     );
     let stmt = f

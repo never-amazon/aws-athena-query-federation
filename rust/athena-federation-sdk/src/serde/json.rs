@@ -20,7 +20,7 @@ pub enum JsonToken {
 }
 
 impl JsonToken {
-    pub fn name(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             JsonToken::StartObject => "START_OBJECT",
             JsonToken::EndObject => "END_OBJECT",
@@ -74,12 +74,12 @@ impl JsonToken {
 
 impl std::fmt::Display for JsonToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
+        f.write_str(self.as_str())
     }
 }
 
 pub fn token_name(token: Option<JsonToken>) -> &'static str {
-    token.map_or("null", |t| t.name())
+    token.map_or("null", |t| t.as_str())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

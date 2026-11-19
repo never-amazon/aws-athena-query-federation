@@ -19,7 +19,7 @@ pub enum Bound {
 }
 
 impl Bound {
-    pub fn name(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Bound::Below => "BELOW",
             Bound::Exactly => "EXACTLY",
@@ -30,7 +30,7 @@ impl Bound {
 
 impl fmt::Display for Bound {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
+        f.write_str(self.as_str())
     }
 }
 

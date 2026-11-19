@@ -3,7 +3,9 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 
 use athena_federation_sdk::connection::environment_constants;
-use athena_federation_sdk::data::{arrow_type_to_string, ArrowType, MinorType, Value};
+use athena_federation_sdk::data::{
+    arrow_type_to_string, minor_type_of, ArrowType, MinorType, Value,
+};
 use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -579,16 +581,16 @@ fn bind_type_and_value(
     type_and_value: &TypeAndValue,
 ) -> Result<()> {
     let value = type_and_value.value();
-    let minor_type = MinorType::get_minor_type_for_arrow_type(type_and_value.get_type());
+    let minor_type = minor_type_of(type_and_value.get_type());
     match minor_type {
-        MinorType::BIGINT => {
+        MinorType::BigInt => {
             let v = value
                 .as_i64()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Long"))?;
             statement.bind(v);
         }
-        MinorType::INT => statement.bind(number_int_value(value)?),
-        MinorType::SMALLINT => {
+        MinorType::Int => statement.bind(number_int_value(value)?),
+        MinorType::SmallInt => {
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "Number.shortValue narrows the same way"
@@ -596,7 +598,7 @@ fn bind_type_and_value(
             let v = number_int_value(value)? as i16;
             statement.bind(v);
         }
-        MinorType::TINYINT => {
+        MinorType::TinyInt => {
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "Number.byteValue narrows the same way"
@@ -604,43 +606,43 @@ fn bind_type_and_value(
             let v = number_int_value(value)? as i8;
             statement.bind(v);
         }
-        MinorType::FLOAT8 => {
+        MinorType::Float8 => {
             let Value::Double(v) = value else {
                 return Err(java_class_cast(value, "java.lang.Double"));
             };
             statement.bind(*v);
         }
-        MinorType::FLOAT4 => {
+        MinorType::Float4 => {
             let v = value
                 .as_f32()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Float"))?;
             statement.bind(v);
         }
-        MinorType::BIT => {
+        MinorType::Bit => {
             let v = value
                 .as_bool()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Boolean"))?;
             statement.bind(v);
         }
-        MinorType::DATEDAY => {
+        MinorType::DateDay => {
             let days = number_long_value(value)?;
             let utc_millis = days.wrapping_mul(MILLIS_PER_DAY);
             statement.bind(date_of_epoch_millis(utc_millis));
         }
-        MinorType::DATEMILLI => {
+        MinorType::DateMilli => {
             let Value::LocalDateTime(timestamp) = value else {
                 return Err(java_class_cast(value, "java.time.LocalDateTime"));
             };
             statement.bind(*timestamp);
         }
-        MinorType::VARCHAR => statement.bind(value.java_to_string()),
-        MinorType::VARBINARY => {
+        MinorType::VarChar => statement.bind(value.java_to_string()),
+        MinorType::VarBinary => {
             let bytes = value
                 .as_bytes()
                 .ok_or_else(|| java_class_cast(value, "[B"))?;
             statement.bind(bytes.to_vec());
         }
-        MinorType::DECIMAL => {
+        MinorType::Decimal => {
             let Value::Decimal(decimal) = value else {
                 return Err(java_class_cast(value, "java.math.BigDecimal"));
             };

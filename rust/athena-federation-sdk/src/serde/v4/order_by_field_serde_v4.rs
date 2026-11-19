@@ -14,7 +14,7 @@ pub fn serialize(order_by_field: Option<&OrderByField>, jgen: &mut JsonGenerator
 
 pub fn do_serialize(order_by_field: &OrderByField, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_string_field(COLUMN_NAME_FIELD, Some(order_by_field.column_name()))?;
-    jgen.write_string_field(DIRECTION_FIELD, Some(order_by_field.direction().name()))
+    jgen.write_string_field(DIRECTION_FIELD, Some(order_by_field.direction().as_str()))
 }
 
 pub fn deserialize(jparser: &mut JsonParser<'_>) -> Result<Option<OrderByField>> {
@@ -25,15 +25,8 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<OrderByField> {
     let column_name = get_next_string_field(jparser, COLUMN_NAME_FIELD)?;
     let direction = get_next_string_field(jparser, DIRECTION_FIELD)?;
     let direction_enum = match direction.as_deref() {
-        Some("ASC_NULLS_FIRST") => Direction::ASC_NULLS_FIRST,
-        Some("ASC_NULLS_LAST") => Direction::ASC_NULLS_LAST,
-        Some("DESC_NULLS_FIRST") => Direction::DESC_NULLS_FIRST,
-        Some("DESC_NULLS_LAST") => Direction::DESC_NULLS_LAST,
-        Some(other) => {
-            return Err(FederationError::invalid_input(format!(
-                "Unexpected value: {other}"
-            )))
-        }
+        Some(name) => Direction::from_name(name)
+            .ok_or_else(|| FederationError::invalid_input(format!("Unexpected value: {name}")))?,
         None => {
             return Err(FederationError::null_pointer(
                 "Cannot invoke \"String.hashCode()\" because \"direction\" is null",

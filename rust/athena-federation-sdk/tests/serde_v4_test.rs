@@ -14,8 +14,8 @@ mod get_data_source_capabilities_response_ser_de_test {
     use super::*;
 
     fn expected() -> GetDataSourceCapabilitiesResponse {
-        let add = StandardFunctions::ADD_FUNCTION_NAME.function_name();
-        let subtract = StandardFunctions::SUBTRACT_FUNCTION_NAME.function_name();
+        let add = StandardFunctions::Add.function_name();
+        let subtract = StandardFunctions::Subtract.function_name();
         let properties = ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
             .with_sub_type_properties(&[add.function_name(), subtract.function_name()])
             .expect("properties");

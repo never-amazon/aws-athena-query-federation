@@ -36,7 +36,7 @@ pub fn filter_capability() -> Capability {
 }
 
 pub fn complex_expression_capability() -> Result<Capability> {
-    let function_names: Vec<String> = StandardFunctions::values()
+    let function_names: Vec<String> = StandardFunctions::ALL
         .iter()
         .map(|f| f.function_name().function_name().to_string())
         .collect();
@@ -152,14 +152,14 @@ impl ExpressionParser {
             ));
         }
         match operator_type {
-            OperatorType::UNARY if arguments.len() != 1 => {
+            OperatorType::Unary if arguments.len() != 1 => {
                 return Err(FederationError::invalid_input(format!(
                     "Unary function type {} was provided with {} arguments.",
                     function_name.function_name(),
                     arguments.len()
                 )));
             }
-            OperatorType::BINARY if arguments.len() != 2 => {
+            OperatorType::Binary if arguments.len() != 2 => {
                 return Err(FederationError::invalid_input(format!(
                     "Binary function type {} was provided with {} arguments.",
                     function_name.function_name(),
@@ -170,39 +170,35 @@ impl ExpressionParser {
         }
 
         let clause = match function_enum {
-            StandardFunctions::ADD_FUNCTION_NAME => arguments.join(" + "),
-            StandardFunctions::AND_FUNCTION_NAME => arguments.join(" AND "),
-            StandardFunctions::ARRAY_CONSTRUCTOR_FUNCTION_NAME => {
-                self.write_array_constructor_clause(arguments)
-            }
-            StandardFunctions::DIVIDE_FUNCTION_NAME => arguments.join(" / "),
-            StandardFunctions::EQUAL_OPERATOR_FUNCTION_NAME => arguments.join(" = "),
-            StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME => arguments.join(" > "),
-            StandardFunctions::GREATER_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME => {
-                arguments.join(" >= ")
-            }
-            StandardFunctions::IN_PREDICATE_FUNCTION_NAME => {
+            StandardFunctions::Add => arguments.join(" + "),
+            StandardFunctions::And => arguments.join(" AND "),
+            StandardFunctions::ArrayConstructor => self.write_array_constructor_clause(arguments),
+            StandardFunctions::Divide => arguments.join(" / "),
+            StandardFunctions::Equal => arguments.join(" = "),
+            StandardFunctions::GreaterThan => arguments.join(" > "),
+            StandardFunctions::GreaterThanOrEqual => arguments.join(" >= "),
+            StandardFunctions::In => {
                 format!("{} IN {}", arguments[0], arguments[1])
             }
-            StandardFunctions::IS_DISTINCT_FROM_OPERATOR_FUNCTION_NAME => {
+            StandardFunctions::IsDistinctFrom => {
                 format!("{} IS DISTINCT FROM {}", arguments[0], arguments[1])
             }
-            StandardFunctions::IS_NULL_FUNCTION_NAME => format!("{} IS NULL", arguments[0]),
-            StandardFunctions::LESS_THAN_OPERATOR_FUNCTION_NAME => arguments.join(" < "),
-            StandardFunctions::LESS_THAN_OR_EQUAL_OPERATOR_FUNCTION_NAME => arguments.join(" <= "),
-            StandardFunctions::LIKE_PATTERN_FUNCTION_NAME => {
+            StandardFunctions::IsNull => format!("{} IS NULL", arguments[0]),
+            StandardFunctions::LessThan => arguments.join(" < "),
+            StandardFunctions::LessThanOrEqual => arguments.join(" <= "),
+            StandardFunctions::LikePattern => {
                 format!("{} LIKE {}", arguments[0], arguments[1])
             }
-            StandardFunctions::MODULUS_FUNCTION_NAME => arguments.join(" % "),
-            StandardFunctions::MULTIPLY_FUNCTION_NAME => arguments.join(" * "),
-            StandardFunctions::NEGATE_FUNCTION_NAME => format!("-{}", arguments[0]),
-            StandardFunctions::NOT_EQUAL_OPERATOR_FUNCTION_NAME => arguments.join(" <> "),
-            StandardFunctions::NOT_FUNCTION_NAME => format!(" NOT {}", arguments[0]),
-            StandardFunctions::NULLIF_FUNCTION_NAME => {
+            StandardFunctions::Modulus => arguments.join(" % "),
+            StandardFunctions::Multiply => arguments.join(" * "),
+            StandardFunctions::Negate => format!("-{}", arguments[0]),
+            StandardFunctions::NotEqual => arguments.join(" <> "),
+            StandardFunctions::Not => format!(" NOT {}", arguments[0]),
+            StandardFunctions::NullIf => {
                 format!("NULLIF({}, {})", arguments[0], arguments[1])
             }
-            StandardFunctions::OR_FUNCTION_NAME => arguments.join(" OR "),
-            StandardFunctions::SUBTRACT_FUNCTION_NAME => arguments.join(" - "),
+            StandardFunctions::Or => arguments.join(" OR "),
+            StandardFunctions::Subtract => arguments.join(" - "),
         };
         Ok(format!("({clause})"))
     }

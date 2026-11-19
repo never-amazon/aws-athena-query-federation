@@ -12,8 +12,8 @@ use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
 use athena_jdbc::manager::{ExpressionParser, TypeAndValue};
 use indexmap::IndexMap;
 
-const ADD: StandardFunctions = StandardFunctions::ADD_FUNCTION_NAME;
-const IS_NULL: StandardFunctions = StandardFunctions::IS_NULL_FUNCTION_NAME;
+const ADD: StandardFunctions = StandardFunctions::Add;
+const IS_NULL: StandardFunctions = StandardFunctions::IsNull;
 
 fn parser() -> ExpressionParser {
     ExpressionParser::new("")
@@ -114,7 +114,7 @@ fn test_parse_function_call_expression_with_all_types() {
 fn test_parse_function_call_expression_with_unknown_argument() {
     let function_call = call(
         DataType::Boolean,
-        StandardFunctions::AND_FUNCTION_NAME,
+        StandardFunctions::And,
         vec![
             var("a", int32()),
             FederationExpression::Constant(constant(1, 1, int32())),
@@ -162,7 +162,7 @@ fn test_parse_complex_expressions_multiple_functions() {
         call(DataType::Boolean, IS_NULL, vec![var("col1", int32())]),
         call(
             DataType::Boolean,
-            StandardFunctions::NOT_FUNCTION_NAME,
+            StandardFunctions::Not,
             vec![var("col2", DataType::Utf8)],
         ),
     ]);
@@ -200,12 +200,12 @@ fn test_parse_variable_expression_different_types() {
 fn test_parse_complex_expressions_with_nested_functions() {
     let subtract = call(
         int32(),
-        StandardFunctions::SUBTRACT_FUNCTION_NAME,
+        StandardFunctions::Subtract,
         vec![var("col1", int32()), var("col2", int32())],
     );
     let multiply = call(
         int32(),
-        StandardFunctions::MULTIPLY_FUNCTION_NAME,
+        StandardFunctions::Multiply,
         vec![var("col1", int32()), var("col2", int32())],
     );
     let add = call(
@@ -227,7 +227,7 @@ fn test_parse_complex_expressions_with_nested_functions() {
 fn test_parse_complex_expressions_with_case_when() {
     let greater = call(
         DataType::Boolean,
-        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME,
+        StandardFunctions::GreaterThan,
         vec![
             var("age", int32()),
             FederationExpression::Constant(constant(1, 18, int32())),
@@ -235,7 +235,7 @@ fn test_parse_complex_expressions_with_case_when() {
     );
     let case = call(
         int32(),
-        StandardFunctions::OR_FUNCTION_NAME,
+        StandardFunctions::Or,
         vec![
             FederationExpression::FunctionCall(greater),
             var("salary", int32()),
@@ -258,7 +258,7 @@ fn test_parse_complex_expressions_with_aggregate_functions() {
     );
     let sum = call(
         int32(),
-        StandardFunctions::NEGATE_FUNCTION_NAME,
+        StandardFunctions::Negate,
         vec![FederationExpression::FunctionCall(add)],
     );
     let expressions = parse(vec![sum]);
@@ -269,7 +269,7 @@ fn test_parse_complex_expressions_with_aggregate_functions() {
 fn test_parse_complex_expressions_with_string_functions() {
     let like = call(
         DataType::Boolean,
-        StandardFunctions::LIKE_PATTERN_FUNCTION_NAME,
+        StandardFunctions::LikePattern,
         vec![var("name", DataType::Utf8), var("pattern", DataType::Utf8)],
     );
     let concat = call(
@@ -291,7 +291,7 @@ fn test_parse_complex_expressions_with_string_functions() {
 fn test_parse_complex_expressions_with_null_handling() {
     let coalesce = call(
         int32(),
-        StandardFunctions::AND_FUNCTION_NAME,
+        StandardFunctions::And,
         vec![
             var("col1", int32()),
             var("col2", int32()),

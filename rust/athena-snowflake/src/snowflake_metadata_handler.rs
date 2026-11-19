@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
-    ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter, SupportedTypes,
+    minor_type_of, ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -1115,7 +1115,7 @@ impl SnowflakeMetadataDialect {
             let column_name = column.name.or_java_null();
             let column_type = match column_type {
                 None => DataType::Utf8,
-                Some(arrow_type) if !SupportedTypes::is_supported_arrow_type(&arrow_type) => {
+                Some(arrow_type) if !minor_type_of(&arrow_type).is_supported() => {
                     tracing::warn!(
                         "getSchema: Unable to map type for column[{}] to a supported type, attempted {:?}",
                         column_name,

@@ -1,36 +1,40 @@
 use std::fmt;
 
-#[allow(
-    non_camel_case_types,
-    reason = "variant names mirror the Java enum constants"
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
-    ASC_NULLS_FIRST,
-    ASC_NULLS_LAST,
-    DESC_NULLS_FIRST,
-    DESC_NULLS_LAST,
+    AscNullsFirst,
+    AscNullsLast,
+    DescNullsFirst,
+    DescNullsLast,
 }
 
 impl Direction {
+    pub const ALL: [Direction; 4] = [
+        Direction::AscNullsFirst,
+        Direction::AscNullsLast,
+        Direction::DescNullsFirst,
+        Direction::DescNullsLast,
+    ];
+
     pub fn is_ascending(&self) -> bool {
-        matches!(self, Direction::ASC_NULLS_FIRST | Direction::ASC_NULLS_LAST)
+        matches!(self, Direction::AscNullsFirst | Direction::AscNullsLast)
     }
 
     pub fn is_nulls_first(&self) -> bool {
-        matches!(
-            self,
-            Direction::ASC_NULLS_FIRST | Direction::DESC_NULLS_FIRST
-        )
+        matches!(self, Direction::AscNullsFirst | Direction::DescNullsFirst)
     }
 
-    pub fn name(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            Direction::ASC_NULLS_FIRST => "ASC_NULLS_FIRST",
-            Direction::ASC_NULLS_LAST => "ASC_NULLS_LAST",
-            Direction::DESC_NULLS_FIRST => "DESC_NULLS_FIRST",
-            Direction::DESC_NULLS_LAST => "DESC_NULLS_LAST",
+            Direction::AscNullsFirst => "ASC_NULLS_FIRST",
+            Direction::AscNullsLast => "ASC_NULLS_LAST",
+            Direction::DescNullsFirst => "DESC_NULLS_FIRST",
+            Direction::DescNullsLast => "DESC_NULLS_LAST",
         }
+    }
+
+    pub fn from_name(name: &str) -> Option<Direction> {
+        Direction::ALL.into_iter().find(|d| d.as_str() == name)
     }
 }
 
@@ -78,7 +82,7 @@ impl fmt::Display for OrderByField {
             f,
             "OrderByField[columnName={}, direction={}]",
             self.column_name,
-            self.direction.name()
+            self.direction.as_str()
         )
     }
 }

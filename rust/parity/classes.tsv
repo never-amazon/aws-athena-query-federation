@@ -37,7 +37,7 @@ com.amazonaws.athena.connector.lambda.data.SchemaBuilder	athena-federation-sdk/s
 com.amazonaws.athena.connector.lambda.data.SchemaSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::serialize_schema	merged	the stateless class's two methods are serialize_schema and deserialize_schema
 com.amazonaws.athena.connector.lambda.data.SimpleBlockWriter	athena-federation-sdk/src/data/simple_block_writer.rs::SimpleBlockWriter	ported	
 com.amazonaws.athena.connector.lambda.data.SpillConfig	athena-federation-sdk/src/data/spill_config.rs::SpillConfig	ported	
-com.amazonaws.athena.connector.lambda.data.SupportedTypes	athena-federation-sdk/src/data/supported_types.rs::SupportedTypes	ported	
+com.amazonaws.athena.connector.lambda.data.SupportedTypes	athena-federation-sdk/src/data/types.rs::MinorType	merged	the supported set is MinorType::is_supported
 com.amazonaws.athena.connector.lambda.data.TimeZoneKey	athena-federation-sdk/src/data/time_zone_key.rs::TimeZoneKey	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjector	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjectorImpl	athena-federation-sdk/src/data/projectors/arrow_value_projector_impl.rs::create_value_projection	merged	the abstract base class becomes the shared create_value_projection function used by each projector

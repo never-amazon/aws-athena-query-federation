@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use arrow::datatypes::Schema;
-use athena_federation_sdk::data::{MinorType, Value};
+use athena_federation_sdk::data::{minor_type_of, MinorType, Value};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -118,8 +118,8 @@ fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
         return Ok("NULL".to_string());
     }
     let quote = single_quote;
-    let literal = match MinorType::get_minor_type_for_arrow_type(type_and_value.get_type()) {
-        MinorType::DATEDAY => {
+    let literal = match minor_type_of(type_and_value.get_type()) {
+        MinorType::DateDay => {
             let days = number_long(value)?;
             let date = NaiveDate::from_ymd_opt(1970, 1, 1)
                 .and_then(|epoch| epoch.checked_add_signed(chrono::Duration::days(days)))
@@ -128,20 +128,20 @@ fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
                 })?;
             format!("DATE {}", quote(&date.format("%Y-%m-%d").to_string()))
         }
-        MinorType::DATEMILLI => format!("TIMESTAMP {}", quote(&instant_text(number_long(value)?)?)),
-        MinorType::TIMESTAMPMILLITZ | MinorType::TIMESTAMPMICROTZ => match value {
+        MinorType::DateMilli => format!("TIMESTAMP {}", quote(&instant_text(number_long(value)?)?)),
+        MinorType::TimestampMilliTz | MinorType::TimestampMicroTz => match value {
             Value::LocalDateTime(timestamp) => {
                 format!("TIMESTAMP {}", quote(&sql_timestamp_text(timestamp)))
             }
             other => format!("TIMESTAMP {}", quote(&instant_text(number_long(other)?)?)),
         },
-        MinorType::INT
-        | MinorType::SMALLINT
-        | MinorType::TINYINT
-        | MinorType::BIGINT
-        | MinorType::FLOAT4
-        | MinorType::FLOAT8
-        | MinorType::DECIMAL => value.java_to_string(),
+        MinorType::Int
+        | MinorType::SmallInt
+        | MinorType::TinyInt
+        | MinorType::BigInt
+        | MinorType::Float4
+        | MinorType::Float8
+        | MinorType::Decimal => value.java_to_string(),
         _ => quote(&value.java_to_string()),
     };
     Ok(literal)

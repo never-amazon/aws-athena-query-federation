@@ -73,38 +73,38 @@ macro_rules! collect_prim {
 impl Column {
     pub(crate) fn for_minor(minor: MinorType) -> Column {
         match minor {
-            MinorType::BIT => Column::Bool(Vec::new()),
-            MinorType::TINYINT | MinorType::UINT1 => Column::Byte(Vec::new()),
-            MinorType::SMALLINT => Column::Short(Vec::new()),
-            MinorType::UINT2 => Column::Char(Vec::new()),
-            MinorType::INT
-            | MinorType::UINT4
-            | MinorType::DATEDAY
-            | MinorType::TIMESEC
-            | MinorType::TIMEMILLI => Column::Int(Vec::new()),
-            MinorType::BIGINT
-            | MinorType::UINT8
-            | MinorType::DATEMILLI
-            | MinorType::TIMEMICRO
-            | MinorType::TIMENANO
-            | MinorType::TIMESTAMPSEC
-            | MinorType::TIMESTAMPMILLI
-            | MinorType::TIMESTAMPMICRO
-            | MinorType::TIMESTAMPNANO
-            | MinorType::TIMESTAMPSECTZ
-            | MinorType::TIMESTAMPMILLITZ
-            | MinorType::TIMESTAMPMICROTZ
-            | MinorType::TIMESTAMPNANOTZ => Column::Long(Vec::new()),
-            MinorType::FLOAT4 => Column::Float(Vec::new()),
-            MinorType::FLOAT8 => Column::Double(Vec::new()),
-            MinorType::DECIMAL | MinorType::DECIMAL256 => Column::Decimal(Vec::new()),
-            MinorType::VARCHAR | MinorType::LARGEVARCHAR | MinorType::VIEWVARCHAR => {
+            MinorType::Bit => Column::Bool(Vec::new()),
+            MinorType::TinyInt | MinorType::UInt1 => Column::Byte(Vec::new()),
+            MinorType::SmallInt => Column::Short(Vec::new()),
+            MinorType::UInt2 => Column::Char(Vec::new()),
+            MinorType::Int
+            | MinorType::UInt4
+            | MinorType::DateDay
+            | MinorType::TimeSec
+            | MinorType::TimeMilli => Column::Int(Vec::new()),
+            MinorType::BigInt
+            | MinorType::UInt8
+            | MinorType::DateMilli
+            | MinorType::TimeMicro
+            | MinorType::TimeNano
+            | MinorType::TimestampSec
+            | MinorType::TimestampMilli
+            | MinorType::TimestampMicro
+            | MinorType::TimestampNano
+            | MinorType::TimestampSecTz
+            | MinorType::TimestampMilliTz
+            | MinorType::TimestampMicroTz
+            | MinorType::TimestampNanoTz => Column::Long(Vec::new()),
+            MinorType::Float4 => Column::Float(Vec::new()),
+            MinorType::Float8 => Column::Double(Vec::new()),
+            MinorType::Decimal | MinorType::Decimal256 => Column::Decimal(Vec::new()),
+            MinorType::VarChar | MinorType::LargeVarChar | MinorType::ViewVarChar => {
                 Column::Utf8(Vec::new())
             }
-            MinorType::VARBINARY
-            | MinorType::LARGEVARBINARY
-            | MinorType::VIEWVARBINARY
-            | MinorType::FIXEDSIZEBINARY => Column::Binary(Vec::new()),
+            MinorType::VarBinary
+            | MinorType::LargeVarBinary
+            | MinorType::ViewVarBinary
+            | MinorType::FixedSizeBinary => Column::Binary(Vec::new()),
             _ => Column::Untyped(0),
         }
     }
@@ -197,79 +197,79 @@ impl Column {
             ))
         };
         let arr: ArrayRef = match (minor, self) {
-            (MinorType::NULL, _) => Arc::new(NullArray::new(len)),
-            (MinorType::BIT, Column::Bool(v)) => Arc::new(BooleanArray::from(padded(v, len))),
-            (MinorType::TINYINT, Column::Byte(v)) => Arc::new(Int8Array::from(padded(v, len))),
-            (MinorType::UINT1, Column::Byte(v)) => Arc::new(UInt8Array::from(
+            (MinorType::Null, _) => Arc::new(NullArray::new(len)),
+            (MinorType::Bit, Column::Bool(v)) => Arc::new(BooleanArray::from(padded(v, len))),
+            (MinorType::TinyInt, Column::Byte(v)) => Arc::new(Int8Array::from(padded(v, len))),
+            (MinorType::UInt1, Column::Byte(v)) => Arc::new(UInt8Array::from(
                 padded(v, len)
                     .into_iter()
                     .map(|x| x.map(i8::cast_unsigned))
                     .collect::<Vec<_>>(),
             )),
-            (MinorType::SMALLINT, Column::Short(v)) => Arc::new(Int16Array::from(padded(v, len))),
-            (MinorType::UINT2, Column::Char(v)) => Arc::new(UInt16Array::from(padded(v, len))),
-            (MinorType::INT, Column::Int(v)) => Arc::new(Int32Array::from(padded(v, len))),
-            (MinorType::UINT4, Column::Int(v)) => Arc::new(UInt32Array::from(
+            (MinorType::SmallInt, Column::Short(v)) => Arc::new(Int16Array::from(padded(v, len))),
+            (MinorType::UInt2, Column::Char(v)) => Arc::new(UInt16Array::from(padded(v, len))),
+            (MinorType::Int, Column::Int(v)) => Arc::new(Int32Array::from(padded(v, len))),
+            (MinorType::UInt4, Column::Int(v)) => Arc::new(UInt32Array::from(
                 padded(v, len)
                     .into_iter()
                     .map(|x| x.map(i32::cast_unsigned))
                     .collect::<Vec<_>>(),
             )),
-            (MinorType::BIGINT, Column::Long(v)) => Arc::new(Int64Array::from(padded(v, len))),
-            (MinorType::UINT8, Column::Long(v)) => Arc::new(UInt64Array::from(
+            (MinorType::BigInt, Column::Long(v)) => Arc::new(Int64Array::from(padded(v, len))),
+            (MinorType::UInt8, Column::Long(v)) => Arc::new(UInt64Array::from(
                 padded(v, len)
                     .into_iter()
                     .map(|x| x.map(i64::cast_unsigned))
                     .collect::<Vec<_>>(),
             )),
-            (MinorType::FLOAT4, Column::Float(v)) => Arc::new(Float32Array::from(padded(v, len))),
-            (MinorType::FLOAT8, Column::Double(v)) => Arc::new(Float64Array::from(padded(v, len))),
-            (MinorType::DATEDAY, Column::Int(v)) => Arc::new(Date32Array::from(padded(v, len))),
-            (MinorType::DATEMILLI, Column::Long(v)) => Arc::new(Date64Array::from(padded(v, len))),
-            (MinorType::TIMESEC, Column::Int(v)) => {
+            (MinorType::Float4, Column::Float(v)) => Arc::new(Float32Array::from(padded(v, len))),
+            (MinorType::Float8, Column::Double(v)) => Arc::new(Float64Array::from(padded(v, len))),
+            (MinorType::DateDay, Column::Int(v)) => Arc::new(Date32Array::from(padded(v, len))),
+            (MinorType::DateMilli, Column::Long(v)) => Arc::new(Date64Array::from(padded(v, len))),
+            (MinorType::TimeSec, Column::Int(v)) => {
                 Arc::new(Time32SecondArray::from(padded(v, len)))
             }
-            (MinorType::TIMEMILLI, Column::Int(v)) => {
+            (MinorType::TimeMilli, Column::Int(v)) => {
                 Arc::new(Time32MillisecondArray::from(padded(v, len)))
             }
-            (MinorType::TIMEMICRO, Column::Long(v)) => {
+            (MinorType::TimeMicro, Column::Long(v)) => {
                 Arc::new(Time64MicrosecondArray::from(padded(v, len)))
             }
-            (MinorType::TIMENANO, Column::Long(v)) => {
+            (MinorType::TimeNano, Column::Long(v)) => {
                 Arc::new(Time64NanosecondArray::from(padded(v, len)))
             }
             (
-                MinorType::TIMESTAMPSEC
-                | MinorType::TIMESTAMPMILLI
-                | MinorType::TIMESTAMPMICRO
-                | MinorType::TIMESTAMPNANO
-                | MinorType::TIMESTAMPSECTZ
-                | MinorType::TIMESTAMPMILLITZ
-                | MinorType::TIMESTAMPMICROTZ
-                | MinorType::TIMESTAMPNANOTZ,
+                MinorType::TimestampSec
+                | MinorType::TimestampMilli
+                | MinorType::TimestampMicro
+                | MinorType::TimestampNano
+                | MinorType::TimestampSecTz
+                | MinorType::TimestampMilliTz
+                | MinorType::TimestampMicroTz
+                | MinorType::TimestampNanoTz,
                 Column::Long(v),
             ) => timestamp_array(field.data_type(), padded(v, len)),
-            (MinorType::DECIMAL, Column::Decimal(v)) => {
+            (MinorType::Decimal, Column::Decimal(v)) => {
                 decimal128_array(field.data_type(), v, len)?
             }
-            (MinorType::DECIMAL256, Column::Decimal(v)) => {
+            (MinorType::Decimal256, Column::Decimal(v)) => {
                 decimal256_array(field.data_type(), v, len)?
             }
-            (MinorType::VARCHAR, Column::Utf8(v)) => Arc::new(StringArray::from(padded(v, len))),
-            (MinorType::LARGEVARCHAR, Column::Utf8(v)) => {
+            (MinorType::VarChar, Column::Utf8(v)) => Arc::new(StringArray::from(padded(v, len))),
+            (MinorType::LargeVarChar, Column::Utf8(v)) => {
                 Arc::new(LargeStringArray::from(padded(v, len)))
             }
-            (MinorType::VARBINARY, Column::Binary(v)) => Arc::new(BinaryArray::from(
+            (MinorType::VarBinary, Column::Binary(v)) => Arc::new(BinaryArray::from(
                 (0..len)
                     .map(|i| v.get(i).and_then(|b| b.as_deref()))
                     .collect::<Vec<_>>(),
             )),
-            (MinorType::LARGEVARBINARY, Column::Binary(v)) => Arc::new(LargeBinaryArray::from(
+            (MinorType::LargeVarBinary, Column::Binary(v)) => Arc::new(LargeBinaryArray::from(
                 (0..len)
                     .map(|i| v.get(i).and_then(|b| b.as_deref()))
                     .collect::<Vec<_>>(),
             )),
-            (MinorType::FIXEDSIZEBINARY, Column::Binary(v)) => {
+            (MinorType::FixedSizeBinary, Column::Binary(v)) => {
                 let size = match field.data_type() {
                     DataType::FixedSizeBinary(n) => *n,
                     _ => 0,
@@ -291,66 +291,66 @@ impl Column {
 
     pub(crate) fn from_array(minor: MinorType, array: &dyn Array) -> Result<Column> {
         Ok(match minor {
-            MinorType::NULL => Column::Untyped(array.len()),
-            MinorType::BIT => Column::Bool(collect_prim!(array, BooleanArray, |v| v)),
-            MinorType::TINYINT => Column::Byte(collect_prim!(array, Int8Array, |v| v)),
-            MinorType::UINT1 => Column::Byte(collect_prim!(array, UInt8Array, u8::cast_signed)),
-            MinorType::SMALLINT => Column::Short(collect_prim!(array, Int16Array, |v| v)),
-            MinorType::UINT2 => Column::Char(collect_prim!(array, UInt16Array, |v| v)),
-            MinorType::INT => Column::Int(collect_prim!(array, Int32Array, |v| v)),
-            MinorType::UINT4 => Column::Int(collect_prim!(array, UInt32Array, u32::cast_signed)),
-            MinorType::BIGINT => Column::Long(collect_prim!(array, Int64Array, |v| v)),
-            MinorType::UINT8 => Column::Long(collect_prim!(array, UInt64Array, u64::cast_signed)),
-            MinorType::FLOAT4 => Column::Float(collect_prim!(array, Float32Array, |v| v)),
-            MinorType::FLOAT8 => Column::Double(collect_prim!(array, Float64Array, |v| v)),
-            MinorType::DATEDAY => Column::Int(collect_prim!(array, Date32Array, |v| v)),
-            MinorType::DATEMILLI => Column::Long(collect_prim!(array, Date64Array, |v| v)),
-            MinorType::TIMESEC => Column::Int(collect_prim!(array, Time32SecondArray, |v| v)),
-            MinorType::TIMEMILLI => {
+            MinorType::Null => Column::Untyped(array.len()),
+            MinorType::Bit => Column::Bool(collect_prim!(array, BooleanArray, |v| v)),
+            MinorType::TinyInt => Column::Byte(collect_prim!(array, Int8Array, |v| v)),
+            MinorType::UInt1 => Column::Byte(collect_prim!(array, UInt8Array, u8::cast_signed)),
+            MinorType::SmallInt => Column::Short(collect_prim!(array, Int16Array, |v| v)),
+            MinorType::UInt2 => Column::Char(collect_prim!(array, UInt16Array, |v| v)),
+            MinorType::Int => Column::Int(collect_prim!(array, Int32Array, |v| v)),
+            MinorType::UInt4 => Column::Int(collect_prim!(array, UInt32Array, u32::cast_signed)),
+            MinorType::BigInt => Column::Long(collect_prim!(array, Int64Array, |v| v)),
+            MinorType::UInt8 => Column::Long(collect_prim!(array, UInt64Array, u64::cast_signed)),
+            MinorType::Float4 => Column::Float(collect_prim!(array, Float32Array, |v| v)),
+            MinorType::Float8 => Column::Double(collect_prim!(array, Float64Array, |v| v)),
+            MinorType::DateDay => Column::Int(collect_prim!(array, Date32Array, |v| v)),
+            MinorType::DateMilli => Column::Long(collect_prim!(array, Date64Array, |v| v)),
+            MinorType::TimeSec => Column::Int(collect_prim!(array, Time32SecondArray, |v| v)),
+            MinorType::TimeMilli => {
                 Column::Int(collect_prim!(array, Time32MillisecondArray, |v| v))
             }
-            MinorType::TIMEMICRO => {
+            MinorType::TimeMicro => {
                 Column::Long(collect_prim!(array, Time64MicrosecondArray, |v| v))
             }
-            MinorType::TIMENANO => Column::Long(collect_prim!(array, Time64NanosecondArray, |v| v)),
-            MinorType::TIMESTAMPSEC | MinorType::TIMESTAMPSECTZ => {
+            MinorType::TimeNano => Column::Long(collect_prim!(array, Time64NanosecondArray, |v| v)),
+            MinorType::TimestampSec | MinorType::TimestampSecTz => {
                 Column::Long(collect_prim!(array, TimestampSecondArray, |v| v))
             }
-            MinorType::TIMESTAMPMILLI | MinorType::TIMESTAMPMILLITZ => {
+            MinorType::TimestampMilli | MinorType::TimestampMilliTz => {
                 Column::Long(collect_prim!(array, TimestampMillisecondArray, |v| v))
             }
-            MinorType::TIMESTAMPMICRO | MinorType::TIMESTAMPMICROTZ => {
+            MinorType::TimestampMicro | MinorType::TimestampMicroTz => {
                 Column::Long(collect_prim!(array, TimestampMicrosecondArray, |v| v))
             }
-            MinorType::TIMESTAMPNANO | MinorType::TIMESTAMPNANOTZ => {
+            MinorType::TimestampNano | MinorType::TimestampNanoTz => {
                 Column::Long(collect_prim!(array, TimestampNanosecondArray, |v| v))
             }
-            MinorType::DECIMAL => {
+            MinorType::Decimal => {
                 let a = downcast::<Decimal128Array>(array, Some("expected decimal128 array"))?;
                 let scale = i64::from(a.scale());
                 Column::Decimal(collect(a, |v| BigDecimal::new(BigInt::from(v), scale)))
             }
-            MinorType::DECIMAL256 => {
+            MinorType::Decimal256 => {
                 let a = downcast::<Decimal256Array>(array, Some("expected decimal256 array"))?;
                 let scale = i64::from(a.scale());
                 Column::Decimal(collect(a, |v| {
                     BigDecimal::new(BigInt::from_signed_bytes_le(&v.to_le_bytes()), scale)
                 }))
             }
-            MinorType::VARCHAR => Column::Utf8(collect_prim!(array, StringArray, str::to_string)),
-            MinorType::LARGEVARCHAR => {
+            MinorType::VarChar => Column::Utf8(collect_prim!(array, StringArray, str::to_string)),
+            MinorType::LargeVarChar => {
                 Column::Utf8(collect_prim!(array, LargeStringArray, str::to_string))
             }
-            MinorType::VIEWVARCHAR => {
+            MinorType::ViewVarChar => {
                 Column::Utf8(collect_prim!(array, StringViewArray, str::to_string))
             }
-            MinorType::VARBINARY => {
+            MinorType::VarBinary => {
                 Column::Binary(collect_prim!(array, BinaryArray, <[u8]>::to_vec))
             }
-            MinorType::LARGEVARBINARY => {
+            MinorType::LargeVarBinary => {
                 Column::Binary(collect_prim!(array, LargeBinaryArray, <[u8]>::to_vec))
             }
-            MinorType::FIXEDSIZEBINARY => {
+            MinorType::FixedSizeBinary => {
                 Column::Binary(collect_prim!(array, FixedSizeBinaryArray, <[u8]>::to_vec))
             }
             other => {
