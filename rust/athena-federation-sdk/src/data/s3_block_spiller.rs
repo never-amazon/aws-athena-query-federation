@@ -12,7 +12,6 @@ use super::block::Block;
 use super::block_allocator::BlockAllocator;
 use super::block_spiller::BlockSpiller;
 use super::block_spiller::RowWriter;
-use super::s3_block_spill_reader::require_present;
 use super::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
 use super::spill_config::SpillConfig;
 use crate::domain::predicate::ConstraintEvaluator;
@@ -277,12 +276,10 @@ impl S3BlockSpiller {
 
     pub async fn read(
         &self,
-        spill_location: impl Into<Option<&S3SpillLocation>>,
+        spill_location: &S3SpillLocation,
         key: Option<&EncryptionKey>,
-        schema: impl Into<Option<SchemaRef>>,
+        schema: SchemaRef,
     ) -> Result<Block> {
-        let spill_location = require_present(spill_location.into(), "spillLocation")?;
-        let schema = schema.into();
         tracing::debug!("write: Started reading block from S3");
         let bytes = self
             .writer
@@ -293,7 +290,6 @@ impl S3BlockSpiller {
             ))
             .await?;
         tracing::debug!("write: Completed reading block from S3");
-        let schema = require_present(schema, "schema")?;
         let block_crypto = match (&self.writer.block_crypto, key) {
             (BlockCrypto::NoOp, _) => BlockCrypto::NoOp,
             (BlockCrypto::AesGcm(_), Some(key)) => BlockCrypto::AesGcm(key.clone()),

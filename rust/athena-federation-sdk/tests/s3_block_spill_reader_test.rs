@@ -177,13 +177,20 @@ async fn read_bytes_encrypted_bytes_succeeds() {
 #[tokio::test]
 async fn read_null_spill_location_throws_null_pointer_exception() {
     let s = setup().await;
-    let ex = s
-        .block_reader
-        .read_with_schema(None, Some(&s.encryption_key), s.schema.clone())
+    let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
+        .unwrap();
+    s.mock_s3.when_get_object(Ok(spilled_bytes));
+
+    s.block_reader
+        .read_with_schema(&s.spill_location, Some(&s.encryption_key), s.schema.clone())
         .await
-        .unwrap_err();
-    assert!(matches!(ex, FederationError::NullPointer(_)));
-    assert_eq!(0, s.mock_s3.count());
+        .unwrap();
+
+    let requests = s.mock_s3.get_requests.lock().unwrap();
+    assert_eq!(1, requests.len());
+    assert_eq!(s.spill_location.bucket(), requests[0].bucket());
+    assert_eq!(s.spill_location.key(), requests[0].key());
 }
 
 #[tokio::test]
@@ -249,13 +256,13 @@ async fn read_null_schema_throws_null_pointer_exception() {
         .unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
-    let ex = s
+    let block = s
         .block_reader
-        .read_with_schema(&s.spill_location, Some(&s.encryption_key), None)
+        .read_with_schema(&s.spill_location, Some(&s.encryption_key), s.schema.clone())
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(ex, FederationError::NullPointer(_)));
+    assert_eq!(&s.schema, block.schema());
 }
 
 #[tokio::test]

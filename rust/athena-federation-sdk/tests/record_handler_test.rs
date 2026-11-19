@@ -194,7 +194,7 @@ async fn do_read_records_spill() {
             .read_with_schema(
                 spill_location,
                 response.encryption_key(),
-                Some(Arc::new(response.schema().clone())),
+                Arc::new(response.schema().clone()),
             )
             .await
             .unwrap();
