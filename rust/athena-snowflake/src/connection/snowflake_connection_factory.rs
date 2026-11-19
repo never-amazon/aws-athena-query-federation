@@ -74,6 +74,33 @@ impl JavaThrowable for KeyPairError {
     }
 }
 
+struct KeyPairCredentials {
+    user: Option<String>,
+    private_key_pem: String,
+    passphrase: Option<String>,
+}
+
+enum SnowflakeCredentials {
+    KeyPair(KeyPairCredentials),
+    Pooled,
+}
+
+impl SnowflakeCredentials {
+    fn from_map(credential_map: &HashMap<String, String>) -> Result<SnowflakeCredentials> {
+        if SnowflakeAuthUtils::determine_auth_type(credential_map)?
+            != SnowflakeAuthType::SnowflakeJwt
+        {
+            return Ok(SnowflakeCredentials::Pooled);
+        }
+        let get = |key: &str| credential_map.get(key).cloned();
+        Ok(SnowflakeCredentials::KeyPair(KeyPairCredentials {
+            user: get(snowflake_constants::USER),
+            private_key_pem: get(snowflake_constants::PEM_PRIVATE_KEY).unwrap_or_default(),
+            passphrase: get(snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE),
+        }))
+    }
+}
+
 pub struct SnowflakeConnectionFactory {
     generic: GenericJdbcConnectionFactory,
     key_pair_base_properties: JdbcProperties,
@@ -138,9 +165,9 @@ impl SnowflakeConnectionFactory {
 
     async fn get_key_pair_connection(
         &self,
-        credential_map: &HashMap<String, String>,
+        credentials: KeyPairCredentials,
     ) -> Result<Box<dyn JdbcConnection>> {
-        self.open_key_pair_connection(credential_map)
+        self.open_key_pair_connection(credentials)
             .await
             .map_err(|error| {
                 tracing::error!("{KEY_PAIR_FAILURE}: {error}");
@@ -153,16 +180,13 @@ impl SnowflakeConnectionFactory {
 
     async fn open_key_pair_connection(
         &self,
-        credential_map: &HashMap<String, String>,
+        credentials: KeyPairCredentials,
     ) -> std::result::Result<Box<dyn JdbcConnection>, KeyPairError> {
-        let username = credential_map.get(snowflake_constants::USER);
-        let private_key_pem = credential_map
-            .get(snowflake_constants::PEM_PRIVATE_KEY)
-            .map(String::as_str)
-            .unwrap_or_default();
-        let passphrase = credential_map
-            .get(snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE)
-            .map(String::as_str);
+        let KeyPairCredentials {
+            user,
+            private_key_pem,
+            passphrase,
+        } = credentials;
         let private_key = create_private_key_off_the_async_thread(private_key_pem, passphrase)
             .await
             .map_err(KeyPairError::Key)?;
@@ -177,16 +201,16 @@ impl SnowflakeConnectionFactory {
             .into_owned();
         let base_url = move_query_parameters_to_properties(&connection_string, &mut properties)
             .map_err(KeyPairError::Url)?;
-        let Some(username) = username else {
+        let Some(username) = user else {
             return Err(KeyPairError::MissingUser);
         };
-        properties.insert(snowflake_constants::USER.to_string(), username.clone());
+        tracing::debug!(
+            "Creating Snowflake connection with key-pair authentication for user: {username}"
+        );
+        properties.insert(snowflake_constants::USER.to_string(), username);
         properties.insert(
             snowflake_constants::AUTHENTICATOR.to_string(),
             SnowflakeAuthType::SnowflakeJwt.as_str().to_string(),
-        );
-        tracing::debug!(
-            "Creating Snowflake connection with key-pair authentication for user: {username}"
         );
         let driver_class_name = self.generic.database_connection_info().driver_class_name();
         if self.driver.driver_class_name() != driver_class_name {
@@ -215,11 +239,9 @@ fn move_query_parameters_to_properties(
 }
 
 async fn create_private_key_off_the_async_thread(
-    private_key_pem: &str,
-    passphrase: Option<&str>,
+    private_key_pem: String,
+    passphrase: Option<String>,
 ) -> Result<SnowflakePrivateKey> {
-    let private_key_pem = private_key_pem.to_string();
-    let passphrase = passphrase.map(str::to_string);
     tokio::task::spawn_blocking(move || {
         SnowflakeAuthUtils::create_private_key(&private_key_pem, passphrase.as_deref())
     })
@@ -245,10 +267,10 @@ impl JdbcConnectionFactory for SnowflakeConnectionFactory {
             return self.generic.get_connection_from_managed_pool(None).await;
         };
         let credential_map = credentials_provider.get_credential_map().await?;
-        if SnowflakeAuthUtils::determine_auth_type(&credential_map)?
-            == SnowflakeAuthType::SnowflakeJwt
+        if let SnowflakeCredentials::KeyPair(credentials) =
+            SnowflakeCredentials::from_map(&credential_map)?
         {
-            return self.get_key_pair_connection(&credential_map).await;
+            return self.get_key_pair_connection(credentials).await;
         }
         self.generic
             .get_connection_from_managed_pool(Some(credentials_provider))
@@ -281,7 +303,11 @@ mod tests {
         });
         tokio::task::yield_now().await;
         let before = ticks.load(std::sync::atomic::Ordering::SeqCst);
-        let result = create_private_key_off_the_async_thread(SCRYPT_KEY, Some("test")).await;
+        let result = create_private_key_off_the_async_thread(
+            SCRYPT_KEY.to_string(),
+            Some("test".to_string()),
+        )
+        .await;
         let during = ticks.load(std::sync::atomic::Ordering::SeqCst) - before;
         ticker.abort();
         result.unwrap();
@@ -290,11 +316,14 @@ mod tests {
 
     #[tokio::test]
     async fn private_key_errors_are_unchanged_off_the_async_thread() {
-        let error = create_private_key_off_the_async_thread(SCRYPT_KEY, Some("wrong"))
-            .await
-            .unwrap_err();
+        let error = create_private_key_off_the_async_thread(
+            SCRYPT_KEY.to_string(),
+            Some("wrong".to_string()),
+        )
+        .await
+        .unwrap_err();
         assert_eq!("Invalid private key format", error.to_string());
-        let error = create_private_key_off_the_async_thread(SCRYPT_KEY, None)
+        let error = create_private_key_off_the_async_thread(SCRYPT_KEY.to_string(), None)
             .await
             .unwrap_err();
         assert_eq!("Invalid private key format", error.to_string());
