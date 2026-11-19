@@ -13,7 +13,7 @@ use athena_jdbc::connection::{
 };
 use athena_jdbc::sql::{JdbcConnection, SqlException};
 
-use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_constants;
 use crate::sql::{url_decode, SnowflakeDriver, SnowflakeJdbcDriver};
 use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
 
@@ -97,13 +97,13 @@ impl SnowflakeConnectionFactory {
         &self,
         credential_map: &HashMap<String, String>,
     ) -> std::result::Result<Box<dyn JdbcConnection>, String> {
-        let username = credential_map.get(SnowflakeConstants::USER);
+        let username = credential_map.get(snowflake_constants::USER);
         let private_key_pem = credential_map
-            .get(SnowflakeConstants::PEM_PRIVATE_KEY)
+            .get(snowflake_constants::PEM_PRIVATE_KEY)
             .map(String::as_str)
             .unwrap_or_default();
         let passphrase = credential_map
-            .get(SnowflakeConstants::PEM_PRIVATE_KEY_PASSPHRASE)
+            .get(snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE)
             .map(String::as_str);
         let private_key = create_private_key_off_the_async_thread(private_key_pem, passphrase)
             .await
@@ -121,9 +121,9 @@ impl SnowflakeConnectionFactory {
         let Some(username) = username else {
             return Err("null".to_string());
         };
-        properties.insert(SnowflakeConstants::USER.to_string(), username.clone());
+        properties.insert(snowflake_constants::USER.to_string(), username.clone());
         properties.insert(
-            SnowflakeConstants::AUTHENTICATOR.to_string(),
+            snowflake_constants::AUTHENTICATOR.to_string(),
             SnowflakeAuthType::SnowflakeJwt.value().to_string(),
         );
         tracing::debug!(

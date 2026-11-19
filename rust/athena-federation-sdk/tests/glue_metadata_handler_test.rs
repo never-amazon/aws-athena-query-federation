@@ -18,7 +18,7 @@ use athena_federation_sdk::metadata::glue::GlueClient;
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
     ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
-    MetadataRequest, UNLIMITED_PAGE_SIZE_VALUE,
+    UNLIMITED_PAGE_SIZE_VALUE,
 };
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, FederatedIdentity, KeySource,
@@ -485,7 +485,7 @@ fn function_arn_owner_digits_are_ascii_only() {
                 .into(),
         ),
     )));
-    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    let catalog = s.handler.get_catalog(req.header()).unwrap();
     assert_eq!(Some(ACCOUNT_ID.to_string()), catalog);
 }
 
@@ -517,24 +517,24 @@ async fn do_get_table_empty_comment() {
 fn test_get_catalog() {
     let s = set_up();
     let mut req = get_table_request();
-    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    let catalog = s.handler.get_catalog(req.header()).unwrap();
     assert_eq!(Some(ACCOUNT_ID.to_string()), catalog);
 
     req.set_context(Some(LambdaContext::default().with_invoked_function_arn(
         Some("arn:aws:lambda:us-east-1:012345678912:function:athena-123".into()),
     )));
-    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    let catalog = s.handler.get_catalog(req.header()).unwrap();
     assert_eq!(Some("012345678912".to_string()), catalog);
 
     req.set_context(Some(LambdaContext::default().with_invoked_function_arn(
         Some("arn:aws:lambda:us-east-1:012345678912:function:".into()),
     )));
-    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    let catalog = s.handler.get_catalog(req.header()).unwrap();
     assert_eq!(Some(ACCOUNT_ID.to_string()), catalog);
 
     req.set_context(Some(
         LambdaContext::default().with_invoked_function_arn(None),
     ));
-    let catalog = s.handler.get_catalog(&req as &dyn MetadataRequest).unwrap();
+    let catalog = s.handler.get_catalog(req.header()).unwrap();
     assert_eq!(Some(ACCOUNT_ID.to_string()), catalog);
 }

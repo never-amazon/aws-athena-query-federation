@@ -1,5 +1,6 @@
 mod jdbc_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -16,10 +17,10 @@ use athena_federation_sdk::metadata::{GetSplitsRequest, GetSplitsResponse, GetTa
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{
-    ConnectionSource, JdbcMetadataHandler, JdbcRecordHandler, JdbcUtil, MetadataDialect,
+    jdbc_util, ConnectionSource, JdbcMetadataHandler, JdbcRecordHandler, MetadataDialect,
     RecordDialect, SplitQuery,
 };
-use athena_jdbc::resolver::DefaultJdbcCaseResolver;
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException};
 use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes, ResultSetData};
 
@@ -87,7 +88,7 @@ type FakeDatabaseJdbcRecordHandler = JdbcRecordHandler<FakeDatabaseRecordDialect
 fn metadata_handler_map(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Arc<FakeDatabaseJdbcMetadataHandler>>> {
-    JdbcUtil::handler_map(
+    jdbc_util::handler_map(
         FAKE_DATABASE,
         config_options,
         |config: &DatabaseConnectionConfig| {
@@ -100,7 +101,11 @@ fn metadata_handler_map(
                     config: config.clone(),
                     factory: Arc::new(FakeConnectionFactory::default()),
                 },
-                Arc::new(DefaultJdbcCaseResolver::new(FAKE_DATABASE)),
+                JdbcCaseResolver::new(
+                    FAKE_DATABASE,
+                    FederationSdkCasingMode::None,
+                    FederationSdkCasingMode::None,
+                ),
                 FakeDatabaseMetadataDialect,
             )))
         },
@@ -110,7 +115,7 @@ fn metadata_handler_map(
 fn record_handler_map(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Arc<FakeDatabaseJdbcRecordHandler>>> {
-    JdbcUtil::handler_map(
+    jdbc_util::handler_map(
         FAKE_DATABASE,
         config_options,
         |_config: &DatabaseConnectionConfig| {
@@ -239,7 +244,7 @@ async fn create_jdbc_record_handler_map_no_default() {
 
 #[test]
 fn test_get_single_database_config_from_env() {
-    let config = JdbcUtil::get_single_database_config_from_env(
+    let config = jdbc_util::single_database_config_from_env(
         FAKE_DATABASE,
         &options(&[(DEFAULT, CONNECTION_STRING1)]),
     )
@@ -250,7 +255,7 @@ fn test_get_single_database_config_from_env() {
 
 #[test]
 fn test_get_single_database_config_from_env_throws_when_no_default() {
-    let result = JdbcUtil::get_single_database_config_from_env(
+    let result = jdbc_util::single_database_config_from_env(
         FAKE_DATABASE,
         &options(&[("testCatalog_connection_string", CONNECTION_STRING1)]),
     );
@@ -266,9 +271,7 @@ async fn test_get_tables() {
             &[&[TEST_TABLE, TEST_SCHEMA]],
         ))
     });
-    let tables = JdbcUtil::get_tables(&connection, TEST_SCHEMA)
-        .await
-        .unwrap();
+    let tables = jdbc_util::tables(&connection, TEST_SCHEMA).await.unwrap();
     assert_eq!(1, tables.len());
     assert_eq!(TEST_TABLE, tables[0].table_name());
     assert_eq!(TEST_SCHEMA, tables[0].schema_name());
@@ -285,7 +288,7 @@ async fn test_get_tables() {
 async fn test_get_table_metadata_with_sql_exception() {
     let connection = FakeConnection::new();
     connection.on_query(|_| Err(SqlException::new("Test exception")));
-    let thrown = JdbcUtil::get_table_metadata(&connection, &statement(), "Tables")
+    let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables")
         .await
         .unwrap_err();
     assert_eq!("Test exception", thrown.message());
@@ -301,7 +304,7 @@ async fn test_get_table_metadata_with_no_warehouse_selected_propagates() {
         .with_sql_state("57P03")
         .with_error_code(606))
     });
-    let thrown = JdbcUtil::get_table_metadata(&connection, &statement(), "Tables and Views")
+    let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables and Views")
         .await
         .unwrap_err();
     assert_eq!(Some("57P03"), thrown.sql_state());
@@ -313,7 +316,7 @@ async fn test_get_table_metadata_returns_empty_list_for_empty_schema() {
     let connection = FakeConnection::new();
     connection.on_query(|_| Ok(ResultSetData::empty(&["TABLE_NAME", "TABLE_SCHEM"])));
     assert!(
-        JdbcUtil::get_table_metadata(&connection, &statement(), "Tables")
+        jdbc_util::table_metadata(&connection, &statement(), "Tables")
             .await
             .unwrap()
             .is_empty()
@@ -328,7 +331,7 @@ async fn test_get_schema_table_name() {
     )
     .to_result_set();
     assert!(result_set.next().await.unwrap());
-    let table_name = JdbcUtil::get_schema_table_name(&result_set).unwrap();
+    let table_name = jdbc_util::schema_table_name(&result_set).unwrap();
     assert_eq!(TEST_SCHEMA, table_name.schema_name());
     assert_eq!(TEST_TABLE, table_name.table_name());
 }

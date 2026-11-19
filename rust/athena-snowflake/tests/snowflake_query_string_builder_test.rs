@@ -2,7 +2,6 @@ mod snowflake_support;
 
 use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
@@ -19,11 +18,13 @@ use athena_federation_sdk::domain::predicate::{
 };
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_substrait::DatabaseProduct;
-use athena_jdbc::manager::{JdbcSplitQueryBuilder, TypeAndValue};
+use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 use athena_snowflake::{
-    SnowflakeDialect, SnowflakeFederationExpressionParser, SnowflakeQueryStringBuilder,
+    append_order_by_limit_offset, base_export_sql, expand_sql, SnowflakeDialect,
+    SnowflakeQueryStringBuilder, SnowflakeSplitDialect,
 };
 
 use snowflake_support::FakeConnection;
@@ -31,8 +32,7 @@ use snowflake_support::FakeConnection;
 const QUOTE_CHARACTER: &str = "\"";
 
 fn query_builder() -> SnowflakeQueryStringBuilder {
-    let expression_parser = SnowflakeFederationExpressionParser::new(QUOTE_CHARACTER);
-    SnowflakeQueryStringBuilder::new(QUOTE_CHARACTER, Arc::new(expression_parser))
+    SplitQueryBuilder::new(QUOTE_CHARACTER, SnowflakeSplitDialect)
 }
 
 fn spill_location() -> SpillLocation {
@@ -87,30 +87,35 @@ async fn build(
     query_builder()
         .build_sql(
             connection,
-            "testCatalog",
-            "testSchema",
-            "testTable",
-            schema,
-            constraints,
-            split,
+            &SplitQuery {
+                catalog_name: "testCatalog",
+                table_name: &TableName::new("testSchema", "testTable"),
+                schema,
+                constraints,
+                split,
+            },
         )
         .await
         .unwrap()
 }
 
-fn base_export_sql(catalog: &str, schema: &Schema, constraints: &Constraints) -> String {
-    query_builder()
-        .get_base_export_sql_string(catalog, "testSchema", "testTable", schema, constraints)
-        .unwrap()
-        .unwrap()
+fn base_export(_catalog: &str, schema: &Schema, constraints: &Constraints) -> String {
+    base_export_sql(
+        &query_builder(),
+        &TableName::new("testSchema", "testTable"),
+        schema,
+        constraints,
+    )
+    .unwrap()
+    .unwrap()
 }
 
 #[test]
 fn test_get_from_clause_with_split() {
-    let result = query_builder().get_from_clause_with_split(
-        "testCatalog",
-        "testSchema",
-        "testTable",
+    let builder = query_builder();
+    let result = builder.dialect().table_clause(
+        &builder,
+        &TableName::new("testSchema", "testTable"),
         &empty_split(),
     );
     assert!(result.contains("\"testSchema\""));
@@ -120,8 +125,11 @@ fn test_get_from_clause_with_split() {
 
 #[test]
 fn test_get_from_clause_with_split_no_schema() {
+    let builder = query_builder();
     let result =
-        query_builder().get_from_clause_with_split("testCatalog", "", "testTable", &empty_split());
+        builder
+            .dialect()
+            .table_clause(&builder, &TableName::new("", "testTable"), &empty_split());
     assert!(result.contains("\"testTable\""));
     assert!(!result.contains("null"));
     assert_eq!(result, " FROM \"testTable\"");
@@ -210,7 +218,7 @@ fn test_get_base_export_sql_string() {
         Field::new("partition", DataType::Utf8, true),
     ]);
 
-    let result = base_export_sql("testCatalog", &schema, &empty_constraints());
+    let result = base_export("testCatalog", &schema, &empty_constraints());
 
     assert!(result.contains("SELECT"));
     assert!(result.contains("\"col1\""));
@@ -230,7 +238,7 @@ fn test_get_base_export_sql_string_with_constraints() {
     let range = Range::greater_than(&allocator, &DataType::Int32, 10_i32).unwrap();
     let constraints = constraints(int_summary(range), Vec::new(), 100);
 
-    let result = base_export_sql("testCatalog", &two_column_schema(), &constraints);
+    let result = base_export("testCatalog", &two_column_schema(), &constraints);
 
     assert!(result.contains("WHERE"));
     assert!(result.contains("LIMIT"));
@@ -245,7 +253,7 @@ fn test_get_base_export_sql_string_with_order_by() {
     let order_by = vec![OrderByField::new("col1", Direction::ASC_NULLS_FIRST)];
     let constraints = constraints(IndexMap::new(), order_by, -1);
 
-    let result = base_export_sql("testCatalog", &two_column_schema(), &constraints);
+    let result = base_export("testCatalog", &two_column_schema(), &constraints);
 
     assert!(result.contains("ORDER BY"));
     assert!(result.contains("\"col1\""));
@@ -257,7 +265,7 @@ fn test_get_base_export_sql_string_with_order_by() {
 
 #[test]
 fn test_get_base_export_sql_string_no_catalog() {
-    let result = base_export_sql("", &two_column_schema(), &empty_constraints());
+    let result = base_export("", &two_column_schema(), &empty_constraints());
 
     assert!(result.contains("\"testSchema\".\"testTable\""));
     assert!(!result.contains("null"));
@@ -308,7 +316,7 @@ async fn test_build_sql_with_all_partition() {
 #[test]
 fn test_append_limit_offset_with_null_split() {
     assert_eq!(
-        query_builder().append_order_by_limit_offset(None, &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), None, &empty_constraints()),
         ""
     );
 }
@@ -316,7 +324,7 @@ fn test_append_limit_offset_with_null_split() {
 #[test]
 fn test_append_limit_offset_with_empty_split() {
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&empty_split()), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&empty_split()), &empty_constraints()),
         ""
     );
 }
@@ -325,7 +333,7 @@ fn test_append_limit_offset_with_empty_split() {
 fn test_append_limit_offset_with_missing_markers() {
     let split = partition_split("some-random-value");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         ""
     );
 }
@@ -334,7 +342,7 @@ fn test_append_limit_offset_with_missing_markers() {
 fn test_append_limit_offset_with_malformed_partition() {
     let split = partition_split("partition-offset-0-limit-100-primary-col1");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         ""
     );
 }
@@ -343,7 +351,7 @@ fn test_append_limit_offset_with_malformed_partition() {
 fn test_append_limit_offset_with_empty_primary_key() {
     let split = partition_split("partition-primary--limit-1000-offset-0");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         ""
     );
 }
@@ -352,7 +360,7 @@ fn test_append_limit_offset_with_empty_primary_key() {
 fn test_append_limit_offset_with_non_numeric_limit() {
     let split = partition_split("partition-primary-col1-limit-abc-offset-0");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         ""
     );
 }
@@ -361,7 +369,7 @@ fn test_append_limit_offset_with_non_numeric_limit() {
 fn test_append_limit_offset_with_non_numeric_offset() {
     let split = partition_split("partition-primary-col1-limit-1000-offset-xyz");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         ""
     );
 }
@@ -370,7 +378,7 @@ fn test_append_limit_offset_with_non_numeric_offset() {
 fn test_append_limit_offset_with_valid_partition() {
     let split = partition_split("partition-primary-\"id\"-limit-1000-offset-500");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         " ORDER BY \"id\" LIMIT 1000 OFFSET 500"
     );
 }
@@ -379,7 +387,7 @@ fn test_append_limit_offset_with_valid_partition() {
 fn test_append_limit_offset_with_composite_primary_key() {
     let split = partition_split("partition-primary-\"col1\",\"col2\"-limit-5000-offset-10000");
     assert_eq!(
-        query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints()),
+        append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints()),
         " ORDER BY \"col1\",\"col2\" LIMIT 5000 OFFSET 10000"
     );
 }
@@ -398,7 +406,7 @@ fn test_append_limit_offset_with_casing_filter_before_partition() {
     ]);
     let split = Split::new(Some(spill_location()), None, properties);
 
-    let result = query_builder().append_order_by_limit_offset(Some(&split), &empty_constraints());
+    let result = append_order_by_limit_offset(&query_builder(), Some(&split), &empty_constraints());
 
     assert!(result.contains("ORDER BY \"id\""));
     assert!(result.contains("LIMIT 100 OFFSET 200"));
@@ -443,7 +451,7 @@ fn test_get_base_export_sql_string_with_order_by_and_limit() {
     let order_by = vec![OrderByField::new("col1", Direction::ASC_NULLS_FIRST)];
     let constraints = constraints(IndexMap::new(), order_by, 10);
 
-    let result = base_export_sql("testCatalog", &two_column_schema(), &constraints);
+    let result = base_export("testCatalog", &two_column_schema(), &constraints);
 
     assert_eq!(
         result,
@@ -453,7 +461,7 @@ fn test_get_base_export_sql_string_with_order_by_and_limit() {
 
 #[test]
 fn test_get_sql_dialect() {
-    let dialect = query_builder().get_sql_dialect();
+    let dialect = query_builder().dialect().sql_dialect(None);
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
     assert_eq!(dialect, SnowflakeDialect::new(false).into_sql_dialect());
     assert!(!dialect.supports_char_set());
@@ -461,7 +469,7 @@ fn test_get_sql_dialect() {
 
 #[test]
 fn test_get_sql_dialect_with_casing_filter() {
-    let dialect = query_builder().get_sql_dialect_with_catalog_casing_filter(true);
+    let dialect = query_builder().dialect().sql_dialect(Some(true));
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
     assert_eq!(dialect, SnowflakeDialect::new(true).into_sql_dialect());
     assert!(dialect.is_upper_casing());
@@ -469,7 +477,7 @@ fn test_get_sql_dialect_with_casing_filter() {
 
 #[test]
 fn test_get_sql_dialect_with_casing_filter_false() {
-    let dialect = query_builder().get_sql_dialect_with_catalog_casing_filter(false);
+    let dialect = query_builder().dialect().sql_dialect(Some(false));
     assert_eq!(dialect.database_product(), DatabaseProduct::Snowflake);
     assert_eq!(dialect, SnowflakeDialect::new(false).into_sql_dialect());
     assert!(!dialect.is_upper_casing());
@@ -539,12 +547,13 @@ fn test_build_sql_string_literal_with_complex_expressions() {
 
     let sql = query_builder()
         .build_sql_string_literal(
-            "cat",
-            "sch",
-            "tbl",
-            &two_column_schema(),
-            &constraints,
-            &split,
+            &SplitQuery {
+                catalog_name: "cat",
+                table_name: &TableName::new("sch", "tbl"),
+                schema: &two_column_schema(),
+                constraints: &constraints,
+                split: &split,
+            },
             "\"col1\", \"col2\"",
             &mut accumulator,
         )
@@ -578,10 +587,14 @@ fn test_get_base_export_sql_string_with_complex_expressions() {
     let allocator = BlockAllocatorImpl::new();
     let constraints = complex_expression_constraints(&allocator);
 
-    let result = query_builder()
-        .get_base_export_sql_string("cat", "sch", "tbl", &two_column_schema(), &constraints)
-        .unwrap()
-        .unwrap();
+    let result = base_export_sql(
+        &query_builder(),
+        &TableName::new("sch", "tbl"),
+        &two_column_schema(),
+        &constraints,
+    )
+    .unwrap()
+    .unwrap();
 
     assert_eq!(
         result,
@@ -606,7 +619,7 @@ fn test_expand_sql_keeps_era_and_sign_in_date_and_timestamp_literals() {
             r#"SELECT * FROM "t" WHERE "d" = DATE '-0043-03-15' AND "e" = DATE '+10000-01-01' AND "ts" = TIMESTAMP '-0043-03-15T12:00:00Z'"#
                 .to_string()
         ),
-        query_builder().expand_sql(sql, &values).unwrap()
+        expand_sql(sql, &values).unwrap()
     );
 }
 
@@ -619,7 +632,7 @@ fn test_expand_sql_escapes_backslash_and_quote() {
             r#"SELECT * FROM "t" WHERE "a" = 'x\\' AND "b" = '\\'' OR 1=1 --' AND "c" = 'it''s'"#
                 .to_string()
         ),
-        query_builder().expand_sql(sql, &values).unwrap()
+        expand_sql(sql, &values).unwrap()
     );
 }
 
@@ -629,7 +642,7 @@ fn test_expand_sql_keeps_dollar_and_backslash_in_values_literal() {
     let values = [varchar("$1"), varchar("a\\$0b")];
     assert_eq!(
         Some(r#"SELECT * FROM "t" WHERE "a" = '$1' AND "b" = 'a\\$0b'"#.to_string()),
-        query_builder().expand_sql(sql, &values).unwrap()
+        expand_sql(sql, &values).unwrap()
     );
 }
 
@@ -639,7 +652,7 @@ fn test_expand_sql_keeps_question_marks_inside_literals_and_identifiers() {
     let values = [varchar("a?b"), varchar("c")];
     assert_eq!(
         Some(r#"SELECT "q?" FROM "t" WHERE "a" = 'a?b' AND "b" = '?' AND "c" = 'c'"#.to_string()),
-        query_builder().expand_sql(sql, &values).unwrap()
+        expand_sql(sql, &values).unwrap()
     );
 }
 

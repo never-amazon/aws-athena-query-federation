@@ -1,5 +1,6 @@
 mod snowflake_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -23,12 +24,12 @@ use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat
 use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
-use athena_jdbc::resolver::DefaultJdbcCaseResolver;
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
-use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
+use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::sql::SNOWFLAKE_SQL_EXCEPTION;
 use athena_snowflake::{
-    create_credentials_provider, create_snowflake_credentials_provider, SnowflakeConstants,
+    create_credentials_provider, create_snowflake_credentials_provider, snowflake_constants,
     SnowflakeMetadataDialect, SnowflakeMetadataHandler,
 };
 use indexmap::IndexMap;
@@ -44,7 +45,7 @@ const DESC_TEST_INTEGRATION: &str = "DESC STORAGE INTEGRATION \"TEST_INTEGRATION
 fn config() -> DatabaseConnectionConfig {
     DatabaseConnectionConfig::new(
         CATALOG,
-        SnowflakeConstants::SNOWFLAKE_NAME,
+        snowflake_constants::SNOWFLAKE_NAME,
         "snowflake://jdbc:snowflake://hostname/?warehouse=warehousename&db=dbname&schema=schemaname&user=xxx&password=xxx",
     )
     .unwrap()
@@ -74,9 +75,9 @@ fn options_with(extra: &[(&str, &str)]) -> HashMap<String, String> {
 
 fn export_options() -> HashMap<String, String> {
     options_with(&[
-        (SnowflakeConstants::SNOWFLAKE_ENABLE_S3_EXPORT, "true"),
+        (snowflake_constants::SNOWFLAKE_ENABLE_S3_EXPORT, "true"),
         (
-            SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY,
+            snowflake_constants::STORAGE_INTEGRATION_CONFIG_KEY,
             "TEST_INTEGRATION",
         ),
     ])
@@ -97,7 +98,11 @@ fn fixture_with(lister: FakeS3Lister, config_options: HashMap<String, String>) -
         .config_options(config_options)
         .build()
         .unwrap();
-    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
+    let case_resolver = JdbcCaseResolver::new(
+        config.engine(),
+        FederationSdkCasingMode::None,
+        FederationSdkCasingMode::None,
+    );
     let handler = SnowflakeMetadataDialect::handler(
         context,
         config,
@@ -129,9 +134,10 @@ fn casing_fixture(mode: &str) -> Fixture {
         context,
         config,
         factory,
-        Arc::new(SnowflakeJdbcCaseResolver::new(
-            SnowflakeConstants::SNOWFLAKE_NAME,
-        )),
+        snowflake_case_resolver(
+            snowflake_constants::SNOWFLAKE_NAME,
+            FederationSdkCasingMode::None,
+        ),
         None,
     );
     Fixture {
@@ -329,7 +335,7 @@ fn route_partitions(
     let uniqueness = Arc::new(uniqueness);
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
-        if sql.starts_with(SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY) {
+        if sql.starts_with(snowflake_constants::SHOW_PRIMARY_KEYS_QUERY) {
             return Ok(strings(&["column_name"], &[&["id"]]));
         }
         if sql.contains("GROUP BY") {
@@ -821,7 +827,7 @@ async fn test_get_sf_storage_integration_name_from_config() {
     let f = fixture_with(
         FakeS3Lister::default(),
         options_with(&[(
-            SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY,
+            snowflake_constants::STORAGE_INTEGRATION_CONFIG_KEY,
             "TEST_INTEGRATION",
         )]),
     );
@@ -996,7 +1002,7 @@ async fn test_get_paginated_tables() {
     assert_eq!("table1", tables[0].table_name());
     assert_eq!("table2", tables[1].table_name());
     assert_eq!(
-        vec![SnowflakeConstants::LIST_PAGINATED_TABLES_QUERY.to_string()],
+        vec![snowflake_constants::LIST_PAGINATED_TABLES_QUERY.to_string()],
         f.connection.prepared_sql()
     );
 }
@@ -1052,9 +1058,9 @@ async fn test_handle_s3_export_splits_escapes_export_path_and_integration_name()
     let f = fixture_with(
         FakeS3Lister::default(),
         options_with(&[
-            (SnowflakeConstants::SNOWFLAKE_ENABLE_S3_EXPORT, "true"),
+            (snowflake_constants::SNOWFLAKE_ENABLE_S3_EXPORT, "true"),
             (
-                SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY,
+                snowflake_constants::STORAGE_INTEGRATION_CONFIG_KEY,
                 "test\"integration",
             ),
         ]),
@@ -1268,7 +1274,7 @@ async fn assert_view_check_binds_table_name(
         partition_values(response.partitions(), PARTITION)[0]
     );
     let view_check = &f.connection.executed()[0];
-    assert_eq!(SnowflakeConstants::VIEW_CHECK_QUERY, view_check.sql());
+    assert_eq!(snowflake_constants::VIEW_CHECK_QUERY, view_check.sql());
     assert_eq!(
         &[
             SqlValue::String(expected_schema.to_string()),
@@ -1362,7 +1368,7 @@ async fn get_partitions_table_above_large_threshold_skips_uniqueness_check() {
     let f = fixture();
     route_partitions(
         &f.connection,
-        SnowflakeConstants::LARGE_TABLE_THRESHOLD + 1,
+        snowflake_constants::LARGE_TABLE_THRESHOLD + 1,
         Ok(1),
     );
     let request = layout_request(
@@ -1379,7 +1385,7 @@ async fn get_partitions_table_above_large_threshold_skips_uniqueness_check() {
     let prepared = f.connection.prepared_sql();
     assert!(!prepared
         .iter()
-        .any(|sql| sql.starts_with(SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY)));
+        .any(|sql| sql.starts_with(snowflake_constants::SHOW_PRIMARY_KEYS_QUERY)));
     assert!(!prepared.iter().any(|sql| sql.contains("GROUP BY")));
     assert_eq!(1, response.partitions().row_count());
     assert_eq!(
@@ -1410,7 +1416,7 @@ async fn get_partitions_table_below_threshold_applies_uniqueness_check_timeout()
         .find(|statement| statement.sql().contains("GROUP BY"))
         .unwrap();
     assert_eq!(
-        SnowflakeConstants::UNIQUENESS_CHECK_TIMEOUT_SECONDS,
+        snowflake_constants::UNIQUENESS_CHECK_TIMEOUT_SECONDS,
         uniqueness.query_timeout()
     );
     assert_eq!(
@@ -1545,7 +1551,7 @@ async fn export_split_error_mapping() {
     );
     let missing = fixture_with(
         FakeS3Lister::default(),
-        options_with(&[(SnowflakeConstants::SNOWFLAKE_ENABLE_S3_EXPORT, "true")]),
+        options_with(&[(snowflake_constants::SNOWFLAKE_ENABLE_S3_EXPORT, "true")]),
     );
     let error = missing
         .handler
@@ -1621,7 +1627,7 @@ async fn get_partitions_escapes_quotes_in_primary_key_and_table_identifiers() {
     let f = fixture();
     f.connection.on_query(|statement: &PreparedStatement| {
         let sql = statement.sql();
-        if sql.starts_with(SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY) {
+        if sql.starts_with(snowflake_constants::SHOW_PRIMARY_KEYS_QUERY) {
             return Ok(strings(&["column_name"], &[&["id\"x"]]));
         }
         if sql.contains("GROUP BY") {

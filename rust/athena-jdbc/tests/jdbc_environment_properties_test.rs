@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use athena_federation_sdk::connection::{environment_constants, EnvironmentProperties};
-use athena_jdbc::JdbcEnvironmentProperties;
+use athena_federation_sdk::connection::environment_constants;
+use athena_jdbc::ConnectionStringFormat;
 
 const TEST_HOST: &str = "test.host.com";
 const TEST_PORT: &str = "1234";
@@ -10,28 +10,13 @@ const TEST_SECRET: &str = "testSecret";
 const TEST_ENCRYPT_PARAM: &str = "encrypt=false";
 const CONNECTION_STRING_PREFIX: &str = "databaseName://jdbc:databaseName://";
 
-struct TestEnvironmentProperties {
-    environment_properties: EnvironmentProperties,
-}
-
-impl JdbcEnvironmentProperties for TestEnvironmentProperties {
-    fn environment_properties(&self) -> &EnvironmentProperties {
-        &self.environment_properties
-    }
-
-    fn get_connection_string_prefix(
-        &self,
-        _connection_properties: &HashMap<String, String>,
-    ) -> String {
-        CONNECTION_STRING_PREFIX.to_string()
-    }
-}
+const FORMAT: ConnectionStringFormat = ConnectionStringFormat::new(CONNECTION_STRING_PREFIX);
 
 fn base_connection_string() -> String {
     format!("{CONNECTION_STRING_PREFIX}{TEST_HOST}:{TEST_PORT}/{TEST_DATABASE}")
 }
 
-fn setup() -> (HashMap<String, String>, TestEnvironmentProperties) {
+fn setup() -> (HashMap<String, String>, ConnectionStringFormat) {
     let connection_properties = HashMap::from([
         (
             environment_constants::HOST.to_string(),
@@ -46,10 +31,7 @@ fn setup() -> (HashMap<String, String>, TestEnvironmentProperties) {
             TEST_DATABASE.to_string(),
         ),
     ]);
-    let properties = TestEnvironmentProperties {
-        environment_properties: EnvironmentProperties::new(),
-    };
-    (connection_properties, properties)
+    (connection_properties, FORMAT)
 }
 
 fn default_of(result: &HashMap<String, String>) -> &str {
@@ -59,7 +41,7 @@ fn default_of(result: &HashMap<String, String>) -> &str {
 #[test]
 fn test_connection_properties_with_no_params() {
     let (connection_properties, properties) = setup();
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{}?", base_connection_string()),
         default_of(&result)
@@ -73,7 +55,7 @@ fn test_connection_properties_with_only_secret() {
         environment_constants::SECRET_NAME.to_string(),
         TEST_SECRET.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{}?${{{TEST_SECRET}}}", base_connection_string()),
         default_of(&result)
@@ -88,7 +70,7 @@ fn test_connection_properties_with_only_jdbc_params() {
         environment_constants::JDBC_PARAMS.to_string(),
         ssl_param.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{}?{ssl_param}", base_connection_string()),
         default_of(&result)
@@ -106,7 +88,7 @@ fn test_connection_properties_with_database_and_params_and_secret() {
         environment_constants::SECRET_NAME.to_string(),
         TEST_SECRET.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!(
             "{}?{TEST_ENCRYPT_PARAM}&${{{TEST_SECRET}}}",
@@ -134,7 +116,7 @@ fn test_special_characters_in_connection_params() {
         environment_constants::JDBC_PARAMS.to_string(),
         special_params.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!(
             "{CONNECTION_STRING_PREFIX}{special_host}:{TEST_PORT}/{special_db}?{special_params}"
@@ -151,7 +133,7 @@ fn test_multiple_jdbc_parameters() {
         environment_constants::JDBC_PARAMS.to_string(),
         params.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{}?{params}", base_connection_string()),
         default_of(&result)
@@ -166,7 +148,7 @@ fn test_complex_database_path() {
         environment_constants::DATABASE.to_string(),
         complex_db.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{CONNECTION_STRING_PREFIX}{TEST_HOST}:{TEST_PORT}/{complex_db}?"),
         default_of(&result)
@@ -181,7 +163,7 @@ fn test_secret_with_special_characters() {
         environment_constants::SECRET_NAME.to_string(),
         special_secret.to_string(),
     );
-    let result = properties.connection_properties_to_environment(connection_properties);
+    let result = properties.connection_properties_to_environment(&connection_properties);
     assert_eq!(
         format!("{}?${{{special_secret}}}", base_connection_string()),
         default_of(&result)

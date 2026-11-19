@@ -26,7 +26,7 @@ use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
-    ListTablesResponse, MetadataRequest,
+    ListTablesResponse, MetadataHeader,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
 use crate::request::{
@@ -428,15 +428,15 @@ fn serialize_split(split: &Split, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_end_object()
 }
 
-fn write_metadata_header(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
+fn write_metadata_header(request: MetadataHeader<'_>, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name("identity")?;
-    serialize_identity(request.identity(), jgen)?;
-    jgen.write_string_field("queryId", request.query_id())?;
-    jgen.write_string_field("catalogName", Some(request.catalog_name()))
+    serialize_identity(request.identity, jgen)?;
+    jgen.write_string_field("queryId", request.query_id)?;
+    jgen.write_string_field("catalogName", Some(request.catalog_name))
 }
 
-fn write_metadata_trailer(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field("requestType", Some(request.request_type().as_str()))?;
+fn write_metadata_trailer(request: MetadataHeader<'_>, jgen: &mut JsonGenerator) -> Result<()> {
+    jgen.write_string_field("requestType", Some(request.request_type.as_str()))?;
     jgen.write_null_field("context")
 }
 
@@ -451,18 +451,18 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             jgen.write_string_field("queryId", Some(r.query_id()))?;
         }
         FederationRequest::ListSchemas(r) => {
-            write_metadata_header(r, jgen)?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
         }
         FederationRequest::ListTables(r) => {
-            write_metadata_header(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
             jgen.write_string_field("schemaName", r.schema_name())?;
             jgen.write_string_field("nextToken", r.next_token())?;
             jgen.write_number_field_i32("pageSize", r.page_size())?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
         }
         FederationRequest::GetTable(r) => {
-            write_metadata_header(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
             jgen.write_field_name("tableName")?;
             serialize_table_name(r.table_name(), jgen)?;
             write_string_map_bean(
@@ -470,11 +470,11 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
                 "queryPassthroughArguments",
                 r.query_passthrough_arguments(),
             )?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
             jgen.write_boolean_field("queryPassthrough", r.is_query_passthrough())?;
         }
         FederationRequest::GetTableLayout(r) => {
-            write_metadata_header(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
             jgen.write_field_name("tableName")?;
             serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("constraints")?;
@@ -482,10 +482,10 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             jgen.write_field_name("schema")?;
             serialize_schema(r.schema(), jgen)?;
             write_strings(jgen, "partitionCols", r.partition_cols())?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
         }
         FederationRequest::GetSplits(r) => {
-            write_metadata_header(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
             jgen.write_field_name("tableName")?;
             serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("partitions")?;
@@ -494,7 +494,7 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             jgen.write_field_name("constraints")?;
             serialize_constraints(r.constraints(), jgen)?;
             jgen.write_string_field("continuationToken", r.continuation_token())?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
         }
         FederationRequest::ReadRecords(r) => {
             jgen.write_field_name("identity")?;
@@ -524,8 +524,8 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             jgen.write_string_field("functionType", Some(r.function_type().as_str()))?;
         }
         FederationRequest::GetDataSourceCapabilities(r) => {
-            write_metadata_header(r, jgen)?;
-            write_metadata_trailer(r, jgen)?;
+            write_metadata_header(r.header(), jgen)?;
+            write_metadata_trailer(r.header(), jgen)?;
         }
     }
     jgen.write_end_object()

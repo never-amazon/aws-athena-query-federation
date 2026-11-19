@@ -11,7 +11,7 @@ use athena_federation_sdk::{QueryStatusChecker, Result};
 
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use crate::manager::{
-    ConnectionSource, JdbcRecordHandler, JdbcUtil, RecordDelegate, RecordDialect, SplitQuery,
+    jdbc_util, ConnectionSource, JdbcRecordHandler, RecordDelegate, RecordDialect, SplitQuery,
 };
 use crate::multiplexing_jdbc_metadata_handler::{
     catalog_not_registered, close_all, validate_catalog_count, validate_handler_map,
@@ -50,7 +50,7 @@ impl<H: RecordHandler + RecordDelegate + 'static> RecordMultiplexer<H> {
         config_options: &HashMap<String, String>,
         make_delegate: impl Fn(&DatabaseConnectionConfig) -> Result<Arc<H>>,
     ) -> Result<MultiplexingJdbcRecordHandler<H>> {
-        let delegates = JdbcUtil::handler_map(engine, config_options, make_delegate)?;
+        let delegates = jdbc_util::handler_map(engine, config_options, make_delegate)?;
         validate_handler_map(&delegates, "Could not find any delegatee.")?;
         Ok(JdbcRecordHandler::new(
             context,

@@ -9,39 +9,28 @@ use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
-    get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
-    JdbcSplitQueryBuilder, JdbcUtil, RecordDialect, SplitQuery,
+    get_arrow_type_from_jdbc_type, jdbc_to_arrow_type, jdbc_util, ConnectionSource,
+    JdbcRecordHandler, RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
-use crate::constants::PostGreSqlConstants;
-use crate::federation_expression_parser::PostgreSqlFederationExpressionParser;
+use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
-use crate::query_string_builder::PostGreSqlQueryStringBuilder;
+use crate::query_string_builder::{self, query_string_builder, PostGreSqlQueryStringBuilder};
 
 const FETCH_SIZE: i32 = 1000;
 
 pub struct PostGreSqlRecordDialect {
-    query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+    query_builder: PostGreSqlQueryStringBuilder,
 }
 
 pub type PostGreSqlRecordHandler = JdbcRecordHandler<PostGreSqlRecordDialect>;
-
-pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
-    Arc::new(PostGreSqlQueryStringBuilder::new(
-        PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-        Arc::new(PostgreSqlFederationExpressionParser::new(
-            PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-        )),
-    ))
-}
 
 impl PostGreSqlRecordDialect {
     pub fn handler(
         context: HandlerContext,
         config: DatabaseConnectionConfig,
         connection_factory: Arc<dyn JdbcConnectionFactory>,
-        query_builder: Arc<dyn JdbcSplitQueryBuilder>,
     ) -> PostGreSqlRecordHandler {
         JdbcRecordHandler::new(
             context,
@@ -49,7 +38,9 @@ impl PostGreSqlRecordDialect {
                 config,
                 factory: connection_factory,
             },
-            PostGreSqlRecordDialect { query_builder },
+            PostGreSqlRecordDialect {
+                query_builder: query_string_builder(),
+            },
         )
     }
 
@@ -63,22 +54,15 @@ impl PostGreSqlRecordDialect {
             &config_options,
         )?);
         let context = HandlerContext::new(config.engine(), clients, config_options)?;
-        Ok(PostGreSqlRecordDialect::handler(
-            context,
-            config,
-            factory,
-            default_query_builder(),
-        ))
+        Ok(PostGreSqlRecordDialect::handler(context, config, factory))
     }
 
     pub fn from_config_options(
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlRecordHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
-            PostGreSqlConstants::POSTGRES_NAME,
-            &config_options,
-        )?;
+        let config =
+            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlRecordDialect::from_config(clients, config, config_options)
     }
 }
@@ -93,8 +77,7 @@ fn export_arrow_type(
     let scale = metadata.scale(column)?;
     if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
         return Ok(
-            JdbcArrowTypeConverter::to_arrow_type(Types::NUMERIC, 0, 0, config_options)?
-                .unwrap_or(DataType::Utf8),
+            jdbc_to_arrow_type(Types::NUMERIC, 0, 0, config_options)?.unwrap_or(DataType::Utf8)
         );
     }
     match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {
@@ -123,17 +106,7 @@ impl RecordDialect for PostGreSqlRecordDialect {
                     .build_query_passthrough_sql(connection, query.constraints)
                     .await?
             } else {
-                self.query_builder
-                    .build_sql(
-                        connection,
-                        "",
-                        query.table_name.schema_name(),
-                        query.table_name.table_name(),
-                        query.schema,
-                        query.constraints,
-                        query.split,
-                    )
-                    .await?
+                query_string_builder::build_sql(&self.query_builder, connection, query).await?
             };
             prepared_statement.set_fetch_size(FETCH_SIZE)?;
             Ok(prepared_statement)

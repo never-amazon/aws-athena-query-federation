@@ -8,7 +8,7 @@ const PAGE_SIZE_FIELD: &str = "pageSize";
 const NEXT_TOKEN_FIELD: &str = "nextToken";
 
 pub fn do_typed_serialize(request: &ListTablesRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    super::metadata_request_serde::serialize_header(request, jgen)?;
+    super::metadata_request_serde::serialize_header(request.header(), jgen)?;
     jgen.write_string_field(SCHEMA_NAME_FIELD, request.schema_name())?;
     jgen.write_string_field(NEXT_TOKEN_FIELD, request.next_token())?;
     jgen.write_number_field_i32(PAGE_SIZE_FIELD, request.page_size())

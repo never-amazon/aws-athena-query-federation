@@ -16,12 +16,11 @@ use athena_federation_sdk::{AthenaClient, FederationError};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use athena_jdbc::manager::JdbcUtil;
+use athena_jdbc::manager::jdbc_util;
 use athena_jdbc::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
 use athena_postgresql::{
-    default_query_builder, PostGreSqlConstants, PostGreSqlMetadataDialect,
-    PostGreSqlMetadataHandler, PostGreSqlMuxMetadataHandler, PostGreSqlMuxRecordHandler,
-    PostGreSqlRecordDialect, PostGreSqlRecordHandler,
+    constants, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler, PostGreSqlMuxMetadataHandler,
+    PostGreSqlMuxRecordHandler, PostGreSqlRecordDialect, PostGreSqlRecordHandler,
 };
 use aws_credential_types::Credentials;
 use aws_sdk_kms::types::DataKeySpec;
@@ -275,7 +274,6 @@ fn record_handler(
         context,
         db_config.clone(),
         factory,
-        default_query_builder(),
     ))
 }
 
@@ -283,8 +281,7 @@ fn single_handler(
     clients: &AwsClients,
     config: &HashMap<String, String>,
 ) -> athena_federation_sdk::Result<CompositeHandler> {
-    let db_config =
-        JdbcUtil::get_single_database_config_from_env(PostGreSqlConstants::POSTGRES_NAME, config)?;
+    let db_config = jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, config)?;
     let metadata = metadata_handler(clients, &db_config, config)?;
     let record = record_handler(clients, &db_config, config)?;
     Ok(CompositeHandler::new(
@@ -302,7 +299,7 @@ fn mux_handler(
         .get("AWS_LAMBDA_FUNCTION_NAME")
         .map_or("null", String::as_str);
     let configs = DatabaseConnectionConfigBuilder::new()
-        .engine(PostGreSqlConstants::POSTGRES_NAME)
+        .engine(constants::POSTGRES_NAME)
         .properties(config.clone())
         .build()?;
     let mut metadata_map: IndexMap<String, Arc<PostGreSqlMetadataHandler>> = IndexMap::new();

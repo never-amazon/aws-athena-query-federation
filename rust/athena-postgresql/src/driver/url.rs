@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use athena_jdbc::sql::SqlException;
 
+use super::codec::hex_digit;
 use super::error::{psql, CONNECTION_UNABLE_TO_CONNECT, INVALID_PARAMETER_VALUE};
 
 const URL_PREFIX: &str = "jdbc:postgresql:";
@@ -216,15 +217,6 @@ fn bad_url() -> SqlException {
     )
 }
 
-fn hex_value(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
 pub(crate) fn url_decode(text: &str) -> Result<String, SqlException> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -235,8 +227,8 @@ pub(crate) fn url_decode(text: &str) -> Result<String, SqlException> {
             b'%' => {
                 let decoded = bytes
                     .get(i + 1)
-                    .and_then(|h| hex_value(*h))
-                    .zip(bytes.get(i + 2).and_then(|l| hex_value(*l)))
+                    .and_then(|h| hex_digit(*h))
+                    .zip(bytes.get(i + 2).and_then(|l| hex_digit(*l)))
                     .ok_or_else(|| {
                         psql(
                             format!("Unable to decode URL entry via UTF-8: {text}"),

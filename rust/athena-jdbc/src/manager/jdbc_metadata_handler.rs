@@ -23,11 +23,11 @@ use athena_federation_sdk::util::{manual_pagination, UNLIMITED_PAGE_SIZE_VALUE};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use indexmap::IndexMap;
 
-use super::jdbc_arrow_type_converter::JdbcArrowTypeConverter;
+use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};
-use super::jdbc_util::JdbcUtil;
+use super::jdbc_util;
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
-use crate::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
+use crate::resolver::JdbcCaseResolver;
 use crate::sql::{DatabaseMetaData, JdbcConnection, ResultSet, ResultSetMetaData};
 use crate::validate::close_after;
 
@@ -103,7 +103,7 @@ pub trait MetadataDialect: Send + Sync + Sized + 'static {
     ) -> Result<Option<ArrowType>> {
         let scale = metadata.scale(column_index)?;
         let column_type = metadata.column_type(column_index)?;
-        JdbcArrowTypeConverter::to_arrow_type(column_type, precision, scale, config_options)
+        jdbc_to_arrow_type(column_type, precision, scale, config_options)
     }
 
     fn array_element_type(
@@ -149,7 +149,7 @@ pub trait MetadataDialect: Send + Sync + Sized + 'static {
 pub struct JdbcMetadataHandler<D> {
     context: MetadataContext,
     connection: ConnectionSource,
-    case_resolver: Arc<dyn JdbcCaseResolver>,
+    case_resolver: JdbcCaseResolver,
     dialect: D,
 }
 
@@ -157,7 +157,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
     pub fn new(
         context: MetadataContext,
         connection: ConnectionSource,
-        case_resolver: Arc<dyn JdbcCaseResolver>,
+        case_resolver: JdbcCaseResolver,
         dialect: D,
     ) -> JdbcMetadataHandler<D> {
         JdbcMetadataHandler {
@@ -176,8 +176,8 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
         &self.connection
     }
 
-    pub fn case_resolver(&self) -> &dyn JdbcCaseResolver {
-        self.case_resolver.as_ref()
+    pub fn case_resolver(&self) -> &JdbcCaseResolver {
+        &self.case_resolver
     }
 
     pub fn config_options(&self) -> &HashMap<String, String> {
@@ -316,7 +316,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
             .await?;
         let mut list = Vec::new();
         while result_set.next().await? {
-            list.push(JdbcUtil::get_schema_table_name(&result_set)?);
+            list.push(jdbc_util::schema_table_name(&result_set)?);
         }
         Ok(list)
     }
@@ -334,7 +334,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
             columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
         let mut found = false;
         while result_set.next().await? {
-            let column_type = JdbcArrowTypeConverter::to_arrow_type(
+            let column_type = jdbc_to_arrow_type(
                 result_set.get_int("DATA_TYPE")?.unwrap_or(0),
                 result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
                 result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),

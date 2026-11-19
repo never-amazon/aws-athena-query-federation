@@ -19,7 +19,7 @@ pub fn do_typed_serialize(
     jgen: &mut JsonGenerator,
     version: SerdeVersion,
 ) -> Result<()> {
-    super::metadata_request_serde::serialize_header(request, jgen)?;
+    super::metadata_request_serde::serialize_header(request.header(), jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
     super::table_name_serde::serialize(request.table_name(), jgen)?;
     jgen.write_field_name(CONSTRAINTS_FIELD)?;

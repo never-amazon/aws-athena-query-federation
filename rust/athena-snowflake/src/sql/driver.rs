@@ -15,7 +15,7 @@ use super::connection::{positive_seconds, SnowflakeConnection};
 use super::executor::{
     from_connector_error, snowflake_exception, ConnectorExecutor, TimestampTypeMapping,
 };
-use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_constants;
 use crate::utils::SnowflakePrivateKey;
 
 const URL_PREFIX: &str = "jdbc:snowflake://";
@@ -296,7 +296,7 @@ impl SnowflakeJdbcDriver {
 #[async_trait]
 impl JdbcDriver for SnowflakeJdbcDriver {
     fn driver_class_name(&self) -> &str {
-        SnowflakeConstants::SNOWFLAKE_DRIVER_CLASS
+        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
     }
 
     async fn connect(

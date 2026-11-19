@@ -22,7 +22,7 @@ use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
-    ListTablesResponse, MetadataRequest,
+    ListTablesResponse, MetadataHeader,
 };
 use crate::request::{FederationRequest, FederationResponse};
 use crate::security::{
@@ -195,8 +195,8 @@ impl MetadataContext {
         }
     }
 
-    pub fn make_spill_location(&self, request: &dyn MetadataRequest) -> Result<SpillLocation> {
-        let identity_options = require_identity(request.identity())?.config_options();
+    pub fn make_spill_location(&self, request: MetadataHeader<'_>) -> Result<SpillLocation> {
+        let identity_options = require_identity(request.identity)?.config_options();
         let config_options: HashMap<String, String> = if identity_options.is_empty() {
             tracing::warn!("configOptions is empty from federation. Use default configOptions.");
             self.config_options().clone()
@@ -216,7 +216,7 @@ impl MetadataContext {
         } else {
             config_options.get(SPILL_BUCKET_ENV).cloned()
         };
-        let request_query_id = request.query_id().ok_or_else(|| {
+        let request_query_id = request.query_id.ok_or_else(|| {
             FederationError::null_pointer(
                 "Cannot invoke \"java.lang.CharSequence.toString()\" because \"s\" is null",
             )
@@ -241,7 +241,7 @@ impl MetadataContext {
     }
 
     pub async fn split_builder(&self, request: &GetSplitsRequest) -> Result<SplitBuilder> {
-        let spill_location = self.make_spill_location(request)?;
+        let spill_location = self.make_spill_location(request.header())?;
         let override_config = self
             .handler
             .identity_override_config(request.identity())

@@ -5,13 +5,10 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{ArrowType, Block, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{AwsClients, MetadataContext, MetadataHandler};
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype,
-};
+use athena_federation_sdk::metadata::optimizations::pushdown::HintsSubtype;
 use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
@@ -25,16 +22,16 @@ use athena_jdbc::connection::{
     JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::manager::{
-    ConnectionSource, JdbcMetadataHandler, JdbcUtil, MetadataDialect, PreparedStatementBuilder,
-    TABLES_AND_VIEWS,
+    complex_expression_capability, filter_capability, jdbc_util, ConnectionSource,
+    JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
-use athena_jdbc::splits::SplitterFactory;
+use athena_jdbc::splits::splitter;
 use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
 use indexmap::IndexMap;
 
-use crate::constants::PostGreSqlConstants;
+use crate::constants;
 use crate::driver::PgDriver;
-use crate::resolver::PostGreSqlJdbcCaseResolver;
+use crate::resolver::postgresql_case_resolver;
 
 const MATERIALIZED_VIEWS: &str = "Materialized Views";
 const PARTITION_SCHEMA_NAME: &str = "child_schema";
@@ -109,8 +106,8 @@ impl PostGreSqlMetadataDialect {
             config.clone(),
             Some(jdbc_properties()),
             DatabaseConnectionInfo::new(
-                PostGreSqlConstants::POSTGRESQL_DRIVER_CLASS,
-                PostGreSqlConstants::POSTGRESQL_DEFAULT_PORT,
+                constants::POSTGRESQL_DRIVER_CLASS,
+                constants::POSTGRESQL_DEFAULT_PORT,
             )?,
             Some(config_options),
             Arc::new(PgDriver),
@@ -130,9 +127,7 @@ impl PostGreSqlMetadataDialect {
                 config,
                 factory: connection_factory,
             },
-            Arc::new(PostGreSqlJdbcCaseResolver::new(
-                PostGreSqlConstants::POSTGRES_NAME,
-            )),
+            postgresql_case_resolver(constants::POSTGRES_NAME),
             PostGreSqlMetadataDialect,
         )
     }
@@ -156,10 +151,8 @@ impl PostGreSqlMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlMetadataHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
-            PostGreSqlConstants::POSTGRES_NAME,
-            &config_options,
-        )?;
+        let config =
+            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlMetadataDialect::from_config(clients, config, config_options)
     }
 }
@@ -210,7 +203,7 @@ async fn get_materialized_views(
         database_name,
         statement.sql()
     );
-    JdbcUtil::get_table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
+    jdbc_util::table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
 }
 
 async fn get_paginated_results(
@@ -232,7 +225,7 @@ async fn get_paginated_results(
         database_name,
         statement.sql()
     );
-    JdbcUtil::get_table_metadata(connection, &statement, TABLES_AND_VIEWS).await
+    jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
 }
 
 async fn is_uuid_column(
@@ -321,11 +314,7 @@ async fn split_clauses_from(
     min_max.next().await?;
     let min = min_max.get_long(1usize)?.unwrap_or(0);
     let max = min_max.get_long(2usize)?.unwrap_or(0);
-    let splitter = SplitterFactory::new().get_splitter(
-        &quoted_primary_key_column,
-        &min_max,
-        DEFAULT_NUM_SPLITS,
-    )?;
+    let splitter = splitter(&quoted_primary_key_column, &min_max, DEFAULT_NUM_SPLITS)?;
     if let Some(mut splitter) = splitter {
         if max - min < i64::from(DEFAULT_NUM_SPLITS) {
             tracing::info!(
@@ -385,22 +374,9 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = Capability::Filter(vec![
-        FilterPushdownSubType::SortedRangeSet,
-        FilterPushdownSubType::NullableComparison,
-    ])
-    .into_entry();
+    let (name, sub_types) = filter_capability().into_entry();
     capabilities.insert(name, sub_types);
-    let function_names: Vec<String> = StandardFunctions::values()
-        .iter()
-        .map(|f| f.function_name().function_name().to_string())
-        .collect();
-    let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = Capability::ComplexExpression(vec![
-        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-            .with_sub_type_properties(&function_names)?,
-    ])
-    .into_entry();
+    let (name, sub_types) = complex_expression_capability()?.into_entry();
     capabilities.insert(name, sub_types);
     athena_jdbc::qpt::JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
@@ -615,7 +591,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
         connection: &dyn JdbcConnection,
         database_name: &str,
     ) -> Result<Vec<TableName>> {
-        let mut list = JdbcUtil::get_tables(connection, database_name).await?;
+        let mut list = jdbc_util::tables(connection, database_name).await?;
         list.extend(get_materialized_views(connection, database_name).await?);
         Ok(list)
     }

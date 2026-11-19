@@ -4,23 +4,21 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use arrow::datatypes::{DataType, Field, FieldRef, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use indexmap::IndexMap;
 
-use athena_federation_sdk::data::{ArrowType, BlockAllocatorImpl};
-use athena_federation_sdk::domain::predicate::functions::FunctionName;
+use athena_federation_sdk::data::BlockAllocatorImpl;
 use athena_federation_sdk::domain::predicate::{
     Constraints, Direction, Marker, OrderByField, QueryPlan, Range, SortedRangeSet, ValueSet,
     DEFAULT_NO_LIMIT,
 };
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::Result;
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{
-    FederationExpressionParser, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase, TypeAndValue,
-};
+use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 
 use jdbc_support::FakeConnection;
@@ -51,75 +49,63 @@ const SUCCESS_PLANS: [&str; 12] = [
 ];
 
 #[derive(Default)]
-struct FakeExpressionParser {
+struct FakeExpressions {
     expressions: Mutex<Vec<String>>,
     calls: AtomicUsize,
 }
 
-impl FederationExpressionParser for FakeExpressionParser {
-    fn map_function_to_data_source_syntax(
-        &self,
-        _function_name: &FunctionName,
-        _arrow_type: &ArrowType,
-        _arguments: &[String],
-    ) -> Result<String> {
-        Ok(String::new())
-    }
-
-    fn parse_complex_expressions(
-        &self,
-        _columns: &[FieldRef],
-        _constraints: &Constraints,
-        _accumulator: &mut Vec<TypeAndValue>,
-    ) -> Result<Vec<String>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.expressions.lock().unwrap().clone())
-    }
+struct TestDialect {
+    expressions: Arc<FakeExpressions>,
 }
 
-struct TestBuilder {
-    base: JdbcSplitQueryBuilderBase,
-}
-
-impl JdbcSplitQueryBuilder for TestBuilder {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-        &self.base
-    }
-
-    fn get_from_clause_with_split(
+impl SplitDialect for TestDialect {
+    fn table_clause(
         &self,
-        _catalog: &str,
-        schema: &str,
-        table: &str,
+        _builder: &SplitQueryBuilder<Self>,
+        table: &TableName,
         _split: &Split,
     ) -> String {
-        format!(" FROM \"{schema}\".\"{table}\"")
+        format!(
+            " FROM \"{}\".\"{}\"",
+            table.schema_name(),
+            table.table_name()
+        )
     }
 
-    fn get_partition_where_clauses(&self, _split: &Split) -> Vec<String> {
+    fn partition_where_clauses(&self, _split: &Split) -> Vec<String> {
         vec![format!(
             "\"{TEST_PARTITION_COL}\" = '{TEST_PARTITION_VALUE}'"
         )]
+    }
+
+    fn complex_expressions(
+        &self,
+        _builder: &SplitQueryBuilder<Self>,
+        _constraints: &Constraints,
+        _accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<Vec<String>> {
+        self.expressions.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self.expressions.expressions.lock().unwrap().clone())
     }
 }
 
 struct Fixture {
     allocator: BlockAllocatorImpl,
-    parser: Arc<FakeExpressionParser>,
-    builder: TestBuilder,
+    parser: Arc<FakeExpressions>,
+    builder: SplitQueryBuilder<TestDialect>,
     connection: FakeConnection,
     split: Split,
 }
 
 impl Fixture {
     fn new() -> Fixture {
-        let parser = Arc::new(FakeExpressionParser::default());
-        let builder = TestBuilder {
-            base: JdbcSplitQueryBuilderBase::new_with_federation_expression_parser(
-                QUOTE_CHAR,
-                parser.clone(),
-            ),
-        };
+        let parser = Arc::new(FakeExpressions::default());
+        let builder = SplitQueryBuilder::new(
+            QUOTE_CHAR,
+            TestDialect {
+                expressions: Arc::clone(&parser),
+            },
+        );
         Fixture {
             allocator: BlockAllocatorImpl::new(),
             parser,
@@ -135,15 +121,17 @@ impl Fixture {
     }
 
     async fn build(&self, schema: &Schema, constraints: &Constraints) -> Result<PreparedStatement> {
+        let table_name = TableName::new(TEST_SCHEMA, TEST_TABLE);
         self.builder
             .build_sql(
                 &self.connection,
-                TEST_CATALOG,
-                TEST_SCHEMA,
-                TEST_TABLE,
-                schema,
-                constraints,
-                &self.split,
+                &SplitQuery {
+                    catalog_name: TEST_CATALOG,
+                    table_name: &table_name,
+                    schema,
+                    constraints,
+                    split: &self.split,
+                },
             )
             .await
     }
@@ -437,21 +425,24 @@ fn test_quote_method_with_special_characters() {
     );
 }
 
-#[test]
-fn test_append_limit_offset_with_split() {
+#[tokio::test]
+async fn test_append_limit_offset_with_split() {
     let f = Fixture::new();
-    assert_eq!(f.builder.append_limit_offset(&f.split), "");
+    let constraints = constraints_with(IndexMap::new(), Vec::new(), DEFAULT_NO_LIMIT);
+    f.build(&int_schema(&[TEST_COL1]), &constraints)
+        .await
+        .unwrap();
+    assert!(!f.prepared().contains("LIMIT"), "{}", f.prepared());
 }
 
-#[test]
-fn test_append_limit_offset_with_constraints() {
+#[tokio::test]
+async fn test_append_limit_offset_with_constraints() {
     let f = Fixture::new();
     let constraints = constraints_with(IndexMap::new(), Vec::new(), 100);
-    assert_eq!(
-        f.builder
-            .append_limit_offset_with_constraints(&f.split, &constraints),
-        " LIMIT 100"
-    );
+    f.build(&int_schema(&[TEST_COL1]), &constraints)
+        .await
+        .unwrap();
+    assert!(f.prepared().ends_with(" LIMIT 100"), "{}", f.prepared());
 }
 
 #[test]
@@ -697,14 +688,17 @@ async fn test_build_sql_with_empty_column_names() {
 #[test]
 fn test_get_sql_dialect() {
     let f = Fixture::new();
-    assert_eq!(f.builder.get_sql_dialect(), SqlDialect::ansi());
+    assert_eq!(f.builder.dialect().sql_dialect(None), SqlDialect::ansi());
 }
 
 #[test]
 fn test_constructor_without_expression_parser() {
-    let builder = TestBuilder {
-        base: JdbcSplitQueryBuilderBase::new(QUOTE_CHAR),
-    };
+    let builder = SplitQueryBuilder::new(
+        QUOTE_CHAR,
+        TestDialect {
+            expressions: Arc::default(),
+        },
+    );
     assert_eq!(builder.quote("test"), "\"test\"");
 }
 

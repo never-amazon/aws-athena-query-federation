@@ -5,8 +5,7 @@ use athena_federation_sdk::domain::predicate::expression::{
 };
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::FederationError;
-use athena_jdbc::manager::{FederationExpressionParser, JdbcFederationExpressionParser};
-use athena_snowflake::SnowflakeFederationExpressionParser;
+use athena_jdbc::manager::ExpressionParser;
 
 const QUOTE_CHAR_DOUBLE: &str = "\"";
 const QUOTE_CHAR_BACKTICK: &str = "`";
@@ -32,11 +31,11 @@ const EXPECTED_NUMBERS: &str = "1, 2, 3";
 const EXPECTED_EMPTY_STRINGS: &str = ", arg2, ";
 const EXPECTED_WHITESPACE: &str = " arg1 ,  arg2 ,  arg3 ";
 
-fn parser() -> SnowflakeFederationExpressionParser {
-    SnowflakeFederationExpressionParser::new(QUOTE_CHAR_DOUBLE)
+fn parser() -> ExpressionParser {
+    ExpressionParser::new(QUOTE_CHAR_DOUBLE)
 }
 
-fn parse_variable(parser: &SnowflakeFederationExpressionParser, column: &str) -> String {
+fn parse_variable(parser: &ExpressionParser, column: &str) -> String {
     let expression = VariableExpression::new(column, DataType::Utf8).unwrap();
     parser.parse_variable_expression(&expression)
 }
@@ -45,15 +44,13 @@ fn strings(arguments: &[&str]) -> Vec<String> {
     arguments.iter().map(ToString::to_string).collect()
 }
 
-fn write_clause(arrow_type: &DataType, arguments: &[&str]) -> String {
-    parser()
-        .write_array_constructor_clause(arrow_type, &strings(arguments))
-        .unwrap()
+fn write_clause(_arrow_type: &DataType, arguments: &[&str]) -> String {
+    parser().write_array_constructor_clause(&strings(arguments))
 }
 
 #[test]
 fn constructor_with_double_quote_char_wraps_column_names_correctly() {
-    let parser = SnowflakeFederationExpressionParser::new(QUOTE_CHAR_DOUBLE);
+    let parser = ExpressionParser::new(QUOTE_CHAR_DOUBLE);
     assert_eq!(parse_variable(&parser, "testColumn"), "\"testColumn\"");
     assert_eq!(parse_variable(&parser, "column_name"), "\"column_name\"");
     assert_eq!(parse_variable(&parser, "MyColumn"), "\"MyColumn\"");
@@ -66,14 +63,14 @@ fn parse_variable_expression_with_double_quote_char_wraps_column_names_correctly
 
 #[test]
 fn constructor_with_backtick_quote_char_wraps_column_names_correctly() {
-    let parser = SnowflakeFederationExpressionParser::new(QUOTE_CHAR_BACKTICK);
+    let parser = ExpressionParser::new(QUOTE_CHAR_BACKTICK);
     assert_eq!(parse_variable(&parser, "testColumn"), "`testColumn`");
     assert_eq!(parse_variable(&parser, "column_name"), "`column_name`");
 }
 
 #[test]
 fn constructor_with_single_quote_char_wraps_column_names_correctly() {
-    let parser = SnowflakeFederationExpressionParser::new("'");
+    let parser = ExpressionParser::new("'");
     assert_eq!(parse_variable(&parser, "testColumn"), "'testColumn'");
     assert_eq!(parse_variable(&parser, "MyColumn"), "'MyColumn'");
 }

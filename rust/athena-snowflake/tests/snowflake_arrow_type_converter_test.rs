@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use arrow::datatypes::DataType;
 
 use athena_jdbc::sql::Types;
-use athena_snowflake::utils::SnowflakeArrowTypeConverter;
+use athena_snowflake::utils;
 
 fn convert(
     jdbc_type: i32,
@@ -11,7 +11,7 @@ fn convert(
     scale: i32,
     config: &HashMap<String, String>,
 ) -> DataType {
-    SnowflakeArrowTypeConverter::to_arrow_type(jdbc_type, precision, scale, config)
+    utils::to_arrow_type(jdbc_type, precision, scale, config)
         .unwrap()
         .unwrap()
 }
@@ -77,6 +77,6 @@ fn test_to_arrow_type_array_type() {
 
 #[test]
 fn test_to_arrow_type_with_null_config_options() {
-    let result = SnowflakeArrowTypeConverter::to_arrow_type(Types::INTEGER, 10, 0, &HashMap::new());
+    let result = utils::to_arrow_type(Types::INTEGER, 10, 0, &HashMap::new());
     assert_eq!(result.unwrap(), Some(DataType::Int32));
 }

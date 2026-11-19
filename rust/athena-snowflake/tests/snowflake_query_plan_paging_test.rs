@@ -1,7 +1,6 @@
 mod snowflake_support;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
@@ -11,11 +10,10 @@ use rusqlite::Connection;
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
-use athena_jdbc::manager::JdbcSplitQueryBuilder;
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::SqlValue;
-use athena_snowflake::{
-    SnowflakeConstants, SnowflakeFederationExpressionParser, SnowflakeQueryStringBuilder,
-};
+use athena_snowflake::{query_string_builder, snowflake_constants, SnowflakeQueryStringBuilder};
 
 use snowflake_support::FakeConnection;
 
@@ -49,10 +47,7 @@ const PLANS: [(&str, &str); 5] = [
 ];
 
 fn query_builder() -> SnowflakeQueryStringBuilder {
-    SnowflakeQueryStringBuilder::new(
-        "\"",
-        Arc::new(SnowflakeFederationExpressionParser::new("\"")),
-    )
+    query_string_builder()
 }
 
 fn schema() -> Schema {
@@ -89,7 +84,7 @@ fn unpaged_split() -> Split {
 fn paged_split(page_size: usize, offset: usize) -> Split {
     Split::new_builder(Some(spill_location()), None)
         .add(
-            SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME,
+            snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
             format!("partition-primary-\"id\"-limit-{page_size}-offset-{offset}"),
         )
         .build()
@@ -119,12 +114,13 @@ async fn build_sql(plan: &str, split: &Split) -> (String, Vec<SqlValue>) {
     let statement = query_builder()
         .build_sql(
             &connection,
-            "test_catalog",
-            "test_schema",
-            "test_table",
-            &schema(),
-            &constraints(plan),
-            split,
+            &SplitQuery {
+                catalog_name: "test_catalog",
+                table_name: &TableName::new("test_schema", "test_table"),
+                schema: &schema(),
+                constraints: &constraints(plan),
+                split,
+            },
         )
         .await
         .unwrap();
@@ -230,12 +226,13 @@ async fn test_paged_split_rejects_query_plan_without_table() {
     let error = query_builder()
         .build_sql(
             &connection,
-            "test_catalog",
-            "test_schema",
-            "test_table",
-            &schema(),
-            &constraints(plan),
-            &paged_split(2, 0),
+            &SplitQuery {
+                catalog_name: "test_catalog",
+                table_name: &TableName::new("test_schema", "test_table"),
+                schema: &schema(),
+                constraints: &constraints(plan),
+                split: &paged_split(2, 0),
+            },
         )
         .await
         .unwrap_err();

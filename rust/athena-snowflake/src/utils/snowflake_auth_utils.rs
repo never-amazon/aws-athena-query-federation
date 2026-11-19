@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 use super::ber;
 use super::pbe::{PbeScheme, PrivateKeyError};
 use super::pbes2::{self, PBES2_OID};
-use crate::snowflake_constants::{is_blank, java_trim, SnowflakeConstants};
+use crate::snowflake_constants::{self, is_blank, java_trim};
 use crate::utils::SnowflakeAuthType;
 
 const PEM_LINE_LENGTH: usize = 64;
@@ -66,10 +66,10 @@ impl SnowflakeAuthUtils {
                 "Credentials cannot be null or empty",
             ));
         }
-        let auth_type = if !is_blank(value(credentials, SnowflakeConstants::PEM_PRIVATE_KEY)) {
+        let auth_type = if !is_blank(value(credentials, snowflake_constants::PEM_PRIVATE_KEY)) {
             tracing::debug!("Key-pair authentication detected");
             SnowflakeAuthType::SnowflakeJwt
-        } else if !is_blank(value(credentials, SnowflakeConstants::AUTH_CODE)) {
+        } else if !is_blank(value(credentials, snowflake_constants::AUTH_CODE)) {
             tracing::debug!("OAuth authentication detected");
             SnowflakeAuthType::Oauth
         } else {
@@ -97,9 +97,9 @@ impl SnowflakeAuthUtils {
 
     pub fn username(credentials: &HashMap<String, String>) -> Result<String> {
         [
-            SnowflakeConstants::SF_USER,
-            SnowflakeConstants::USERNAME,
-            SnowflakeConstants::USERNAME_UPPERCASE,
+            snowflake_constants::SF_USER,
+            snowflake_constants::USERNAME,
+            snowflake_constants::USERNAME_UPPERCASE,
         ]
         .iter()
         .filter_map(|key| value(credentials, key))
@@ -112,8 +112,8 @@ impl SnowflakeAuthUtils {
 
     pub fn password(credentials: &HashMap<String, String>) -> Result<String> {
         [
-            SnowflakeConstants::PASSWORD,
-            SnowflakeConstants::PASSWORD_UPPERCASE,
+            snowflake_constants::PASSWORD,
+            snowflake_constants::PASSWORD_UPPERCASE,
         ]
         .iter()
         .filter_map(|key| value(credentials, key))
@@ -136,14 +136,14 @@ impl SnowflakeAuthUtils {
         Self::username(credentials)?;
         match auth_type {
             SnowflakeAuthType::SnowflakeJwt => {
-                if is_blank(value(credentials, SnowflakeConstants::PEM_PRIVATE_KEY)) {
+                if is_blank(value(credentials, snowflake_constants::PEM_PRIVATE_KEY)) {
                     return Err(FederationError::illegal_argument(
                         "pem_private_key is required for key-pair authentication",
                     ));
                 }
             }
             SnowflakeAuthType::Oauth => {
-                if is_blank(value(credentials, SnowflakeConstants::AUTH_CODE)) {
+                if is_blank(value(credentials, snowflake_constants::AUTH_CODE)) {
                     return Err(FederationError::illegal_argument(
                         "Auth code is required for OAuth authentication",
                     ));

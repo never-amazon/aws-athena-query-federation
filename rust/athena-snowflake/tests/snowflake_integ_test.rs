@@ -1,5 +1,6 @@
 mod snowflake_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -20,15 +21,15 @@ use athena_jdbc::connection::{
 };
 use athena_jdbc::sql::{JdbcConnection, RowSource, SqlException, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
-use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
+use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::sql::{
     SnowflakeColumn, SnowflakeColumnType, SnowflakeConnection, SnowflakeDriver, SnowflakeExecutor,
     SnowflakeQueryResult,
 };
 use athena_snowflake::utils::SnowflakePrivateKey;
 use athena_snowflake::{
-    default_query_builder, S3ParquetExportReader, SnowflakeConstants, SnowflakeMetadataDialect,
-    SnowflakeMetadataHandler, SnowflakeRecordDialect, SnowflakeRecordHandler,
+    snowflake_constants, S3ParquetExportReader, SnowflakeMetadataDialect, SnowflakeMetadataHandler,
+    SnowflakeRecordDialect, SnowflakeRecordHandler,
 };
 use indexmap::IndexMap;
 use snowflake_support::Fakes;
@@ -212,7 +213,7 @@ impl FakeSnowflake {
         if sql.starts_with("show /* JDBC:DatabaseMetaData.getColumns() */") {
             return self.show_columns(sql);
         }
-        if sql == SnowflakeConstants::VIEW_CHECK_QUERY {
+        if sql == snowflake_constants::VIEW_CHECK_QUERY {
             let view = self.table_named(binds.get(1)).is_some_and(|t| t.view);
             let rows = if view {
                 vec![vec![binds[0].clone(), binds[1].clone()]]
@@ -221,7 +222,7 @@ impl FakeSnowflake {
             };
             return result(text_columns(&["TABLE_SCHEMA", "TABLE_NAME"]), rows);
         }
-        if sql == SnowflakeConstants::COUNT_RECORDS_QUERY {
+        if sql == snowflake_constants::COUNT_RECORDS_QUERY {
             let count = self.table_named(binds.get(1)).map_or(0, |t| t.row_count);
             return result(
                 vec![SnowflakeColumn::new(
@@ -235,7 +236,7 @@ impl FakeSnowflake {
                 vec![vec![SqlValue::BigInt(count)]],
             );
         }
-        if sql.starts_with(SnowflakeConstants::SHOW_PRIMARY_KEYS_QUERY) {
+        if sql.starts_with(snowflake_constants::SHOW_PRIMARY_KEYS_QUERY) {
             let rows = self
                 .table_in(sql)
                 .and_then(|t| t.primary_key)
@@ -301,7 +302,7 @@ struct FakeDriver {
 #[async_trait]
 impl JdbcDriver for FakeDriver {
     fn driver_class_name(&self) -> &str {
-        SnowflakeConstants::SNOWFLAKE_DRIVER_CLASS
+        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
     }
 
     async fn connect(
@@ -340,7 +341,7 @@ fn lambda() -> Lambda {
     let fakes = Fakes::new();
     let config = DatabaseConnectionConfig::new(
         "snowflake",
-        SnowflakeConstants::SNOWFLAKE_NAME,
+        snowflake_constants::SNOWFLAKE_NAME,
         "snowflake://jdbc:snowflake://account.snowflakecomputing.com/?warehouse=WH&db=TESTDB&schema=CMRN&user=athena&password=secret",
     )
     .unwrap();
@@ -351,10 +352,10 @@ fn lambda() -> Lambda {
     let factory = Arc::new(
         SnowflakeConnectionFactory::new_with_driver(
             config.clone(),
-            Some(SnowflakeConstants::jdbc_properties()),
+            Some(snowflake_constants::jdbc_properties()),
             DatabaseConnectionInfo::new(
-                SnowflakeConstants::SNOWFLAKE_DRIVER_CLASS,
-                SnowflakeConstants::SNOWFLAKE_DEFAULT_PORT,
+                snowflake_constants::SNOWFLAKE_DRIVER_CLASS,
+                snowflake_constants::SNOWFLAKE_DEFAULT_PORT,
             )
             .unwrap(),
             Some(&options),
@@ -372,21 +373,16 @@ fn lambda() -> Lambda {
         metadata_context,
         config.clone(),
         factory.clone(),
-        Arc::new(SnowflakeJdbcCaseResolver::new(
-            SnowflakeConstants::SNOWFLAKE_NAME,
-        )),
+        snowflake_case_resolver(
+            snowflake_constants::SNOWFLAKE_NAME,
+            FederationSdkCasingMode::None,
+        ),
         None,
     );
     let record_clients = fakes.clients();
     let export_reader = Arc::new(S3ParquetExportReader::new(Arc::clone(&record_clients.s3)));
     let record_context = HandlerContext::new(config.engine(), record_clients, options).unwrap();
-    let record = SnowflakeRecordDialect::handler(
-        record_context,
-        config,
-        factory,
-        default_query_builder(),
-        export_reader,
-    );
+    let record = SnowflakeRecordDialect::handler(record_context, config, factory, export_reader);
     Lambda {
         database,
         metadata,
@@ -885,7 +881,7 @@ async fn fetch_data_select_integ_view_test() {
         .database
         .queries()
         .iter()
-        .any(|(sql, _)| sql == SnowflakeConstants::COUNT_RECORDS_QUERY));
+        .any(|(sql, _)| sql == snowflake_constants::COUNT_RECORDS_QUERY));
 }
 
 #[tokio::test]

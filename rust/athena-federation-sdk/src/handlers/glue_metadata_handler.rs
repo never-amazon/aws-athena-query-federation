@@ -23,7 +23,7 @@ use crate::exceptions::{
 use crate::metadata::glue::{self, GlueClient};
 use crate::metadata::{
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
-    ListTablesResponse, MetadataRequest, UNLIMITED_PAGE_SIZE_VALUE,
+    ListTablesResponse, MetadataHeader, UNLIMITED_PAGE_SIZE_VALUE,
 };
 use crate::serde::java_hash::{java_hash_order_default, java_hash_set_order_by_hash};
 
@@ -96,7 +96,7 @@ fn function_owner(function_arn: Option<&str>) -> Option<String> {
 pub trait GlueMetadataHandler: MetadataHandler {
     fn aws_glue(&self) -> Option<&Arc<dyn GlueClient>>;
 
-    fn get_catalog(&self, request: &dyn MetadataRequest) -> Result<Option<String>> {
+    fn get_catalog(&self, request: MetadataHeader<'_>) -> Result<Option<String>> {
         if let Some(catalog) = self
             .context()
             .config_options()
@@ -104,13 +104,13 @@ pub trait GlueMetadataHandler: MetadataHandler {
         {
             return Ok(Some(catalog.clone()));
         }
-        if let Some(context) = request.context() {
+        if let Some(context) = request.context {
             if let Some(owner) = function_owner(context.invoked_function_arn()) {
                 tracing::debug!("Function Owner: {}", owner);
                 return Ok(Some(owner));
             }
         }
-        let identity = request.identity().ok_or_else(|| {
+        let identity = request.identity.ok_or_else(|| {
             FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getAccount()\" because the return value of \"com.amazonaws.athena.connector.lambda.metadata.MetadataRequest.getIdentity()\" is null")
         })?;
         Ok(identity.account().map(str::to_string))
@@ -130,7 +130,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         let glue = self
             .aws_glue()
             .ok_or_else(|| glue_is_null("getDatabasesPaginator(...)"))?;
-        let catalog = self.get_catalog(request)?;
+        let catalog = self.get_catalog(request.header())?;
         let mut schemas = Vec::new();
         let mut next_token: Option<String> = None;
         loop {
@@ -184,7 +184,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         );
         loop {
             let mut builder = GetTablesInput::builder()
-                .set_catalog_id(self.get_catalog(request)?)
+                .set_catalog_id(self.get_catalog(request.header())?)
                 .set_database_name(request.schema_name().map(str::to_string))
                 .set_next_token(next_token.clone());
             if page_size != UNLIMITED_PAGE_SIZE_VALUE {
@@ -237,7 +237,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
             .aws_glue()
             .ok_or_else(|| glue_is_null("getTable(...)"))?;
         let input = GetTableInput::builder()
-            .set_catalog_id(self.get_catalog(request)?)
+            .set_catalog_id(self.get_catalog(request.header())?)
             .database_name(table_name.schema_name())
             .name(table_name.table_name())
             .build()

@@ -8,7 +8,7 @@ use athena_jdbc::{
     multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, RecordMultiplexer,
 };
 
-use crate::constants::PostGreSqlConstants;
+use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
 use crate::record_handler::PostGreSqlRecordDialect;
 
@@ -19,13 +19,12 @@ pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler
         std::env::vars().collect(),
         async move |multiplexed, config_options| {
             let handler: Arc<dyn MetadataHandler> = if multiplexed {
-                let context =
-                    MetadataContext::builder(PostGreSqlConstants::POSTGRES_NAME, clients.clone())
-                        .config_options(config_options.clone())
-                        .build()?;
+                let context = MetadataContext::builder(constants::POSTGRES_NAME, clients.clone())
+                    .config_options(config_options.clone())
+                    .build()?;
                 Arc::new(MultiplexingJdbcMetadataHandler::from_config(
                     context,
-                    PostGreSqlConstants::POSTGRES_NAME,
+                    constants::POSTGRES_NAME,
                     &config_options,
                     |config| {
                         Ok(Arc::new(PostGreSqlMetadataDialect::from_config(
@@ -46,13 +45,13 @@ pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler
         async move |multiplexed, config_options| {
             let handler: Arc<dyn RecordHandler> = if multiplexed {
                 let context = HandlerContext::new(
-                    PostGreSqlConstants::POSTGRES_NAME,
+                    constants::POSTGRES_NAME,
                     record_clients.clone(),
                     config_options.clone(),
                 )?;
                 Arc::new(RecordMultiplexer::handler_from_config(
                     context,
-                    PostGreSqlConstants::POSTGRES_NAME,
+                    constants::POSTGRES_NAME,
                     &config_options,
                     |config| {
                         Ok(Arc::new(PostGreSqlRecordDialect::from_config(

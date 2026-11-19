@@ -2,43 +2,28 @@ use super::MetadataRequestType;
 use crate::lambda::LambdaContext;
 use crate::request::FederatedIdentity;
 
-pub trait MetadataRequest {
-    fn identity(&self) -> Option<&FederatedIdentity>;
-
-    fn request_type(&self) -> MetadataRequestType;
-
-    fn catalog_name(&self) -> &str;
-
-    fn query_id(&self) -> Option<&str>;
-
-    fn context(&self) -> Option<&LambdaContext>;
+#[derive(Debug, Clone, Copy)]
+pub struct MetadataHeader<'a> {
+    pub identity: Option<&'a FederatedIdentity>,
+    pub request_type: MetadataRequestType,
+    pub catalog_name: &'a str,
+    pub query_id: Option<&'a str>,
+    pub context: Option<&'a LambdaContext>,
 }
 
 macro_rules! impl_metadata_request {
     ($t:ty, $kind:expr) => {
-        impl $crate::metadata::MetadataRequest for $t {
-            fn identity(&self) -> Option<&$crate::request::FederatedIdentity> {
-                self.identity.as_ref()
-            }
-
-            fn request_type(&self) -> $crate::metadata::MetadataRequestType {
-                $kind
-            }
-
-            fn catalog_name(&self) -> &str {
-                &self.catalog_name
-            }
-
-            fn query_id(&self) -> Option<&str> {
-                self.query_id.as_deref()
-            }
-
-            fn context(&self) -> Option<&$crate::lambda::LambdaContext> {
-                self.context.as_ref()
-            }
-        }
-
         impl $t {
+            pub fn header(&self) -> $crate::metadata::MetadataHeader<'_> {
+                $crate::metadata::MetadataHeader {
+                    identity: self.identity.as_ref(),
+                    request_type: $kind,
+                    catalog_name: &self.catalog_name,
+                    query_id: self.query_id.as_deref(),
+                    context: self.context.as_ref(),
+                }
+            }
+
             pub fn identity(&self) -> Option<&$crate::request::FederatedIdentity> {
                 self.identity.as_ref()
             }

@@ -1,14 +1,11 @@
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::ArrowType;
-use athena_jdbc::manager::JdbcFederationExpressionParser;
-use athena_postgresql::PostgreSqlFederationExpressionParser;
+use athena_jdbc::manager::ExpressionParser;
 
-fn write(arrow_type: &ArrowType, arguments: &[&str]) -> String {
-    let parser = PostgreSqlFederationExpressionParser::new("\"");
+fn write(_arrow_type: &ArrowType, arguments: &[&str]) -> String {
+    let parser = ExpressionParser::new("\"");
     let arguments: Vec<String> = arguments.iter().map(ToString::to_string).collect();
-    parser
-        .write_array_constructor_clause(arrow_type, &arguments)
-        .unwrap()
+    parser.write_array_constructor_clause(&arguments)
 }
 
 #[test]

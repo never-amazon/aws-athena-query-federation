@@ -6,7 +6,7 @@ pub fn do_typed_serialize(
     request: &GetDataSourceCapabilitiesRequest,
     jgen: &mut JsonGenerator,
 ) -> Result<()> {
-    crate::serde::v2::metadata_request_serde::serialize_header(request, jgen)
+    crate::serde::v2::metadata_request_serde::serialize_header(request.header(), jgen)
 }
 
 pub fn do_typed_deserialize(

@@ -20,8 +20,6 @@ use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
 };
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{read_records, HandlerContext, RecordHandler};
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
@@ -32,6 +30,7 @@ use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_federation_substrait::{plan, SqlDialect};
 
+use super::jdbc_split_query_builder::SplitQuery;
 use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
@@ -276,26 +275,6 @@ fn column_name_remapping(request: &ReadRecordsRequest) -> Result<HashMap<String,
         .into_iter()
         .filter_map(|(renamed, original)| original.map(|original| (original, renamed)))
         .collect())
-}
-
-pub struct SplitQuery<'a> {
-    pub catalog_name: &'a str,
-    pub table_name: &'a TableName,
-    pub schema: &'a Schema,
-    pub constraints: &'a Constraints,
-    pub split: &'a Split,
-}
-
-impl<'a> SplitQuery<'a> {
-    pub fn of(request: &'a ReadRecordsRequest) -> SplitQuery<'a> {
-        SplitQuery {
-            catalog_name: request.catalog_name(),
-            table_name: request.table_name(),
-            schema: request.schema(),
-            constraints: request.constraints(),
-            split: request.split(),
-        }
-    }
 }
 
 pub enum ConnectionSource {

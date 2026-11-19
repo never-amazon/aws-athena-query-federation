@@ -16,7 +16,7 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use crate::manager::{JdbcUtil, MetadataDelegate};
+use crate::manager::{jdbc_util, MetadataDelegate};
 
 const MAX_CATALOGS_TO_MULTIPLEX: usize = 100;
 
@@ -89,7 +89,7 @@ impl<H: MetadataHandler + MetadataDelegate + 'static> MultiplexingJdbcMetadataHa
         config_options: &HashMap<String, String>,
         make_delegate: impl Fn(&DatabaseConnectionConfig) -> Result<Arc<H>>,
     ) -> Result<MultiplexingJdbcMetadataHandler<H>> {
-        let delegates = JdbcUtil::handler_map(engine, config_options, make_delegate)?;
+        let delegates = jdbc_util::handler_map(engine, config_options, make_delegate)?;
         validate_handler_map(&delegates, "Could not find any delegatee.")?;
         Ok(MultiplexingJdbcMetadataHandler {
             context,

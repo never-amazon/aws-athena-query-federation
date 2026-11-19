@@ -1,69 +1,16 @@
 use arrow::datatypes::DataType;
-use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::domain::predicate::expression::VariableExpression;
 use athena_federation_sdk::domain::predicate::functions::FunctionName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::Result;
-use athena_jdbc::manager::{
-    FederationExpressionParser, JdbcFederationExpressionParser, JdbcFederationExpressionParserExt,
-};
+use athena_jdbc::manager::ExpressionParser;
 
-struct TestJdbcFederationExpressionParser {
-    quote_char: String,
+fn parser() -> ExpressionParser {
+    ExpressionParser::new("\"")
 }
 
-impl FederationExpressionParser for TestJdbcFederationExpressionParser {
-    fn map_function_to_data_source_syntax(
-        &self,
-        function_name: &FunctionName,
-        arrow_type: &ArrowType,
-        arguments: &[String],
-    ) -> Result<String> {
-        self.jdbc_map_function_to_data_source_syntax(function_name, arrow_type, arguments)
-    }
-
-    fn parse_variable_expression(&self, variable_expression: &VariableExpression) -> String {
-        self.jdbc_parse_variable_expression(variable_expression)
-    }
-}
-
-impl JdbcFederationExpressionParser for TestJdbcFederationExpressionParser {
-    fn quote_char(&self) -> &str {
-        &self.quote_char
-    }
-
-    fn write_array_constructor_clause(
-        &self,
-        _arrow_type: &ArrowType,
-        arguments: &[String],
-    ) -> Result<String> {
-        Ok(format!("ARRAY[{}]", arguments.join(",")))
-    }
-}
-
-fn parser() -> TestJdbcFederationExpressionParser {
-    TestJdbcFederationExpressionParser {
-        quote_char: "\"".to_string(),
-    }
-}
-
-fn arrow(kind: &str) -> ArrowType {
-    match kind {
-        "int" => DataType::Int32,
-        "utf8" => DataType::Utf8,
-        "double" => DataType::Float64,
-        "decimal" => DataType::Decimal128(10, 2),
-        _ => DataType::Null,
-    }
-}
-
-fn map(function_name: &str, kind: &str, arguments: &[String]) -> String {
+fn map(function_name: &str, _kind: &str, arguments: &[String]) -> String {
     parser()
-        .map_function_to_data_source_syntax(
-            &FunctionName::new(function_name),
-            &arrow(kind),
-            arguments,
-        )
+        .map_function_to_data_source_syntax(&FunctionName::new(function_name), arguments)
         .unwrap()
 }
 
@@ -73,11 +20,7 @@ fn assert_athena_connector_exception(
     expected_message: &str,
 ) {
     let err = parser()
-        .map_function_to_data_source_syntax(
-            &FunctionName::new(function_name),
-            &DataType::Null,
-            arguments,
-        )
+        .map_function_to_data_source_syntax(&FunctionName::new(function_name), arguments)
         .unwrap_err();
     assert_eq!(
         Some(FederationSourceErrorCode::InvalidInputException),
@@ -145,7 +88,7 @@ fn test_null_if_function() {
 #[test]
 fn test_write_array_constructor_function() {
     assert_eq!(
-        "(ARRAY[1,2,3])",
+        "(1, 2, 3)",
         map(
             "$array",
             "int",
@@ -262,7 +205,7 @@ fn test_like_function() {
 #[test]
 fn test_complex_nested_functions() {
     assert_eq!(
-        "(ARRAY['hello','world','test'])",
+        "('hello', 'world', 'test')",
         map(
             "$array",
             "utf8",

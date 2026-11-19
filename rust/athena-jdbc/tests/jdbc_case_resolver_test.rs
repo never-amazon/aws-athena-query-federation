@@ -2,13 +2,12 @@ mod jdbc_support;
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use athena_federation_sdk::{FederationError, Result};
-use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
-use athena_jdbc::sql::JdbcConnection;
-use jdbc_support::FakeConnection;
+use athena_jdbc::resolver::{CaseLookup, JdbcCaseResolver};
+use athena_jdbc::sql::{PreparedStatement, SqlValue};
+use jdbc_support::{FakeConnection, ResultSetData};
 
 const CASING_MODE_CONFIG_KEY: &str = "casing_mode";
 const CASING_MODE_LOWER: &str = "LOWER";
@@ -32,10 +31,31 @@ enum Matches {
     Multiple,
 }
 
+const SCHEMA_QUERY: &str = "schema lookup";
+const TABLE_QUERY: &str = "table lookup";
+const TEST_LOOKUP: CaseLookup = CaseLookup {
+    schema_query: SCHEMA_QUERY,
+    schema_column: "schema_name",
+    table_queries: &[TABLE_QUERY],
+    table_column: "table_name",
+};
+
 struct TestJdbcCaseResolver {
-    base: CaseResolver,
+    inner: JdbcCaseResolver,
     schema_matches: Matches,
     table_matches: Matches,
+}
+
+fn parameter(statement: &PreparedStatement, index: usize) -> String {
+    match statement.parameter(index) {
+        Some(SqlValue::String(value)) => value.clone(),
+        other => panic!("unexpected parameter {other:?}"),
+    }
+}
+
+fn rows(column: &str, values: &[&str]) -> ResultSetData {
+    let rows: Vec<&[&str]> = values.iter().map(std::slice::from_ref).collect();
+    ResultSetData::of_strings(&[column], &rows)
 }
 
 impl TestJdbcCaseResolver {
@@ -53,59 +73,88 @@ impl TestJdbcCaseResolver {
         glue: FederationSdkCasingMode,
     ) -> TestJdbcCaseResolver {
         TestJdbcCaseResolver {
-            base: CaseResolver::new(source_type, non_glue, glue),
+            inner: JdbcCaseResolver::new(source_type, non_glue, glue).with_lookup(TEST_LOOKUP),
             schema_matches: Matches::Single,
             table_matches: Matches::Single,
         }
     }
-}
 
-#[async_trait]
-impl JdbcCaseResolver for TestJdbcCaseResolver {
-    fn case_resolver(&self) -> &CaseResolver {
-        &self.base
+    fn source_type(&self) -> &str {
+        self.inner.source_type()
     }
 
-    async fn do_get_schema_name_case_insensitively(
+    fn script(&self, connection: &FakeConnection) {
+        let schema_matches = self.schema_matches;
+        let table_matches = self.table_matches;
+        connection.on_query(move |statement| {
+            if statement.sql() == SCHEMA_QUERY {
+                if schema_matches == Matches::Multiple {
+                    return Ok(rows("schema_name", &["Schema1", "Schema2"]));
+                }
+                if parameter(statement, 1) == TEST_SCHEMA_LOWER {
+                    return Ok(rows("schema_name", &[TEST_SCHEMA_NAME]));
+                }
+                return Ok(rows("schema_name", &[]));
+            }
+            if table_matches == Matches::Multiple {
+                return Ok(rows("table_name", &["Table1", "Table2"]));
+            }
+            if parameter(statement, 2) == TEST_TABLE_LOWER {
+                return Ok(rows("table_name", &[TEST_TABLE_NAME]));
+            }
+            Ok(rows("table_name", &[]))
+        });
+    }
+
+    async fn get_adjusted_schema_name_string(
         &self,
-        _connection: &dyn JdbcConnection,
+        connection: &FakeConnection,
         schema_name_input: &str,
-        _config_options: &HashMap<String, String>,
-    ) -> Result<Vec<String>> {
-        if self.schema_matches == Matches::Multiple {
-            return Ok(vec!["Schema1".to_string(), "Schema2".to_string()]);
-        }
-        if TEST_SCHEMA_LOWER.eq_ignore_ascii_case(schema_name_input) {
-            return Ok(vec![TEST_SCHEMA_NAME.to_string()]);
-        }
-        Ok(Vec::new())
+        config_options: &HashMap<String, String>,
+    ) -> Result<String> {
+        self.script(connection);
+        self.inner
+            .get_adjusted_schema_name_string(connection, schema_name_input, config_options)
+            .await
     }
 
-    async fn do_get_table_name_case_insensitively(
+    async fn get_adjusted_table_name_string(
         &self,
-        _connection: &dyn JdbcConnection,
-        _schema_name_in_correct_case: &str,
+        connection: &FakeConnection,
+        schema_name_in_correct_case: &str,
         table_name_input: &str,
-        _config_options: &HashMap<String, String>,
-    ) -> Result<Vec<String>> {
-        if self.table_matches == Matches::Multiple {
-            return Ok(vec!["Table1".to_string(), "Table2".to_string()]);
-        }
-        if TEST_TABLE_LOWER.eq_ignore_ascii_case(table_name_input) {
-            return Ok(vec![TEST_TABLE_NAME.to_string()]);
-        }
-        Ok(Vec::new())
+        config_options: &HashMap<String, String>,
+    ) -> Result<String> {
+        self.script(connection);
+        self.inner
+            .get_adjusted_table_name_string(
+                connection,
+                schema_name_in_correct_case,
+                table_name_input,
+                config_options,
+            )
+            .await
+    }
+
+    async fn get_adjusted_table_name_object(
+        &self,
+        connection: &FakeConnection,
+        table_name_object: &TableName,
+        config_options: &HashMap<String, String>,
+    ) -> Result<TableName> {
+        self.script(connection);
+        self.inner
+            .get_adjusted_table_name_object(connection, table_name_object, config_options)
+            .await
     }
 }
 
-struct PlainJdbcCaseResolver {
-    base: CaseResolver,
-}
-
-impl JdbcCaseResolver for PlainJdbcCaseResolver {
-    fn case_resolver(&self) -> &CaseResolver {
-        &self.base
-    }
+fn plain_resolver() -> JdbcCaseResolver {
+    JdbcCaseResolver::new(
+        DB_TYPE_UNSUPPORTED,
+        FederationSdkCasingMode::None,
+        FederationSdkCasingMode::None,
+    )
 }
 
 fn config(mode: &str) -> HashMap<String, String> {
@@ -357,51 +406,46 @@ async fn test_table_name_case_insensitively_multiple_matches() {
     );
 }
 
-#[test]
-fn test_get_case_insensitively_schema_name_query_template() {
-    let resolver = TestJdbcCaseResolver::new(DB_TYPE_TESTDB);
-    assert_unsupported(&resolver.get_case_insensitively_schema_name_query_template());
+#[tokio::test]
+async fn test_get_case_insensitively_schema_name_query_template() {
+    let resolver = plain_resolver();
+    let result = resolver
+        .schema_name_case_insensitively(&FakeConnection::new(), "test")
+        .await;
+    assert_unsupported(&result);
+    assert_eq!(
+        "CASE_INSENSITIVE_SEARCH is not supported for type: 'unsupportedtype', please provide SchemaNameQuery",
+        result.unwrap_err().to_string()
+    );
 }
 
-#[test]
-fn test_get_case_insensitively_schema_name_column_key() {
-    let resolver = TestJdbcCaseResolver::new(DB_TYPE_TESTDB);
-    assert_unsupported(&resolver.get_case_insensitively_schema_name_column_key());
+#[tokio::test]
+async fn test_get_case_insensitively_schema_name_column_key() {
+    let resolver = plain_resolver();
+    assert!(resolver.lookup().is_none());
+    assert_unsupported(
+        &resolver
+            .schema_name_case_insensitively(&FakeConnection::new(), "test")
+            .await,
+    );
 }
 
 #[tokio::test]
 async fn test_do_get_schema_name_case_insensitively_default_implementation() {
-    let resolver = PlainJdbcCaseResolver {
-        base: CaseResolver::new(
-            DB_TYPE_UNSUPPORTED,
-            FederationSdkCasingMode::None,
-            FederationSdkCasingMode::None,
-        ),
-    };
+    let resolver = plain_resolver();
     assert_unsupported(
         &resolver
-            .do_get_schema_name_case_insensitively(&FakeConnection::new(), "test", &HashMap::new())
+            .schema_name_case_insensitively(&FakeConnection::new(), "test")
             .await,
     );
 }
 
 #[tokio::test]
 async fn test_do_get_table_name_case_insensitively_default_implementation() {
-    let resolver = PlainJdbcCaseResolver {
-        base: CaseResolver::new(
-            DB_TYPE_UNSUPPORTED,
-            FederationSdkCasingMode::None,
-            FederationSdkCasingMode::None,
-        ),
-    };
+    let resolver = plain_resolver();
     assert_unsupported(
         &resolver
-            .do_get_table_name_case_insensitively(
-                &FakeConnection::new(),
-                TEST_SCHEMA_NAME,
-                "test",
-                &HashMap::new(),
-            )
+            .table_name_case_insensitively(&FakeConnection::new(), TEST_SCHEMA_NAME, "test")
             .await,
     );
 }

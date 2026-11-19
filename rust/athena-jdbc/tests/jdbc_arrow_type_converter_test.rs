@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use arrow::datatypes::{DataType, TimeUnit};
-use athena_jdbc::manager::{JdbcArrowTypeConverter, DEFAULT_PRECISION};
+use athena_jdbc::manager::{jdbc_to_arrow_type, DEFAULT_PRECISION};
 use athena_jdbc::sql::Types;
 
 fn convert(jdbc_type: i32, precision: i32, scale: i32) -> DataType {
-    JdbcArrowTypeConverter::to_arrow_type(jdbc_type, precision, scale, &HashMap::new())
+    jdbc_to_arrow_type(jdbc_type, precision, scale, &HashMap::new())
         .unwrap()
         .unwrap()
 }
