@@ -67,8 +67,8 @@ pub enum SqlLiteralValue {
     Approx(BigDecimal),
     Char(String),
     Date(DateString),
-    Time(TimeString, i32),
-    Timestamp(TimestampString, i32),
+    Time(TimeString, usize),
+    Timestamp(TimestampString, usize),
     Binary(BitString),
     Symbol(String),
     Interval {
@@ -202,8 +202,8 @@ impl LiteralObject {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlDataTypeSpec {
     pub type_name: String,
-    pub precision: i32,
-    pub scale: i32,
+    pub precision: Option<i32>,
+    pub scale: Option<i32>,
     pub charset: Option<String>,
     pub alien: bool,
     pub collection: Option<String>,

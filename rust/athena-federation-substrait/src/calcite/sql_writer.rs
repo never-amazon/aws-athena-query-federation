@@ -337,13 +337,11 @@ fn unparse_literal(w: &mut SqlWriter<'_>, l: &SqlLiteral) {
         }
         SqlLiteralValue::Date(d) => w.literal(&format!("DATE '{d}'")),
         SqlLiteralValue::Time(t, p) => {
-            let p = usize::try_from(*p).unwrap_or(0);
-            w.literal(&format!("TIME '{}'", t.to_string_with_precision(p)));
+            w.literal(&format!("TIME '{}'", t.to_string_with_precision(*p)));
         }
         SqlLiteralValue::Timestamp(t, p) => {
-            let p = usize::try_from(*p).unwrap_or(0);
-            let ts = if p > 0 { t.round(p) } else { t.clone() };
-            w.literal(&format!("TIMESTAMP '{}'", ts.to_string_with_precision(p)));
+            let ts = if *p > 0 { t.round(*p) } else { t.clone() };
+            w.literal(&format!("TIMESTAMP '{}'", ts.to_string_with_precision(*p)));
         }
         SqlLiteralValue::Binary(b) => w.literal(&format!("X'{}'", b.to_hex_string())),
         SqlLiteralValue::Symbol(s) => w.keyword(s),
@@ -675,12 +673,12 @@ fn unparse_data_type(w: &mut SqlWriter<'_>, spec: &SqlDataTypeSpec) {
         return;
     }
     w.keyword(&spec.type_name);
-    if spec.precision >= 0 {
+    if let Some(precision) = spec.precision.filter(|p| *p >= 0) {
         w.start_list(FrameType::FunCall, "(", ")");
-        w.print_int(spec.precision);
-        if spec.scale != i32::MIN {
+        w.print_int(precision);
+        if let Some(scale) = spec.scale {
             w.sep_with(",", true);
-            w.print_int(spec.scale);
+            w.print_int(scale);
         }
         w.end_list();
     }

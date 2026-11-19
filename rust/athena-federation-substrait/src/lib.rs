@@ -31,8 +31,7 @@ pub mod predicate;
 pub use calcite::operators;
 pub use calcite::operators::{SqlKind, SqlOperator, SqlSyntax};
 pub use calcite::rel_data_type::{
-    RelDataType, RelDataTypeBuilder, RelDataTypeField, RelDataTypeSystem, PRECISION_NOT_SPECIFIED,
-    SCALE_NOT_SPECIFIED,
+    RelDataType, RelDataTypeBuilder, RelDataTypeField, RelDataTypeSystem,
 };
 pub use calcite::sql_dialect::{Conformance, DatabaseProduct, SqlDialect};
 pub use calcite::sql_node::{

@@ -35,6 +35,7 @@ pub(crate) struct SubstraitToCalcite {
     pub(super) rex_builder: RexBuilder,
     rel_builder: RelBuilder,
     pub(super) functions: HashMap<u32, Rc<str>>,
+    pub(super) type_names: HashMap<u32, Rc<str>>,
     outer: Vec<OuterFrame>,
     used_correl: Vec<usize>,
     next_correl: usize,
@@ -111,9 +112,16 @@ impl SubstraitToCalcite {
         let system = dialect.type_system();
         let rex_builder = RexBuilder::new(system);
         let mut functions = HashMap::new();
+        let mut type_names = HashMap::new();
         for ext in &plan.extensions {
-            if let Some(MappingType::ExtensionFunction(f)) = &ext.mapping_type {
-                functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
+            match &ext.mapping_type {
+                Some(MappingType::ExtensionFunction(f)) => {
+                    functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
+                }
+                Some(MappingType::ExtensionType(t)) => {
+                    type_names.insert(t.type_anchor, Rc::from(t.name.as_str()));
+                }
+                _ => {}
             }
         }
         SubstraitToCalcite {
@@ -121,6 +129,7 @@ impl SubstraitToCalcite {
             rex_builder,
             rel_builder: RelBuilder::new(RexBuilder::new(RelDataTypeSystem::Default)),
             functions,
+            type_names,
             outer: Vec::new(),
             used_correl: Vec::new(),
             next_correl: 0,
@@ -204,7 +213,7 @@ impl SubstraitToCalcite {
                 let condition = self.rex_builder.make_bool_literal(true);
                 let node = self
                     .rel_builder
-                    .join(left, right, JoinType::Inner, &condition);
+                    .join(left, right, JoinType::Inner, condition);
                 self.apply_remap(node, remap_of(c.common.as_ref()))
             }
             Some(RelType::Set(s)) => self.set(s),
@@ -254,7 +263,7 @@ impl SubstraitToCalcite {
             })?;
             exprs.push(RexBuilder::make_input_ref(index, f.ty().clone()));
         }
-        Ok(self.rel_builder.project(node, &exprs))
+        Ok(self.rel_builder.project(node, exprs))
     }
 
     #[allow(
@@ -355,7 +364,7 @@ impl SubstraitToCalcite {
             Some(e) => self.rex(e, &input_type)?,
             None => self.rex_builder.make_bool_literal(true),
         };
-        let mut node = self.rel_builder.join(left, right, join_type, &condition);
+        let mut node = self.rel_builder.join(left, right, join_type, condition);
         if let Some(post) = j.post_join_filter.as_deref() {
             let row_type = node.row_type().clone();
             let rex = self.rex(post, &row_type)?;
@@ -403,7 +412,7 @@ impl SubstraitToCalcite {
         }
         let node = self
             .rel_builder
-            .project_named(child, &exprs, Vec::new(), false);
+            .project_named(child, exprs, Vec::new(), false);
         self.apply_remap(node, remap_of(p.common.as_ref()))
     }
 
@@ -651,7 +660,7 @@ impl SubstraitToCalcite {
         exprs.extend(new_expressions);
         let projected = self
             .rel_builder
-            .project_named(child, &exprs, Vec::new(), false);
+            .project_named(child, exprs, Vec::new(), false);
         Ok((projected, new_groupings))
     }
 

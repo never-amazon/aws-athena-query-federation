@@ -5,8 +5,8 @@ use bigdecimal::BigDecimal;
 use super::operators::{self, SqlKind, SqlOperator};
 use super::rel_data_type::RelDataType;
 use super::rex::{
-    compose_conjunction, compose_disjunction, conjunctions, disjunctions, LiteralValue, RexBuilder,
-    RexCall, RexLiteral, RexNode,
+    compose_conjunction, compose_disjunction, conjunction_refs, conjunctions, disjunctions,
+    LiteralValue, RexBuilder, RexCall, RexLiteral, RexNode,
 };
 use super::sarg::{Range, RangeSet, RexUnknownAs, Sarg, SargValue};
 use super::sql_type_name::{SqlTypeFamily, SqlTypeName};
@@ -75,7 +75,7 @@ impl SargBuilder {
                 let mut best = first.clone();
                 for t in &self.types {
                     if t.sql_type_name() == best.sql_type_name() {
-                        if t.precision() > best.precision() {
+                        if t.precision_exceeds(&best) {
                             best = t.clone();
                         }
                     } else if t.sql_type_name() == SqlTypeName::Varchar {
@@ -88,9 +88,9 @@ impl SargBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum CollectedTerm {
-    Node(RexNode),
+    Node(usize),
     Sarg(usize),
 }
 
@@ -119,9 +119,9 @@ impl SargCollector {
         i
     }
 
-    fn accept(&mut self, term: &RexNode, new_terms: &mut Vec<CollectedTerm>) {
+    fn accept(&mut self, index: usize, term: &RexNode, new_terms: &mut Vec<CollectedTerm>) {
         if !self.accept_inner(term, new_terms) {
-            new_terms.push(CollectedTerm::Node(term.clone()));
+            new_terms.push(CollectedTerm::Node(index));
         }
         self.new_terms_count = new_terms.len();
     }
@@ -240,20 +240,40 @@ impl SargCollector {
                     .all(|b| simple_sarg(&b.build(self.negate))))
     }
 
-    fn fix(&self, builder: RexBuilder, term: &CollectedTerm, unknown_as: RexUnknownAs) -> RexNode {
-        match term {
-            CollectedTerm::Node(n) => n.clone(),
-            CollectedTerm::Sarg(i) => {
-                let b = &self.builders[*i];
-                let sarg = b.build(self.negate);
-                let ty = b.ty();
-                if sarg.complexity() <= 1 && simple_sarg(&sarg) {
-                    return sarg_ref(builder, &b.ref_node, &sarg, &ty, unknown_as);
-                }
-                builder.make_search(b.ref_node.clone(), sarg, ty)
-            }
-        }
+    fn fix(
+        self,
+        builder: RexBuilder,
+        collected: Vec<CollectedTerm>,
+        terms: Vec<RexNode>,
+        unknown_as: RexUnknownAs,
+    ) -> Vec<RexNode> {
+        let negate = self.negate;
+        let mut terms = terms.into_iter().enumerate();
+        let mut builders = self.builders.into_iter().enumerate();
+        collected
+            .into_iter()
+            .filter_map(|term| match term {
+                CollectedTerm::Node(i) => terms.find(|(j, _)| *j == i).map(|(_, n)| n),
+                CollectedTerm::Sarg(i) => builders
+                    .find(|(j, _)| *j == i)
+                    .map(|(_, b)| fix_sarg(builder, b, negate, unknown_as)),
+            })
+            .collect()
     }
+}
+
+fn fix_sarg(
+    builder: RexBuilder,
+    b: SargBuilder,
+    negate: bool,
+    unknown_as: RexUnknownAs,
+) -> RexNode {
+    let sarg = b.build(negate);
+    let ty = b.ty();
+    if sarg.complexity() <= 1 && simple_sarg(&sarg) {
+        return sarg_ref(builder, &b.ref_node, &sarg, &ty, unknown_as);
+    }
+    builder.make_search(b.ref_node, sarg, ty)
 }
 
 fn simple_sarg(sarg: &Sarg) -> bool {
@@ -264,7 +284,7 @@ fn make_sarg_literal(v: &SargValue, ty: &RelDataType) -> RexNode {
     RexBuilder::make_literal(LiteralValue::from_sarg_value(v), ty.with_nullability(false))
 }
 
-pub fn sarg_ref(
+fn sarg_ref(
     builder: RexBuilder,
     ref_node: &RexNode,
     sarg: &Sarg,
@@ -293,11 +313,11 @@ pub fn sarg_ref(
             .complement()
             .as_ranges()
             .iter()
-            .filter_map(|r| r.lower.endpoint().cloned())
+            .filter_map(|r| r.lower.endpoint())
             .map(|v| {
                 builder.make_call(
                     &operators::NOT_EQUALS,
-                    vec![ref_node.clone(), make_sarg_literal(&v, ty)],
+                    vec![ref_node.clone(), make_sarg_literal(v, ty)],
                 )
             })
             .collect();
@@ -350,7 +370,7 @@ fn range_to_rex(builder: RexBuilder, ref_node: &RexNode, r: &Range, ty: &RelData
     }
 }
 
-pub fn simple_sarg_node(
+fn simple_sarg_node(
     builder: RexBuilder,
     ref_node: &RexNode,
     sarg: &Sarg,
@@ -386,48 +406,50 @@ pub fn simple_sarg_node(
     }
 }
 
-pub fn expand_search(builder: RexBuilder, call: &RexCall) -> RexNode {
+fn expand_search(builder: RexBuilder, call: RexCall) -> RexNode {
     match call.operands.get(1) {
         Some(RexNode::Literal(RexLiteral {
             value: LiteralValue::Sarg(sarg),
             ty,
         })) => sarg_ref(builder, &call.operands[0], sarg, ty, RexUnknownAs::Unknown),
-        _ => RexNode::Call(call.clone()),
+        _ => RexNode::Call(call),
     }
 }
 
-fn rex_not(builder: RexBuilder, e: &RexNode) -> RexNode {
+fn rex_not(builder: RexBuilder, e: RexNode) -> RexNode {
     match e {
-        RexNode::Call(c) if c.op.kind == SqlKind::Not => c.operands[0].clone(),
-        _ => builder.make_not(e.clone()),
+        RexNode::Call(mut c) if c.op.kind == SqlKind::Not && !c.operands.is_empty() => {
+            c.operands.swap_remove(0)
+        }
+        other => builder.make_not(other),
     }
 }
 
-struct Comparison {
-    ref_node: RexNode,
+struct Comparison<'a> {
+    ref_node: &'a RexNode,
     kind: SqlKind,
-    literal: RexLiteral,
+    literal: &'a RexLiteral,
 }
 
-fn comparison_of(e: &RexNode) -> Option<Comparison> {
+fn comparison_of(e: &RexNode) -> Option<Comparison<'_>> {
     let call = e.as_call()?;
     if !call.op.kind.is_binary_comparison() {
         return None;
     }
     let left = &call.operands[0];
     let right = &call.operands[1];
-    if let RexNode::Literal(lit) = right {
+    if let RexNode::Literal(literal) = right {
         return Some(Comparison {
-            ref_node: left.clone(),
+            ref_node: left,
             kind: call.op.kind,
-            literal: lit.clone(),
+            literal,
         });
     }
-    if let RexNode::Literal(lit) = left {
+    if let RexNode::Literal(literal) = left {
         return Some(Comparison {
-            ref_node: right.clone(),
+            ref_node: right,
             kind: call.op.kind.reverse(),
-            literal: lit.clone(),
+            literal,
         });
     }
     None
@@ -559,22 +581,21 @@ fn strong_operands(terms: &[RexNode]) -> Vec<usize> {
     strong
 }
 
-fn strip_true_equals(slot: &mut RexNode) -> RexNode {
-    let mut term = slot.clone();
-    while term.kind() == SqlKind::Equals {
-        let Some(c) = term.as_call().cloned() else {
-            break;
-        };
-        if c.operands[0].is_always_true() {
-            term = c.operands[1].clone();
-        } else if c.operands[1].is_always_true() {
-            term = c.operands[0].clone();
-        } else {
+fn strip_true_equals(slot: &mut RexNode) {
+    while let RexNode::Call(c) = slot {
+        if c.op.kind != SqlKind::Equals {
             break;
         }
-        *slot = term.clone();
+        let keep = if c.operands[0].is_always_true() {
+            1
+        } else if c.operands[1].is_always_true() {
+            0
+        } else {
+            break;
+        };
+        let inner = c.operands.swap_remove(keep);
+        *slot = inner;
     }
-    term
 }
 
 enum BoundChange {
@@ -644,7 +665,6 @@ fn process_range(
         return None;
     };
     let mut r = range_terms[pos].range.clone();
-    let previous = range_terms[pos].terms.clone();
     let mut remove_upper = false;
     let mut remove_lower = false;
     match comparison {
@@ -652,11 +672,9 @@ fn process_range(
             if !r.contains(&v0) {
                 return Some(builder.make_bool_literal(false));
             }
-            range_terms[pos] = RangeTerm {
-                ref_node: ref_node.clone(),
-                range: SimpleRange::of(SqlKind::Equals, v0),
-                terms: vec![term.clone()],
-            };
+            let entry = &mut range_terms[pos];
+            entry.range = SimpleRange::of(SqlKind::Equals, v0);
+            let previous = std::mem::replace(&mut entry.terms, vec![term.clone()]);
             for e in &previous {
                 replace_last(terms, e, &true_literal);
             }
@@ -680,25 +698,24 @@ fn process_range(
         }
     }
     if remove_upper || remove_lower {
+        let entry = &mut range_terms[pos];
+        let previous = std::mem::take(&mut entry.terms);
         let mut new_bounds = Vec::new();
-        for e in &previous {
+        for e in previous {
             let drop = if remove_upper {
-                is_upper_bound(e)
+                is_upper_bound(&e)
             } else {
-                is_lower_bound(e)
+                is_lower_bound(&e)
             };
             if drop {
-                replace_last(terms, e, &true_literal);
+                replace_last(terms, &e, &true_literal);
             } else {
-                new_bounds.push(e.clone());
+                new_bounds.push(e);
             }
         }
         new_bounds.push(term.clone());
-        range_terms[pos] = RangeTerm {
-            ref_node: ref_node.clone(),
-            range: r,
-            terms: new_bounds,
-        };
+        entry.range = r;
+        entry.terms = new_bounds;
     }
     None
 }
@@ -777,6 +794,29 @@ fn literal_bool(e: &RexNode) -> Option<bool> {
     }
 }
 
+enum BooleanComparison {
+    Operand,
+    NotOperand,
+    Constant(bool),
+}
+
+fn boolean_comparison(kind: SqlKind, literal: bool, nullable: bool) -> Option<BooleanComparison> {
+    let outcome = match (literal, kind) {
+        (true, SqlKind::GreaterThanOrEqual | SqlKind::Equals)
+        | (false, SqlKind::NotEquals | SqlKind::GreaterThan) => BooleanComparison::Operand,
+        (true, SqlKind::LessThan | SqlKind::NotEquals)
+        | (false, SqlKind::Equals | SqlKind::LessThanOrEqual) => BooleanComparison::NotOperand,
+        (true, SqlKind::GreaterThan) | (false, SqlKind::LessThan) if !nullable => {
+            BooleanComparison::Constant(false)
+        }
+        (true, SqlKind::LessThanOrEqual) | (false, SqlKind::GreaterThanOrEqual) if !nullable => {
+            BooleanComparison::Constant(true)
+        }
+        _ => return None,
+    };
+    Some(outcome)
+}
+
 impl RexSimplify {
     pub fn new(builder: RexBuilder) -> RexSimplify {
         RexSimplify {
@@ -795,47 +835,44 @@ impl RexSimplify {
     pub fn simplify_filter_predicates(self, predicates: Vec<RexNode>) -> Option<RexNode> {
         let s = self.with_predicate_elimination(false);
         let composed = compose_conjunction(self.builder, predicates);
-        let simplified = s.simplify(&composed, RexUnknownAs::False);
+        let simplified = s.simplify(composed, RexUnknownAs::False);
         if simplified.is_always_false() {
             return None;
         }
-        Some(remove_nullability_cast(&simplified))
+        Some(remove_nullability_cast(simplified))
     }
 
-    pub fn simplify_unknown_as_false(self, e: &RexNode) -> RexNode {
+    pub fn simplify_unknown_as_false(self, e: RexNode) -> RexNode {
         self.simplify(e, RexUnknownAs::False)
     }
 
-    pub fn simplify_preserving_type(self, e: &RexNode) -> RexNode {
+    pub fn simplify_preserving_type(self, e: RexNode) -> RexNode {
+        let ty = e.ty().clone();
         let e2 = self.simplify(e, RexUnknownAs::Unknown);
-        if e2.ty() == e.ty() {
+        if e2.ty() == &ty {
             return e2;
         }
-        let e3 = RexBuilder::make_cast(e.ty().clone(), e2, false);
-        if &e3 == e {
-            return e.clone();
-        }
-        e3
+        RexBuilder::make_cast(ty, e2, false)
     }
 
-    pub fn simplify(self, e: &RexNode, unknown_as: RexUnknownAs) -> RexNode {
-        if definitely_null(e) {
+    pub fn simplify(self, e: RexNode, unknown_as: RexUnknownAs) -> RexNode {
+        if definitely_null(&e) {
             if e.ty().sql_type_name() == SqlTypeName::Boolean {
                 if let Some(b) = unknown_as.to_boolean() {
                     return self.builder.make_bool_literal(b);
                 }
             }
             if e.is_null_literal() {
-                return e.clone();
+                return e;
             }
             return RexBuilder::make_null_literal(e.ty());
         }
         let RexNode::Call(call) = e else {
-            return e.clone();
+            return e;
         };
         match call.op.kind {
-            SqlKind::And => self.simplify_and(e, unknown_as),
-            SqlKind::Or => self.simplify_or(e, unknown_as),
+            SqlKind::And => self.simplify_and(RexNode::Call(call), unknown_as),
+            SqlKind::Or => self.simplify_or(RexNode::Call(call), unknown_as),
             SqlKind::Not => self.simplify_not(call, unknown_as),
             SqlKind::Case => self.simplify_case(call, unknown_as),
             SqlKind::Coalesce => self.simplify_coalesce(call),
@@ -854,13 +891,18 @@ impl RexSimplify {
             | SqlKind::LessThanOrEqual => self.simplify_comparison(call, unknown_as),
             SqlKind::Search => self.simplify_search(call, unknown_as),
             SqlKind::Like if !call.op.negated => self.simplify_like(call, unknown_as),
-            SqlKind::MinusPrefix => {
-                if call.operands[0].kind() == SqlKind::MinusPrefix {
-                    return self.simplify(&call.operands[0].operands()[0], unknown_as);
-                }
-                self.simplify_generic(call)
+            SqlKind::MinusPrefix if call.operands[0].kind() == SqlKind::MinusPrefix => {
+                let mut call = call;
+                let inner = match call.operands.swap_remove(0) {
+                    RexNode::Call(mut c) => c.operands.swap_remove(0),
+                    other => other.operands()[0].clone(),
+                };
+                self.simplify(inner, unknown_as)
             }
-            SqlKind::PlusPrefix => self.simplify(&call.operands[0], unknown_as),
+            SqlKind::PlusPrefix => {
+                let mut call = call;
+                self.simplify(call.operands.swap_remove(0), unknown_as)
+            }
             SqlKind::Plus | SqlKind::Minus | SqlKind::Times | SqlKind::Divide => {
                 self.simplify_arithmetic(call)
             }
@@ -868,19 +910,17 @@ impl RexSimplify {
         }
     }
 
-    fn simplify_list(self, terms: &mut [RexNode], unknown_as: RexUnknownAs) {
-        for t in terms.iter_mut() {
-            *t = self.simplify(t, unknown_as);
-        }
+    fn simplify_list(self, terms: Vec<RexNode>, unknown_as: RexUnknownAs) -> Vec<RexNode> {
+        terms
+            .into_iter()
+            .map(|t| self.simplify(t, unknown_as))
+            .collect()
     }
 
-    fn simplify_generic(self, e: &RexCall) -> RexNode {
-        let mut operands = e.operands.clone();
-        self.simplify_list(&mut operands, RexUnknownAs::Unknown);
-        if operands == e.operands {
-            return RexNode::Call(e.clone());
-        }
-        RexBuilder::make_call_typed(e.ty.clone(), e.op, operands)
+    fn simplify_generic(self, e: RexCall) -> RexNode {
+        let RexCall { op, operands, ty } = e;
+        let operands = self.simplify_list(operands, RexUnknownAs::Unknown);
+        RexBuilder::make_call_typed(ty, op, operands)
     }
 
     fn find_literal_index(operands: &[RexNode], value: i64) -> Option<usize> {
@@ -890,140 +930,108 @@ impl RexSimplify {
         })
     }
 
-    fn simplify_arithmetic(self, e: &RexCall) -> RexNode {
+    fn simplify_arithmetic(self, e: RexCall) -> RexNode {
         if e.ty.sql_type_name().family() != SqlTypeFamily::Numeric || e.operands.len() != 2 {
             return self.simplify_generic(e);
         }
-        let keep = |other: &RexNode| -> RexNode {
-            if other.ty() == &e.ty {
-                other.clone()
-            } else {
-                RexBuilder::make_cast(e.ty.clone(), other.clone(), false)
-            }
+        let kept = match e.op.kind {
+            SqlKind::Plus => Self::find_literal_index(&e.operands, 0).map(|i| (i + 1) % 2),
+            SqlKind::Minus => (Self::find_literal_index(&e.operands, 0) == Some(1)).then_some(0),
+            SqlKind::Times => Self::find_literal_index(&e.operands, 1).map(|i| (i + 1) % 2),
+            SqlKind::Divide => (Self::find_literal_index(&e.operands, 1) == Some(1)).then_some(0),
+            _ => None,
         };
-        match e.op.kind {
-            SqlKind::Plus => {
-                if let Some(i) = Self::find_literal_index(&e.operands, 0) {
-                    return keep(&e.operands[(i + 1) % 2]);
-                }
-            }
-            SqlKind::Minus => {
-                if Self::find_literal_index(&e.operands, 0) == Some(1) {
-                    return keep(&e.operands[0]);
-                }
-            }
-            SqlKind::Times => {
-                if let Some(i) = Self::find_literal_index(&e.operands, 1) {
-                    return keep(&e.operands[(i + 1) % 2]);
-                }
-            }
-            SqlKind::Divide if Self::find_literal_index(&e.operands, 1) == Some(1) => {
-                return keep(&e.operands[0]);
-            }
-            _ => {}
+        let Some(i) = kept else {
+            return self.simplify_generic(e);
+        };
+        let RexCall {
+            mut operands, ty, ..
+        } = e;
+        let other = operands.swap_remove(i);
+        if other.ty() == &ty {
+            other
+        } else {
+            RexBuilder::make_cast(ty, other, false)
+        }
+    }
+
+    fn simplify_like(self, mut e: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let matches_all = e.operands.len() == 2
+            && matches!(
+                &e.operands[1],
+                RexNode::Literal(RexLiteral { value: LiteralValue::Char(s), .. }) if s == "%"
+            );
+        if matches_all {
+            let x = e.operands.swap_remove(0);
+            let eq = self
+                .builder
+                .make_call(&operators::EQUALS, vec![x.clone(), x]);
+            return self.simplify(eq, unknown_as);
         }
         self.simplify_generic(e)
     }
 
-    fn simplify_like(self, e: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        if let Some(RexNode::Literal(RexLiteral {
-            value: LiteralValue::Char(s),
-            ..
-        })) = e.operands.get(1)
-        {
-            if s == "%" && e.operands.len() == 2 {
-                let x = e.operands[0].clone();
-                let eq = self
-                    .builder
-                    .make_call(&operators::EQUALS, vec![x.clone(), x]);
-                return self.simplify(&eq, unknown_as);
-            }
-        }
-        self.simplify_generic(e)
-    }
-
-    fn simplify_comparison(self, e: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        let mut operands = e.operands.clone();
-        self.simplify_list(&mut operands, RexUnknownAs::Unknown);
-        let o0 = operands[0].clone();
-        let o1 = operands[1].clone();
-        if o0 == o1 {
-            match e.op.kind {
+    fn simplify_comparison(self, e: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let RexCall { op, operands, ty } = e;
+        let original = operands.clone();
+        let mut operands = self.simplify_list(operands, RexUnknownAs::Unknown);
+        if operands[0] == operands[1] {
+            let o0 = operands.swap_remove(0);
+            let n = match op.kind {
                 SqlKind::Equals | SqlKind::GreaterThanOrEqual | SqlKind::LessThanOrEqual => {
-                    let n = self.builder.make_call(
+                    self.builder.make_call(
                         &operators::OR,
                         vec![
-                            RexBuilder::make_null_literal(&e.ty),
-                            self.builder
-                                .make_call(&operators::IS_NOT_NULL, vec![o0.clone()]),
+                            RexBuilder::make_null_literal(&ty),
+                            self.builder.make_call(&operators::IS_NOT_NULL, vec![o0]),
                         ],
-                    );
-                    return self.simplify(&n, unknown_as);
+                    )
                 }
-                _ => {
-                    let n = self.builder.make_call(
-                        &operators::AND,
-                        vec![
-                            RexBuilder::make_null_literal(&e.ty),
-                            self.builder
-                                .make_call(&operators::IS_NULL, vec![o0.clone()]),
-                        ],
-                    );
-                    return self.simplify(&n, unknown_as);
+                _ => self.builder.make_call(
+                    &operators::AND,
+                    vec![
+                        RexBuilder::make_null_literal(&ty),
+                        self.builder.make_call(&operators::IS_NULL, vec![o0]),
+                    ],
+                ),
+            };
+            return self.simplify(n, unknown_as);
+        }
+        if operands[0].ty().sql_type_name() == SqlTypeName::Boolean {
+            let found = match (&operands[0], &operands[1]) {
+                (left, RexNode::Literal(lit)) => Some((0, op.kind, left, lit)),
+                (RexNode::Literal(lit), right) => Some((1, op.kind.reverse(), right, lit)),
+                _ => None,
+            };
+            let outcome = found.and_then(|(index, kind, ref_node, lit)| match lit.value {
+                LiteralValue::Boolean(b) => {
+                    boolean_comparison(kind, b, ref_node.ty().is_nullable()).map(|o| (index, o))
                 }
+                _ => None,
+            });
+            if let Some((index, outcome)) = outcome {
+                return match outcome {
+                    BooleanComparison::Operand => operands.swap_remove(index),
+                    BooleanComparison::NotOperand => self.simplify(
+                        rex_not(self.builder, operands.swap_remove(index)),
+                        unknown_as,
+                    ),
+                    BooleanComparison::Constant(b) => self.builder.make_bool_literal(b),
+                };
             }
         }
-        if o0.ty().sql_type_name() == SqlTypeName::Boolean {
-            let rebuilt = self.builder.make_call(e.op, vec![o0.clone(), o1.clone()]);
-            if let Some(cmp) = comparison_of(&rebuilt) {
-                if let LiteralValue::Boolean(b) = cmp.literal.value {
-                    let nullable = cmp.ref_node.ty().is_nullable();
-                    if b {
-                        match cmp.kind {
-                            SqlKind::GreaterThanOrEqual | SqlKind::Equals => return cmp.ref_node,
-                            SqlKind::LessThan | SqlKind::NotEquals => {
-                                return self
-                                    .simplify(&rex_not(self.builder, &cmp.ref_node), unknown_as)
-                            }
-                            SqlKind::GreaterThan if !nullable => {
-                                return self.builder.make_bool_literal(false)
-                            }
-                            SqlKind::LessThanOrEqual if !nullable => {
-                                return self.builder.make_bool_literal(true)
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        match cmp.kind {
-                            SqlKind::Equals | SqlKind::LessThanOrEqual => {
-                                return self
-                                    .simplify(&rex_not(self.builder, &cmp.ref_node), unknown_as)
-                            }
-                            SqlKind::NotEquals | SqlKind::GreaterThan => return cmp.ref_node,
-                            SqlKind::GreaterThanOrEqual if !nullable => {
-                                return self.builder.make_bool_literal(true)
-                            }
-                            SqlKind::LessThan if !nullable => {
-                                return self.builder.make_bool_literal(false)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        if let (RexNode::Literal(l0), RexNode::Literal(l1)) = (&o0, &o1) {
+        if let (RexNode::Literal(l0), RexNode::Literal(l1)) = (&operands[0], &operands[1]) {
             if l0.ty.equals_sans_nullability(&l1.ty) {
                 if l0.is_null() || l1.is_null() {
                     return if unknown_as == RexUnknownAs::False {
                         self.builder.make_bool_literal(false)
                     } else {
-                        RexBuilder::make_null_literal(&e.ty)
+                        RexBuilder::make_null_literal(&ty)
                     };
                 }
                 if let (Some(v0), Some(v1)) = (l0.value.to_sarg_value(), l1.value.to_sarg_value()) {
                     let c = v0.compare(&v1);
-                    let r = match e.op.kind {
+                    let r = match op.kind {
                         SqlKind::Equals => c == Ordering::Equal,
                         SqlKind::GreaterThan => c == Ordering::Greater,
                         SqlKind::GreaterThanOrEqual => c != Ordering::Less,
@@ -1035,91 +1043,93 @@ impl RexSimplify {
                 }
             }
         }
-        if operands == e.operands {
-            RexNode::Call(e.clone())
+        if operands == original {
+            RexBuilder::make_call_typed(ty, op, operands)
         } else {
-            self.builder.make_call(e.op, operands)
+            self.builder.make_call(op, operands)
         }
     }
 
-    fn simplify_and(self, e: &RexNode, unknown_as: RexUnknownAs) -> RexNode {
+    fn simplify_and(self, e: RexNode, unknown_as: RexUnknownAs) -> RexNode {
         let mut operands = conjunctions(e);
-        if unknown_as == RexUnknownAs::False && self.predicate_elimination {
-            self.simplify_and_terms(&mut operands);
+        operands = if unknown_as == RexUnknownAs::False && self.predicate_elimination {
+            self.simplify_and_terms(operands)
         } else {
-            self.simplify_list(&mut operands, unknown_as);
-        }
+            self.simplify_list(operands, unknown_as)
+        };
         let mut collected = Vec::new();
         let mut collector = SargCollector::new(true);
-        for t in &operands {
-            collector.accept(t, &mut collected);
+        for (i, t) in operands.iter().enumerate() {
+            collector.accept(i, t, &mut collected);
         }
         if collector.need_to_fix() {
-            operands = collected
-                .iter()
-                .map(|t| collector.fix(self.builder, t, unknown_as))
-                .collect();
+            operands = collector.fix(self.builder, collected, operands, unknown_as);
         }
         let mut terms = Vec::new();
         let mut not_terms = Vec::new();
-        for o in &operands {
+        for o in operands {
             decompose_conjunction(o, &mut terms, &mut not_terms);
         }
         if unknown_as == RexUnknownAs::False {
-            return self.simplify_and2_for_unknown_as_false(terms, &not_terms);
+            return self.simplify_and2_for_unknown_as_false(terms, not_terms);
         }
         self.simplify_and2(terms, not_terms)
     }
 
-    fn simplify_and_terms(self, terms: &mut [RexNode]) {
+    fn simplify_and_terms(self, terms: Vec<RexNode>) -> Vec<RexNode> {
         let is_predicate = |t: &RexNode| {
             comparison_of(t).is_some() || matches!(t.kind(), SqlKind::IsNull | SqlKind::IsNotNull)
         };
-        for t in terms.iter_mut() {
-            if is_predicate(t) {
-                *t = self.simplify(t, RexUnknownAs::False);
-            }
-        }
-        for t in terms.iter_mut() {
-            if !is_predicate(t) {
-                *t = self.simplify(t, RexUnknownAs::False);
-            }
-        }
+        let terms: Vec<RexNode> = terms
+            .into_iter()
+            .map(|t| {
+                if is_predicate(&t) {
+                    self.simplify(t, RexUnknownAs::False)
+                } else {
+                    t
+                }
+            })
+            .collect();
+        terms
+            .into_iter()
+            .map(|t| {
+                if is_predicate(&t) {
+                    t
+                } else {
+                    self.simplify(t, RexUnknownAs::False)
+                }
+            })
+            .collect()
     }
 
-    fn simplify_and2(self, mut terms: Vec<RexNode>, mut not_terms: Vec<RexNode>) -> RexNode {
+    fn simplify_and2(self, mut terms: Vec<RexNode>, not_terms: Vec<RexNode>) -> RexNode {
         if terms.iter().any(RexNode::is_always_false) {
             return self.builder.make_bool_literal(false);
         }
         if terms.is_empty() && not_terms.is_empty() {
             return self.builder.make_bool_literal(true);
         }
-        let mut not_satisfiable: Vec<RexNode> = Vec::new();
-        for nd in &not_terms {
-            let terms2 = conjunctions(nd);
-            if !terms2.iter().all(|t| terms.contains(t)) {
-                continue;
-            }
-            if !nd.ty().is_nullable() {
-                return self.builder.make_bool_literal(false);
-            }
-            not_satisfiable.push(nd.clone());
+        let covered = |nd: &RexNode| conjunction_refs(nd).iter().all(|t| terms.contains(t));
+        if not_terms
+            .iter()
+            .any(|nd| covered(nd) && !nd.ty().is_nullable())
+        {
+            return self.builder.make_bool_literal(false);
         }
-        if let Some(first) = not_satisfiable.first().cloned() {
+        let (not_satisfiable, not_terms): (Vec<RexNode>, Vec<RexNode>) =
+            not_terms.into_iter().partition(|nd| covered(nd));
+        if let Some(first) = not_satisfiable.first() {
+            let null_type = first.ty().clone();
             terms.retain(|t| !not_satisfiable.contains(t));
-            not_terms.retain(|t| !not_satisfiable.contains(t));
-            terms.push(RexBuilder::make_null_literal(first.ty()));
-            for ns in &not_satisfiable {
-                let is_null = self
-                    .builder
-                    .make_call(&operators::IS_NULL, vec![ns.clone()]);
-                if let RexNode::Call(c) = &is_null {
+            terms.push(RexBuilder::make_null_literal(&null_type));
+            for ns in not_satisfiable {
+                if let RexNode::Call(c) = self.builder.make_call(&operators::IS_NULL, vec![ns]) {
                     terms.push(self.simplify_is(c, RexUnknownAs::Unknown));
                 }
             }
         }
-        for nd in &not_terms {
-            terms.push(self.simplify(&rex_not(self.builder, nd), RexUnknownAs::Unknown));
+        for nd in not_terms {
+            terms.push(self.simplify(rex_not(self.builder, nd), RexUnknownAs::Unknown));
         }
         compose_conjunction(self.builder, terms)
     }
@@ -1127,7 +1137,7 @@ impl RexSimplify {
     fn simplify_and2_for_unknown_as_false(
         self,
         mut terms: Vec<RexNode>,
-        not_terms: &[RexNode],
+        not_terms: Vec<RexNode>,
     ) -> RexNode {
         if terms
             .iter()
@@ -1139,45 +1149,47 @@ impl RexSimplify {
             return self.builder.make_bool_literal(true);
         }
         if terms.len() == 1 && not_terms.is_empty() {
-            return self.simplify(&terms[0], RexUnknownAs::False);
+            if let Some(only) = terms.pop() {
+                return self.simplify(only, RexUnknownAs::False);
+            }
         }
         let mut state = AndState::default();
         let mut null_operands: Vec<RexNode> = Vec::new();
         let mut not_null_operands: Vec<RexNode> = Vec::new();
         let mut i = 0;
         while i < terms.len() {
-            let term = strip_true_equals(&mut terms[i]);
-            match term.kind() {
+            strip_true_equals(&mut terms[i]);
+            match terms[i].kind() {
                 k if k.is_binary_comparison() => {
+                    let term = terms[i].clone();
                     if let Some(r) = self.absorb_comparison(k, &term, &mut terms, &mut state) {
                         return r;
                     }
                 }
                 SqlKind::IsNotNull => {
-                    not_null_operands.push(term.operands()[0].clone());
-                    terms.remove(i);
+                    match terms.remove(i) {
+                        RexNode::Call(mut c) => not_null_operands.push(c.operands.swap_remove(0)),
+                        other => not_null_operands.push(other.operands()[0].clone()),
+                    }
                     continue;
                 }
                 SqlKind::IsNull => {
-                    null_operands.push(term.operands()[0].clone());
+                    null_operands.push(terms[i].operands()[0].clone());
                 }
                 _ => {}
             }
             i += 1;
         }
         for (ref1, ref2, eq_term) in &state.equality_terms {
-            let l1 = state
-                .equality_constants
-                .iter()
-                .find(|(r, _)| r == ref1)
-                .map(|(_, l)| l.clone());
-            let Some(l1) = l1 else { continue };
-            let l2 = state
-                .equality_constants
-                .iter()
-                .find(|(r, _)| r == ref2)
-                .map(|(_, l)| l.clone());
-            let Some(l2) = l2 else { continue };
+            let constant = |r: &RexNode| {
+                state
+                    .equality_constants
+                    .iter()
+                    .find(|(c, _)| c == r)
+                    .map(|(_, l)| l)
+            };
+            let Some(l1) = constant(ref1) else { continue };
+            let Some(l2) = constant(ref2) else { continue };
             if l1.ty == l2.ty && l1 != l2 {
                 return self.builder.make_bool_literal(false);
             }
@@ -1185,9 +1197,8 @@ impl RexSimplify {
                 terms.remove(p);
             }
         }
-        for nd in not_terms {
-            let terms2 = conjunctions(nd);
-            if terms2.iter().all(|t| terms.contains(t)) {
+        for nd in &not_terms {
+            if conjunction_refs(nd).iter().all(|t| terms.contains(t)) {
                 return self.builder.make_bool_literal(false);
             }
         }
@@ -1200,19 +1211,18 @@ impl RexSimplify {
             terms.push(rex_not(self.builder, nd));
         }
         let strong_operands = strong_operands(&terms);
-        if null_operands.iter().any(
-            |n| matches!(n, RexNode::InputRef { index, .. } if strong_operands.contains(index)),
-        ) {
+        let is_strong = |n: &RexNode| matches!(n, RexNode::InputRef { index, .. } if strong_operands.contains(index));
+        if null_operands.iter().any(is_strong) {
             return self.builder.make_bool_literal(false);
         }
-        let mut seen: Vec<RexNode> = Vec::new();
+        let mut distinct: Vec<RexNode> = Vec::new();
         for operand in not_null_operands {
-            if seen.contains(&operand) {
-                continue;
+            if !distinct.contains(&operand) {
+                distinct.push(operand);
             }
-            seen.push(operand.clone());
-            let strong = matches!(&operand, RexNode::InputRef { index, .. } if strong_operands.contains(index));
-            if !strong {
+        }
+        for operand in distinct {
+            if !is_strong(&operand) {
                 terms.push(
                     self.builder
                         .make_call(&operators::IS_NOT_NULL, vec![operand]),
@@ -1241,11 +1251,12 @@ impl RexSimplify {
                 if let Some(pos) = state
                     .equality_constants
                     .iter()
-                    .position(|(r, _)| r == &cmp.ref_node)
+                    .position(|(r, _)| r == cmp.ref_node)
                 {
-                    let prev = state.equality_constants[pos].1.clone();
-                    state.equality_constants[pos].1 = cmp.literal.clone();
-                    if cmp.literal.ty == prev.ty && cmp.literal != prev {
+                    let previous = &mut state.equality_constants[pos].1;
+                    let conflict = cmp.literal.ty == previous.ty && cmp.literal != previous;
+                    *previous = cmp.literal.clone();
+                    if conflict {
                         return Some(self.builder.make_bool_literal(false));
                     }
                 } else {
@@ -1281,7 +1292,7 @@ impl RexSimplify {
                         terms,
                         &mut state.range_terms,
                         term,
-                        &cmp.ref_node,
+                        cmp.ref_node,
                         v,
                         cmp.kind,
                     ) {
@@ -1293,9 +1304,9 @@ impl RexSimplify {
         None
     }
 
-    fn simplify_or(self, e: &RexNode, unknown_as: RexUnknownAs) -> RexNode {
+    fn simplify_or(self, e: RexNode, unknown_as: RexUnknownAs) -> RexNode {
         let terms0 = disjunctions(e);
-        let mut terms = if self.predicate_elimination {
+        let terms = if self.predicate_elimination {
             let (mut nulls, rest): (Vec<RexNode>, Vec<RexNode>) = terms0
                 .into_iter()
                 .partition(|t| t.kind() == SqlKind::IsNull);
@@ -1304,59 +1315,56 @@ impl RexSimplify {
         } else {
             terms0
         };
-        self.simplify_list(&mut terms, unknown_as);
+        let terms = self.simplify_list(terms, unknown_as);
         self.simplify_ors(terms, unknown_as)
     }
 
     fn simplify_ors(self, mut terms: Vec<RexNode>, unknown_as: RexUnknownAs) -> RexNode {
         let mut collected = Vec::new();
         let mut collector = SargCollector::new(false);
-        for t in &terms {
-            collector.accept(t, &mut collected);
+        for (i, t) in terms.iter().enumerate() {
+            collector.accept(i, t, &mut collected);
         }
         if collector.need_to_fix() {
-            terms = collected
-                .iter()
-                .map(|t| collector.fix(self.builder, t, unknown_as))
-                .collect();
+            terms = collector.fix(self.builder, collected, terms, unknown_as);
         }
         let true_literal = self.builder.make_bool_literal(true);
         let mut not_equals: Vec<(RexNode, RexNode)> = Vec::new();
         let mut i = 0;
         while i < terms.len() {
-            let term = terms[i].clone();
-            match term.kind() {
+            match terms[i].kind() {
                 SqlKind::Literal => {
-                    if term.is_null_literal() {
+                    if terms[i].is_null_literal() {
                         if unknown_as == RexUnknownAs::False {
                             terms.remove(i);
                             continue;
                         } else if unknown_as == RexUnknownAs::True {
                             return true_literal;
                         }
-                    } else if literal_bool(&term) == Some(true) {
-                        return term;
+                    } else if literal_bool(&terms[i]) == Some(true) {
+                        return terms.swap_remove(i);
                     } else {
                         terms.remove(i);
                         continue;
                     }
                 }
                 SqlKind::NotEquals => {
-                    if let Some(cmp) = comparison_of(&term) {
-                        if let Some(pos) = not_equals.iter().position(|(r, _)| r == &cmp.ref_node) {
-                            let prev = not_equals[pos].1.clone();
+                    if let Some(cmp) = comparison_of(&terms[i]) {
+                        let ref_node = cmp.ref_node.clone();
+                        let v1 = cmp.literal.value.to_sarg_value();
+                        if let Some(pos) = not_equals.iter().position(|(r, _)| r == &ref_node) {
+                            let prev = &not_equals[pos].1;
                             if prev.kind() != SqlKind::IsNotNull {
-                                let v1 = cmp.literal.value.to_sarg_value();
-                                let v2 = comparison_of(&prev)
+                                let v2 = comparison_of(prev)
                                     .and_then(|c| c.literal.value.to_sarg_value());
                                 if let (Some(v1), Some(v2)) = (v1, v2) {
                                     if v1.compare(&v2) != Ordering::Equal {
-                                        let is_not_null = self.builder.make_call(
-                                            &operators::IS_NOT_NULL,
-                                            vec![cmp.ref_node.clone()],
-                                        );
+                                        let prev_position = terms.iter().position(|t| t == prev);
+                                        let is_not_null = self
+                                            .builder
+                                            .make_call(&operators::IS_NOT_NULL, vec![ref_node]);
                                         let cond = self.simplify(
-                                            &self.builder.make_call(
+                                            self.builder.make_call(
                                                 &operators::OR,
                                                 vec![
                                                     is_not_null.clone(),
@@ -1371,7 +1379,7 @@ impl RexSimplify {
                                             return true_literal;
                                         }
                                         not_equals[pos].1 = is_not_null;
-                                        if let Some(p) = terms.iter().position(|t| t == &prev) {
+                                        if let Some(p) = prev_position {
                                             terms[p] = cond;
                                         }
                                     }
@@ -1380,23 +1388,23 @@ impl RexSimplify {
                             terms.remove(i);
                             continue;
                         }
-                        not_equals.push((cmp.ref_node.clone(), term.clone()));
+                        not_equals.push((ref_node, terms[i].clone()));
                     }
                 }
                 SqlKind::Not => {
-                    let x = term.operands()[0].clone();
-                    if terms.contains(&x) {
+                    let x = &terms[i].operands()[0];
+                    if terms.contains(x) {
                         if !x.ty().is_nullable() {
                             return true_literal;
                         }
-                        let is_not_null = self
-                            .builder
-                            .make_call(&operators::IS_NOT_NULL, vec![x.clone()]);
+                        let x = x.clone();
                         let pos = terms.iter().position(|t| t == &x);
-                        if let (Some(p), RexNode::Call(c)) = (pos, &is_not_null) {
+                        let null_literal = RexBuilder::make_null_literal(x.ty());
+                        let is_not_null = self.builder.make_call(&operators::IS_NOT_NULL, vec![x]);
+                        if let (Some(p), RexNode::Call(c)) = (pos, is_not_null) {
                             terms[p] = self.simplify_is(c, unknown_as);
                         }
-                        terms[i] = RexBuilder::make_null_literal(x.ty());
+                        terms[i] = null_literal;
                         continue;
                     }
                 }
@@ -1407,191 +1415,214 @@ impl RexSimplify {
         compose_disjunction(self.builder, terms)
     }
 
-    fn simplify_not(self, call: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        let a = &call.operands[0];
-        match a {
-            RexNode::Call(ac) => match ac.op.kind {
-                SqlKind::Not => return self.simplify(&ac.operands[0], unknown_as),
-                SqlKind::Search => {
-                    if let Some(RexNode::Literal(RexLiteral {
-                        value: LiteralValue::Sarg(sarg),
-                        ty,
-                    })) = ac.operands.get(1)
-                    {
-                        let negated = RexCall {
-                            op: ac.op,
-                            operands: vec![
-                                ac.operands[0].clone(),
-                                RexNode::Literal(RexLiteral {
-                                    value: LiteralValue::Sarg(Box::new(sarg.negate())),
-                                    ty: ty.clone(),
-                                }),
-                            ],
-                            ty: ac.ty.clone(),
-                        };
-                        return self.simplify_search(&negated, unknown_as.negate());
-                    }
-                }
-                SqlKind::And | SqlKind::Or => {
-                    let ops: Vec<RexNode> = ac
-                        .operands
-                        .iter()
-                        .map(|o| self.simplify(&rex_not(self.builder, o), unknown_as))
-                        .collect();
-                    let op = if ac.op.kind == SqlKind::And {
-                        &operators::OR
-                    } else {
-                        &operators::AND
-                    };
-                    return self.simplify(&self.builder.make_call(op, ops), unknown_as);
-                }
-                SqlKind::Case => {
-                    let mut ops = Vec::new();
-                    let n = ac.operands.len();
-                    let mut i = 0;
-                    while i < n {
-                        if i + 1 == n {
-                            ops.push(rex_not(self.builder, &ac.operands[i]));
-                        } else {
-                            ops.push(ac.operands[i].clone());
-                            ops.push(rex_not(self.builder, &ac.operands[i + 1]));
-                        }
-                        i += 2;
-                    }
-                    let c = RexBuilder::make_call_typed(ac.ty.clone(), &operators::CASE, ops);
-                    return self.simplify(&c, unknown_as);
-                }
-                SqlKind::In | SqlKind::NotIn => {}
-                k => {
-                    let negated = match k {
-                        SqlKind::IsTrue
-                        | SqlKind::IsFalse
-                        | SqlKind::IsNull
-                        | SqlKind::IsNotTrue
-                        | SqlKind::IsNotFalse
-                        | SqlKind::IsNotNull
-                        | SqlKind::IsDistinctFrom
-                        | SqlKind::IsNotDistinctFrom => k.negate_null_safe(),
-                        _ => k,
-                    };
-                    let negated = if negated != k {
-                        negated
-                    } else if k.is_binary_comparison() {
-                        k.negate_null_safe()
-                    } else {
-                        k
-                    };
-                    if negated != k {
-                        if let Some(op) = operators::of_comparison_kind(negated) {
-                            let c = self.builder.make_call(op, ac.operands.clone());
-                            return self.simplify(&c, unknown_as);
-                        }
-                    }
-                }
+    fn simplify_not(self, call: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let RexCall {
+            op,
+            mut operands,
+            ty,
+        } = call;
+        let a = match operands.remove(0) {
+            RexNode::Call(ac) => match self.simplify_not_call(ac, unknown_as) {
+                Ok(simplified) => return simplified,
+                Err(ac) => RexNode::Call(ac),
             },
             RexNode::Literal(RexLiteral {
                 value: LiteralValue::Boolean(b),
                 ..
             }) => return self.builder.make_bool_literal(!b),
-            _ => {}
-        }
+            other => other,
+        };
+        let original = a.clone();
         let a2 = self.simplify(a, unknown_as.negate());
-        if &a2 == a {
-            return RexNode::Call(call.clone());
+        if a2 == original {
+            operands.insert(0, a2);
+            return RexNode::Call(RexCall { op, operands, ty });
         }
-        rex_not(self.builder, &a2)
+        rex_not(self.builder, a2)
     }
 
-    fn simplify_is(self, call: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        match self.simplify_is1(call.op.kind, &call.operands[0], unknown_as) {
-            Some(n) => n,
-            None => RexNode::Call(call.clone()),
+    fn simplify_not_call(self, ac: RexCall, unknown_as: RexUnknownAs) -> Result<RexNode, RexCall> {
+        match ac.op.kind {
+            SqlKind::Not => {
+                let mut ac = ac;
+                Ok(self.simplify(ac.operands.swap_remove(0), unknown_as))
+            }
+            SqlKind::Search => {
+                let mut ac = ac;
+                if let Some(RexNode::Literal(RexLiteral {
+                    value: LiteralValue::Sarg(sarg),
+                    ..
+                })) = ac.operands.get_mut(1)
+                {
+                    **sarg = sarg.negate();
+                    ac.operands.truncate(2);
+                    return Ok(self.simplify_search(ac, unknown_as.negate()));
+                }
+                Err(ac)
+            }
+            SqlKind::And | SqlKind::Or => {
+                let op = if ac.op.kind == SqlKind::And {
+                    &operators::OR
+                } else {
+                    &operators::AND
+                };
+                let ops: Vec<RexNode> = ac
+                    .operands
+                    .into_iter()
+                    .map(|o| self.simplify(rex_not(self.builder, o), unknown_as))
+                    .collect();
+                Ok(self.simplify(self.builder.make_call(op, ops), unknown_as))
+            }
+            SqlKind::Case => {
+                let n = ac.operands.len();
+                let ops: Vec<RexNode> = ac
+                    .operands
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, o)| {
+                        if i % 2 == 1 || i + 1 == n {
+                            rex_not(self.builder, o)
+                        } else {
+                            o
+                        }
+                    })
+                    .collect();
+                let c = RexBuilder::make_call_typed(ac.ty, &operators::CASE, ops);
+                Ok(self.simplify(c, unknown_as))
+            }
+            SqlKind::In | SqlKind::NotIn => Err(ac),
+            k => {
+                let negated = match k {
+                    SqlKind::IsTrue
+                    | SqlKind::IsFalse
+                    | SqlKind::IsNull
+                    | SqlKind::IsNotTrue
+                    | SqlKind::IsNotFalse
+                    | SqlKind::IsNotNull
+                    | SqlKind::IsDistinctFrom
+                    | SqlKind::IsNotDistinctFrom => k.negate_null_safe(),
+                    _ => k,
+                };
+                let negated = if negated != k {
+                    negated
+                } else if k.is_binary_comparison() {
+                    k.negate_null_safe()
+                } else {
+                    k
+                };
+                if negated != k {
+                    if let Some(op) = operators::of_comparison_kind(negated) {
+                        let c = self.builder.make_call(op, ac.operands);
+                        return Ok(self.simplify(c, unknown_as));
+                    }
+                }
+                Err(ac)
+            }
         }
     }
 
-    fn simplify_is1(self, kind: SqlKind, a: &RexNode, unknown_as: RexUnknownAs) -> Option<RexNode> {
-        if kind == SqlKind::IsTrue && unknown_as == RexUnknownAs::False {
-            return Some(self.simplify(a, unknown_as));
+    fn simplify_is(self, call: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let RexCall {
+            op,
+            mut operands,
+            ty,
+        } = call;
+        match self.simplify_is1(op.kind, operands.remove(0), unknown_as) {
+            Ok(n) => n,
+            Err(a) => {
+                operands.insert(0, a);
+                RexNode::Call(RexCall { op, operands, ty })
+            }
         }
-        if kind == SqlKind::IsFalse && unknown_as == RexUnknownAs::False {
-            return Some(self.simplify(&rex_not(self.builder, a), unknown_as));
-        }
-        if kind == SqlKind::IsNotFalse && unknown_as == RexUnknownAs::True {
-            return Some(self.simplify(a, unknown_as));
-        }
-        if kind == SqlKind::IsNotTrue && unknown_as == RexUnknownAs::True {
-            return Some(self.simplify(&rex_not(self.builder, a), unknown_as));
-        }
-        self.simplify_is2(kind, a, unknown_as)
     }
 
-    fn simplify_is2(self, kind: SqlKind, a: &RexNode, unknown_as: RexUnknownAs) -> Option<RexNode> {
+    fn simplify_is1(
+        self,
+        kind: SqlKind,
+        a: RexNode,
+        unknown_as: RexUnknownAs,
+    ) -> Result<RexNode, RexNode> {
+        match (kind, unknown_as) {
+            (SqlKind::IsTrue, RexUnknownAs::False) | (SqlKind::IsNotFalse, RexUnknownAs::True) => {
+                Ok(self.simplify(a, unknown_as))
+            }
+            (SqlKind::IsFalse, RexUnknownAs::False) | (SqlKind::IsNotTrue, RexUnknownAs::True) => {
+                Ok(self.simplify(rex_not(self.builder, a), unknown_as))
+            }
+            _ => self.simplify_is2(kind, a, unknown_as),
+        }
+    }
+
+    fn simplify_is2(
+        self,
+        kind: SqlKind,
+        a: RexNode,
+        unknown_as: RexUnknownAs,
+    ) -> Result<RexNode, RexNode> {
         match kind {
             SqlKind::IsNull => {
-                if let Some(s) = self.simplify_is_null(a) {
-                    return Some(s);
+                if let Some(s) = self.simplify_is_null(&a) {
+                    return Ok(s);
                 }
             }
             SqlKind::IsNotNull => {
-                if let Some(s) = self.simplify_is_not_null(a) {
-                    return Some(s);
+                if let Some(s) = self.simplify_is_not_null(&a) {
+                    return Ok(s);
                 }
             }
-            SqlKind::IsTrue => {
+            SqlKind::IsTrue | SqlKind::IsNotFalse => {
                 if !a.ty().is_nullable() {
-                    return Some(self.simplify(a, unknown_as));
+                    return Ok(self.simplify(a, unknown_as));
                 }
-                let s = self.simplify(a, RexUnknownAs::False);
-                if &s == a {
-                    return None;
+                let (inner_unknown_as, op) = if kind == SqlKind::IsTrue {
+                    (RexUnknownAs::False, &operators::IS_TRUE)
+                } else {
+                    (RexUnknownAs::True, &operators::IS_NOT_FALSE)
+                };
+                let s = self.simplify(a.clone(), inner_unknown_as);
+                if s == a {
+                    return Err(a);
                 }
-                return Some(self.builder.make_call(&operators::IS_TRUE, vec![s]));
-            }
-            SqlKind::IsNotFalse => {
-                if !a.ty().is_nullable() {
-                    return Some(self.simplify(a, unknown_as));
-                }
-                let s = self.simplify(a, RexUnknownAs::True);
-                if &s == a {
-                    return None;
-                }
-                return Some(self.builder.make_call(&operators::IS_NOT_FALSE, vec![s]));
+                return Ok(self.builder.make_call(op, vec![s]));
             }
             SqlKind::IsFalse | SqlKind::IsNotTrue if !a.ty().is_nullable() => {
-                return Some(self.simplify(&rex_not(self.builder, a), unknown_as));
+                return Ok(self.simplify(rex_not(self.builder, a), unknown_as));
             }
             _ => {}
         }
         if a.kind() == SqlKind::Not {
             if let Some(op) = operators::of_comparison_kind(kind.negate_null_safe()) {
-                let c = self.builder.make_call(op, vec![a.operands()[0].clone()]);
-                return Some(self.simplify(&c, RexUnknownAs::Unknown));
+                let inner = match a {
+                    RexNode::Call(mut c) => c.operands.swap_remove(0),
+                    other => other.operands()[0].clone(),
+                };
+                let c = self.builder.make_call(op, vec![inner]);
+                return Ok(self.simplify(c, RexUnknownAs::Unknown));
             }
         }
-        let a2 = self.simplify(a, RexUnknownAs::Unknown);
-        if &a2 != a {
+        let a2 = self.simplify(a.clone(), RexUnknownAs::Unknown);
+        if a2 != a {
             if let Some(op) = operators::of_comparison_kind(kind) {
-                return Some(self.builder.make_call(op, vec![a2]));
+                return Ok(self.builder.make_call(op, vec![a2]));
             }
         }
-        None
+        Err(a)
     }
 
     fn simplify_is_not_null(self, a: &RexNode) -> Option<RexNode> {
-        let a = self.simplify(a, RexUnknownAs::Unknown);
+        let a = self.simplify(a.clone(), RexUnknownAs::Unknown);
         if !a.ty().is_nullable() {
             return Some(self.builder.make_bool_literal(true));
         }
-        match &a {
+        match a {
             RexNode::Literal(l) => Some(self.builder.make_bool_literal(!l.is_null())),
             RexNode::Call(c) if is_strong_kind(c.op.kind) && c.op.kind != SqlKind::Search => {
                 let mut operands = Vec::new();
-                for o in &c.operands {
-                    match self.simplify_is_not_null(o) {
-                        None => operands.push(
-                            self.builder
-                                .make_call(&operators::IS_NOT_NULL, vec![o.clone()]),
-                        ),
+                for o in c.operands {
+                    match self.simplify_is_not_null(&o) {
+                        None => {
+                            operands.push(self.builder.make_call(&operators::IS_NOT_NULL, vec![o]));
+                        }
                         Some(s) if s.is_always_false() => {
                             return Some(self.builder.make_bool_literal(false))
                         }
@@ -1605,19 +1636,17 @@ impl RexSimplify {
     }
 
     fn simplify_is_null(self, a: &RexNode) -> Option<RexNode> {
-        let a = self.simplify(a, RexUnknownAs::Unknown);
+        let a = self.simplify(a.clone(), RexUnknownAs::Unknown);
         if !a.ty().is_nullable() {
             return Some(self.builder.make_bool_literal(false));
         }
-        match &a {
-            RexNode::Literal(l) if l.is_null() => Some(self.builder.make_bool_literal(true)),
-            RexNode::Literal(_) => Some(self.builder.make_bool_literal(false)),
+        match a {
+            RexNode::Literal(l) => Some(self.builder.make_bool_literal(l.is_null())),
             RexNode::Call(c) if is_strong_kind(c.op.kind) && c.op.kind != SqlKind::Search => {
                 let mut operands = Vec::new();
-                for o in &c.operands {
-                    match self.simplify_is_null(o) {
-                        None => operands
-                            .push(self.builder.make_call(&operators::IS_NULL, vec![o.clone()])),
+                for o in c.operands {
+                    match self.simplify_is_null(&o) {
+                        None => operands.push(self.builder.make_call(&operators::IS_NULL, vec![o])),
                         Some(s) => operands.push(s),
                     }
                 }
@@ -1627,64 +1656,78 @@ impl RexSimplify {
         }
     }
 
-    fn simplify_search(self, call: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        let a = &call.operands[0];
-        if let Some(RexNode::Literal(RexLiteral {
-            value: LiteralValue::Sarg(sarg),
-            ty,
-        })) = call.operands.get(1)
-        {
-            if sarg.is_all() || sarg.is_none() {
-                let n = simple_sarg_node(self.builder, a, sarg, unknown_as);
-                return self.simplify(&n, unknown_as);
-            }
-            if sarg.null_as != RexUnknownAs::Unknown {
-                if let Some(s) = self.simplify_is1(SqlKind::IsNull, a, unknown_as) {
-                    if s.is_always_false() {
-                        let sarg2 = Sarg::of(RexUnknownAs::Unknown, sarg.range_set.clone());
-                        let c2 = RexCall {
-                            op: call.op,
-                            operands: vec![
-                                a.clone(),
-                                RexNode::Literal(RexLiteral {
-                                    value: LiteralValue::Sarg(Box::new(sarg2)),
-                                    ty: ty.clone(),
-                                }),
-                            ],
-                            ty: call.ty.clone(),
-                        };
-                        return self.simplify_search(&c2, unknown_as);
-                    }
-                }
-            } else if sarg.is_points() && sarg.point_count() <= 1 {
-                return expand_search(self.builder, call);
-            }
+    fn simplify_search(self, mut call: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let (all_or_none, null_as, single_point) = match call.operands.get(1) {
+            Some(RexNode::Literal(RexLiteral {
+                value: LiteralValue::Sarg(sarg),
+                ..
+            })) => (
+                sarg.is_all() || sarg.is_none(),
+                sarg.null_as,
+                sarg.is_points() && sarg.point_count() <= 1,
+            ),
+            _ => return RexNode::Call(call),
+        };
+        if all_or_none {
+            let n = match &call.operands[1] {
+                RexNode::Literal(RexLiteral {
+                    value: LiteralValue::Sarg(sarg),
+                    ..
+                }) => simple_sarg_node(self.builder, &call.operands[0], sarg, unknown_as),
+                _ => return RexNode::Call(call),
+            };
+            return self.simplify(n, unknown_as);
         }
-        RexNode::Call(call.clone())
+        if null_as != RexUnknownAs::Unknown {
+            if let Ok(s) = self.simplify_is1(SqlKind::IsNull, call.operands[0].clone(), unknown_as)
+            {
+                if s.is_always_false() {
+                    if let Some(RexNode::Literal(RexLiteral {
+                        value: LiteralValue::Sarg(sarg),
+                        ..
+                    })) = call.operands.get_mut(1)
+                    {
+                        sarg.null_as = RexUnknownAs::Unknown;
+                    }
+                    call.operands.truncate(2);
+                    return self.simplify_search(call, unknown_as);
+                }
+            }
+        } else if single_point {
+            return expand_search(self.builder, call);
+        }
+        RexNode::Call(call)
     }
 
-    fn simplify_cast(self, e: &RexCall) -> RexNode {
-        let operand = self.simplify(&e.operands[0], RexUnknownAs::Unknown);
-        let same_or_narrows = e.ty == *operand.ty()
-            || (e.ty.equals_sans_nullability(operand.ty()) && !operand.ty().is_nullable());
-        if same_or_narrows && e.ty.sql_type_name() != SqlTypeName::Decimal {
+    fn simplify_cast(self, e: RexCall) -> RexNode {
+        let RexCall {
+            op,
+            mut operands,
+            ty,
+        } = e;
+        let operand = self.simplify(operands.remove(0), RexUnknownAs::Unknown);
+        let same_or_narrows = ty == *operand.ty()
+            || (ty.equals_sans_nullability(operand.ty()) && !operand.ty().is_nullable());
+        if same_or_narrows && ty.sql_type_name() != SqlTypeName::Decimal {
             return operand;
         }
         if let RexNode::Literal(lit) = &operand {
-            if let Some(folded) = fold_literal_cast(lit, &e.ty) {
+            if let Some(folded) = fold_literal_cast(lit, &ty) {
                 return folded;
             }
         }
-        if operand == e.operands[0] {
-            RexNode::Call(e.clone())
-        } else {
-            RexBuilder::make_call_typed(e.ty.clone(), e.op, vec![operand])
-        }
+        operands.insert(0, operand);
+        RexBuilder::make_call_typed(ty, op, operands)
     }
 
-    fn simplify_coalesce(self, call: &RexCall) -> RexNode {
+    fn simplify_coalesce(self, call: RexCall) -> RexNode {
+        let RexCall {
+            op,
+            operands: original,
+            ty,
+        } = call;
         let mut operands: Vec<RexNode> = Vec::new();
-        for o in &call.operands {
+        for o in original {
             let s = self.simplify(o, RexUnknownAs::Unknown);
             if s.is_null_literal() {
                 continue;
@@ -1699,33 +1742,36 @@ impl RexSimplify {
             }
         }
         match operands.len() {
-            0 => RexBuilder::make_null_literal(&call.ty),
+            0 => RexBuilder::make_null_literal(&ty),
             1 => {
                 let only = operands.remove(0);
-                if only.ty() == &call.ty {
+                if only.ty() == &ty {
                     only
                 } else {
-                    RexBuilder::make_cast(call.ty.clone(), only, false)
+                    RexBuilder::make_cast(ty, only, false)
                 }
             }
-            _ => {
-                if operands == call.operands {
-                    RexNode::Call(call.clone())
-                } else {
-                    RexBuilder::make_call_typed(call.ty.clone(), call.op, operands)
-                }
-            }
+            _ => RexBuilder::make_call_typed(ty, op, operands),
         }
     }
 
-    fn simplify_case(self, call: &RexCall, unknown_as: RexUnknownAs) -> RexNode {
-        let n = call.operands.len();
+    fn simplify_case(self, call: RexCall, unknown_as: RexUnknownAs) -> RexNode {
+        let RexCall {
+            op,
+            operands: original,
+            ty,
+        } = call;
+        let n = original.len();
+        let mut remaining = original.into_iter();
         let mut branches: Vec<(RexNode, RexNode)> = Vec::new();
         let mut else_value: Option<RexNode> = None;
         let mut i = 0;
         while i + 1 < n {
-            let cond = self.simplify(&call.operands[i], RexUnknownAs::False);
-            let value = self.simplify(&call.operands[i + 1], unknown_as);
+            let (Some(cond), Some(value)) = (remaining.next(), remaining.next()) else {
+                break;
+            };
+            let cond = self.simplify(cond, RexUnknownAs::False);
+            let value = self.simplify(value, unknown_as);
             i += 2;
             if cond.is_always_false() || cond.is_null_literal() {
                 continue;
@@ -1738,44 +1784,40 @@ impl RexSimplify {
         }
         let else_value = match else_value {
             Some(v) => v,
-            None => self.simplify(&call.operands[n - 1], unknown_as),
+            None => match remaining.next_back() {
+                Some(last) => self.simplify(last, unknown_as),
+                None => RexBuilder::make_null_literal(&ty),
+            },
         };
         let mut merged: Vec<(RexNode, RexNode)> = Vec::new();
         for (c, v) in branches {
             if let Some(last) = merged.last_mut() {
                 if last.1 == v {
-                    let or = self
-                        .builder
-                        .make_call(&operators::OR, vec![last.0.clone(), c]);
-                    last.0 = self.simplify(&or, RexUnknownAs::False);
+                    let previous =
+                        std::mem::replace(&mut last.0, self.builder.make_bool_literal(false));
+                    let or = self.builder.make_call(&operators::OR, vec![previous, c]);
+                    last.0 = self.simplify(or, RexUnknownAs::False);
                     continue;
                 }
             }
             merged.push((c, v));
         }
-        while let Some(last) = merged.last() {
-            if last.1 == else_value {
-                merged.pop();
-            } else {
-                break;
-            }
+        while merged.last().is_some_and(|last| last.1 == else_value) {
+            merged.pop();
         }
         if merged.is_empty() {
-            if else_value.ty() == &call.ty {
+            if else_value.ty() == &ty {
                 return else_value;
             }
-            return RexBuilder::make_cast(call.ty.clone(), else_value, false);
+            return RexBuilder::make_cast(ty, else_value, false);
         }
-        let mut operands = Vec::new();
+        let mut operands = Vec::with_capacity(merged.len() * 2 + 1);
         for (c, v) in merged {
             operands.push(c);
             operands.push(v);
         }
         operands.push(else_value);
-        if operands == call.operands {
-            return RexNode::Call(call.clone());
-        }
-        RexBuilder::make_call_typed(call.ty.clone(), &operators::CASE, operands)
+        RexBuilder::make_call_typed(ty, op, operands)
     }
 }
 
@@ -1795,15 +1837,19 @@ fn truncate_or_pad(s: &str, precision: Option<usize>) -> String {
     text
 }
 
+fn char_precision(target: &RelDataType) -> Option<usize> {
+    target.precision().and_then(|p| usize::try_from(p).ok())
+}
+
 fn fold_literal_cast(lit: &RexLiteral, target: &RelDataType) -> Option<RexNode> {
     let tn = target.sql_type_name();
     let value = match (&lit.value, tn) {
         (LiteralValue::Null, _) => LiteralValue::Null,
         (LiteralValue::Char(s), SqlTypeName::Varchar) => {
-            LiteralValue::Char(truncate(s, usize::try_from(target.precision()).ok()))
+            LiteralValue::Char(truncate(s, char_precision(target)))
         }
         (LiteralValue::Char(s), SqlTypeName::Char) => {
-            LiteralValue::Char(truncate_or_pad(s, usize::try_from(target.precision()).ok()))
+            LiteralValue::Char(truncate_or_pad(s, char_precision(target)))
         }
         (
             LiteralValue::Exact(d),
@@ -1835,47 +1881,46 @@ fn fold_literal_cast(lit: &RexLiteral, target: &RelDataType) -> Option<RexNode> 
     }))
 }
 
-pub fn decompose_conjunction(e: &RexNode, terms: &mut Vec<RexNode>, not_terms: &mut Vec<RexNode>) {
+fn decompose_conjunction(e: RexNode, terms: &mut Vec<RexNode>, not_terms: &mut Vec<RexNode>) {
     if e.is_always_true() {
         return;
     }
     match e {
         RexNode::Call(c) if c.op.kind == SqlKind::And => {
-            for o in &c.operands {
+            for o in c.operands {
                 decompose_conjunction(o, terms, not_terms);
             }
         }
-        RexNode::Call(c) if c.op.kind == SqlKind::Not => {
-            let inner = &c.operands[0];
+        RexNode::Call(mut c) if c.op.kind == SqlKind::Not => {
+            let inner = c.operands.swap_remove(0);
             if inner.is_always_false() {
                 return;
             }
             if inner.kind() == SqlKind::Or {
                 for o in disjunctions(inner) {
-                    if o.kind() == SqlKind::Not {
-                        terms.push(o.operands()[0].clone());
-                    } else {
-                        not_terms.push(o);
+                    match o {
+                        RexNode::Call(mut n) if n.op.kind == SqlKind::Not => {
+                            terms.push(n.operands.swap_remove(0));
+                        }
+                        other => not_terms.push(other),
                     }
                 }
             } else {
-                not_terms.push(inner.clone());
+                not_terms.push(inner);
             }
         }
-        other => terms.push(other.clone()),
+        other => terms.push(other),
     }
 }
 
-pub fn remove_nullability_cast(e: &RexNode) -> RexNode {
+fn remove_nullability_cast(e: RexNode) -> RexNode {
     match e {
-        RexNode::Call(c) if c.op.kind == SqlKind::Cast => {
-            let inner = &c.operands[0];
-            if inner.ty().equals_sans_nullability(&c.ty) {
-                return inner.clone();
-            }
-            e.clone()
+        RexNode::Call(mut c)
+            if c.op.kind == SqlKind::Cast && c.operands[0].ty().equals_sans_nullability(&c.ty) =>
+        {
+            c.operands.swap_remove(0)
         }
-        _ => e.clone(),
+        other => other,
     }
 }
 

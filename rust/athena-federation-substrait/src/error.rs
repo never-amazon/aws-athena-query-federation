@@ -18,6 +18,8 @@ pub enum SubstraitError {
     IndexOutOfBounds(String),
     #[error("{0}")]
     NullPointer(String),
+    #[error("{0}")]
+    NumberFormat(String),
     #[error("{}", class_cast_message(from, to))]
     ClassCast {
         from: &'static str,
@@ -61,6 +63,7 @@ impl SubstraitError {
             SubstraitError::Unsupported(_) => JavaExceptionKind::UnsupportedOperation,
             SubstraitError::IndexOutOfBounds(_) => JavaExceptionKind::IndexOutOfBounds,
             SubstraitError::NullPointer(_) => JavaExceptionKind::NullPointer,
+            SubstraitError::NumberFormat(_) => JavaExceptionKind::NumberFormat,
             SubstraitError::ClassCast { .. } => {
                 JavaExceptionKind::Unchecked("java.lang.ClassCastException")
             }

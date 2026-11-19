@@ -546,24 +546,41 @@ impl RexBuilder {
     }
 }
 
-pub fn flatten(kind: SqlKind, node: &RexNode, out: &mut Vec<RexNode>) {
+fn flatten(kind: SqlKind, node: RexNode, out: &mut Vec<RexNode>) {
     match node {
         RexNode::Call(c) if c.op.kind == kind => {
-            for o in &c.operands {
+            for o in c.operands {
                 flatten(kind, o, out);
             }
         }
-        other => out.push(other.clone()),
+        other => out.push(other),
     }
 }
 
-pub fn conjunctions(node: &RexNode) -> Vec<RexNode> {
+fn flatten_refs<'a>(kind: SqlKind, node: &'a RexNode, out: &mut Vec<&'a RexNode>) {
+    match node {
+        RexNode::Call(c) if c.op.kind == kind => {
+            for o in &c.operands {
+                flatten_refs(kind, o, out);
+            }
+        }
+        other => out.push(other),
+    }
+}
+
+pub fn conjunctions(node: RexNode) -> Vec<RexNode> {
     let mut out = Vec::new();
     flatten(SqlKind::And, node, &mut out);
     out
 }
 
-pub fn disjunctions(node: &RexNode) -> Vec<RexNode> {
+pub fn conjunction_refs(node: &RexNode) -> Vec<&RexNode> {
+    let mut out = Vec::new();
+    flatten_refs(SqlKind::And, node, &mut out);
+    out
+}
+
+pub fn disjunctions(node: RexNode) -> Vec<RexNode> {
     let mut out = Vec::new();
     flatten(SqlKind::Or, node, &mut out);
     out
@@ -573,7 +590,7 @@ pub fn compose_conjunction(builder: RexBuilder, nodes: Vec<RexNode>) -> RexNode 
     let mut list: Vec<RexNode> = Vec::new();
     for n in nodes {
         let mut flat = Vec::new();
-        flatten(SqlKind::And, &n, &mut flat);
+        flatten(SqlKind::And, n, &mut flat);
         for f in flat {
             if f.is_always_true() {
                 continue;
@@ -601,7 +618,7 @@ pub fn compose_disjunction(builder: RexBuilder, nodes: Vec<RexNode>) -> RexNode 
     let mut list: Vec<RexNode> = Vec::new();
     for n in nodes {
         let mut flat = Vec::new();
-        flatten(SqlKind::Or, &n, &mut flat);
+        flatten(SqlKind::Or, n, &mut flat);
         for f in flat {
             if f.is_always_false() {
                 continue;

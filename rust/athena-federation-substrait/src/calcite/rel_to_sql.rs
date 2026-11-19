@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use bigdecimal::BigDecimal;
@@ -706,7 +707,7 @@ impl Context {
         })))
     }
 
-    fn strip_cast_from_string(&self, call: &RexCall) -> RexCall {
+    fn strip_cast_from_string<'c>(&self, call: &'c RexCall) -> Cow<'c, RexCall> {
         match call.op.kind {
             SqlKind::Equals
             | SqlKind::IsNotDistinctFrom
@@ -733,29 +734,29 @@ impl Context {
                 };
                 if is_cast(o0) && !is_cast(o1) {
                     if !coercion(o0) {
-                        return call.clone();
+                        return Cow::Borrowed(call);
                     }
                     let inner = o0.operands()[0].clone();
-                    return RexCall {
+                    return Cow::Owned(RexCall {
                         op: call.op,
                         operands: vec![inner, o1.clone()],
                         ty: call.ty.clone(),
-                    };
+                    });
                 }
                 if is_cast(o1) && !is_cast(o0) {
                     if !coercion(o1) {
-                        return call.clone();
+                        return Cow::Borrowed(call);
                     }
                     let inner = o1.operands()[0].clone();
-                    return RexCall {
+                    return Cow::Owned(RexCall {
                         op: call.op,
                         operands: vec![o0.clone(), inner],
                         ty: call.ty.clone(),
-                    };
+                    });
                 }
-                call.clone()
+                Cow::Borrowed(call)
             }
-            _ => call.clone(),
+            _ => Cow::Borrowed(call),
         }
     }
 
@@ -1059,13 +1060,25 @@ fn create_over_call(
     SqlNode::call(&operators::OVER, vec![agg, window])
 }
 
-fn java_double_decimal(value: f64) -> BigDecimal {
-    java_double_to_string(value).parse().unwrap_or_default()
+fn java_double_decimal(value: f64) -> Result<BigDecimal> {
+    if value.is_finite() {
+        return Ok(java_double_to_string(value).parse().unwrap_or_default());
+    }
+    let first = if value.is_nan() { 'N' } else { 'I' };
+    Err(SubstraitError::NumberFormat(format!(
+        "Character {first} is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark."
+    )))
 }
 
 fn ordinal_number(ordinal: usize) -> Result<u64> {
     u64::try_from(ordinal + 1)
         .map_err(|_| SubstraitError::IndexOutOfBounds(format!("Index {ordinal} out of bounds")))
+}
+
+fn literal_precision(ty: &RelDataType) -> usize {
+    ty.precision()
+        .and_then(|p| usize::try_from(p).ok())
+        .unwrap_or(0)
 }
 
 pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
@@ -1084,16 +1097,16 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
             if tn.is_approx() {
                 SqlLiteral::approx(java_double_decimal(
                     d.to_string().parse::<f64>().unwrap_or(0.0),
-                ))
+                )?)
             } else {
                 SqlLiteral::exact(d.clone())
             }
         }
         LiteralValue::Approx(f) => {
             if tn.is_approx() || tn.family() != SqlTypeFamily::Numeric {
-                SqlLiteral::approx(java_double_decimal(*f))
+                SqlLiteral::approx(java_double_decimal(*f)?)
             } else {
-                SqlLiteral::exact(java_double_decimal(*f))
+                SqlLiteral::exact(java_double_decimal(*f)?)
             }
         }
         LiteralValue::Boolean(b) => SqlLiteral::boolean(*b),
@@ -1101,10 +1114,10 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
             value: SqlLiteralValue::Date(d.clone()),
         },
         LiteralValue::Time(t) => SqlLiteral {
-            value: SqlLiteralValue::Time(t.clone(), literal.ty.precision()),
+            value: SqlLiteralValue::Time(t.clone(), literal_precision(&literal.ty)),
         },
         LiteralValue::Timestamp(t) => SqlLiteral {
-            value: SqlLiteralValue::Timestamp(t.clone(), literal.ty.precision()),
+            value: SqlLiteralValue::Timestamp(t.clone(), literal_precision(&literal.ty)),
         },
         LiteralValue::Binary(b) => SqlLiteral {
             value: SqlLiteralValue::Binary(b.clone()),

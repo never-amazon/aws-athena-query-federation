@@ -1,6 +1,4 @@
-use super::rel_data_type::{
-    RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED, SCALE_NOT_SPECIFIED,
-};
+use super::rel_data_type::{RelDataType, RelDataTypeSystem};
 use super::sql_node::SqlDataTypeSpec;
 use super::sql_type_name::SqlTypeName;
 
@@ -172,8 +170,8 @@ impl SqlDialect {
             if let Some(a) = alien {
                 return Some(SqlDataTypeSpec {
                     type_name: a.to_string(),
-                    precision: PRECISION_NOT_SPECIFIED,
-                    scale: SCALE_NOT_SPECIFIED,
+                    precision: None,
+                    scale: None,
                     charset: None,
                     alien: true,
                     collection: None,
@@ -184,33 +182,22 @@ impl SqlDialect {
             return None;
         }
         let system = self.type_system();
-        let mut precision = ty.precision();
-        let mut scale = ty.scale();
-        match tn {
-            SqlTypeName::Decimal => {
-                let max_scale = system.max_scale(tn);
-                let max_precision = system.max_precision(tn);
-                if max_precision > 0 && precision > max_precision {
-                    precision = max_precision;
-                }
-                if max_scale > 0 && scale > max_scale {
-                    scale = max_scale;
-                }
-            }
+        let clamp = |value: Option<i32>, max: Option<i32>| match (value, max) {
+            (Some(v), Some(m)) if m > 0 && v > m => Some(m),
+            _ => value,
+        };
+        let (precision, scale) = match tn {
+            SqlTypeName::Decimal => (
+                clamp(ty.precision(), system.max_precision(tn)),
+                clamp(ty.scale(), system.max_scale(tn)),
+            ),
             SqlTypeName::Char | SqlTypeName::Varchar => {
-                let max_precision = system.max_precision(tn);
-                if max_precision > 0 && precision > max_precision {
-                    precision = max_precision;
-                }
+                (clamp(ty.precision(), system.max_precision(tn)), ty.scale())
             }
-            _ => {}
-        }
-        if !tn.allows_prec() {
-            precision = PRECISION_NOT_SPECIFIED;
-        }
-        if !tn.allows_scale() {
-            scale = SCALE_NOT_SPECIFIED;
-        }
+            _ => (ty.precision(), ty.scale()),
+        };
+        let precision = precision.filter(|_| tn.allows_prec());
+        let scale = scale.filter(|_| tn.allows_scale());
         let charset = if tn.is_character() && self.supports_char_set() {
             Some("UTF-8".to_string())
         } else {
