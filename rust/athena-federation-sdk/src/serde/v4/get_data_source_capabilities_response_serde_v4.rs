@@ -1,8 +1,7 @@
 use indexmap::IndexMap;
 
 use crate::exceptions::{FederationError, Result};
-use crate::metadata::optimizations::OptimizationSubType;
-use crate::metadata::GetDataSourceCapabilitiesResponse;
+use crate::metadata::{GetDataSourceCapabilitiesResponse, OptimizationSubType};
 use crate::serde::base::{
     assert_field_name, get_next_string_field, require_non_null, validate_object_end,
     validate_object_start_token,

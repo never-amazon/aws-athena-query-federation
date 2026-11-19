@@ -1,5 +1,5 @@
-use super::MetadataRequestType;
 use crate::lambda::LambdaContext;
+use crate::named_enum::named_enum;
 use crate::security::FederatedIdentity;
 
 #[derive(Debug, Clone, Copy)]
@@ -51,4 +51,30 @@ macro_rules! impl_metadata_request {
     };
 }
 
+named_enum! {
+    pub enum MetadataRequestType {
+        ListTables => "LIST_TABLES",
+        ListSchemas => "LIST_SCHEMAS",
+        GetTable => "GET_TABLE",
+        GetTableLayout => "GET_TABLE_LAYOUT",
+        GetSplits => "GET_SPLITS",
+        GetDatasourceCapabilities => "GET_DATASOURCE_CAPABILITIES",
+    }
+}
+
+macro_rules! impl_metadata_response {
+    ($t:ty, $kind:expr) => {
+        impl $t {
+            pub fn request_type(&self) -> $crate::metadata::MetadataRequestType {
+                $kind
+            }
+
+            pub fn catalog_name(&self) -> &str {
+                &self.catalog_name
+            }
+        }
+    };
+}
+
 pub(crate) use impl_metadata_request;
+pub(crate) use impl_metadata_response;

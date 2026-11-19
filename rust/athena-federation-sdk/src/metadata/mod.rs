@@ -1,35 +1,33 @@
-mod get_data_source_capabilities_request;
-mod get_data_source_capabilities_response;
-mod get_splits_request;
-mod get_splits_response;
-mod get_table_layout_request;
-mod get_table_layout_response;
-mod get_table_request;
-mod get_table_response;
+mod get_data_source_capabilities;
+mod get_splits;
+mod get_table;
+mod get_table_layout;
 pub mod glue;
-mod list_schemas_request;
-mod list_schemas_response;
-mod list_tables_request;
-mod list_tables_response;
-mod metadata_request;
-mod metadata_request_type;
-mod metadata_response;
-pub mod optimizations;
+mod header;
+mod list_schemas;
+mod list_tables;
+mod optimizations;
+mod query_passthrough;
 
-pub use get_data_source_capabilities_request::GetDataSourceCapabilitiesRequest;
-pub use get_data_source_capabilities_response::GetDataSourceCapabilitiesResponse;
-pub use get_splits_request::GetSplitsRequest;
-pub use get_splits_response::GetSplitsResponse;
-pub use get_table_layout_request::GetTableLayoutRequest;
-pub use get_table_layout_response::GetTableLayoutResponse;
-pub use get_table_request::GetTableRequest;
-pub use get_table_response::GetTableResponse;
-pub use list_schemas_request::ListSchemasRequest;
-pub use list_schemas_response::ListSchemasResponse;
-pub use list_tables_request::{ListTablesRequest, UNLIMITED_PAGE_SIZE_VALUE};
-pub use list_tables_response::ListTablesResponse;
-pub use metadata_request::MetadataHeader;
-pub use metadata_request_type::MetadataRequestType;
+pub use get_data_source_capabilities::{
+    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse,
+};
+pub use get_splits::{GetSplitsRequest, GetSplitsResponse};
+pub use get_table::{GetTableRequest, GetTableResponse};
+pub use get_table_layout::{GetTableLayoutRequest, GetTableLayoutResponse};
+pub(crate) use header::{impl_metadata_request, impl_metadata_response};
+pub use header::{MetadataHeader, MetadataRequestType};
+pub use list_schemas::{ListSchemasRequest, ListSchemasResponse};
+pub use list_tables::{ListTablesRequest, ListTablesResponse, UNLIMITED_PAGE_SIZE_VALUE};
+pub use optimizations::{
+    Capability, ComplexExpressionPushdownSubType, DataSourceOptimizations, FilterPushdownSubType,
+    HintsSubtype, LimitPushdownSubType, OptimizationSubType, SubTypeProperties,
+    TopNPushdownSubType,
+};
+pub use query_passthrough::{
+    QueryPassthrough, QueryPassthroughSignature, DEFAULT_ENABLE_QUERY_PASSTHROUGH_STATE,
+    ENABLE_QUERY_PASSTHROUGH, SCHEMA_FUNCTION_NAME,
+};
 
 pub(crate) fn collections_equals<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && rhs.iter().all(|r| lhs.contains(r))

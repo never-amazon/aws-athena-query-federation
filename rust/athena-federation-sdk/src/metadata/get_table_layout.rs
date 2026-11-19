@@ -3,11 +3,13 @@ use std::fmt;
 use arrow::datatypes::Schema;
 use indexmap::IndexSet;
 
-use super::metadata_request::impl_metadata_request;
-use super::{opt_str, MetadataRequestType};
+use crate::data::Block;
 use crate::domain::predicate::Constraints;
 use crate::domain::table_name::TableName;
 use crate::lambda::LambdaContext;
+use crate::metadata::{
+    impl_metadata_request, impl_metadata_response, opt_str, MetadataRequestType,
+};
 use crate::security::FederatedIdentity;
 use crate::serde::java_hash::java_hash_set_copy_order;
 
@@ -102,6 +104,57 @@ impl fmt::Display for GetTableLayoutRequest {
             self.constraints,
             self.schema,
             cols.join(", ")
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetTableLayoutResponse {
+    catalog_name: String,
+    table_name: TableName,
+    partitions: Block,
+}
+
+impl GetTableLayoutResponse {
+    pub fn new(
+        catalog_name: impl Into<String>,
+        table_name: TableName,
+        partitions: Block,
+    ) -> GetTableLayoutResponse {
+        GetTableLayoutResponse {
+            catalog_name: catalog_name.into(),
+            table_name,
+            partitions,
+        }
+    }
+
+    pub fn table_name(&self) -> &TableName {
+        &self.table_name
+    }
+
+    pub fn partitions(&self) -> &Block {
+        &self.partitions
+    }
+}
+
+impl_metadata_response!(GetTableLayoutResponse, MetadataRequestType::GetTableLayout);
+
+impl PartialEq for GetTableLayoutResponse {
+    fn eq(&self, other: &Self) -> bool {
+        self.table_name == other.table_name
+            && self.partitions == other.partitions
+            && self.catalog_name == other.catalog_name
+    }
+}
+
+impl fmt::Display for GetTableLayoutResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GetTableLayoutResponse{{tableName={}, requestType={}, catalogName={}}}",
+            self.table_name,
+            self.request_type(),
+            self.catalog_name
         )
     }
 }

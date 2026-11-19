@@ -21,12 +21,11 @@ use crate::domain::split::Split;
 use crate::domain::table_name::TableName;
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::double_to_long;
-use crate::metadata::optimizations::OptimizationSubType;
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
-    ListTablesResponse, MetadataHeader,
+    ListTablesResponse, MetadataHeader, OptimizationSubType,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
 use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};

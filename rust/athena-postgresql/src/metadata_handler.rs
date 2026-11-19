@@ -8,11 +8,10 @@ use athena_federation_sdk::data::{ArrowType, Block, SchemaBuilder, SimpleBlockWr
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{AwsClients, MetadataContext, MetadataHandler};
-use athena_federation_sdk::metadata::optimizations::pushdown::HintsSubtype;
-use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
-    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
-    GetSplitsResponse, GetTableLayoutRequest, ListTablesRequest, ListTablesResponse,
+    Capability, GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse,
+    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, HintsSubtype, ListTablesRequest,
+    ListTablesResponse, OptimizationSubType,
 };
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use super::super::OptimizationSubType;
-use super::QueryPassthrough;
 use crate::exceptions::{FederationError, Result};
+use crate::metadata::OptimizationSubType;
+use crate::named_enum::named_enum;
 
 pub const SCHEMA_FUNCTION_NAME: &str = "schemaFunctionName";
 pub const ENABLE_QUERY_PASSTHROUGH: &str = "enable_query_passthrough";
@@ -104,4 +104,34 @@ fn allow_query_passthrough(config_options: &HashMap<String, String>) -> bool {
         .map_or(DEFAULT_ENABLE_QUERY_PASSTHROUGH_STATE, String::as_str)
         .to_lowercase()
         == "true"
+}
+
+named_enum! {
+    pub enum QueryPassthrough {
+        QueryPassthroughSchema => "QUERY_PASSTHROUGH_SCHEMA",
+        QueryPassthroughName => "QUERY_PASSTHROUGH_NAME",
+        QueryPassthroughArguments => "QUERY_PASSTHROUGH_ARGUMENTS",
+    }
+}
+
+impl QueryPassthrough {
+    pub fn value(&self) -> &'static str {
+        match self {
+            QueryPassthrough::QueryPassthroughSchema => "query_passthrough_schema",
+            QueryPassthrough::QueryPassthroughName => "query_passthrough_name",
+            QueryPassthrough::QueryPassthroughArguments => "query_passthrough_arguments",
+        }
+    }
+
+    pub fn with_schema(&self, schema: &str) -> OptimizationSubType {
+        OptimizationSubType::new(self.value(), vec![schema.to_string()])
+    }
+
+    pub fn with_name(&self, name: &str) -> OptimizationSubType {
+        OptimizationSubType::new(self.value(), vec![name.to_string()])
+    }
+
+    pub fn with_arguments(&self, arguments: Vec<String>) -> OptimizationSubType {
+        OptimizationSubType::new(self.value(), arguments)
+    }
 }

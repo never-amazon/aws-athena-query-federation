@@ -1,4 +1,4 @@
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
+use athena_federation_sdk::metadata::QueryPassthroughSignature;
 
 pub const NAME: &str = "query";
 pub const SCHEMA_NAME: &str = "system";

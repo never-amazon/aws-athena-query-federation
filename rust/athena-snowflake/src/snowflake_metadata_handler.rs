@@ -15,13 +15,10 @@ use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaThrowable
 use athena_federation_sdk::handlers::{
     AwsClients, HandlerContext, MetadataContext, MetadataHandler,
 };
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    LimitPushdownSubType, TopNPushdownSubType,
-};
-use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
-    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
-    GetSplitsResponse, GetTableLayoutRequest, ListTablesRequest, ListTablesResponse,
+    Capability, GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse,
+    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, LimitPushdownSubType,
+    ListTablesRequest, ListTablesResponse, OptimizationSubType, TopNPushdownSubType,
     UNLIMITED_PAGE_SIZE_VALUE,
 };
 use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, FederatedIdentity};

@@ -7,10 +7,9 @@ use athena_federation_sdk::domain::predicate::functions::{
     FunctionName, OperatorType, StandardFunctions,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType,
+use athena_federation_sdk::metadata::{
+    Capability, ComplexExpressionPushdownSubType, FilterPushdownSubType,
 };
-use athena_federation_sdk::metadata::optimizations::Capability;
 use athena_federation_sdk::{FederationError, Result};
 
 use super::type_and_value::TypeAndValue;

@@ -115,35 +115,35 @@ com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation
 com.amazonaws.athena.connector.lambda.handlers.RecordHandler	athena-federation-sdk/src/handlers/record_handler.rs::RecordHandler	ported	abstract class becomes a hook trait; its fields live in HandlerContext and request dispatch lives in serve.rs
 com.amazonaws.athena.connector.lambda.handlers.SerDeVersion	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	constant holder class; the version constants become the SerdeVersion enum
 com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler	athena-federation-sdk/src/handlers/user_defined_function_handler.rs::UserDefinedFunctionHandler	ported	abstract class becomes a trait; reflection lookup becomes the UdfMethods registry
-com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesRequest	athena-federation-sdk/src/metadata/get_data_source_capabilities_request.rs::GetDataSourceCapabilitiesRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesResponse	athena-federation-sdk/src/metadata/get_data_source_capabilities_response.rs::GetDataSourceCapabilitiesResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetSplitsRequest	athena-federation-sdk/src/metadata/get_splits_request.rs::GetSplitsRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetSplitsResponse	athena-federation-sdk/src/metadata/get_splits_response.rs::GetSplitsResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutRequest	athena-federation-sdk/src/metadata/get_table_layout_request.rs::GetTableLayoutRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutResponse	athena-federation-sdk/src/metadata/get_table_layout_response.rs::GetTableLayoutResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetTableRequest	athena-federation-sdk/src/metadata/get_table_request.rs::GetTableRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.GetTableResponse	athena-federation-sdk/src/metadata/get_table_response.rs::GetTableResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest	athena-federation-sdk/src/metadata/list_schemas_request.rs::ListSchemasRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.ListSchemasResponse	athena-federation-sdk/src/metadata/list_schemas_response.rs::ListSchemasResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.ListTablesRequest	athena-federation-sdk/src/metadata/list_tables_request.rs::ListTablesRequest	ported	
-com.amazonaws.athena.connector.lambda.metadata.ListTablesResponse	athena-federation-sdk/src/metadata/list_tables_response.rs::ListTablesResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/metadata_request.rs::MetadataHeader	ported	the abstract base class is a borrowed header view returned by each request header() method
-com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/metadata_request_type.rs::MetadataRequestType	ported	
-com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::impl_metadata_response	merged	the abstract base class becomes a macro that adds the shared accessors to each response
+com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesRequest	athena-federation-sdk/src/metadata/get_data_source_capabilities.rs::GetDataSourceCapabilitiesRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesResponse	athena-federation-sdk/src/metadata/get_data_source_capabilities.rs::GetDataSourceCapabilitiesResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetSplitsRequest	athena-federation-sdk/src/metadata/get_splits.rs::GetSplitsRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetSplitsResponse	athena-federation-sdk/src/metadata/get_splits.rs::GetSplitsResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutRequest	athena-federation-sdk/src/metadata/get_table_layout.rs::GetTableLayoutRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutResponse	athena-federation-sdk/src/metadata/get_table_layout.rs::GetTableLayoutResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableRequest	athena-federation-sdk/src/metadata/get_table.rs::GetTableRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.GetTableResponse	athena-federation-sdk/src/metadata/get_table.rs::GetTableResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest	athena-federation-sdk/src/metadata/list_schemas.rs::ListSchemasRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListSchemasResponse	athena-federation-sdk/src/metadata/list_schemas.rs::ListSchemasResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListTablesRequest	athena-federation-sdk/src/metadata/list_tables.rs::ListTablesRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.ListTablesResponse	athena-federation-sdk/src/metadata/list_tables.rs::ListTablesResponse	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/header.rs::MetadataHeader	ported	the abstract base class is a borrowed header view returned by each request header() method
+com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/header.rs::MetadataRequestType	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/header.rs::impl_metadata_response	merged	the abstract base class becomes a macro that adds the shared accessors to each response
 com.amazonaws.athena.connector.lambda.metadata.glue.DefaultGlueType	athena-federation-sdk/src/metadata/glue/default_glue_type.rs::DefaultGlueType	ported	
 com.amazonaws.athena.connector.lambda.metadata.glue.GlueFieldLexer	athena-federation-sdk/src/metadata/glue/glue_field_lexer.rs::lex	merged	the static-method class becomes the lex and lex_with_mapper functions
 com.amazonaws.athena.connector.lambda.metadata.glue.GlueTypeParser	athena-federation-sdk/src/metadata/glue/glue_type_parser.rs::GlueTypeParser	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.DataSourceOptimizations	athena-federation-sdk/src/metadata/optimizations/data_source_optimizations.rs::DataSourceOptimizations	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.OptimizationSubType	athena-federation-sdk/src/metadata/optimizations/optimization_sub_type.rs::OptimizationSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.ComplexExpressionPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/complex_expression_pushdown_sub_type.rs::ComplexExpressionPushdownSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.FilterPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/filter_pushdown_sub_type.rs::FilterPushdownSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.HintsSubtype	athena-federation-sdk/src/metadata/optimizations/pushdown/hints_subtype.rs::HintsSubtype	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.LimitPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/limit_pushdown_sub_type.rs::LimitPushdownSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.PushdownSubTypes	athena-federation-sdk/src/metadata/optimizations/data_source_optimizations.rs::Capability	merged	the marker interface becomes the Capability enum, which pairs each optimization with its own sub-type enum
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.SubTypeProperties	athena-federation-sdk/src/metadata/optimizations/pushdown/sub_type_properties.rs::SubTypeProperties	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.TopNPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/top_n_pushdown_sub_type.rs::TopNPushdownSubType	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthrough	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough.rs::QueryPassthrough	ported	
-com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthroughSignature	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough_signature.rs::QueryPassthroughSignature	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.DataSourceOptimizations	athena-federation-sdk/src/metadata/optimizations.rs::DataSourceOptimizations	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.OptimizationSubType	athena-federation-sdk/src/metadata/optimizations.rs::OptimizationSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.ComplexExpressionPushdownSubType	athena-federation-sdk/src/metadata/optimizations.rs::ComplexExpressionPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.FilterPushdownSubType	athena-federation-sdk/src/metadata/optimizations.rs::FilterPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.HintsSubtype	athena-federation-sdk/src/metadata/optimizations.rs::HintsSubtype	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.LimitPushdownSubType	athena-federation-sdk/src/metadata/optimizations.rs::LimitPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.PushdownSubTypes	athena-federation-sdk/src/metadata/optimizations.rs::Capability	merged	the marker interface becomes the Capability enum, which pairs each optimization with its own sub-type enum
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.SubTypeProperties	athena-federation-sdk/src/metadata/optimizations.rs::SubTypeProperties	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.TopNPushdownSubType	athena-federation-sdk/src/metadata/optimizations.rs::TopNPushdownSubType	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthrough	athena-federation-sdk/src/metadata/query_passthrough.rs::QueryPassthrough	ported	
+com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthroughSignature	athena-federation-sdk/src/metadata/query_passthrough.rs::QueryPassthroughSignature	ported	
 com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest	athena-federation-sdk/src/records.rs::ReadRecordsRequest	ported	
 com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse	athena-federation-sdk/src/records.rs::ReadRecordsResponse	ported	
 com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records.rs::ReadRecordsRequest	merged	the abstract base class has one subclass, ReadRecordsRequest, which carries its accessors
