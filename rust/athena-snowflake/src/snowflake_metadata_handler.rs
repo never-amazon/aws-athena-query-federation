@@ -72,7 +72,7 @@ pub struct SnowflakeMetadataDialect {
 
 pub type SnowflakeMetadataHandler = JdbcMetadataHandler<SnowflakeMetadataDialect>;
 
-fn java_text(error: &FederationError) -> String {
+pub(crate) fn java_text(error: &FederationError) -> String {
     error.java_message().unwrap_or_else(|| "null".to_string())
 }
 

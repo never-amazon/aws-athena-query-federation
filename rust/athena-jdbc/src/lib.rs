@@ -19,4 +19,4 @@ pub use multiplexing_jdbc_metadata_handler::{
     MultiplexingJdbcMetadataHandler, CATALOG_NOT_REGISTERED_ERROR_TEMPLATE,
 };
 pub use multiplexing_jdbc_record_handler::{MultiplexingJdbcRecordHandler, RecordMultiplexer};
-pub use validate::close_after;
+pub use validate::{close_after, internal_service_error};

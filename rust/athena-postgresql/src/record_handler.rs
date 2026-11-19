@@ -7,11 +7,12 @@ use athena_federation_sdk::data::{ArrowType, SupportedTypes};
 use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
     get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
     JdbcSplitQueryBuilder, JdbcUtil, RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, SqlException, Types};
+use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
 use crate::constants::PostGreSqlConstants;
 use crate::federation_expression_parser::PostgreSqlFederationExpressionParser;
@@ -25,13 +26,6 @@ pub struct PostGreSqlRecordDialect {
 }
 
 pub type PostGreSqlRecordHandler = JdbcRecordHandler<PostGreSqlRecordDialect>;
-
-fn internal_service_error(error: FederationError) -> FederationError {
-    match SqlException::from_federation_error(&error) {
-        Some(sql) => FederationError::internal(sql.message()),
-        None => error,
-    }
-}
 
 pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
     Arc::new(PostGreSqlQueryStringBuilder::new(

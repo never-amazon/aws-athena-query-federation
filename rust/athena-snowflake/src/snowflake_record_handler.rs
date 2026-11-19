@@ -17,17 +17,18 @@ use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
     jdbc_to_arrow_schema, ConnectionSource, JdbcRecordHandler, JdbcSplitQueryBuilder, JdbcUtil,
     RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, SqlException};
+use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
 use crate::s3_export::{construct_s3_uri, ExportReader, S3ParquetExportReader};
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
 use crate::snowflake_metadata_handler::{
-    create_snowflake_credentials_provider, SnowflakeMetadataDialect,
+    create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
 use crate::snowflake_query_string_builder::SnowflakeQueryStringBuilder;
 use crate::utils::SnowflakeArrowTypeConverter;
@@ -41,17 +42,6 @@ pub struct SnowflakeRecordDialect {
 }
 
 pub type SnowflakeRecordHandler = JdbcRecordHandler<SnowflakeRecordDialect>;
-
-fn java_text(error: &FederationError) -> String {
-    error.java_message().unwrap_or_else(|| "null".to_string())
-}
-
-fn internal_service_error(error: FederationError) -> FederationError {
-    match SqlException::from_federation_error(&error) {
-        Some(sql) => FederationError::internal(sql.message()),
-        None => error,
-    }
-}
 
 pub fn convert_timestamp_tz_milli_to_date_milli_fast(
     ts_vector: &TimestampMillisecondArray,
