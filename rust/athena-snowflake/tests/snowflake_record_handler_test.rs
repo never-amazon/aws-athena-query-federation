@@ -23,8 +23,9 @@ use athena_federation_sdk::security::{
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker};
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
-use athena_jdbc::qpt::QUERY;
+use athena_jdbc::handler::{RecordDialect, EXPORT_SCHEMA};
+use athena_jdbc::query::passthrough::QUERY;
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError};
 use athena_snowflake::{
     construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast,

@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
-use athena_jdbc::manager::SplitQuery;
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::SqlValue;
 use athena_snowflake::{query_string_builder, snowflake_constants, SnowflakeQueryStringBuilder};
 

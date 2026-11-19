@@ -9,7 +9,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use super::sql_error::{Driver, SqlError};
+use super::error::{Driver, SqlError};
 use crate::java_null::JAVA_NULL;
 
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;

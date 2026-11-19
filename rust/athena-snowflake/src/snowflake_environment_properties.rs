@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use athena_federation_sdk::connection::environment_constants;
-use athena_jdbc::ConnectionStringFormat;
+use athena_jdbc::connection::ConnectionStringFormat;
 
 use crate::snowflake_constants::java_trim;
 use athena_jdbc::java_null::{OrJavaNull, JAVA_NULL};

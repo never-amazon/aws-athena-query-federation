@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use athena_federation_sdk::connection::environment_constants;
-use athena_jdbc::ConnectionStringFormat;
+use athena_jdbc::connection::ConnectionStringFormat;
 
 const TEST_HOST: &str = "test.host.com";
 const TEST_PORT: &str = "1234";

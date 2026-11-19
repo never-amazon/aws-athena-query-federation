@@ -15,8 +15,8 @@ use athena_federation_substrait::{
     SubstraitTypeAndValue, SubstraitValue,
 };
 
-use super::expression_parser::ExpressionParser;
-use super::type_and_value::TypeAndValue;
+use super::expr::ExpressionParser;
+use super::statement::TypeAndValue;
 use crate::sql::{JdbcConnection, PreparedStatement};
 use crate::validate::runtime_with_cause;
 

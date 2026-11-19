@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::error::SqlError;
 use super::prepared_statement::PreparedStatement;
 use super::result_set::ResultSet;
 use super::result_set_metadata::ResultSetMetaData;
-use super::sql_error::SqlError;
 use super::types::JdbcType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

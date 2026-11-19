@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use athena_jdbc::ConnectionStringFormat;
+use athena_jdbc::connection::ConnectionStringFormat;
 
 pub const POSTGRESQL_CONNECTION_STRING: ConnectionStringFormat =
     ConnectionStringFormat::new("postgres://jdbc:postgresql://");

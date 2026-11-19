@@ -25,14 +25,18 @@ use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat
 use athena_federation_sdk::util::{calculate_next_token, validate_and_parse_pagination_arguments};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::close_after;
+use athena_jdbc::connection::single_database_config_from_env;
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
 };
-use athena_jdbc::manager::{
-    columns, complex_expression_capability, filter_capability, jdbc_util, ConnectionSource,
-    JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
+use athena_jdbc::handler::table_metadata;
+use athena_jdbc::handler::{
+    columns, ConnectionSource, JdbcMetadataHandler, MetadataDialect, TABLES_AND_VIEWS,
 };
-use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
+use athena_jdbc::query::passthrough::{JDBC_QUERY_PASSTHROUGH, QUERY};
+use athena_jdbc::query::{
+    complex_expression_capability, filter_capability, PreparedStatementBuilder,
+};
 use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{ColumnMetadata, JdbcConnection, SqlError};
 use indexmap::IndexMap;
@@ -212,10 +216,8 @@ impl SnowflakeMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeMetadataHandler> {
-        let config = jdbc_util::single_database_config_from_env(
-            snowflake_constants::SNOWFLAKE_NAME,
-            &config_options,
-        )?;
+        let config =
+            single_database_config_from_env(snowflake_constants::SNOWFLAKE_NAME, &config_options)?;
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         SnowflakeMetadataDialect::from_config(
             clients,
@@ -238,7 +240,7 @@ impl SnowflakeMetadataDialect {
         statement.bind(database_name);
         statement.bind(limit);
         statement.bind(offset);
-        jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
+        table_metadata(connection, &statement, TABLES_AND_VIEWS).await
     }
 
     pub async fn list_exported_objects(

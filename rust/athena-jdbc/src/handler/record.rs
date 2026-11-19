@@ -29,10 +29,10 @@ use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_federation_substrait::{plan, SqlDialect};
 
-use super::jdbc_split_query_builder::SplitQuery;
-use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
+use crate::arrow_type::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
+use crate::query::passthrough::{JDBC_QUERY_PASSTHROUGH, QUERY};
+use crate::query::SplitQuery;
 use crate::sql::{JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData, Row, SqlValue};
 use crate::validate::{close_after, null_pointer};
 

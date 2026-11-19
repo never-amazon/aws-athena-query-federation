@@ -8,7 +8,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::{FederationError, Result};
 
-use super::type_and_value::TypeAndValue;
+use super::statement::TypeAndValue;
 use crate::validate::null_pointer;
 
 const FUNCTION_CALL_EXPRESSION_CLASS: &str =

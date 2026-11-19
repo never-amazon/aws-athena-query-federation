@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use arrow::datatypes::{DataType, TimeUnit};
-use athena_jdbc::manager::{jdbc_to_arrow_type, DEFAULT_PRECISION};
+use athena_jdbc::arrow_type::{jdbc_to_arrow_type, DEFAULT_PRECISION};
 use athena_jdbc::sql::JdbcType;
 
 fn convert(jdbc_type: JdbcType, precision: i32, scale: i32) -> DataType {

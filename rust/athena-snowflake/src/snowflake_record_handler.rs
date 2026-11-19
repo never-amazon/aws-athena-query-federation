@@ -16,11 +16,12 @@ use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
+use athena_jdbc::arrow_type::jdbc_to_arrow_schema;
+use athena_jdbc::connection::single_database_config_from_env;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::handler::{ConnectionSource, JdbcRecordHandler, RecordDialect};
 use athena_jdbc::internal_service_error;
-use athena_jdbc::manager::{
-    jdbc_to_arrow_schema, jdbc_util, ConnectionSource, JdbcRecordHandler, RecordDialect, SplitQuery,
-};
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
 use crate::s3_export::{construct_s3_uri, BlockingBatches, ExportReader, S3ParquetExportReader};
@@ -147,10 +148,8 @@ impl SnowflakeRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeRecordHandler> {
-        let config = jdbc_util::single_database_config_from_env(
-            snowflake_constants::SNOWFLAKE_NAME,
-            &config_options,
-        )?;
+        let config =
+            single_database_config_from_env(snowflake_constants::SNOWFLAKE_NAME, &config_options)?;
         SnowflakeRecordDialect::from_config(clients, config, config_options)
     }
 

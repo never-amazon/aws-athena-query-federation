@@ -1,4 +1,4 @@
-use athena_jdbc::MultiplexingJdbcMetadataHandler;
+use athena_jdbc::handler::MultiplexingJdbcMetadataHandler;
 
 use crate::metadata_handler::PostGreSqlMetadataHandler;
 

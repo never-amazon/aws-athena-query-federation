@@ -22,12 +22,14 @@ use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, Federated
 use athena_federation_sdk::util::manual_pagination;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 
-use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
-use super::jdbc_record_handler::{missing_factory, ConnectionSource};
+use super::record::{missing_factory, ConnectionSource};
+use crate::arrow_type::jdbc_to_arrow_type;
 use crate::java_null::OrJavaNull;
-use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
+use crate::query::passthrough::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::JdbcCaseResolver;
-use crate::sql::{ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection};
+use crate::sql::{
+    ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, Row, SqlError,
+};
 use crate::validate::close_after;
 
 pub const TABLES_AND_VIEWS: &str = "Tables and Views";
@@ -670,4 +672,58 @@ impl<D: MetadataDialect> MetadataDelegate for JdbcMetadataHandler<D> {
     async fn close(&self) -> Result<()> {
         JdbcMetadataHandler::close(self).await
     }
+}
+
+pub async fn tables(
+    connection: &dyn JdbcConnection,
+    database_name: &str,
+) -> std::result::Result<Vec<TableName>, SqlError> {
+    let sql = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?";
+    let mut prepared_statement = connection.prepare_statement(sql).await?;
+    prepared_statement.bind(database_name);
+    tracing::debug!(
+        "Prepared Statement for getting tables in schema {} : {}",
+        database_name,
+        prepared_statement.sql()
+    );
+    table_metadata(connection, &prepared_statement, TABLES_AND_VIEWS).await
+}
+
+pub async fn table_metadata(
+    connection: &dyn JdbcConnection,
+    prepared_statement: &PreparedStatement,
+    table_type: &str,
+) -> std::result::Result<Vec<TableName>, SqlError> {
+    let listed = async {
+        let mut result_set = connection.execute_query(prepared_statement).await?;
+        let mut list = Vec::new();
+        while let Some(row) = result_set.next_row().await? {
+            list.push(read_schema_table_name(&row)?);
+        }
+        Ok(list)
+    }
+    .await;
+    if let Err(ex) = &listed {
+        tracing::warn!(
+            "Unable to return list of {} from data source! {}",
+            table_type,
+            ex
+        );
+    }
+    listed
+}
+
+pub fn schema_table_name(row: &Row) -> Result<TableName> {
+    Ok(read_schema_table_name(row)?)
+}
+
+fn read_schema_table_name(row: &Row) -> std::result::Result<TableName, SqlError> {
+    Ok(TableName::new(
+        row.by_label("TABLE_SCHEM")?
+            .to_java_string()
+            .unwrap_or_default(),
+        row.by_label("TABLE_NAME")?
+            .to_java_string()
+            .unwrap_or_default(),
+    ))
 }

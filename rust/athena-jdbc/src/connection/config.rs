@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::fmt;
+use std::hash::BuildHasher;
 use std::sync::LazyLock;
 
 use athena_federation_sdk::connection::environment_constants;
@@ -5,7 +8,7 @@ use athena_federation_sdk::{FederationError, Result};
 use indexmap::IndexMap;
 use regex::Regex;
 
-use super::database_connection_config::DatabaseConnectionConfig;
+use crate::java_null::OrJavaNull;
 use crate::validate::{is_blank, is_true, not_blank};
 
 pub const CONNECTION_STRING_PROPERTY_SUFFIX: &str = "_connection_string";
@@ -152,4 +155,125 @@ fn extract_secret_name(jdbc_connection_string: &str) -> Option<&str> {
         .and_then(|c| c.get(1))
         .map(|m| m.as_str())
         .filter(|s| !s.trim().is_empty())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DatabaseConnectionConfig {
+    catalog: String,
+    engine: String,
+    jdbc_connection_string: String,
+    secret: Option<String>,
+}
+
+impl DatabaseConnectionConfig {
+    pub fn new(
+        catalog: &str,
+        engine: &str,
+        jdbc_connection_string: &str,
+    ) -> Result<DatabaseConnectionConfig> {
+        Ok(DatabaseConnectionConfig {
+            catalog: not_blank(Some(catalog), "catalog must not be blank")?.to_string(),
+            engine: not_blank(Some(engine), "engine must not be blank")?.to_string(),
+            jdbc_connection_string: not_blank(
+                Some(jdbc_connection_string),
+                "jdbcConnectionString must not be blank",
+            )?
+            .to_string(),
+            secret: None,
+        })
+    }
+
+    pub fn new_with_secret(
+        catalog: &str,
+        engine: &str,
+        jdbc_connection_string: &str,
+        secret: &str,
+    ) -> Result<DatabaseConnectionConfig> {
+        let mut config = DatabaseConnectionConfig::new(catalog, engine, jdbc_connection_string)?;
+        config.secret = Some(not_blank(Some(secret), "secret must not be blank")?.to_string());
+        Ok(config)
+    }
+
+    pub fn engine(&self) -> &str {
+        &self.engine
+    }
+
+    pub fn jdbc_connection_string(&self) -> &str {
+        &self.jdbc_connection_string
+    }
+
+    pub fn catalog(&self) -> &str {
+        &self.catalog
+    }
+
+    pub fn secret(&self) -> Option<&str> {
+        self.secret.as_deref()
+    }
+}
+
+impl fmt::Display for DatabaseConnectionConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "DatabaseConnectionConfig{{catalog='{}', engine={}, jdbcConnectionString='{}', secret='{}'}}",
+            self.catalog,
+            self.engine,
+            self.jdbc_connection_string,
+            self.secret.as_deref().or_java_null()
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DatabaseConnectionInfo {
+    driver_class_name: String,
+    default_port: i32,
+}
+
+impl DatabaseConnectionInfo {
+    pub fn new(driver_class_name: &str, default_port: i32) -> Result<DatabaseConnectionInfo> {
+        Ok(DatabaseConnectionInfo {
+            driver_class_name: not_blank(
+                Some(driver_class_name),
+                "driverClassName must not be blank",
+            )?
+            .to_string(),
+            default_port,
+        })
+    }
+
+    pub fn driver_class_name(&self) -> &str {
+        &self.driver_class_name
+    }
+
+    pub fn default_port(&self) -> i32 {
+        self.default_port
+    }
+}
+
+pub(crate) fn owned<S: BuildHasher>(
+    config_options: &HashMap<String, String, S>,
+) -> HashMap<String, String> {
+    config_options
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+pub fn single_database_config_from_env<S: BuildHasher>(
+    database_engine: &str,
+    config_options: &HashMap<String, String, S>,
+) -> Result<DatabaseConnectionConfig> {
+    let configs = DatabaseConnectionConfigBuilder::build_from_system_env(
+        database_engine,
+        owned(config_options),
+    )?;
+    configs
+        .into_iter()
+        .find(|config| config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY && config.engine() == database_engine)
+        .ok_or_else(|| {
+            FederationError::invalid_input(format!(
+                "Must provide default connection string parameter {DEFAULT_CONNECTION_STRING_PROPERTY} for database type {database_engine}"
+            ))
+        })
 }

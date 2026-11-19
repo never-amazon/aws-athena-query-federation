@@ -6,7 +6,7 @@ use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
+use athena_jdbc::query::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
 use crate::partition_page::PartitionPage;

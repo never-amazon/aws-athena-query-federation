@@ -19,7 +19,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::MetadataDialect;
+use athena_jdbc::handler::MetadataDialect;
 use athena_jdbc::sql::{
     ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue,
 };
@@ -1063,7 +1063,7 @@ async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_t
     let f = setup();
     let h = &f.handler;
     assert_eq!(
-        athena_jdbc::manager::jdbc_to_arrow_type(JdbcType::Timestamp, 0, 0, &HashMap::new())
+        athena_jdbc::arrow_type::jdbc_to_arrow_type(JdbcType::Timestamp, 0, 0, &HashMap::new())
             .unwrap()
             .unwrap(),
         h.dialect().array_element_type(Some("_timestamptz"), 0, 0)

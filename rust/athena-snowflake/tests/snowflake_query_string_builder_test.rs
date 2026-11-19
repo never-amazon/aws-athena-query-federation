@@ -14,7 +14,7 @@ use athena_federation_sdk::domain::predicate::{
 };
 use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use athena_federation_substrait::DatabaseProduct;
-use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
+use athena_jdbc::query::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 use athena_snowflake::{
     append_order_by_limit_offset, base_export_sql, expand_sql, SnowflakeDialect,

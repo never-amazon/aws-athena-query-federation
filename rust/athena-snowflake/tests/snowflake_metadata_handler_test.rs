@@ -21,7 +21,7 @@ use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, Federated
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
 use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
+use athena_jdbc::handler::{ConnectionSource, MetadataDialect};
 use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{
     ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, SchemaEntry, SqlError, SqlValue,

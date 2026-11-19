@@ -15,7 +15,8 @@ use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::HandlerContext;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use athena_jdbc::manager::{RecordDialect, SplitQuery};
+use athena_jdbc::handler::RecordDialect;
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{
     ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError, SqlValue,
 };

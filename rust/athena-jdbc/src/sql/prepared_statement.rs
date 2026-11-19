@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::result_set_metadata::ResultSetMetaData;
-use super::sql_value::SqlValue;
+use super::value::SqlValue;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PreparedStatement {

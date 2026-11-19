@@ -8,9 +8,7 @@ use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::{FederationError, Result};
 use regex::Regex;
 
-use super::database_connection_config::DatabaseConnectionConfig;
-use super::database_connection_info::DatabaseConnectionInfo;
-use super::jdbc_connection_factory::JdbcConnectionFactory;
+use super::config::{DatabaseConnectionConfig, DatabaseConnectionInfo};
 use crate::sql::{
     DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, ResultSetMetaData, SqlError,
 };
@@ -393,6 +391,18 @@ impl JdbcConnection for PooledConnection {
     }
 
     async fn close(&self) -> std::result::Result<(), SqlError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+pub trait JdbcConnectionFactory: Send + Sync {
+    async fn get_connection(
+        &self,
+        credentials_provider: Option<&dyn CredentialsProvider>,
+    ) -> Result<Box<dyn JdbcConnection>>;
+
+    async fn close(&self) -> Result<()> {
         Ok(())
     }
 }

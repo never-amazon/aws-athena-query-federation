@@ -4,7 +4,7 @@ use std::hash::BuildHasher;
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::{FederationError, Result};
-use athena_jdbc::manager::get_arrow_type_from_jdbc_type;
+use athena_jdbc::arrow_type::get_arrow_type_from_jdbc_type;
 use athena_jdbc::sql::JdbcType;
 
 const DEFAULT_SCALE_KEY: &str = "default_scale";

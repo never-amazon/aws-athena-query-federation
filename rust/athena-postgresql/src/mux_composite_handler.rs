@@ -4,7 +4,7 @@ use athena_federation_sdk::handlers::{
     AwsClients, CompositeHandler, HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
 use athena_federation_sdk::Result;
-use athena_jdbc::{
+use athena_jdbc::handler::{
     multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, RecordMultiplexer,
 };
 

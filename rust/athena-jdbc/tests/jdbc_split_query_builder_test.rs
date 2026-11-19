@@ -17,7 +17,7 @@ use athena_federation_sdk::domain::predicate::{
 use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::Result;
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
+use athena_jdbc::query::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 
 use jdbc_support::FakeConnection;

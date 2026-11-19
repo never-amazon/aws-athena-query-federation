@@ -1,5 +1,7 @@
-use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
+use std::collections::HashMap;
+use std::hash::BuildHasher;
 
+use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::{FederationError, Result};
 
@@ -81,4 +83,55 @@ pub fn jdbc_to_arrow_schema(metadata: &ResultSetMetaData) -> Result<Schema> {
         fields.push(Field::new(column.label(), arrow_type, nullable));
     }
     Ok(Schema::new(fields))
+}
+
+pub const DEFAULT_PRECISION: i32 = 38;
+const DEFAULT_SCALE_KEY: &str = "default_scale";
+
+pub fn jdbc_to_arrow_type<S: BuildHasher>(
+    jdbc_type: JdbcType,
+    precision: i32,
+    scale: i32,
+    config_options: &HashMap<String, String, S>,
+) -> Result<Option<ArrowType>> {
+    let default_scale_text = config_options
+        .get(DEFAULT_SCALE_KEY)
+        .map_or("0", String::as_str);
+    let default_scale = default_scale_text.parse::<i32>().map_err(|_| {
+        FederationError::NumberFormat(format!("For input string: \"{default_scale_text}\""))
+    })?;
+    let mut resolved_precision = precision;
+    let mut resolved_scale = scale;
+    let needs_resolving = jdbc_type == JdbcType::Numeric && precision == 0 && scale <= 0;
+    let decimal_exceeding_precision =
+        jdbc_type == JdbcType::Decimal && precision > DEFAULT_PRECISION;
+    if needs_resolving {
+        resolved_precision = DEFAULT_PRECISION;
+        resolved_scale = default_scale;
+    } else if decimal_exceeding_precision {
+        resolved_precision = DEFAULT_PRECISION;
+    }
+
+    match get_arrow_type_from_jdbc_type(jdbc_type, resolved_precision, resolved_scale, None) {
+        Ok(DataType::Date32 | DataType::Date64) => Ok(Some(DataType::Date32)),
+        Ok(DataType::Timestamp(_, _)) => Ok(Some(DataType::Date64)),
+        Ok(arrow_type) => Ok(Some(arrow_type)),
+        Err(FederationError::UnsupportedOperation(message)) => {
+            tracing::warn!(
+                "Error converting JDBC Type [{}] to arrow: {}",
+                jdbc_type.code(),
+                message
+            );
+            if jdbc_type == JdbcType::TimestampWithTimezone {
+                tracing::debug!(
+                    "Converting JDBC Type [{}] to arrow: {}",
+                    jdbc_type.code(),
+                    message
+                );
+                return Ok(Some(DataType::Date64));
+            }
+            Ok(None)
+        }
+        Err(other) => Err(other),
+    }
 }

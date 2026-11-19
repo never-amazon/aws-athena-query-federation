@@ -1,4 +1,4 @@
-use super::sql_error::SqlError;
+use super::error::SqlError;
 use super::types::JdbcType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

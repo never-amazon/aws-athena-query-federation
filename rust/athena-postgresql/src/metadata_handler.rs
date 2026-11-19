@@ -15,13 +15,17 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::close_after;
+use athena_jdbc::connection::single_database_config_from_env;
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
     JdbcConnectionFactory, JdbcProperties,
 };
-use athena_jdbc::manager::{
-    complex_expression_capability, filter_capability, jdbc_util, ConnectionSource,
-    JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
+use athena_jdbc::handler::{table_metadata, tables};
+use athena_jdbc::handler::{
+    ConnectionSource, JdbcMetadataHandler, MetadataDialect, TABLES_AND_VIEWS,
+};
+use athena_jdbc::query::{
+    complex_expression_capability, filter_capability, PreparedStatementBuilder,
 };
 use athena_jdbc::splits::splitter;
 use athena_jdbc::sql::{JdbcConnection, SqlError, SqlValue};
@@ -141,8 +145,7 @@ impl PostGreSqlMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlMetadataHandler> {
-        let config =
-            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
+        let config = single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlMetadataDialect::from_config(clients, config, config_options)
     }
 }
@@ -193,7 +196,7 @@ async fn materialized_views(
         database_name,
         statement.sql()
     );
-    jdbc_util::table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
+    table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
 }
 
 async fn paginated_results(
@@ -215,7 +218,7 @@ async fn paginated_results(
         database_name,
         statement.sql()
     );
-    jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
+    table_metadata(connection, &statement, TABLES_AND_VIEWS).await
 }
 
 async fn is_uuid_column(
@@ -368,7 +371,7 @@ fn capabilities(
     capabilities.insert(name, sub_types);
     let (name, sub_types) = complex_expression_capability()?.into_entry();
     capabilities.insert(name, sub_types);
-    athena_jdbc::qpt::JDBC_QUERY_PASSTHROUGH
+    athena_jdbc::query::passthrough::JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
     let non_default_collate = config_options
         .get(NON_DEFAULT_COLLATE)
@@ -581,7 +584,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
         connection: &dyn JdbcConnection,
         database_name: &str,
     ) -> Result<Vec<TableName>> {
-        let mut list = jdbc_util::tables(connection, database_name).await?;
+        let mut list = tables(connection, database_name).await?;
         list.extend(materialized_views(connection, database_name).await?);
         Ok(list)
     }

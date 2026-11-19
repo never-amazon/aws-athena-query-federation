@@ -1,9 +1,10 @@
 use std::fmt;
 
+use athena_federation_sdk::data::{arrow_type_to_string, ArrowType, Value};
 use athena_federation_sdk::{FederationError, Result};
 
 use crate::sql::{JdbcConnection, PreparedStatement};
-use crate::validate::{not_blank, runtime_with_cause};
+use crate::validate::{not_blank, null_pointer, runtime_with_cause};
 
 const PARAMETERS_MESSAGE: &str = "parameters must not be null";
 const QUERY_MESSAGE: &str = "query must not be blank";
@@ -83,5 +84,39 @@ impl<'a> PreparedStatementBuilder<'a> {
             let message = format!("{}: {}", e.error_code(), e.message());
             runtime_with_cause(message, FederationError::from(e))
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeAndValue {
+    arrow_type: ArrowType,
+    value: Value,
+}
+
+impl TypeAndValue {
+    pub fn new(arrow_type: ArrowType, value: Value) -> Result<TypeAndValue> {
+        if value.is_null() {
+            return Err(null_pointer("value is null"));
+        }
+        Ok(TypeAndValue { arrow_type, value })
+    }
+
+    pub fn get_type(&self) -> &ArrowType {
+        &self.arrow_type
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+}
+
+impl fmt::Display for TypeAndValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "TypeAndValue{{type={}, value={}}}",
+            arrow_type_to_string(&self.arrow_type),
+            self.value.java_to_string()
+        )
     }
 }

@@ -5,7 +5,7 @@ use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
 use athena_federation_sdk::{FederationError, Result};
 
 use crate::java_null::OrJavaNull;
-use crate::manager::PreparedStatementBuilder;
+use crate::query::PreparedStatementBuilder;
 use crate::sql::{JdbcConnection, SqlError};
 use crate::validate::runtime_with_cause;
 

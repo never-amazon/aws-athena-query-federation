@@ -1,7 +1,7 @@
 use arrow::datatypes::DataType;
 use athena_federation_sdk::domain::predicate::{FunctionName, VariableExpression};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_jdbc::manager::ExpressionParser;
+use athena_jdbc::query::ExpressionParser;
 
 fn parser() -> ExpressionParser {
     ExpressionParser::new("\"")

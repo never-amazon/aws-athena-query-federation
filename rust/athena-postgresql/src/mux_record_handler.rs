@@ -1,4 +1,4 @@
-use athena_jdbc::MultiplexingJdbcRecordHandler;
+use athena_jdbc::handler::MultiplexingJdbcRecordHandler;
 
 use crate::record_handler::PostGreSqlRecordHandler;
 
