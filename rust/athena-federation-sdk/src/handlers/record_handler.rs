@@ -164,7 +164,6 @@ pub async fn default_do_read_records<H: RecordHandler + ?Sized>(
     let s3_client = handler.get_s3_client(override_config.as_ref(), base.amazon_s3());
     let schema = Arc::new(request.schema().clone());
     let evaluator = Arc::new(ConstraintEvaluator::new(
-        Some(allocator.as_ref()),
         request.schema(),
         request.constraints().clone(),
     ));

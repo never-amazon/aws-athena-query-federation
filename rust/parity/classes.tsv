@@ -1,12 +1,12 @@
 java_class	rust_path	status	note
 com.amazonaws.athena.connector.credentials.Credentials	athena-federation-sdk/src/credentials/credentials.rs::Credentials	ported	
-com.amazonaws.athena.connector.credentials.CredentialsConstants	athena-federation-sdk/src/credentials/credentials_constants.rs::CredentialsConstants	ported	
+com.amazonaws.athena.connector.credentials.CredentialsConstants	athena-federation-sdk/src/credentials/mod.rs::credentials_constants	ported	constant holder class; its constants are module-level consts
 com.amazonaws.athena.connector.credentials.CredentialsProvider	athena-federation-sdk/src/credentials/credentials_provider.rs::CredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-federation-sdk/src/credentials/credentials_provider_factory.rs::CredentialsProviderFactory	ported	
-com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account_credentials_provider.rs::CrossAccountCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-federation-sdk/src/credentials/credentials_provider_factory.rs::create_credential_provider	merged	static factory class; its one method is a module function that takes the optional override configuration
+com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account_credentials_provider.rs::get_cross_account_credentials_if_present	merged	static helper class; its one method is a module function
 com.amazonaws.athena.connector.credentials.DefaultCredentials	athena-federation-sdk/src/credentials/default_credentials.rs::DefaultCredentials	ported	
 com.amazonaws.athena.connector.credentials.DefaultCredentialsProvider	athena-federation-sdk/src/credentials/default_credentials_provider.rs::DefaultCredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/initializable_credentials_provider.rs::InitializableCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	merged	OAuthCredentialsProvider::new takes the secret name, secret map and clients in one step, so there is no separate initialize phase
 com.amazonaws.athena.connector.credentials.OAuthAccessTokenCredentials	athena-federation-sdk/src/credentials/oauth_access_token_credentials.rs::OAuthAccessTokenCredentials	ported	
 com.amazonaws.athena.connector.credentials.OAuthCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	ported	
 com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-federation-sdk/src/credentials/static_credentials_provider.rs::StaticCredentialsProvider	ported	
@@ -15,26 +15,26 @@ com.amazonaws.athena.connector.lambda.QueryStatusChecker	athena-federation-sdk/s
 com.amazonaws.athena.connector.lambda.ThrottlingInvoker	athena-federation-sdk/src/throttling_invoker.rs::ThrottlingInvoker	ported	
 com.amazonaws.athena.connector.lambda.connection.EnvironmentConstants	athena-federation-sdk/src/connection/environment_constants.rs::EnvironmentConstants	ported	
 com.amazonaws.athena.connector.lambda.connection.EnvironmentProperties	athena-federation-sdk/src/connection/environment_properties.rs::EnvironmentProperties	ported	
-com.amazonaws.athena.connector.lambda.data.ArrowSchemaUtils	athena-federation-sdk/src/data/arrow_schema_utils.rs::ArrowSchemaUtils	ported	
+com.amazonaws.athena.connector.lambda.data.ArrowSchemaUtils	athena-federation-sdk/src/data/arrow_schema_utils.rs::remap_arrow_types_within_field	merged	static helper class; its one method is a module function
 com.amazonaws.athena.connector.lambda.data.ArrowRecordBatchReader	athena-federation-sdk/src/data/record_batch_serde.rs::deserialize_record_batch_message	merged	The Java helper reads a record batch with an empty body; the Rust reader handles that case in ArrowRecordBatch::from_message
 com.amazonaws.athena.connector.lambda.data.ArrowTypeComparator	athena-federation-sdk/src/data/arrow_type_comparator.rs::ArrowTypeComparator	ported	
-com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption	athena-federation-sdk/src/data/record_batch_serde.rs::AthenaFederationIpcOption	ported	
+com.amazonaws.athena.connector.lambda.data.AthenaFederationIpcOption	athena-federation-sdk/src/data/record_batch_serde.rs::ipc_write_options	merged	static holder of the IPC write options; a private function returns them
 com.amazonaws.athena.connector.lambda.data.Block	athena-federation-sdk/src/data/block.rs::Block	ported	
 com.amazonaws.athena.connector.lambda.data.BlockAllocator	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocator	ported	
 com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorImpl	ported	
-com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry	athena-federation-sdk/src/data/block_allocator.rs::BlockAllocatorRegistry	ported	
+com.amazonaws.athena.connector.lambda.data.BlockAllocatorRegistry	-	not_ported	no code path looks up an allocator by id; SerDeContext carries the one allocator every deserializer uses
 com.amazonaws.athena.connector.lambda.data.BlockSpiller	athena-federation-sdk/src/data/block_spiller.rs::BlockSpiller	ported	
-com.amazonaws.athena.connector.lambda.data.BlockUtils	athena-federation-sdk/src/data/block_utils.rs::BlockUtils	ported	
-com.amazonaws.athena.connector.lambda.data.BlockWriter	athena-federation-sdk/src/data/block_writer.rs::BlockWriter	ported	
-com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtil	athena-federation-sdk/src/data/date_time_formatter_util.rs::DateTimeFormatterUtil	ported	
+com.amazonaws.athena.connector.lambda.data.BlockUtils	athena-federation-sdk/src/data/mod.rs::block_utils	ported	static helper class; its methods are block_utils module functions
+com.amazonaws.athena.connector.lambda.data.BlockWriter	athena-federation-sdk/src/data/simple_block_writer.rs::SimpleBlockWriter	merged	SimpleBlockWriter was the only implementor; get_partitions takes it directly and its RowWriter lambda is a closure
+com.amazonaws.athena.connector.lambda.data.DateTimeFormatterUtil	athena-federation-sdk/src/data/mod.rs::date_time_formatter_util	ported	static helper class; its methods are date_time_formatter_util module functions
 com.amazonaws.athena.connector.lambda.data.FieldBuilder	athena-federation-sdk/src/data/field_builder.rs::FieldBuilder	ported	
 com.amazonaws.athena.connector.lambda.data.FieldResolver	athena-federation-sdk/src/data/field_resolver.rs::FieldResolver	ported	
 com.amazonaws.athena.connector.lambda.data.RecordBatchSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::RecordBatchSerDe	ported	
 com.amazonaws.athena.connector.lambda.data.S3BlockSpillReader	athena-federation-sdk/src/data/s3_block_spill_reader.rs::S3BlockSpillReader	ported	
 com.amazonaws.athena.connector.lambda.data.S3BlockSpiller	athena-federation-sdk/src/data/s3_block_spiller.rs::S3BlockSpiller	ported	
-com.amazonaws.athena.connector.lambda.data.SchemaAware	athena-federation-sdk/src/data/schema_aware.rs::SchemaAware	ported	
+com.amazonaws.athena.connector.lambda.data.SchemaAware	athena-federation-sdk/src/data/block.rs::Block	merged	Block was the only implementor; Block::get_meta_data and Block::schema cover the accessors
 com.amazonaws.athena.connector.lambda.data.SchemaBuilder	athena-federation-sdk/src/data/schema_builder.rs::SchemaBuilder	ported	
-com.amazonaws.athena.connector.lambda.data.SchemaSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::SchemaSerDe	ported	
+com.amazonaws.athena.connector.lambda.data.SchemaSerDe	athena-federation-sdk/src/data/record_batch_serde.rs::serialize_schema	merged	the stateless class's two methods are serialize_schema and deserialize_schema
 com.amazonaws.athena.connector.lambda.data.SimpleBlockWriter	athena-federation-sdk/src/data/simple_block_writer.rs::SimpleBlockWriter	ported	
 com.amazonaws.athena.connector.lambda.data.SpillConfig	athena-federation-sdk/src/data/spill_config.rs::SpillConfig	ported	
 com.amazonaws.athena.connector.lambda.data.SupportedTypes	athena-federation-sdk/src/data/supported_types.rs::SupportedTypes	ported	
@@ -42,40 +42,40 @@ com.amazonaws.athena.connector.lambda.data.TimeZoneKey	athena-federation-sdk/src
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjector	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.ArrowValueProjectorImpl	athena-federation-sdk/src/data/projectors/arrow_value_projector_impl.rs::create_value_projection	merged	the abstract base class becomes the shared create_value_projection function used by each projector
 com.amazonaws.athena.connector.lambda.data.projectors.ListArrowValueProjector	athena-federation-sdk/src/data/projectors/list_arrow_value_projector.rs::ListArrowValueProjector	ported	
-com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-federation-sdk/src/data/projectors/projector_utils.rs::ProjectorUtils	ported	
+com.amazonaws.athena.connector.lambda.data.projectors.ProjectorUtils	athena-federation-sdk/src/data/projectors/mod.rs::ArrowValueProjector	merged	ArrowValueProjector::new picks the List, Struct or Simple variant, which was the only ProjectorUtils method
 com.amazonaws.athena.connector.lambda.data.projectors.SimpleArrowValueProjector	athena-federation-sdk/src/data/projectors/simple_arrow_value_projector.rs::SimpleArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.projectors.StructArrowValueProjector	athena-federation-sdk/src/data/projectors/struct_arrow_value_projector.rs::StructArrowValueProjector	ported	
 com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter	athena-federation-sdk/src/data/writers/generated_row_writer.rs::GeneratedRowWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BigIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::BitExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateDayExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DateMilliExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.DecimalExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::DecimalExtractor	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BigIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::BigInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.BitExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Bit variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateDayExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::DateDay variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DateMilliExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::DateMilli variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.DecimalExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Decimal variant; its closure returns Option instead of filling a holder
 com.amazonaws.athena.connector.lambda.data.writers.extractors.Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.Float4Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float4Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.Float8Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Float8Extractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.IntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::IntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.SmallIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::SmallIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.TinyIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::TinyIntExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.VarBinaryExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarBinaryExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::VarCharExtractor	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BigIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/big_int_field_writer.rs::BigIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BitFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/bit_field_writer.rs::BitFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateDayFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_day_field_writer.rs::DateDayFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateMilliFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/date_milli_field_writer.rs::DateMilliFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DecimalFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/decimal_field_writer.rs::DecimalFieldWriter	ported	
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float4Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Float4 variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.Float8Extractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Float8 variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.IntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::Int variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.SmallIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::SmallInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.TinyIntExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::TinyInt variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarBinaryExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::VarBinary variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.extractors.VarCharExtractor	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	the Extractor::VarChar variant; its closure returns Option instead of filling a holder
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BigIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.BitFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateDayFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DateMilliFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.DecimalFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
 com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriter	ported	
 com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriterFactory	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::FieldWriterFactory	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float4FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float4_field_writer.rs::Float4FieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float8FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/float8_field_writer.rs::Float8FieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.IntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/int_field_writer.rs::IntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.SmallIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/small_int_field_writer.rs::SmallIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.TinyIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/tiny_int_field_writer.rs::TinyIntFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarBinaryFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_binary_field_writer.rs::VarBinaryFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarCharFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/var_char_field_writer.rs::VarCharFieldWriter	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableDecimalHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableDecimalHolder	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarBinaryHolder	ported	
-com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder	athena-federation-sdk/src/data/writers/holders/mod.rs::NullableVarCharHolder	ported	
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float4FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.Float8FieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.IntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.SmallIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.TinyIntFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarBinaryFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.VarCharFieldWriter	athena-federation-sdk/src/data/writers/fieldwriters/mod.rs::ScalarFieldWriter	merged	one ScalarFieldWriter matches on the Extractor variant for every scalar type
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableDecimalHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
+com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarCharHolder	athena-federation-sdk/src/data/writers/extractors/mod.rs::Extractor	merged	extractors return Option values, so no isSet/value holder is needed
 com.amazonaws.athena.connector.lambda.domain.Split	athena-federation-sdk/src/domain/split.rs::Split	ported	
 com.amazonaws.athena.connector.lambda.domain.TableName	athena-federation-sdk/src/domain/table_name.rs::TableName	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.AllOrNoneValueSet	athena-federation-sdk/src/domain/predicate/all_or_none_value_set.rs::AllOrNoneValueSet	ported	
@@ -83,16 +83,16 @@ com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator	athen
 com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector	athena-federation-sdk/src/domain/predicate/constraint_projector.rs::ConstraintProjector	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Constraints	athena-federation-sdk/src/domain/predicate/constraints.rs::Constraints	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.EquatableValueSet	athena-federation-sdk/src/domain/predicate/equatable_value_set.rs::EquatableValueSet	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::LiteralValueMarker	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::literal builds an EXACTLY marker around a plain value
 com.amazonaws.athena.connector.lambda.domain.predicate.Marker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker_factory.rs::MarkerFactory	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::nullable replaces MarkerFactory.createNullable, the only factory method in use
 com.amazonaws.athena.connector.lambda.domain.predicate.OrderByField	athena-federation-sdk/src/domain/predicate/order_by_field.rs::OrderByField	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan	athena-federation-sdk/src/domain/predicate/query_plan.rs::QueryPlan	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Range	athena-federation-sdk/src/domain/predicate/range.rs::Range	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/ranges.rs::Ranges	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	merged	SortedRangeSet is the only implementor; its inherent methods cover the interface
 com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarker	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/value_marker.rs::ValueMarkerComparator	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker is the only marker type, so the interface is gone
+com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::try_cmp returns an Ordering with the same null and unbounded rules
 com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet	athena-federation-sdk/src/domain/predicate/value_set.rs::ValueSet	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.expression.ConstantExpression	athena-federation-sdk/src/domain/predicate/expression/constant_expression.rs::ConstantExpression	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression	athena-federation-sdk/src/domain/predicate/expression/federation_expression.rs::FederationExpression	ported	
@@ -155,17 +155,17 @@ com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federati
 com.amazonaws.athena.connector.lambda.request.PingRequest	athena-federation-sdk/src/request/ping_request.rs::PingRequest	ported	
 com.amazonaws.athena.connector.lambda.request.PingResponse	athena-federation-sdk/src/request/ping_response.rs::PingResponse	ported	
 com.amazonaws.athena.connector.lambda.resolver.CaseResolver	athena-federation-sdk/src/resolver/case_resolver.rs::CaseResolver	ported	
-com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/aes_gcm_block_crypto.rs::AesGcmBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	merged	the BlockCrypto::AesGcm variant, which holds the key it encrypts with
 com.amazonaws.athena.connector.lambda.security.BlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	ported	
 com.amazonaws.athena.connector.lambda.security.CachableSecretsManager	athena-federation-sdk/src/security/cachable_secrets_manager.rs::CachableSecretsManager	ported	
 com.amazonaws.athena.connector.lambda.security.EncryptionKey	athena-federation-sdk/src/security/encryption_key.rs::EncryptionKey	ported	
-com.amazonaws.athena.connector.lambda.security.EncryptionKeyFactory	athena-federation-sdk/src/security/encryption_key_factory.rs::EncryptionKeyFactory	ported	
+com.amazonaws.athena.connector.lambda.security.EncryptionKeyFactory	athena-federation-sdk/src/security/encryption_key_factory.rs::KeySource	merged	the two key sources are a closed set, so KeySource is an enum whose create takes the optional override configuration
 com.amazonaws.athena.connector.lambda.security.FASToken	athena-federation-sdk/src/security/fas_token.rs::FasToken	ported	
 com.amazonaws.athena.connector.lambda.security.FederatedIdentity	athena-federation-sdk/src/security/federated_identity.rs::FederatedIdentity	ported	
 com.amazonaws.athena.connector.lambda.security.KmsEncryptionProvider	athena-federation-sdk/src/security/kms_encryption_provider.rs::KmsEncryptionProvider	ported	
-com.amazonaws.athena.connector.lambda.security.KmsKeyFactory	athena-federation-sdk/src/security/kms_key_factory.rs::KmsKeyFactory	ported	
-com.amazonaws.athena.connector.lambda.security.LocalKeyFactory	athena-federation-sdk/src/security/local_key_factory.rs::LocalKeyFactory	ported	
-com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto	athena-federation-sdk/src/security/no_op_block_crypto.rs::NoOpBlockCrypto	ported	
+com.amazonaws.athena.connector.lambda.security.KmsKeyFactory	athena-federation-sdk/src/security/encryption_key_factory.rs::KeySource	merged	the KeySource::Kms variant
+com.amazonaws.athena.connector.lambda.security.LocalKeyFactory	athena-federation-sdk/src/security/encryption_key_factory.rs::KeySource	merged	the KeySource::Local variant
+com.amazonaws.athena.connector.lambda.security.NoOpBlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	merged	the BlockCrypto::NoOp variant, chosen when there is no key
 com.amazonaws.athena.connector.lambda.serde.BaseDeserializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.BaseSerializer	athena-federation-sdk/src/serde/mod.rs::base	merged	Jackson base class; its shared read and write helpers live in serde::base and type dispatch is a match in each serde module
 com.amazonaws.athena.connector.lambda.serde.BlockDeserializer	athena-federation-sdk/src/serde/mod.rs::block_deserializer	ported	Jackson deserializer class becomes a module of functions

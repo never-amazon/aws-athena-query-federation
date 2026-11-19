@@ -76,7 +76,7 @@ impl CachableSecretsManager {
         };
         let mut result = raw_string.to_string();
         for (next_secret, name) in Self::secret_names(raw_string) {
-            let secret = self.get_secret(&name).await?;
+            let secret = self.get_secret(&name, None).await?;
             result = result.replace(&next_secret, &secret);
         }
         Ok(Some(result))
@@ -97,7 +97,7 @@ impl CachableSecretsManager {
                 tracing::info!(
                     "Credentials are not in json format. Falling back to <username>:<password>..."
                 );
-                self.get_secret(&name).await?
+                self.get_secret(&name, None).await?
             };
             result = result.replace(&next_secret, &replacement);
         }
@@ -105,18 +105,13 @@ impl CachableSecretsManager {
     }
 
     async fn use_default_credentials(&self, secret: &str) -> Result<String> {
-        let secret_string = self.get_secret(secret).await?;
+        let secret_string = self.get_secret(secret, None).await?;
         let provider = DefaultCredentialsProvider::new(&secret_string)?;
         let credentials = provider.credential();
         Ok(format!("{}:{}", credentials.user(), credentials.password()))
     }
 
-    pub async fn get_secret(&self, secret_name: &str) -> Result<String> {
-        self.get_secret_with_override_configuration(secret_name, None)
-            .await
-    }
-
-    pub async fn get_secret_with_override_configuration(
+    pub async fn get_secret(
         &self,
         secret_name: &str,
         override_configuration: Option<&AwsRequestOverrideConfiguration>,

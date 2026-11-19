@@ -51,14 +51,11 @@ fn test_comparisons() {
     let a = BlockAllocatorImpl::new();
     let markers = ordered_markers(&a);
     for w in markers.windows(2) {
-        assert!(w[0].compare_to(&w[1]).unwrap() < 0);
+        assert!(w[0].try_cmp(&w[1]).unwrap().is_lt());
     }
     for i in 0..markers.len() {
         for j in 0..markers.len() {
-            assert_eq!(
-                markers[i].compare_to(&markers[j]).unwrap(),
-                i.cmp(&j) as i32
-            );
+            assert_eq!(markers[i].try_cmp(&markers[j]).unwrap(), i.cmp(&j));
         }
     }
 }

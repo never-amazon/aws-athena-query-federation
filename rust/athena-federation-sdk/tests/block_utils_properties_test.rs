@@ -1,8 +1,9 @@
 mod data_helpers;
 
 use arrow::datatypes::{DataType, Field};
+use athena_federation_sdk::data::block_utils;
 use athena_federation_sdk::data::{minor_type_of, MinorType};
-use athena_federation_sdk::data::{BlockUtils, FieldResolver, FieldVector, Value};
+use athena_federation_sdk::data::{FieldResolver, FieldVector, Value};
 use athena_federation_sdk::Result;
 use proptest::prelude::*;
 use std::sync::Arc;
@@ -131,9 +132,9 @@ fn set_complex_values_sets_all_fields_correctly_given_any_input(
             }
         };
         let result = if is_complex(&field) {
-            BlockUtils::set_complex_value(&mut output, i, resolver.as_ref(), &value)
+            block_utils::set_complex_value(&mut output, i, resolver.as_ref(), &value)
         } else {
-            BlockUtils::set_value(&mut output, i, &value)
+            block_utils::set_value(&mut output, i, &value)
         };
         if let Err(e) = result {
             eprintln!("DID NOT MATCH, write failed for {field:?}: {e}");

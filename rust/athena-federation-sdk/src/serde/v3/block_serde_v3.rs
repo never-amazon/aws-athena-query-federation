@@ -10,7 +10,7 @@ pub fn serialize(block: Option<&Block>, jgen: &mut JsonGenerator) -> Result<()> 
 pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Option<Block>> {
     let ctx = SerDeContext {
         version: ctx.version.max(SERDE_VERSION_THREE),
-        allocators: ctx.allocators,
+        allocator: ctx.allocator,
     };
     crate::serde::v2::block_serde::deserialize(jparser, &ctx)
 }

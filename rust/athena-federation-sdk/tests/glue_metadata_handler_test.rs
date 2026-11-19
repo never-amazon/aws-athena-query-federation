@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockWriter, MinorType, SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, MinorType, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
@@ -24,7 +24,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, FederatedIdentity,
-    KmsEncryptionProvider, LocalKeyFactory,
+    KeySource, KmsEncryptionProvider,
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use aws_sdk_glue::operation::get_databases::{GetDatabasesInput, GetDatabasesOutput};
@@ -200,7 +200,7 @@ impl MetadataHandler for TestGlueHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
@@ -239,7 +239,7 @@ fn set_up_with_glue(glue: FakeGlue) -> Setup {
     let glue = Arc::new(glue);
     let base = MetadataHandlerBase::builder("glue-test", Fakes::new().clients())
         .config_options(HashMap::new())
-        .encryption_key_factory(Some(Arc::new(LocalKeyFactory::new())))
+        .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(Some("spill-bucket".into()))
         .spill_prefix(Some("spill-prefix".into()))
         .build()

@@ -533,6 +533,7 @@ impl SecretsManagerClient for FakeSecretsManager {
         &self,
         secret_id: &str,
         secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         self.puts
             .lock()
@@ -814,7 +815,7 @@ impl CountingSpiller {
 impl BlockSpiller for CountingSpiller {
     async fn write_rows(
         &self,
-        _row_writer: &mut (dyn RowWriter + Send),
+        _row_writer: &mut RowWriter<'_>,
     ) -> athena_federation_sdk::Result<()> {
         self.write_rows_calls.fetch_add(1, Ordering::SeqCst);
         Ok(())

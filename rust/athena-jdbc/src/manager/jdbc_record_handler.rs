@@ -1,4 +1,5 @@
-use std::any::Any;
+use athena_federation_sdk::data::block_utils;
+use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -8,11 +9,10 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
-use athena_federation_sdk::data::writers::holders::NullableFloat8Holder;
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockSpiller, BlockUtils, DateTimeFormatterUtil, DefaultFieldResolver,
-    FieldVector, MinorType, PutObjectRequest, S3BlockSpiller, S3Client, Value,
+    Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector, MinorType,
+    PutObjectRequest, S3BlockSpiller, S3Client, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -24,9 +24,7 @@ use athena_federation_sdk::handlers::{default_do_read_records, RecordHandler, Re
 use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
-use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey};
 use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_federation_substrait::{plan, SqlDialect};
@@ -40,7 +38,6 @@ use crate::validate::{close_after, null_pointer};
 const CLICKHOUSE_DB: &str = "clickhouse";
 pub const EXPORT_SCHEMA: &str = "ExportSchema";
 const SCHEMA_SUFFIX: &str = ".schema";
-const RESULT_SET_CLASS: &str = "java.sql.ResultSet";
 
 pub struct JdbcRecordHandlerBase {
     record_base: RecordHandlerBase,
@@ -93,71 +90,9 @@ impl JdbcRecordHandlerBase {
     }
 }
 
-fn row_of(context: &dyn Any) -> Result<&Row> {
-    context.downcast_ref::<Row>().ok_or_else(|| {
-        FederationError::ClassCast(format!(
-            "context cannot be cast to class {RESULT_SET_CLASS}"
-        ))
-    })
-}
-
-fn null_extractor(field_type: MinorType) -> Result<Extractor> {
-    let extractor = match field_type {
-        MinorType::BIT => Extractor::bit(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::TINYINT => Extractor::tiny_int(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::SMALLINT => Extractor::small_int(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::INT => Extractor::int(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::BIGINT => Extractor::big_int(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::FLOAT4 => Extractor::float4(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::FLOAT8 => Extractor::float8(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::DECIMAL => Extractor::decimal(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::DATEDAY => Extractor::date_day(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::DATEMILLI => Extractor::date_milli(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::VARCHAR => Extractor::var_char(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        MinorType::VARBINARY => Extractor::var_binary(|_: &dyn Any, dst: &mut _| {
-            dst.is_set = 0;
-            Ok(())
-        }),
-        other => {
-            return Err(FederationError::not_supported(format!(
-                "Unhandled type {other}"
-            )))
-        }
-    };
-    Ok(extractor)
+fn null_extractor(field_type: MinorType) -> Result<Extractor<Row>> {
+    Extractor::null(field_type)
+        .ok_or_else(|| FederationError::not_supported(format!("Unhandled type {field_type}")))
 }
 
 fn parse_java_double(text: &str) -> Result<f64> {
@@ -193,7 +128,7 @@ pub(crate) fn make_extractor_with_column_name_remapping(
     metadata: &ResultSetMetaData,
     partition_values: &HashMap<String, String>,
     column_name_remapping: &HashMap<String, String>,
-) -> Result<Extractor> {
+) -> Result<Extractor<Row>> {
     let field_type = MinorType::get_minor_type_for_arrow_type(field.data_type());
     let field_name = column_name_remapping
         .get(field.name())
@@ -202,11 +137,9 @@ pub(crate) fn make_extractor_with_column_name_remapping(
 
     if let Some(partition_value) = partition_values.get(&field_name) {
         let partition_value = partition_value.clone();
-        return Ok(Extractor::var_char(move |_: &dyn Any, dst: &mut _| {
-            dst.is_set = 1;
-            dst.value.clone_from(&partition_value);
-            Ok(())
-        }));
+        return Ok(Extractor::VarChar(Arc::new(move |_: &Row| {
+            Ok(Some(partition_value.clone()))
+        })));
     }
 
     let Ok(index) = metadata.find_column(&field_name) else {
@@ -220,18 +153,14 @@ pub(crate) fn make_extractor_with_column_name_remapping(
     typed_extractor(field_type, index)
 }
 
-fn extract_float8(row: &Row, index: usize, dst: &mut NullableFloat8Holder) -> Result<()> {
+fn extract_float8(row: &Row, index: usize) -> Result<Option<f64>> {
     if let Ok(value) = row.get_double(index) {
-        dst.value = value.unwrap_or(0.0);
-        dst.is_set = i32::from(value.is_some());
-    } else {
-        let text = row.get_string(index)?.ok_or_else(|| {
-            null_pointer("Cannot invoke \"String.replaceAll(String, String)\" because the return value of \"java.sql.ResultSet.getString(String)\" is null")
-        })?;
-        dst.value = parse_java_double(&text.replace([',', '$'], ""))?;
-        dst.is_set = 1;
+        return Ok(value);
     }
-    Ok(())
+    let text = row.get_string(index)?.ok_or_else(|| {
+        null_pointer("Cannot invoke \"String.replaceAll(String, String)\" because the return value of \"java.sql.ResultSet.getString(String)\" is null")
+    })?;
+    parse_java_double(&text.replace([',', '$'], "")).map(Some)
 }
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
@@ -239,92 +168,47 @@ fn date_day(epoch_day: i64) -> i32 {
     i32::try_from(epoch_day).unwrap_or(if epoch_day < 0 { i32::MIN } else { i32::MAX })
 }
 
-fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor> {
+fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor<Row>> {
     let extractor = match field_type {
-        MinorType::BIT => Extractor::bit(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_boolean(index)?;
-            dst.value = i32::from(value.unwrap_or(false));
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::TINYINT => Extractor::tiny_int(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_byte(index)?;
-            dst.value = value.unwrap_or(0);
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::SMALLINT => Extractor::small_int(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_short(index)?;
-            dst.value = value.unwrap_or(0);
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::INT => Extractor::int(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_int(index)?;
-            dst.value = value.unwrap_or(0);
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::BIGINT => Extractor::big_int(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_long(index)?;
-            dst.value = value.unwrap_or(0);
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::FLOAT4 => Extractor::float4(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_float(index)?;
-            dst.value = value.unwrap_or(0.0);
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::FLOAT8 => Extractor::float8(move |context: &dyn Any, dst: &mut _| {
-            extract_float8(row_of(context)?, index, dst)
-        }),
-        MinorType::DECIMAL => Extractor::decimal(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_big_decimal(index)?;
-            dst.is_set = i32::from(value.is_some());
-            if let Some(value) = value {
-                dst.value = value;
-            }
-            Ok(())
-        }),
-        MinorType::DATEDAY => Extractor::date_day(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_object(index)?.to_epoch_day()?;
-            if let Some(day) = value {
-                dst.value = date_day(day);
-            }
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::DATEMILLI => Extractor::date_milli(move |context: &dyn Any, dst: &mut _| {
-            let row = row_of(context)?;
-            let value = if row.metadata().column_type(index)? == Types::DATE {
-                row.get_object(index)?
+        MinorType::BIT => Extractor::Bit(Arc::new(move |row: &Row| {
+            Ok(row.get_boolean(index)?.map(i32::from))
+        })),
+        MinorType::TINYINT => {
+            Extractor::TinyInt(Arc::new(move |row: &Row| Ok(row.get_byte(index)?)))
+        }
+        MinorType::SMALLINT => {
+            Extractor::SmallInt(Arc::new(move |row: &Row| Ok(row.get_short(index)?)))
+        }
+        MinorType::INT => Extractor::Int(Arc::new(move |row: &Row| Ok(row.get_int(index)?))),
+        MinorType::BIGINT => Extractor::BigInt(Arc::new(move |row: &Row| Ok(row.get_long(index)?))),
+        MinorType::FLOAT4 => {
+            Extractor::Float4(Arc::new(move |row: &Row| Ok(row.get_float(index)?)))
+        }
+        MinorType::FLOAT8 => {
+            Extractor::Float8(Arc::new(move |row: &Row| extract_float8(row, index)))
+        }
+        MinorType::DECIMAL => {
+            Extractor::Decimal(Arc::new(move |row: &Row| Ok(row.get_big_decimal(index)?)))
+        }
+        MinorType::DATEDAY => Extractor::DateDay(Arc::new(move |row: &Row| {
+            Ok(row.get_object(index)?.to_epoch_day()?.map(date_day))
+        })),
+        MinorType::DATEMILLI => Extractor::DateMilli(Arc::new(move |row: &Row| {
+            if row.metadata().column_type(index)? == Types::DATE {
+                Ok(row
+                    .get_object(index)?
                     .to_epoch_day()?
-                    .map(|day| day.saturating_mul(MILLIS_PER_DAY))
+                    .map(|day| day.saturating_mul(MILLIS_PER_DAY)))
             } else {
-                row.get_object(index)?.to_epoch_millis()?
-            };
-            if let Some(millis) = value {
-                dst.value = millis;
+                Ok(row.get_object(index)?.to_epoch_millis()?)
             }
-            dst.is_set = i32::from(value.is_some());
-            Ok(())
-        }),
-        MinorType::VARCHAR => Extractor::var_char(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_string(index)?;
-            dst.is_set = i32::from(value.is_some());
-            if let Some(value) = value {
-                dst.value = value;
-            }
-            Ok(())
-        }),
-        MinorType::VARBINARY => Extractor::var_binary(move |context: &dyn Any, dst: &mut _| {
-            let value = row_of(context)?.get_bytes(index)?;
-            dst.is_set = i32::from(value.is_some());
-            dst.value = value.unwrap_or_default();
-            Ok(())
-        }),
+        })),
+        MinorType::VARCHAR => {
+            Extractor::VarChar(Arc::new(move |row: &Row| Ok(row.get_string(index)?)))
+        }
+        MinorType::VARBINARY => {
+            Extractor::VarBinary(Arc::new(move |row: &Row| Ok(row.get_bytes(index)?)))
+        }
         other => {
             return Err(FederationError::not_supported(format!(
                 "Unhandled type {other}"
@@ -376,14 +260,8 @@ struct ArrayFieldWriter {
     element_type: MinorType,
 }
 
-impl FieldWriter for ArrayFieldWriter {
-    fn write(
-        &mut self,
-        vector: &mut FieldVector,
-        context: &dyn Any,
-        row_num: usize,
-    ) -> Result<bool> {
-        let row = row_of(context)?;
+impl FieldWriter<Row> for ArrayFieldWriter {
+    fn write(&mut self, vector: &mut FieldVector, row: &Row, row_num: usize) -> Result<bool> {
         if let Some(values) = row.get_array(self.field_name.as_str())? {
             let list = Value::List(
                 values
@@ -391,7 +269,7 @@ impl FieldWriter for ArrayFieldWriter {
                     .map(|value| array_element_value(value, self.element_type))
                     .collect::<Result<_>>()?,
             );
-            BlockUtils::set_complex_value(vector, row_num, &DefaultFieldResolver, &list)?;
+            block_utils::set_complex_value(vector, row_num, &DefaultFieldResolver, &list)?;
         }
         Ok(true)
     }
@@ -504,17 +382,9 @@ pub trait JdbcRecordHandler: RecordHandler {
         spill_location: &S3SpillLocation,
         encryption_key: Option<&EncryptionKey>,
         derived_schema: &Schema,
-        allocator: &Arc<dyn BlockAllocator>,
     ) -> Result<()> {
-        let block_crypto: Box<dyn BlockCrypto> = if encryption_key.is_some() {
-            Box::new(AesGcmBlockCrypto::new(Arc::clone(allocator)))
-        } else {
-            Box::new(NoOpBlockCrypto::new(Arc::clone(allocator)))
-        };
-        let schema_bytes = block_crypto.encrypt_with_bytes(
-            encryption_key,
-            &schema_to_bytes(derived_schema, IpcFormat::ArrowDefault)?,
-        )?;
+        let schema_bytes = BlockCrypto::for_key(encryption_key.cloned())
+            .encrypt_with_bytes(&schema_to_bytes(derived_schema, IpcFormat::ArrowDefault)?)?;
         let key = format!("{}{SCHEMA_SUFFIX}", spill_location.key());
         let length = i64::try_from(schema_bytes.len())
             .map_err(|e| FederationError::IllegalArgument(e.to_string()))?;
@@ -536,7 +406,7 @@ pub trait JdbcRecordHandler: RecordHandler {
         Ok(())
     }
 
-    fn make_factory(&self, field: &Field) -> Arc<dyn FieldWriterFactory> {
+    fn make_factory(&self, field: &Field) -> FieldWriterFactory<Row> {
         let field_name = field.name().clone();
         let element_type = match field.data_type() {
             DataType::List(child) => MinorType::get_minor_type_for_arrow_type(child.data_type()),
@@ -544,9 +414,9 @@ pub trait JdbcRecordHandler: RecordHandler {
         };
         Arc::new(
             move |_vector: &FieldVector,
-                  _extractor: Option<&Extractor>,
-                  _constraint: Option<Arc<dyn ConstraintProjector>>|
-                  -> Result<Box<dyn FieldWriter>> {
+                  _extractor: Option<&Extractor<Row>>,
+                  _constraint: Option<ConstraintProjector>|
+                  -> Result<Box<dyn FieldWriter<Row>>> {
                 Ok(Box::new(ArrayFieldWriter {
                     field_name: field_name.clone(),
                     element_type,
@@ -574,7 +444,7 @@ pub trait JdbcRecordHandler: RecordHandler {
         field: &Field,
         metadata: &ResultSetMetaData,
         partition_values: &HashMap<String, String>,
-    ) -> Result<Extractor> {
+    ) -> Result<Extractor<Row>> {
         make_extractor_with_column_name_remapping(
             field,
             metadata,
@@ -668,12 +538,10 @@ async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Si
                 spill_location,
                 request.split().encryption_key(),
                 &derived_schema,
-                allocator,
             )
             .await?;
 
         let evaluator = Arc::new(ConstraintEvaluator::new(
-            Some(allocator.as_ref()),
             &derived_schema,
             request.constraints().clone(),
         ));
@@ -692,9 +560,9 @@ async fn write_pass_through_query_using_result_schema<H: JdbcRecordHandler + ?Si
                 let row = result_set.take_current_row()?;
                 spiller
                     .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
-                        DateTimeFormatterUtil::override_timezone_packing(false);
+                        date_time_formatter_util::override_timezone_packing(false);
                         let written = write_export_row(block, row_num, &row, column_count);
-                        DateTimeFormatterUtil::clear_timezone_packing_override();
+                        date_time_formatter_util::clear_timezone_packing_override();
                         written
                     })
                     .await?;
@@ -730,7 +598,7 @@ fn write_export_row(
     let vectors = block.field_vectors_mut();
     for (i, vector) in vectors.iter_mut().enumerate().take(column_count) {
         let value = calendar_value(row.get_object(i + 1)?, vector.minor_type())?;
-        BlockUtils::set_value(vector, row_num, &value)?;
+        block_utils::set_value(vector, row_num, &value)?;
     }
     Ok(1)
 }

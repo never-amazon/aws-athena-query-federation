@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockWriter, FieldBuilder, SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
@@ -101,7 +101,7 @@ impl MetadataHandler for TestHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

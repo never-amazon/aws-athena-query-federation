@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use super::credentials::Credentials;
-use super::credentials_constants::CredentialsConstants;
+use super::credentials_constants;
 use super::credentials_provider::CredentialsProvider;
 use super::default_credentials::DefaultCredentials;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
@@ -26,8 +26,8 @@ impl DefaultCredentialsProvider {
             })?;
         let mut rds_secrets: HashMap<String, Option<String>> = HashMap::new();
         for (key, value) in original_map {
-            if key.eq_ignore_ascii_case(CredentialsConstants::USERNAME)
-                || key.eq_ignore_ascii_case(CredentialsConstants::PASSWORD)
+            if key.eq_ignore_ascii_case(credentials_constants::USERNAME)
+                || key.eq_ignore_ascii_case(credentials_constants::PASSWORD)
             {
                 let value = match value {
                     serde_json::Value::Null => None,
@@ -43,11 +43,11 @@ impl DefaultCredentialsProvider {
             }
         }
         let user = rds_secrets
-            .get(CredentialsConstants::USERNAME)
+            .get(credentials_constants::USERNAME)
             .cloned()
             .flatten();
         let password = rds_secrets
-            .get(CredentialsConstants::PASSWORD)
+            .get(credentials_constants::PASSWORD)
             .cloned()
             .flatten();
         Ok(DefaultCredentialsProvider {
@@ -80,8 +80,8 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 
 #[async_trait]
 impl CredentialsProvider for DefaultCredentialsProvider {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>> {
-        Ok(Box::new(self.default_credentials.clone()))
+    async fn get_credential(&self) -> Result<Credentials> {
+        Ok(self.default_credentials.clone().into())
     }
 
     fn as_any(&self) -> &dyn Any {

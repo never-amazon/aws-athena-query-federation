@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 use async_trait::async_trait;
-use athena_federation_sdk::data::{BlockAllocator, BlockSpiller, BlockWriter};
+use athena_federation_sdk::data::{BlockAllocator, BlockSpiller, SimpleBlockWriter};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
@@ -87,7 +87,7 @@ impl MetadataHandler for FakeDatabaseJdbcMetadataHandler {
 
     async fn get_partitions(
         &self,
-        _block_writer: &mut (dyn BlockWriter + Send),
+        _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

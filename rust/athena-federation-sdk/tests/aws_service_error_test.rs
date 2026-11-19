@@ -10,8 +10,7 @@ use athena_federation_sdk::data::{Block, BlockSpiller, RowWriter};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::SpillLocation;
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, AwsService, AwsServiceError, EncryptionKeyFactory, KmsClient,
-    KmsKeyFactory,
+    AwsRequestOverrideConfiguration, AwsService, AwsServiceError, KeySource, KmsClient,
 };
 use athena_federation_sdk::ThrottlingInvoker;
 use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
@@ -120,7 +119,7 @@ struct NotSpilled;
 impl BlockSpiller for NotSpilled {
     async fn write_rows(
         &self,
-        _row_writer: &mut (dyn RowWriter + Send),
+        _row_writer: &mut RowWriter<'_>,
     ) -> athena_federation_sdk::Result<()> {
         Ok(())
     }
@@ -194,13 +193,13 @@ impl KmsClient for FailingKms {
 
 #[tokio::test]
 async fn kms_key_factory_message_uses_java_get_message() {
-    let factory = KmsKeyFactory::new(
+    let factory = KeySource::kms(
         Arc::new(FailingKms {
             error: error_from_case(&case("kms_not_found")),
         }),
         "masterKey",
     );
-    let e = factory.create().await.unwrap_err();
+    let e = factory.create(None).await.unwrap_err();
     assert_eq!(
         Some(FederationSourceErrorCode::EntityNotFoundException),
         e.error_code()

@@ -1,14 +1,12 @@
 mod common_field_writer;
 
-use std::any::Any;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
-use athena_federation_sdk::data::writers::extractors::DecimalExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{DecimalFieldWriter, FieldWriter};
-use athena_federation_sdk::data::writers::holders::NullableDecimalHolder;
+use athena_federation_sdk::data::writers::extractors::Extractor;
+use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, ScalarFieldWriter};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
 use athena_federation_sdk::FederationError;
@@ -25,18 +23,12 @@ struct Fixture {
     projector: Arc<MockConstraintProjector>,
 }
 
-fn configure_extractor(
-    value: BigDecimal,
-    is_set: i32,
-    calls: &CallCounter,
-) -> Arc<dyn DecimalExtractor> {
+fn configure_extractor(value: BigDecimal, is_set: i32, calls: &CallCounter) -> Extractor<()> {
     let counter = calls.0.clone();
-    Arc::new(move |_ctx: &dyn Any, holder: &mut NullableDecimalHolder| {
+    Extractor::Decimal(Arc::new(move |_ctx: &()| {
         counter.fetch_add(1, Ordering::SeqCst);
-        holder.is_set = is_set;
-        holder.value = value.clone();
-        Ok(())
-    })
+        Ok((is_set > 0).then(|| value.clone()))
+    }))
 }
 
 fn set_up() -> Fixture {
@@ -52,13 +44,13 @@ fn writer(
     value: BigDecimal,
     is_set: i32,
     with_constraint: bool,
-) -> DecimalFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
-        Some(fx.projector.clone())
+) -> ScalarFieldWriter<()> {
+    let constraint: Option<ConstraintProjector> = if with_constraint {
+        Some(fx.projector.as_projector())
     } else {
         None
     };
-    DecimalFieldWriter::new(
+    ScalarFieldWriter::new(
         configure_extractor(value, is_set, &fx.extractor_calls),
         constraint,
     )

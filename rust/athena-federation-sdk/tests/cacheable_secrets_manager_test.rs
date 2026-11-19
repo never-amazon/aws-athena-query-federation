@@ -44,6 +44,7 @@ impl SecretsManagerClient for MockSecretsManager {
         &self,
         _secret_id: &str,
         _secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<(), AwsServiceError> {
         Ok(())
     }
@@ -71,7 +72,10 @@ async fn expiration_test() {
     cachable_secrets_manager.add_cache_entry("test", "value", now());
     assert_eq!(
         "value",
-        cachable_secrets_manager.get_secret("test").await.unwrap()
+        cachable_secrets_manager
+            .get_secret("test", None)
+            .await
+            .unwrap()
     );
     assert_eq!(0, mock_secrets_manager.calls.load(Ordering::SeqCst));
 
@@ -85,7 +89,10 @@ async fn expiration_test() {
     cachable_secrets_manager.add_cache_entry("test", "value", 0);
     assert_eq!(
         "value2",
-        cachable_secrets_manager.get_secret("test").await.unwrap()
+        cachable_secrets_manager
+            .get_secret("test", None)
+            .await
+            .unwrap()
     );
 }
 
@@ -100,11 +107,17 @@ async fn eviction_test() {
 
     assert_eq!(
         "test_value",
-        cachable_secrets_manager.get_secret("test").await.unwrap()
+        cachable_secrets_manager
+            .get_secret("test", None)
+            .await
+            .unwrap()
     );
     assert_eq!(
         "test0_value",
-        cachable_secrets_manager.get_secret("test0").await.unwrap()
+        cachable_secrets_manager
+            .get_secret("test0", None)
+            .await
+            .unwrap()
     );
     assert_eq!(2, mock_secrets_manager.calls.load(Ordering::SeqCst));
 }

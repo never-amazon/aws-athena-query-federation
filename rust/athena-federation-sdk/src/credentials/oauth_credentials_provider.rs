@@ -7,10 +7,9 @@ use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
 use super::credentials::Credentials;
-use super::credentials_constants::CredentialsConstants;
+use super::credentials_constants;
 use super::credentials_provider::CredentialsProvider;
-use super::http_client::{HttpClient, HttpClientError, HttpRequest, ReqwestHttpClient};
-use super::initializable_credentials_provider::InitializableCredentialsProvider;
+use super::http_client::{HttpClient, HttpClientError, HttpRequest};
 use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::java_cast::double_to_long;
@@ -26,10 +25,10 @@ pub trait OAuthFlow: Send + Sync {
 
 pub struct OAuthCredentialsProvider {
     flow: Box<dyn OAuthFlow>,
-    secret_name: Option<String>,
-    secrets_manager: Option<Arc<CachableSecretsManager>>,
+    secret_name: String,
+    secrets_manager: Arc<CachableSecretsManager>,
     secret_map: Mutex<HashMap<String, String>>,
-    http_client: Option<Arc<dyn HttpClient>>,
+    http_client: Arc<dyn HttpClient>,
 }
 
 fn now_seconds() -> i64 {
@@ -85,32 +84,20 @@ fn service_error(
 }
 
 impl OAuthCredentialsProvider {
-    pub fn new(flow: Box<dyn OAuthFlow>) -> OAuthCredentialsProvider {
-        OAuthCredentialsProvider {
-            flow,
-            secret_name: None,
-            secrets_manager: None,
-            secret_map: Mutex::new(HashMap::new()),
-            http_client: None,
-        }
-    }
-
-    pub fn with_http_client(
+    pub fn new(
         flow: Box<dyn OAuthFlow>,
+        secret_name: &str,
+        secret_map: HashMap<String, String>,
+        secrets_manager: Arc<CachableSecretsManager>,
         http_client: Arc<dyn HttpClient>,
     ) -> OAuthCredentialsProvider {
         OAuthCredentialsProvider {
-            http_client: Some(http_client),
-            ..OAuthCredentialsProvider::new(flow)
+            flow,
+            secret_name: secret_name.to_string(),
+            secrets_manager,
+            secret_map: Mutex::new(secret_map),
+            http_client,
         }
-    }
-
-    pub fn is_oauth_configured(&self, secret_map: &HashMap<String, String>) -> Result<bool> {
-        self.flow.is_oauth_configured(secret_map)
-    }
-
-    pub fn build_token_request(&self, secret_map: &HashMap<String, String>) -> Result<HttpRequest> {
-        self.flow.build_token_request(secret_map)
     }
 
     fn lock_secret_map(&self) -> MutexGuard<'_, HashMap<String, String>> {
@@ -120,15 +107,15 @@ impl OAuthCredentialsProvider {
     }
 
     fn cached_access_token(snapshot: &HashMap<String, String>) -> Result<Option<String>> {
-        if let Some(cached) = snapshot.get(CredentialsConstants::ACCESS_TOKEN) {
+        if let Some(cached) = snapshot.get(credentials_constants::ACCESS_TOKEN) {
             let expires_in = parse_long(
                 snapshot
-                    .get(CredentialsConstants::EXPIRES_IN)
+                    .get(credentials_constants::EXPIRES_IN)
                     .map_or("0", String::as_str),
             )?;
             let fetched_at = parse_long(
                 snapshot
-                    .get(CredentialsConstants::FETCHED_AT)
+                    .get(credentials_constants::FETCHED_AT)
                     .map_or("0", String::as_str),
             )?;
             if now_seconds() - fetched_at < expires_in - 60 {
@@ -141,12 +128,8 @@ impl OAuthCredentialsProvider {
     }
 
     async fn fetch_token_response(&self, snapshot: &HashMap<String, String>) -> Result<JsonValue> {
-        let http_client = self
-            .http_client
-            .as_ref()
-            .ok_or_else(|| FederationError::null_pointer("httpClient was null"))?;
         let request = self.flow.build_token_request(snapshot)?;
-        let response = http_client.send(request).await.map_err(|e| match e {
+        let response = self.http_client.send(request).await.map_err(|e| match e {
             HttpClientError::Io(m) => connector_error(
                 FederationSourceErrorCode::OperationTimeoutException,
                 "Failed to communicate with OAuth endpoint",
@@ -205,15 +188,15 @@ impl OAuthCredentialsProvider {
         let secret_string = {
             let mut secret_map = self.lock_secret_map();
             secret_map.insert(
-                CredentialsConstants::ACCESS_TOKEN.to_string(),
+                credentials_constants::ACCESS_TOKEN.to_string(),
                 access_token.to_string(),
             );
             secret_map.insert(
-                CredentialsConstants::EXPIRES_IN.to_string(),
+                credentials_constants::EXPIRES_IN.to_string(),
                 expires_in.to_string(),
             );
             secret_map.insert(
-                CredentialsConstants::FETCHED_AT.to_string(),
+                credentials_constants::FETCHED_AT.to_string(),
                 fetched_at.to_string(),
             );
             serde_json::to_string(&*secret_map).map_err(|e| {
@@ -225,14 +208,10 @@ impl OAuthCredentialsProvider {
             })?
         };
 
-        let secret_name = self.secret_name.as_deref().unwrap_or("null");
-        let secrets_manager = self
-            .secrets_manager
-            .as_ref()
-            .ok_or_else(|| FederationError::null_pointer("secretsManager was null"))?;
-        secrets_manager
+        let secret_name = self.secret_name.as_str();
+        self.secrets_manager
             .secrets_manager()
-            .put_secret_value(secret_name, &secret_string)
+            .put_secret_value(secret_name, &secret_string, None)
             .await
             .map_err(|e| {
                 if !e.is_service_exception_of(AwsService::SecretsManager) {
@@ -261,8 +240,8 @@ impl OAuthCredentialsProvider {
         }
         let token_response = self.fetch_token_response(&snapshot).await?;
         let (Some(access_token_node), Some(expires_in_node)) = (
-            token_response.get(CredentialsConstants::ACCESS_TOKEN),
-            token_response.get(CredentialsConstants::EXPIRES_IN),
+            token_response.get(credentials_constants::ACCESS_TOKEN),
+            token_response.get(credentials_constants::EXPIRES_IN),
         ) else {
             return Err(connector_error(
                 FederationSourceErrorCode::InvalidResponseException,
@@ -282,37 +261,12 @@ impl OAuthCredentialsProvider {
 
 #[async_trait]
 impl CredentialsProvider for OAuthCredentialsProvider {
-    async fn get_credential(&self) -> Result<Box<dyn Credentials>> {
+    async fn get_credential(&self) -> Result<Credentials> {
         let access_token = self.get_oauth_access_token().await?;
-        Ok(Box::new(OAuthAccessTokenCredentials::new(&access_token)?))
+        Ok(OAuthAccessTokenCredentials::new(&access_token)?.into())
     }
 
     fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl InitializableCredentialsProvider for OAuthCredentialsProvider {
-    fn initialize(
-        &mut self,
-        secret_name: &str,
-        secret_map: HashMap<String, String>,
-        secrets_manager: Arc<CachableSecretsManager>,
-    ) -> Result<()> {
-        self.secret_name = Some(secret_name.to_string());
-        *self.lock_secret_map() = secret_map;
-        self.secrets_manager = Some(secrets_manager);
-        if self.http_client.is_none() {
-            self.http_client = Some(Arc::new(ReqwestHttpClient::new()));
-        }
-        Ok(())
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-
-    fn into_credentials_provider(self: Box<Self>) -> Box<dyn CredentialsProvider> {
         self
     }
 }

@@ -1,15 +1,15 @@
+use athena_federation_sdk::data::block_utils;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, GetObjectRequest, PutObjectRequest,
+    Block, BlockAllocator, BlockAllocatorImpl, GetObjectRequest, PutObjectRequest,
     S3BlockSpillReader, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, AwsService, AwsServiceError, BlockCrypto, EncryptionKey,
-    EncryptionKeyFactory, LocalKeyFactory, NoOpBlockCrypto,
+    AwsService, AwsServiceError, BlockCrypto, EncryptionKey, KeySource,
 };
 use athena_federation_sdk::FederationError;
 use aws_credential_types::Credentials;
@@ -82,7 +82,7 @@ impl Drop for Setup {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut(field).unwrap(),
         row,
         &value.into(),
@@ -100,7 +100,7 @@ async fn setup() -> Setup {
             .add_field_with_type("col2", DataType::Utf8)
             .build(),
     );
-    let encryption_key = LocalKeyFactory::new().create().await.unwrap();
+    let encryption_key = KeySource::Local.create(None).await.unwrap();
     let spill_location = S3SpillLocation::new_builder()
         .with_bucket(BUCKET)
         .with_prefix(PREFIX)
@@ -135,9 +135,8 @@ fn assert_connector_exception(e: &FederationError) {
 #[tokio::test]
 async fn read_encrypted_block_succeeds() {
     let s = setup().await;
-    let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto
-        .encrypt(Some(&s.encryption_key), &s.expected)
+    let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
         .unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
@@ -159,9 +158,8 @@ async fn read_encrypted_block_succeeds() {
 #[tokio::test]
 async fn read_bytes_encrypted_bytes_succeeds() {
     let s = setup().await;
-    let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let encrypted_bytes = block_crypto
-        .encrypt(Some(&s.encryption_key), &s.expected)
+    let encrypted_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
         .unwrap();
     s.mock_s3.when_get_object(Ok(encrypted_bytes));
 
@@ -179,13 +177,20 @@ async fn read_bytes_encrypted_bytes_succeeds() {
 #[tokio::test]
 async fn read_null_spill_location_throws_null_pointer_exception() {
     let s = setup().await;
-    let ex = s
-        .block_reader
-        .read_with_schema(None, Some(&s.encryption_key), s.schema.clone())
+    let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
+        .unwrap();
+    s.mock_s3.when_get_object(Ok(spilled_bytes));
+
+    s.block_reader
+        .read_with_schema(&s.spill_location, Some(&s.encryption_key), s.schema.clone())
         .await
-        .unwrap_err();
-    assert!(matches!(ex, FederationError::NullPointer(_)));
-    assert_eq!(0, s.mock_s3.count());
+        .unwrap();
+
+    let requests = s.mock_s3.get_requests.lock().unwrap();
+    assert_eq!(1, requests.len());
+    assert_eq!(s.spill_location.bucket(), requests[0].bucket());
+    assert_eq!(s.spill_location.key(), requests[0].key());
 }
 
 #[tokio::test]
@@ -227,11 +232,10 @@ async fn read_corrupted_encrypted_data_throws_athena_connector_exception() {
 #[tokio::test]
 async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
     let s = setup().await;
-    let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto
-        .encrypt(Some(&s.encryption_key), &s.expected)
+    let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
         .unwrap();
-    let wrong_key = LocalKeyFactory::new().create().await.unwrap();
+    let wrong_key = KeySource::Local.create(None).await.unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
     let ex = s
@@ -247,26 +251,24 @@ async fn read_mismatched_encryption_key_throws_athena_connector_exception() {
 #[tokio::test]
 async fn read_null_schema_throws_null_pointer_exception() {
     let s = setup().await;
-    let block_crypto = AesGcmBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto
-        .encrypt(Some(&s.encryption_key), &s.expected)
+    let spilled_bytes = BlockCrypto::AesGcm(s.encryption_key.clone())
+        .encrypt(&s.expected)
         .unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
-    let ex = s
+    let block = s
         .block_reader
-        .read_with_schema(&s.spill_location, Some(&s.encryption_key), None)
+        .read_with_schema(&s.spill_location, Some(&s.encryption_key), s.schema.clone())
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(ex, FederationError::NullPointer(_)));
+    assert_eq!(&s.schema, block.schema());
 }
 
 #[tokio::test]
 async fn read_unencrypted_block_with_null_encryption_key_succeeds() {
     let s = setup().await;
-    let block_crypto = NoOpBlockCrypto::new(s.allocator.clone());
-    let spilled_bytes = block_crypto.encrypt(None, &s.expected).unwrap();
+    let spilled_bytes = BlockCrypto::NoOp.encrypt(&s.expected).unwrap();
     s.mock_s3.when_get_object(Ok(spilled_bytes));
 
     let actual = s

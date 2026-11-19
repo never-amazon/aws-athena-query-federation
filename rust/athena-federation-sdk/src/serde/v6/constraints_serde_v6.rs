@@ -13,7 +13,7 @@ pub fn deserialize(
 ) -> Result<Option<Constraints>> {
     let ctx = SerDeContext {
         version: SERDE_VERSION_SIX,
-        allocators: ctx.allocators,
+        allocator: ctx.allocator,
     };
     crate::serde::v2::constraints_serde::deserialize(jparser, &ctx)
 }

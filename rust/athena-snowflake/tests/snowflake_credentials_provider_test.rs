@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
-    CredentialsProvider, DefaultCredentials, HttpClient, HttpClientError, HttpRequest, HttpResponse,
+    Credentials, CredentialsProvider, HttpClient, HttpClientError, HttpRequest, HttpResponse,
 };
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::security::{
@@ -68,15 +68,6 @@ impl SecretsManagerClient for RecordingSecretsManager {
     }
 
     async fn put_secret_value(
-        &self,
-        secret_id: &str,
-        secret_string: &str,
-    ) -> Result<(), AwsServiceError> {
-        self.put_secret_value_with_override_configuration(secret_id, secret_string, None)
-            .await
-    }
-
-    async fn put_secret_value_with_override_configuration(
         &self,
         secret_id: &str,
         secret_string: &str,
@@ -264,10 +255,9 @@ async fn test_get_credential_with_o_auth_flow() {
     let provider = provider(&secrets, &http, None);
 
     let credentials = provider.get_credential().await.unwrap();
-    let credentials = credentials
-        .as_any()
-        .downcast_ref::<DefaultCredentials>()
-        .unwrap();
+    let Credentials::UserPassword(credentials) = credentials else {
+        panic!("expected user and password credentials");
+    };
 
     assert_eq!(TEST_USERNAME, credentials.user());
     assert_eq!(TEST_ACCESS_TOKEN, credentials.password());

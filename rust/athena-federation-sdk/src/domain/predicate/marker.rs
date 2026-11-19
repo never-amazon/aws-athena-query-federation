@@ -1,14 +1,13 @@
+use crate::data::block_utils;
+use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
 use arrow::datatypes::{Field, Schema};
 
-use crate::data::java_format::java_string_hash;
 use crate::data::types::arrow_type_to_string;
-use crate::data::{ArrowType, Block, BlockAllocator, BlockUtils, Value};
+use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
-
-use super::value_marker::{ValueMarker, ValueMarkerComparator};
 
 pub const DEFAULT_COLUMN: &str = "col1";
 
@@ -25,14 +24,6 @@ impl Bound {
             Bound::Below => "BELOW",
             Bound::Exactly => "EXACTLY",
             Bound::Above => "ABOVE",
-        }
-    }
-
-    pub fn ordinal(&self) -> i32 {
-        match self {
-            Bound::Below => 0,
-            Bound::Exactly => 1,
-            Bound::Above => 2,
         }
     }
 }
@@ -52,16 +43,6 @@ pub struct Marker {
     allocator_id: Option<String>,
 }
 
-pub(crate) fn type_hash(arrow_type: &ArrowType) -> i32 {
-    java_string_hash(&arrow_type_to_string(arrow_type))
-}
-
-pub(crate) fn objects_hash(items: &[i32]) -> i32 {
-    items
-        .iter()
-        .fold(1i32, |acc, h| acc.wrapping_mul(31).wrapping_add(*h))
-}
-
 pub(crate) fn value_block_schema(arrow_type: &ArrowType) -> Arc<Schema> {
     Arc::new(Schema::new(vec![Field::new(
         DEFAULT_COLUMN,
@@ -73,7 +54,7 @@ pub(crate) fn value_block_schema(arrow_type: &ArrowType) -> Arc<Schema> {
 pub(crate) fn coerce_value(arrow_type: &ArrowType, value: &Value) -> Result<Value> {
     let mut block = Block::new("marker", value_block_schema(arrow_type));
     if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
-        BlockUtils::set_value(vector, 0, value)?;
+        block_utils::set_value(vector, 0, value)?;
     }
     block.set_row_count(1);
     Ok(block
@@ -183,12 +164,7 @@ impl Marker {
         {
             return Ok(false);
         }
-        if crate::data::ArrowTypeComparator::compare(
-            self.get_type(),
-            self.value()?,
-            other.value()?,
-        )? != 0
-        {
+        if ArrowTypeComparator::compare(self.get_type(), self.value()?, other.value()?)? != 0 {
             return Ok(false);
         }
         Ok(
@@ -238,7 +214,7 @@ impl Marker {
     }
 
     pub fn min(marker1: &Marker, marker2: &Marker) -> Result<Marker> {
-        Ok(if marker1.compare_to(marker2)? <= 0 {
+        Ok(if marker1.try_cmp(marker2)?.is_le() {
             marker1.clone()
         } else {
             marker2.clone()
@@ -246,7 +222,7 @@ impl Marker {
     }
 
     pub fn max(marker1: &Marker, marker2: &Marker) -> Result<Marker> {
-        Ok(if marker1.compare_to(marker2)? >= 0 {
+        Ok(if marker1.try_cmp(marker2)?.is_ge() {
             marker1.clone()
         } else {
             marker2.clone()
@@ -259,7 +235,7 @@ impl Marker {
         value: Value,
         bound: Bound,
     ) -> Result<Marker> {
-        let block = BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, vec![value])?;
+        let block = block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, vec![value])?;
         Marker::from_block_position(&block, 0, bound, false)
     }
 
@@ -323,47 +299,58 @@ impl Marker {
         Marker::create_with_value(allocator, arrow_type, value, Bound::Below)
     }
 
-    pub fn compare_to(&self, other: &dyn ValueMarker) -> Result<i32> {
-        ValueMarkerComparator::do_compare(self, other)
+    pub fn literal(arrow_type: ArrowType, value: Value) -> Marker {
+        Marker::from_parts(arrow_type, Bound::Exactly, value.is_null(), value)
     }
 
-    pub fn hash_code(&self) -> i32 {
-        let null_hash = if self.null_value { 1231 } else { 1237 };
-        if self.null_value {
-            return objects_hash(&[null_hash, type_hash(&self.arrow_type), self.bound.ordinal()]);
+    pub fn nullable(arrow_type: &ArrowType, value: &Value, bound: Bound) -> Result<Marker> {
+        if value.is_null() {
+            return Ok(Marker::from_parts(
+                arrow_type.clone(),
+                bound,
+                true,
+                Value::Null,
+            ));
         }
-        objects_hash(&[
-            null_hash,
-            type_hash(&self.arrow_type),
-            self.value.java_hash_code(),
-            self.bound.ordinal(),
-        ])
-    }
-}
-
-impl ValueMarker for Marker {
-    fn is_upper_unbounded(&self) -> bool {
-        Marker::is_upper_unbounded(self)
+        let stored = coerce_value(arrow_type, value)?;
+        Ok(Marker::from_parts(arrow_type.clone(), bound, false, stored))
     }
 
-    fn is_lower_unbounded(&self) -> bool {
-        Marker::is_lower_unbounded(self)
-    }
-
-    fn is_null_value(&self) -> bool {
-        self.null_value
-    }
-
-    fn value_ref(&self) -> &Value {
-        &self.value
-    }
-
-    fn bound(&self) -> Bound {
-        self.bound
-    }
-
-    fn get_type(&self) -> &ArrowType {
-        &self.arrow_type
+    pub fn try_cmp(&self, other: &Marker) -> Result<Ordering> {
+        if self.is_upper_unbounded() {
+            return Ok(if other.is_upper_unbounded() {
+                Ordering::Equal
+            } else {
+                Ordering::Greater
+            });
+        }
+        if self.is_lower_unbounded() {
+            return Ok(if other.is_lower_unbounded() {
+                Ordering::Equal
+            } else {
+                Ordering::Less
+            });
+        }
+        if other.is_upper_unbounded() {
+            return Ok(Ordering::Less);
+        }
+        if other.is_lower_unbounded() {
+            return Ok(Ordering::Greater);
+        }
+        if self.null_value || other.null_value {
+            return Ok(self.null_value.cmp(&other.null_value));
+        }
+        let compare = ArrowTypeComparator::compare(&self.arrow_type, &self.value, &other.value)?;
+        if compare != 0 {
+            return Ok(compare.cmp(&0));
+        }
+        Ok(match (self.bound, other.bound) {
+            (Bound::Below, Bound::Below)
+            | (Bound::Exactly, Bound::Exactly)
+            | (Bound::Above, Bound::Above) => Ordering::Equal,
+            (Bound::Below, _) | (Bound::Exactly, Bound::Above) => Ordering::Less,
+            (Bound::Above, _) | (Bound::Exactly, Bound::Below) => Ordering::Greater,
+        })
     }
 }
 

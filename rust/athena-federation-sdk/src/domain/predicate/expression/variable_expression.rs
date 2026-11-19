@@ -1,9 +1,7 @@
 use std::fmt;
 
-use crate::data::java_format::java_string_hash;
 use crate::data::types::arrow_type_to_string;
 use crate::data::ArrowType;
-use crate::domain::predicate::marker::{objects_hash, type_hash};
 use crate::exceptions::{FederationError, Result};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,13 +35,6 @@ impl VariableExpression {
 
     pub fn children(&self) -> &[super::FederationExpression] {
         &[]
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[
-            java_string_hash(&self.column_name),
-            type_hash(&self.arrow_type),
-        ])
     }
 }
 

@@ -7,7 +7,6 @@ use crate::exceptions::{FederationError, Result};
 use super::all_or_none_value_set::AllOrNoneValueSet;
 use super::equatable_value_set::EquatableValueSet;
 use super::marker::Marker;
-use super::ranges::Ranges;
 use super::sorted_range_set::SortedRangeSet;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,13 +104,6 @@ impl ValueSet {
             ValueSet::SortedRangeSet(v) => v.contains_value(value),
             ValueSet::EquatableValueSet(v) => v.contains_value(value),
             ValueSet::AllOrNoneValueSet(v) => v.contains_value(value),
-        }
-    }
-
-    pub fn ranges(&self) -> Result<&dyn Ranges> {
-        match self {
-            ValueSet::SortedRangeSet(v) => Ok(v),
-            _ => Err(FederationError::not_supported("Operation not supported")),
         }
     }
 
@@ -222,14 +214,6 @@ impl ValueSet {
 
     pub fn contains(&self, allocator: &dyn BlockAllocator, other: &ValueSet) -> Result<bool> {
         Ok(self.union(allocator, other)? == *self)
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        match self {
-            ValueSet::SortedRangeSet(v) => v.hash_code(),
-            ValueSet::EquatableValueSet(v) => v.hash_code(),
-            ValueSet::AllOrNoneValueSet(v) => v.hash_code(),
-        }
     }
 }
 

@@ -1,10 +1,11 @@
 mod serde_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
-use athena_federation_sdk::data::{Block, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value};
+use athena_federation_sdk::data::{Block, BlockAllocatorImpl, SchemaBuilder, Value};
 use athena_federation_sdk::domain::predicate::{
     Constraints, Marker, Range, SortedRangeSet, ValueSet, DEFAULT_NO_LIMIT,
 };
@@ -44,7 +45,7 @@ mod block_serialization_test {
     fn serialization_test() {
         let other_allocator = BlockAllocatorImpl::new();
         let expected =
-            BlockUtils::new_block(&other_allocator, "col1", &DataType::Int32, vec![21i32])
+            block_utils::new_block(&other_allocator, "col1", &DataType::Int32, vec![21i32])
                 .expect("block");
         let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
         let mut out: Vec<u8> = Vec::new();

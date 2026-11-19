@@ -1,10 +1,11 @@
+use athena_federation_sdk::credentials::credentials_constants;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
-    CredentialsConstants, CredentialsProviderFactory, DefaultCredentialsProvider, HttpRequest,
-    OAuthCredentialsProvider, OAuthFlow,
+    create_credential_provider, DefaultCredentialsProvider, HttpRequest, OAuthCredentialsProvider,
+    OAuthFlow,
 };
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, SecretsManagerClient,
@@ -37,6 +38,7 @@ impl SecretsManagerClient for MockSecretsManager {
         &self,
         _secret_id: &str,
         _secret_string: &str,
+        _override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> std::result::Result<(), AwsServiceError> {
         Ok(())
     }
@@ -46,8 +48,8 @@ struct TestOAuthProvider;
 
 impl OAuthFlow for TestOAuthProvider {
     fn is_oauth_configured(&self, secret_map: &HashMap<String, String>) -> Result<bool> {
-        Ok(secret_map.contains_key(CredentialsConstants::CLIENT_ID)
-            && secret_map.contains_key(CredentialsConstants::CLIENT_SECRET))
+        Ok(secret_map.contains_key(credentials_constants::CLIENT_ID)
+            && secret_map.contains_key(credentials_constants::CLIENT_SECRET))
     }
 
     fn build_token_request(&self, _secret_map: &HashMap<String, String>) -> Result<HttpRequest> {
@@ -76,24 +78,24 @@ fn setup(secret: Option<String>) -> Arc<CachableSecretsManager> {
 
 fn oauth_secret() -> String {
     serde_json::to_string(&HashMap::from([
-        (CredentialsConstants::CLIENT_ID, TEST_CLIENT_ID),
-        (CredentialsConstants::CLIENT_SECRET, TEST_CLIENT_SECRET),
+        (credentials_constants::CLIENT_ID, TEST_CLIENT_ID),
+        (credentials_constants::CLIENT_SECRET, TEST_CLIENT_SECRET),
     ]))
     .unwrap()
 }
 
-fn test_oauth_provider(
-) -> Box<dyn athena_federation_sdk::credentials::InitializableCredentialsProvider> {
-    Box::new(OAuthCredentialsProvider::new(Box::new(TestOAuthProvider)))
+fn test_oauth_provider() -> Box<dyn OAuthFlow> {
+    Box::new(TestOAuthProvider)
 }
 
 #[tokio::test]
 async fn test_create_credential_provider_when_oauth_configured() {
     let cachable_secrets_manager = setup(Some(oauth_secret()));
-    let provider = CredentialsProviderFactory::create_credential_provider(
+    let provider = create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
         Some(test_oauth_provider()),
+        None,
     )
     .await
     .unwrap()
@@ -104,15 +106,16 @@ async fn test_create_credential_provider_when_oauth_configured() {
 #[tokio::test]
 async fn test_create_credential_provider_when_username_password_configured() {
     let standard_secret = serde_json::to_string(&HashMap::from([
-        (CredentialsConstants::USERNAME, TEST_USERNAME),
-        (CredentialsConstants::PASSWORD, TEST_PASSWORD),
+        (credentials_constants::USERNAME, TEST_USERNAME),
+        (credentials_constants::PASSWORD, TEST_PASSWORD),
     ]))
     .unwrap();
     let cachable_secrets_manager = setup(Some(standard_secret));
-    let provider = CredentialsProviderFactory::create_credential_provider(
+    let provider = create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
         Some(test_oauth_provider()),
+        None,
     )
     .await
     .unwrap()
@@ -123,10 +126,11 @@ async fn test_create_credential_provider_when_username_password_configured() {
 #[tokio::test]
 async fn test_create_credential_provider_when_no_secret() {
     let cachable_secrets_manager = setup(None);
-    let provider = CredentialsProviderFactory::create_credential_provider(
+    let provider = create_credential_provider(
         Some(""),
         &cachable_secrets_manager,
         Some(test_oauth_provider()),
+        None,
     )
     .await
     .unwrap();
@@ -136,10 +140,11 @@ async fn test_create_credential_provider_when_no_secret() {
 #[tokio::test]
 async fn test_create_credential_provider_when_invalid_json_throws_exception() {
     let cachable_secrets_manager = setup(Some("invalid-json{".to_string()));
-    let e = CredentialsProviderFactory::create_credential_provider(
+    let e = create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
         Some(test_oauth_provider()),
+        None,
     )
     .await
     .err()
@@ -159,12 +164,11 @@ async fn test_create_credential_provider_when_invalid_json_throws_exception() {
 #[tokio::test]
 async fn test_create_credential_provider_when_invalid_oauth_class_throws_exception() {
     let cachable_secrets_manager = setup(Some(oauth_secret()));
-    let e = CredentialsProviderFactory::create_credential_provider(
+    let e = create_credential_provider(
         Some(SECRET_NAME),
         &cachable_secrets_manager,
-        Some(Box::new(OAuthCredentialsProvider::new(Box::new(
-            InvalidOAuthProvider,
-        )))),
+        Some(Box::new(InvalidOAuthProvider)),
+        None,
     )
     .await
     .err()

@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use athena_federation_sdk::connection::EnvironmentConstants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
-    ArrowType, Block, BlockAllocator, BlockWriter, FieldBuilder, SchemaBuilder, SupportedTypes,
+    ArrowType, Block, BlockAllocator, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
+    SupportedTypes,
 };
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::{Split, SplitBuilder};
@@ -738,7 +739,7 @@ impl SnowflakeMetadataHandler {
 
     async fn write_table_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         table_name: &TableName,
         connection: &dyn JdbcConnection,
     ) -> Result<()> {
@@ -1013,7 +1014,7 @@ impl MetadataHandler for SnowflakeMetadataHandler {
 
     async fn get_partitions(
         &self,
-        block_writer: &mut (dyn BlockWriter + Send),
+        block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {

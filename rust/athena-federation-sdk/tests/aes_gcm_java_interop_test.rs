@@ -1,3 +1,4 @@
+use athena_federation_sdk::data::block_utils;
 use std::fmt::Write as _;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -8,11 +9,9 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value,
 };
-use athena_federation_sdk::security::{
-    AesGcmBlockCrypto, BlockCrypto, EncryptionKey, NoOpBlockCrypto,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey};
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 
@@ -55,7 +54,7 @@ fn schema() -> Arc<Schema> {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: &Value) {
-    BlockUtils::set_value(block.get_field_vector_mut(field).unwrap(), row, value).unwrap();
+    block_utils::set_value(block.get_field_vector_mut(field).unwrap(), row, value).unwrap();
 }
 
 fn date(y: i32, m: u32, d: u32) -> Value {
@@ -149,10 +148,9 @@ fn rows(block: &Block) -> String {
 #[test]
 fn decrypts_java_aes256_block() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let crypto = AesGcmBlockCrypto::new(allocator.clone());
     assert_eq!(PLAIN.len() + 16, AES256.len());
-    let block = crypto
-        .decrypt_with_schema(Some(&key256()), AES256, schema())
+    let block = BlockCrypto::AesGcm(key256())
+        .decrypt_with_schema(allocator.as_ref(), AES256, schema())
         .unwrap();
     assert_eq!(3, block.row_count());
     assert_eq!(ROWS, rows(&block));
@@ -162,38 +160,35 @@ fn decrypts_java_aes256_block() {
 #[test]
 fn decrypts_java_aes128_block() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let crypto = AesGcmBlockCrypto::new(allocator.clone());
-    let block = crypto
-        .decrypt_with_schema(Some(&key128()), AES128, schema())
+    let block = BlockCrypto::AesGcm(key128())
+        .decrypt_with_schema(allocator.as_ref(), AES128, schema())
         .unwrap();
     assert_eq!(ROWS, rows(&block));
 }
 
 #[test]
 fn decrypts_java_raw_bytes() {
-    let crypto = AesGcmBlockCrypto::new(Arc::new(BlockAllocatorImpl::new()));
     assert_eq!(
         b"hello spill".to_vec(),
-        crypto.decrypt(Some(&key256()), RAW256).unwrap()
+        BlockCrypto::AesGcm(key256()).decrypt(RAW256).unwrap()
     );
 }
 
 #[test]
 fn reads_java_unencrypted_block() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let block = NoOpBlockCrypto::new(allocator.clone())
-        .decrypt_with_schema(None, PLAIN, schema())
+    let block = BlockCrypto::NoOp
+        .decrypt_with_schema(allocator.as_ref(), PLAIN, schema())
         .unwrap();
     assert_eq!(ROWS, rows(&block));
 }
 
 #[test]
 fn rust_raw_ciphertext_is_identical_to_java() {
-    let crypto = AesGcmBlockCrypto::new(Arc::new(BlockAllocatorImpl::new()));
     assert_eq!(
         RAW256,
-        crypto
-            .encrypt_with_bytes(Some(&key256()), b"hello spill")
+        BlockCrypto::AesGcm(key256())
+            .encrypt_with_bytes(b"hello spill")
             .unwrap()
             .as_slice()
     );
@@ -204,18 +199,17 @@ fn rust_block_ciphertext_matches_java_verified_fixture() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
     let block = rust_block(&allocator);
     assert_eq!(ROWS, rows(&block));
-    let crypto = AesGcmBlockCrypto::new(allocator.clone());
-    let plain = NoOpBlockCrypto::new(allocator.clone())
-        .encrypt(None, &block)
-        .unwrap();
-    let aes256 = crypto.encrypt(Some(&key256()), &block).unwrap();
-    let aes128 = crypto.encrypt(Some(&key128()), &block).unwrap();
+    let plain = BlockCrypto::NoOp.encrypt(&block).unwrap();
+    let aes256 = BlockCrypto::AesGcm(key256()).encrypt(&block).unwrap();
+    let aes128 = BlockCrypto::AesGcm(key128()).encrypt(&block).unwrap();
     assert_eq!(RUST_PLAIN, plain.as_slice());
     assert_eq!(RUST_AES256, aes256.as_slice());
     assert_eq!(RUST_AES128, aes128.as_slice());
     assert_eq!(plain.len() + 16, aes256.len());
     assert_eq!(
-        crypto.encrypt_with_bytes(Some(&key256()), &plain).unwrap(),
+        BlockCrypto::AesGcm(key256())
+            .encrypt_with_bytes(&plain)
+            .unwrap(),
         aes256
     );
     assert_ne!([0xffu8; 4], PLAIN[..4]);
@@ -224,9 +218,8 @@ fn rust_block_ciphertext_matches_java_verified_fixture() {
 
 #[test]
 fn wrong_key_fails_on_java_ciphertext() {
-    let crypto = AesGcmBlockCrypto::new(Arc::new(BlockAllocatorImpl::new()));
-    let ex = crypto
-        .decrypt_with_schema(Some(&key128()), AES256, schema())
+    let ex = BlockCrypto::AesGcm(key128())
+        .decrypt_with_schema(&BlockAllocatorImpl::new(), AES256, schema())
         .unwrap_err();
     assert!(ex.as_connector_exception().is_some());
 }

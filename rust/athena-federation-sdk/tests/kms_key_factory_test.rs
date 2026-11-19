@@ -4,8 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, AwsServiceError, EncryptionKeyFactory, KmsClient,
-    KmsKeyFactory,
+    AwsRequestOverrideConfiguration, AwsServiceError, KeySource, KmsClient,
 };
 use aws_sdk_kms::types::DataKeySpec;
 
@@ -67,9 +66,9 @@ async fn test_create() {
     let test_plaintext_key = [1u8, 2, 3, 4, 5];
     let test_nonce = [9u8, 8, 7];
     let mock_kms_client = mock(&test_plaintext_key, &test_nonce);
-    let kms_key_factory = KmsKeyFactory::new(mock_kms_client.clone(), MASTER_KEY_ID);
+    let kms_key_factory = KeySource::kms(mock_kms_client.clone(), MASTER_KEY_ID);
 
-    let result = kms_key_factory.create().await.unwrap();
+    let result = kms_key_factory.create(None).await.unwrap();
 
     assert_eq!(test_plaintext_key.as_slice(), result.key());
     assert_eq!(test_nonce.as_slice(), result.nonce());
@@ -99,8 +98,8 @@ async fn test_not_found_exception() {
         ))),
         ..MockKmsClient::default()
     });
-    let kms_key_factory = KmsKeyFactory::new(mock_kms_client, MASTER_KEY_ID);
-    let ex = kms_key_factory.create().await.unwrap_err();
+    let kms_key_factory = KeySource::kms(mock_kms_client, MASTER_KEY_ID);
+    let ex = kms_key_factory.create(None).await.unwrap_err();
     let connector = ex
         .as_connector_exception()
         .expect("AthenaConnectorException");
@@ -117,10 +116,10 @@ async fn test_create_with_override_configuration() {
     let test_nonce = [9u8, 8, 7];
     let override_config = AwsRequestOverrideConfiguration::builder().build();
     let mock_kms_client = mock(&test_plaintext_key, &test_nonce);
-    let kms_key_factory = KmsKeyFactory::new(mock_kms_client.clone(), MASTER_KEY_ID);
+    let kms_key_factory = KeySource::kms(mock_kms_client.clone(), MASTER_KEY_ID);
 
     let result = kms_key_factory
-        .create_with_override_configuration(Some(&override_config))
+        .create(Some(&override_config))
         .await
         .unwrap();
 
@@ -147,12 +146,9 @@ async fn test_create_with_null_override_configuration() {
     let test_plaintext_key = [1u8, 2, 3, 4, 5];
     let test_nonce = [9u8, 8, 7];
     let mock_kms_client = mock(&test_plaintext_key, &test_nonce);
-    let kms_key_factory = KmsKeyFactory::new(mock_kms_client, MASTER_KEY_ID);
+    let kms_key_factory = KeySource::kms(mock_kms_client, MASTER_KEY_ID);
 
-    let result = kms_key_factory
-        .create_with_override_configuration(None)
-        .await
-        .unwrap();
+    let result = kms_key_factory.create(None).await.unwrap();
 
     assert_eq!(test_plaintext_key.as_slice(), result.key());
     assert_eq!(test_nonce.as_slice(), result.nonce());

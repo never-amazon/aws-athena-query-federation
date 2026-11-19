@@ -1,5 +1,4 @@
 use super::arrow_value_projector_impl::{create_value_projection, Projection};
-use super::ArrowValueProjector;
 use crate::data::types::{get_children, minor_type_of};
 use crate::data::value::Value;
 use crate::data::vector::FieldReader;
@@ -37,10 +36,8 @@ impl<'a> StructArrowValueProjector<'a> {
         }
         Ok(Value::Map(name_to_values))
     }
-}
 
-impl ArrowValueProjector for StructArrowValueProjector<'_> {
-    fn project(&self, pos: usize) -> Result<Value> {
+    pub fn project(&self, pos: usize) -> Result<Value> {
         self.struct_reader.set_position(pos);
         if !self.struct_reader.is_set() {
             return Ok(Value::Null);

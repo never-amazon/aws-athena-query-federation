@@ -1,6 +1,6 @@
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::{BlockAllocatorImpl, Value};
-use athena_federation_sdk::domain::predicate::{LiteralValueMarker, Marker, Range};
+use athena_federation_sdk::domain::predicate::{Marker, Range};
 use athena_federation_sdk::FederationError;
 
 const BIGINT: DataType = DataType::Int64;
@@ -9,8 +9,8 @@ fn is_connector_err<T>(r: &Result<T, FederationError>) -> bool {
     matches!(r, Err(FederationError::AthenaConnector(_)))
 }
 
-fn lit(v: i64) -> LiteralValueMarker {
-    LiteralValueMarker::new(v, BIGINT)
+fn lit(v: i64) -> Marker {
+    Marker::literal(BIGINT, Value::Long(v))
 }
 
 #[test]

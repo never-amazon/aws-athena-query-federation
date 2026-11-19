@@ -1,5 +1,6 @@
 mod snowflake_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
 
 use athena_federation_sdk::connection::EnvironmentConstants;
-use athena_federation_sdk::data::{BlockAllocatorImpl, BlockUtils, Value};
+use athena_federation_sdk::data::{BlockAllocatorImpl, Value};
 use athena_federation_sdk::domain::predicate::expression::{
     ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
     DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
@@ -479,7 +480,7 @@ fn constant(
     value: Value,
     arrow_type: DataType,
 ) -> FederationExpression {
-    let block = BlockUtils::new_block(
+    let block = block_utils::new_block(
         allocator,
         DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
         &arrow_type,

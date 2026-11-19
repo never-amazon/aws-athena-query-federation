@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use athena_federation_sdk::data::{Block, BlockWriter, SchemaBuilder, SimpleBlockWriter};
+use athena_federation_sdk::data::{Block, SchemaBuilder, SimpleBlockWriter};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::FederationError;
 

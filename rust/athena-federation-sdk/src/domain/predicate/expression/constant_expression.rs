@@ -2,7 +2,6 @@ use std::fmt;
 
 use crate::data::types::arrow_type_to_string;
 use crate::data::{ArrowType, Block};
-use crate::domain::predicate::marker::{objects_hash, type_hash};
 
 pub const DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME: &str = "col1";
 
@@ -30,15 +29,6 @@ impl ConstantExpression {
 
     pub fn children(&self) -> &[super::FederationExpression] {
         &[]
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[
-            self.value_block
-                .as_ref()
-                .map_or(0, crate::data::block::Block::hash_code),
-            type_hash(&self.arrow_type),
-        ])
     }
 }
 

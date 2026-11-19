@@ -3,13 +3,14 @@
     reason = "shared test helpers; each test binary uses a subset"
 )]
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockUtils, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::predicate::expression::{
     ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
@@ -117,7 +118,7 @@ pub fn string_map(entries: &[(&str, &str)]) -> HashMap<String, Option<String>> {
 
 pub fn set(block: &mut Block, column: &str, row: usize, value: impl Into<Value>) {
     let vector = block.get_field_vector_mut(column).expect("column");
-    BlockUtils::set_value(vector, row, &value.into()).expect("set value");
+    block_utils::set_value(vector, row, &value.into()).expect("set value");
 }
 
 pub fn partitions_schema() -> Schema {
@@ -209,7 +210,7 @@ pub fn read_records_split() -> Split {
 
 pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpression {
     let constant_block =
-        BlockUtils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
+        block_utils::new_block(allocator, "col1", &DataType::Int32, vec![10i32]).expect("block");
     FunctionCallExpression::new(
         DataType::Boolean,
         StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME.function_name(),

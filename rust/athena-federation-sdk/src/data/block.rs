@@ -2,14 +2,13 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::array::ArrayRef;
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::SchemaRef;
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::arrow_type_comparator::ArrowTypeComparator;
-use super::block_utils::BlockUtils;
+use super::block_utils;
 use super::field_resolver::FieldResolver;
 use super::record_batch_serde::ArrowRecordBatch;
-use super::schema_aware::SchemaAware;
 use super::value::Value;
 use super::vector::{FieldReader, FieldVector};
 use crate::domain::predicate::ConstraintEvaluator;
@@ -58,6 +57,10 @@ impl Block {
         &self.schema
     }
 
+    pub fn get_meta_data(&self, key: &str) -> Option<&str> {
+        self.schema.metadata().get(key).map(String::as_str)
+    }
+
     pub fn set_value(
         &mut self,
         field_name: &str,
@@ -69,7 +72,7 @@ impl Block {
             let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
                 FederationError::null_pointer(format!("No vector found for field {field_name}"))
             })?;
-            BlockUtils::set_value(vector, row, &value)?;
+            block_utils::set_value(vector, row, &value)?;
             return Ok(true);
         }
         Ok(false)
@@ -84,7 +87,7 @@ impl Block {
         let value = value.into();
         if self.constraint_evaluator.apply(field_name, &value)? {
             if let Some(vector) = self.get_field_vector_mut(field_name) {
-                BlockUtils::set_value(vector, row, &value)?;
+                block_utils::set_value(vector, row, &value)?;
             }
             return Ok(true);
         }
@@ -102,7 +105,7 @@ impl Block {
         let vector = self.get_field_vector_mut(field_name).ok_or_else(|| {
             FederationError::null_pointer(format!("No vector found for field {field_name}"))
         })?;
-        BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
+        block_utils::set_complex_value(vector, row, field_resolver, &value)?;
         Ok(true)
     }
 
@@ -115,7 +118,7 @@ impl Block {
     ) -> Result<bool> {
         let value = value.into();
         if let Some(vector) = self.get_field_vector_mut(field_name) {
-            BlockUtils::set_complex_value(vector, row, field_resolver, &value)?;
+            block_utils::set_complex_value(vector, row, field_resolver, &value)?;
         }
         Ok(true)
     }
@@ -273,37 +276,11 @@ impl Block {
         }
         Ok(true)
     }
-
-    pub fn hash_code(&self) -> i32 {
-        let mut hashcode: i32 = 0;
-        for (k, v) in self.schema.metadata() {
-            let entry =
-                super::java_format::java_string_hash(k) ^ super::java_format::java_string_hash(v);
-            hashcode = hashcode.wrapping_add(entry);
-        }
-        for next in self.schema.fields() {
-            if let Some(reader) = self.get_field_reader(next.name()) {
-                for i in 0..self.row_count {
-                    reader.set_position(i);
-                    hashcode = hashcode
-                        .wrapping_mul(31)
-                        .wrapping_add(reader.read_object().java_hash_code());
-                }
-            }
-        }
-        hashcode
-    }
 }
 
 impl PartialEq for Block {
     fn eq(&self, other: &Self) -> bool {
         self.try_equals(other).unwrap_or(false)
-    }
-}
-
-impl SchemaAware for Block {
-    fn internal_get_schema(&self) -> &Schema {
-        &self.schema
     }
 }
 
@@ -323,7 +300,7 @@ impl fmt::Display for Block {
                 for i in 0..rows_to_print {
                     reader.set_position(i);
                     values.push(
-                        BlockUtils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
+                        block_utils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
                     );
                 }
             }

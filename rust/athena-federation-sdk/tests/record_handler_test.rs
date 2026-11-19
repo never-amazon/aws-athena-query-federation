@@ -1,13 +1,13 @@
 mod handler_support;
 
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, S3BlockSpillReader, S3Client,
-    SchemaBuilder,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpillReader, S3Client, SchemaBuilder,
 };
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
 use athena_federation_sdk::domain::spill::S3SpillLocation;
@@ -22,8 +22,7 @@ use athena_federation_sdk::metadata::{GetDataSourceCapabilitiesRequest, ListSche
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::{
-    CachableSecretsManager, EncryptionKeyFactory, FederatedIdentity, KmsEncryptionProvider,
-    LocalKeyFactory,
+    CachableSecretsManager, FederatedIdentity, KeySource, KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::VersionedObjectMapperFactory;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -154,7 +153,7 @@ async fn do_read_records_spill() {
         .build();
     let split = Split::new_builder(
         Some(spill_location.into()),
-        Some(LocalKeyFactory::new().create().await.unwrap()),
+        Some(KeySource::Local.create(None).await.unwrap()),
     )
     .add("splitNum", "0")
     .add("totalNumberSplits", "10000")
@@ -195,11 +194,11 @@ async fn do_read_records_spill() {
             .read_with_schema(
                 spill_location,
                 response.encryption_key(),
-                Some(Arc::new(response.schema().clone())),
+                Arc::new(response.schema().clone()),
             )
             .await
             .unwrap();
-        assert!(BlockUtils::row_to_string(&block, 0).is_ok());
+        assert!(block_utils::row_to_string(&block, 0).is_ok());
     }
 }
 

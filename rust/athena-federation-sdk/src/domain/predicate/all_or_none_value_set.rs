@@ -4,7 +4,7 @@ use crate::data::types::arrow_type_to_string;
 use crate::data::{ArrowType, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
-use super::marker::{objects_hash, type_hash, Marker};
+use super::marker::Marker;
 
 #[derive(Debug, Clone)]
 pub struct AllOrNoneValueSet {
@@ -159,13 +159,6 @@ impl AllOrNoneValueSet {
             )));
         }
         Ok(())
-    }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[
-            type_hash(&self.arrow_type),
-            if self.all { 1231 } else { 1237 },
-        ])
     }
 }
 

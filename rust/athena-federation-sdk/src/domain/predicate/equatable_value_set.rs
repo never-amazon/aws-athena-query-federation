@@ -1,18 +1,19 @@
+use crate::data::block_utils;
 use std::fmt;
 
 use crate::data::types::{arrow_type_to_string, minor_type_of};
-use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, BlockUtils, Value};
+use crate::data::{ArrowType, ArrowTypeComparator, Block, BlockAllocator, Value};
 use crate::exceptions::{FederationError, Result};
 
-use super::marker::{objects_hash, type_hash, Marker};
+use super::marker::Marker;
 
 const DEFAULT_COLUMN: &str = "col1";
 
 #[derive(Debug, Clone)]
 pub struct EquatableValueSet {
-    white_list: bool,
+    allow_list: bool,
     value_block: Block,
-    pub null_allowed: bool,
+    null_allowed: bool,
 }
 
 fn column_type(block: &Block) -> Result<ArrowType> {
@@ -45,11 +46,11 @@ fn build_block(
     arrow_type: &ArrowType,
     values: &[Value],
 ) -> Result<Block> {
-    let mut block = BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type);
+    let mut block = block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type);
     let count = values.len();
     if let Some(vector) = block.get_field_vector_mut(DEFAULT_COLUMN) {
         for (i, v) in values.iter().enumerate() {
-            BlockUtils::set_value(vector, i, v)?;
+            block_utils::set_value(vector, i, v)?;
         }
     }
     block.set_row_count(count);
@@ -57,9 +58,9 @@ fn build_block(
 }
 
 impl EquatableValueSet {
-    pub fn new(value_block: Block, white_list: bool, null_allowed: bool) -> EquatableValueSet {
+    pub fn new(value_block: Block, allow_list: bool, null_allowed: bool) -> EquatableValueSet {
         EquatableValueSet {
-            white_list,
+            allow_list,
             value_block,
             null_allowed,
         }
@@ -68,13 +69,13 @@ impl EquatableValueSet {
     pub fn new_builder<'a>(
         allocator: &'a dyn BlockAllocator,
         arrow_type: &ArrowType,
-        is_white_list: bool,
+        is_allow_list: bool,
         null_allowed: bool,
     ) -> EquatableValueSetBuilder<'a> {
         EquatableValueSetBuilder {
             allocator,
             arrow_type: arrow_type.clone(),
-            is_white_list,
+            is_allow_list,
             null_allowed,
             values: Vec::new(),
         }
@@ -82,7 +83,7 @@ impl EquatableValueSet {
 
     pub fn none(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             true,
             false,
         )
@@ -90,7 +91,7 @@ impl EquatableValueSet {
 
     pub fn all(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             true,
         )
@@ -98,7 +99,7 @@ impl EquatableValueSet {
 
     pub fn only_null(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             true,
         )
@@ -106,7 +107,7 @@ impl EquatableValueSet {
 
     pub fn not_null(allocator: &dyn BlockAllocator, arrow_type: &ArrowType) -> EquatableValueSet {
         EquatableValueSet::new(
-            BlockUtils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
+            block_utils::new_empty_block(allocator, DEFAULT_COLUMN, arrow_type),
             false,
             false,
         )
@@ -122,7 +123,7 @@ impl EquatableValueSet {
         V: Into<Value>,
     {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
+            block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
             true,
             false,
         ))
@@ -139,7 +140,7 @@ impl EquatableValueSet {
         V: Into<Value>,
     {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
+            block_utils::new_block(allocator, DEFAULT_COLUMN, arrow_type, values)?,
             true,
             null_allowed,
         ))
@@ -161,8 +162,8 @@ impl EquatableValueSet {
         column_type(&self.value_block).unwrap_or(ArrowType::Null)
     }
 
-    pub fn is_white_list(&self) -> bool {
-        self.white_list
+    pub fn is_allow_list(&self) -> bool {
+        self.allow_list
     }
 
     pub fn values(&self) -> &Block {
@@ -176,16 +177,16 @@ impl EquatableValueSet {
     }
 
     pub fn is_none(&self) -> bool {
-        self.white_list && self.value_block.row_count() == 0 && !self.null_allowed
+        self.allow_list && self.value_block.row_count() == 0 && !self.null_allowed
     }
 
     pub fn is_all(&self) -> bool {
-        !self.white_list && self.value_block.row_count() == 0 && self.null_allowed
+        !self.allow_list && self.value_block.row_count() == 0 && self.null_allowed
     }
 
     pub fn is_single_value(&self) -> bool {
         let rows = self.value_block.row_count();
-        self.white_list && ((rows == 1 && !self.null_allowed) || (rows == 0 && self.null_allowed))
+        self.allow_list && ((rows == 1 && !self.null_allowed) || (rows == 0 && self.null_allowed))
     }
 
     pub fn get_single_value(&self) -> Result<Value> {
@@ -209,7 +210,7 @@ impl EquatableValueSet {
             }
             result = ArrowTypeComparator::compare(&arrow_type, value, &rhs)? == 0;
         }
-        Ok(self.white_list == result)
+        Ok(self.allow_list == result)
     }
 
     pub fn contains_marker(&self, marker: &Marker) -> Result<bool> {
@@ -278,19 +279,19 @@ impl EquatableValueSet {
     ) -> Result<EquatableValueSet> {
         self.check_compatibility(other)?;
         let null_allowed = self.null_allowed && other.null_allowed;
-        Ok(if self.white_list && other.white_list {
+        Ok(if self.allow_list && other.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::intersect_blocks(allocator, self, other)?,
                 true,
                 null_allowed,
             )
-        } else if self.white_list {
+        } else if self.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::subtract_blocks(allocator, self, other)?,
                 true,
                 null_allowed,
             )
-        } else if other.white_list {
+        } else if other.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::subtract_blocks(allocator, other, self)?,
                 true,
@@ -312,19 +313,19 @@ impl EquatableValueSet {
     ) -> Result<EquatableValueSet> {
         self.check_compatibility(other)?;
         let null_allowed = self.null_allowed || other.null_allowed;
-        Ok(if self.white_list && other.white_list {
+        Ok(if self.allow_list && other.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::union_blocks(allocator, other, self)?,
                 true,
                 null_allowed,
             )
-        } else if self.white_list {
+        } else if self.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::subtract_blocks(allocator, other, self)?,
                 false,
                 null_allowed,
             )
-        } else if other.white_list {
+        } else if other.allow_list {
             EquatableValueSet::new(
                 EquatableValueSet::subtract_blocks(allocator, self, other)?,
                 false,
@@ -354,7 +355,7 @@ impl EquatableValueSet {
     pub fn complement(&self, _allocator: &dyn BlockAllocator) -> Result<EquatableValueSet> {
         Ok(EquatableValueSet::new(
             self.value_block.clone(),
-            !self.white_list,
+            !self.allow_list,
             !self.null_allowed,
         ))
     }
@@ -393,15 +394,6 @@ impl EquatableValueSet {
         }
         Ok(())
     }
-
-    pub fn hash_code(&self) -> i32 {
-        objects_hash(&[
-            type_hash(&self.get_type()),
-            if self.white_list { 1231 } else { 1237 },
-            self.value_block.hash_code(),
-            if self.null_allowed { 1231 } else { 1237 },
-        ])
-    }
 }
 
 impl PartialEq for EquatableValueSet {
@@ -409,7 +401,7 @@ impl PartialEq for EquatableValueSet {
         if minor_type_of(&self.get_type()) != minor_type_of(&other.get_type()) {
             return false;
         }
-        if self.white_list != other.white_list {
+        if self.allow_list != other.allow_list {
             return false;
         }
         if self.null_allowed != other.null_allowed {
@@ -424,7 +416,7 @@ impl fmt::Display for EquatableValueSet {
         write!(
             f,
             "EquatableValueSet{{whiteList={}nullAllowed={}, valueBlock={}}}",
-            self.white_list, self.null_allowed, self.value_block
+            self.allow_list, self.null_allowed, self.value_block
         )
     }
 }
@@ -432,7 +424,7 @@ impl fmt::Display for EquatableValueSet {
 pub struct EquatableValueSetBuilder<'a> {
     allocator: &'a dyn BlockAllocator,
     arrow_type: ArrowType,
-    is_white_list: bool,
+    is_allow_list: bool,
     null_allowed: bool,
     values: Vec<Value>,
 }
@@ -454,13 +446,13 @@ impl EquatableValueSetBuilder<'_> {
 
     pub fn build(&self) -> Result<EquatableValueSet> {
         Ok(EquatableValueSet::new(
-            BlockUtils::new_block(
+            block_utils::new_block(
                 self.allocator,
                 DEFAULT_COLUMN,
                 &self.arrow_type,
                 self.values.clone(),
             )?,
-            self.is_white_list,
+            self.is_allow_list,
             self.null_allowed,
         ))
     }

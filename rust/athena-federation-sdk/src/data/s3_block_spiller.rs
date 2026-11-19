@@ -11,18 +11,14 @@ use tokio::task::JoinHandle;
 use super::block::Block;
 use super::block_allocator::BlockAllocator;
 use super::block_spiller::BlockSpiller;
-use super::block_writer::RowWriter;
-use super::s3_block_spill_reader::require_present;
+use super::block_spiller::RowWriter;
 use super::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
 use super::spill_config::SpillConfig;
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::spill::{S3SpillLocation, SpillLocation};
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::len_to_long;
-use crate::security::{
-    run_blocking, AesGcmBlockCrypto, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey,
-    NoOpBlockCrypto,
-};
+use crate::security::{run_blocking, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey};
 
 const ASYNC_SHUTDOWN_MILLIS: u64 = 10_000;
 const MAX_ROWS_PER_CALL: i32 = 100;
@@ -44,7 +40,7 @@ struct SpillPool {
 
 struct SpillWriter {
     amazon_s3: Arc<dyn S3Client>,
-    block_crypto: Arc<dyn BlockCrypto>,
+    block_crypto: BlockCrypto,
     spill_config: SpillConfig,
     config_options: HashMap<String, String>,
     spill_number: AtomicI64,
@@ -133,14 +129,12 @@ impl SpillWriter {
         block: Block,
     ) -> Result<SpillLocation> {
         let spill_location = spill_location?;
-        let encryption_key = self.spill_config.encryption_key().cloned();
         tracing::info!(
             "write: Started encrypting block for write to {}",
             spill_location
         );
-        let block_crypto = Arc::clone(&self.block_crypto);
-        let bytes =
-            run_blocking(move || block_crypto.encrypt(encryption_key.as_ref(), &block)).await?;
+        let block_crypto = self.block_crypto.clone();
+        let bytes = run_blocking(move || block_crypto.encrypt(&block)).await?;
         self.total_bytes_spilled
             .fetch_add(len_to_long(bytes.len()), Ordering::SeqCst);
         tracing::info!(
@@ -188,7 +182,7 @@ pub struct S3BlockSpiller {
     allocator: Arc<dyn BlockAllocator>,
     schema: SchemaRef,
     max_rows_per_call: i64,
-    in_progress_block: Mutex<Option<Block>>,
+    in_progress_block: Mutex<Block>,
     async_spill_pool: Option<SpillPool>,
     spill_lock: Arc<RwLock<()>>,
     constraint_evaluator: Arc<ConstraintEvaluator>,
@@ -204,36 +198,14 @@ impl S3BlockSpiller {
         constraint_evaluator: Arc<ConstraintEvaluator>,
         config_options: HashMap<String, String>,
     ) -> Result<S3BlockSpiller> {
-        S3BlockSpiller::new_with_max_rows_per_call(
-            amazon_s3,
-            spill_config,
-            allocator,
-            schema,
-            constraint_evaluator,
-            MAX_ROWS_PER_CALL,
-            config_options,
-        )
-    }
-
-    pub fn new_with_max_rows_per_call(
-        amazon_s3: Arc<dyn S3Client>,
-        spill_config: SpillConfig,
-        allocator: Arc<dyn BlockAllocator>,
-        schema: SchemaRef,
-        constraint_evaluator: Arc<ConstraintEvaluator>,
-        max_rows_per_call: i32,
-        config_options: HashMap<String, String>,
-    ) -> Result<S3BlockSpiller> {
-        let block_crypto: Arc<dyn BlockCrypto> = if spill_config.encryption_key().is_some() {
-            Arc::new(AesGcmBlockCrypto::new(allocator.clone()))
-        } else {
-            Arc::new(NoOpBlockCrypto::new(allocator.clone()))
-        };
+        let block_crypto = BlockCrypto::for_key(spill_config.encryption_key().cloned());
         let async_spill_pool = if spill_config.num_spill_threads() <= 0 {
             None
         } else {
             Some(Self::make_async_spill_pool(&spill_config, &config_options)?)
         };
+        let mut in_progress_block = allocator.create_block(schema.clone());
+        in_progress_block.constrain(Some(constraint_evaluator.clone()));
         Ok(S3BlockSpiller {
             writer: Arc::new(SpillWriter {
                 amazon_s3,
@@ -247,8 +219,8 @@ impl S3BlockSpiller {
             }),
             allocator,
             schema,
-            max_rows_per_call: i64::from(max_rows_per_call),
-            in_progress_block: Mutex::new(None),
+            max_rows_per_call: i64::from(MAX_ROWS_PER_CALL),
+            in_progress_block: Mutex::new(in_progress_block),
             async_spill_pool,
             spill_lock: Arc::new(RwLock::new(())),
             constraint_evaluator,
@@ -296,22 +268,16 @@ impl S3BlockSpiller {
         block
     }
 
-    fn ensure_init<'a>(&self, slot: &'a mut Option<Block>) -> &'a mut Block {
-        slot.get_or_insert_with(|| self.new_block())
-    }
-
     pub async fn write(&self, block: Block) -> Result<SpillLocation> {
         self.writer.write(block).await
     }
 
     pub async fn read(
         &self,
-        spill_location: impl Into<Option<&S3SpillLocation>>,
+        spill_location: &S3SpillLocation,
         key: Option<&EncryptionKey>,
-        schema: impl Into<Option<SchemaRef>>,
+        schema: SchemaRef,
     ) -> Result<Block> {
-        let spill_location = require_present(spill_location.into(), "spillLocation")?;
-        let schema = schema.into();
         tracing::debug!("write: Started reading block from S3");
         let bytes = self
             .writer
@@ -322,12 +288,18 @@ impl S3BlockSpiller {
             ))
             .await?;
         tracing::debug!("write: Completed reading block from S3");
-        let schema = require_present(schema, "schema")?;
-        let block_crypto = Arc::clone(&self.writer.block_crypto);
-        let key = key.cloned();
-        let block =
-            run_blocking(move || block_crypto.decrypt_with_schema(key.as_ref(), &bytes, schema))
-                .await?;
+        let block_crypto = match (&self.writer.block_crypto, key) {
+            (BlockCrypto::NoOp, _) => BlockCrypto::NoOp,
+            (BlockCrypto::AesGcm(_), Some(key)) => BlockCrypto::AesGcm(key.clone()),
+            (BlockCrypto::AesGcm(_), None) => {
+                return Err(FederationError::null_pointer("key was null"))
+            }
+        };
+        let allocator = Arc::clone(&self.allocator);
+        let block = run_blocking(move || {
+            block_crypto.decrypt_with_schema(allocator.as_ref(), &bytes, schema)
+        })
+        .await?;
         tracing::debug!("write: Completed decrypting block of size.");
         Ok(block)
     }
@@ -377,12 +349,11 @@ impl S3BlockSpiller {
 
 #[async_trait]
 impl BlockSpiller for S3BlockSpiller {
-    async fn write_rows(&self, row_writer: &mut (dyn RowWriter + Send)) -> Result<()> {
+    async fn write_rows(&self, row_writer: &mut RowWriter<'_>) -> Result<()> {
         let to_spill = {
-            let mut slot = lock(&self.in_progress_block);
-            let block = self.ensure_init(&mut slot);
+            let mut block = lock(&self.in_progress_block);
             let row_count = block.row_count();
-            let rows = row_writer.write_rows(block, row_count)?;
+            let rows = row_writer(&mut block, row_count)?;
             if rows > 0 {
                 block.set_row_count(row_count + rows);
             }
@@ -393,7 +364,7 @@ impl BlockSpiller for S3BlockSpiller {
                     block.get_size(),
                     self.writer.spill_config.max_block_bytes()
                 );
-                Some(std::mem::replace(block, self.new_block()))
+                Some(std::mem::replace(&mut *block, self.new_block()))
             } else {
                 None
             }
@@ -413,8 +384,7 @@ impl BlockSpiller for S3BlockSpiller {
             return Err(ex);
         }
         let _write_guard = self.spill_lock.write().await;
-        let mut slot = lock(&self.in_progress_block);
-        let block = self.ensure_init(&mut slot);
+        let block = lock(&self.in_progress_block);
         Ok(!lock(&self.writer.spill_locations).is_empty()
             || len_to_long(block.get_size()) >= self.writer.spill_config.max_inline_block_size())
     }
@@ -425,14 +395,13 @@ impl BlockSpiller for S3BlockSpiller {
                 "Blocks have spilled, calls to getBlock not permitted. use getSpillLocations instead.",
             ));
         }
-        let mut slot = lock(&self.in_progress_block);
-        let block = self.ensure_init(&mut slot);
+        let block = lock(&self.in_progress_block);
         tracing::info!(
             "getBlock: Inline Block size[{}] bytes vs {}",
             block.get_size(),
             self.writer.spill_config.max_inline_block_size()
         );
-        Ok(block.clone())
+        Ok((*block).clone())
     }
 
     async fn get_spill_locations(&self) -> Result<Vec<SpillLocation>> {
@@ -442,8 +411,7 @@ impl BlockSpiller for S3BlockSpiller {
             ));
         }
         let final_block = {
-            let mut slot = lock(&self.in_progress_block);
-            let block = self.ensure_init(&mut slot);
+            let mut block = lock(&self.in_progress_block);
             if block.row_count() > 0 {
                 tracing::info!(
                     "getSpillLocations: Spilling final block with {} rows and {} bytes and config {} bytes",
@@ -451,7 +419,7 @@ impl BlockSpiller for S3BlockSpiller {
                     block.get_size(),
                     self.writer.spill_config.max_block_bytes()
                 );
-                Some(std::mem::replace(block, self.new_block()))
+                Some(std::mem::replace(&mut *block, self.new_block()))
             } else {
                 None
             }

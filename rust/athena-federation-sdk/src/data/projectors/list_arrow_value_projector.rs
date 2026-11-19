@@ -1,5 +1,4 @@
 use super::arrow_value_projector_impl::{create_value_projection, Projection};
-use super::ArrowValueProjector;
 use crate::data::types::{get_children, minor_type_of};
 use crate::data::value::Value;
 use crate::data::vector::FieldReader;
@@ -41,10 +40,8 @@ impl<'a> ListArrowValueProjector<'a> {
         }
         Ok(Value::List(list))
     }
-}
 
-impl ArrowValueProjector for ListArrowValueProjector<'_> {
-    fn project(&self, pos: usize) -> Result<Value> {
+    pub fn project(&self, pos: usize) -> Result<Value> {
         self.list_reader.set_position(pos);
         if !self.list_reader.is_set() {
             return Ok(Value::Null);

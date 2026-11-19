@@ -9,16 +9,14 @@ const ROWS: &str = include_str!("fixtures/java_arrow_18_3/rows.txt");
 fn rows(block: &Block) -> String {
     let mut dump = String::new();
     for i in 0..block.row_count() {
-        dump.push_str(&BlockUtils::row_to_string(block, i).unwrap_or_else(|e| e.to_string()));
+        dump.push_str(&block_utils::row_to_string(block, i).unwrap_or_else(|e| e.to_string()));
         dump.push('\n');
     }
     dump
 }
 
 fn load(allocator: &BlockAllocatorImpl, schema_bytes: &[u8], batch_bytes: &[u8]) -> Block {
-    let schema = SchemaSerDe::new()
-        .deserialize(&mut &schema_bytes[..])
-        .unwrap();
+    let schema = deserialize_schema(&mut &schema_bytes[..]).unwrap();
     let batch = RecordBatchSerDe::new(allocator)
         .deserialize(batch_bytes)
         .unwrap();
@@ -41,9 +39,7 @@ fn rewrites_java_arrow_ipc_messages_without_loss() {
     let allocator = BlockAllocatorImpl::new();
     let block = load(&allocator, SCHEMA, BATCH);
     let mut schema_out = Vec::new();
-    SchemaSerDe::new()
-        .serialize(block.schema(), &mut schema_out)
-        .unwrap();
+    serialize_schema(block.schema(), &mut schema_out).unwrap();
     let mut batch_out = Vec::new();
     RecordBatchSerDe::new(&allocator)
         .serialize(&block.get_arrow_record_batch().unwrap(), &mut batch_out)

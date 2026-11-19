@@ -40,7 +40,7 @@ pub trait FederationRequestHandler: Send + Sync {
 
     async fn get_secret(&self, secret_name: &str) -> Result<String> {
         self.cachable_secrets_manager()
-            .get_secret(secret_name)
+            .get_secret(secret_name, None)
             .await
     }
 
@@ -50,7 +50,7 @@ pub trait FederationRequestHandler: Send + Sync {
         request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<String> {
         self.cachable_secrets_manager()
-            .get_secret_with_override_configuration(secret_name, request_override_configuration)
+            .get_secret(secret_name, request_override_configuration)
             .await
     }
 

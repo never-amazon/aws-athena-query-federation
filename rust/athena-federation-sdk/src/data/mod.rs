@@ -3,9 +3,8 @@ pub(crate) mod arrow_type_comparator;
 pub(crate) mod block;
 pub(crate) mod block_allocator;
 pub(crate) mod block_spiller;
-pub(crate) mod block_utils;
-pub(crate) mod block_writer;
-pub(crate) mod date_time_formatter_util;
+pub mod block_utils;
+pub mod date_time_formatter_util;
 pub(crate) mod field_builder;
 pub(crate) mod field_resolver;
 pub mod java_format;
@@ -15,7 +14,6 @@ pub(crate) mod record_batch_serde;
 mod s3_block_spill_reader;
 mod s3_block_spiller;
 mod s3_client;
-pub(crate) mod schema_aware;
 pub(crate) mod schema_builder;
 pub(crate) mod simple_block_writer;
 pub mod spill_config;
@@ -26,21 +24,16 @@ pub(crate) mod value;
 pub(crate) mod vector;
 pub mod writers;
 
-pub use arrow_schema_utils::ArrowSchemaUtils;
+pub use arrow_schema_utils::remap_arrow_types_within_field;
 pub use arrow_type_comparator::{compare_unsigned_bytes, java_string_compare, ArrowTypeComparator};
 pub use block::Block;
-pub use block_allocator::{
-    ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl, BlockAllocatorRegistry,
-};
-pub use block_spiller::BlockSpiller;
+pub use block_allocator::{ArrowBuf, BatchGenerator, BlockAllocator, BlockAllocatorImpl};
+pub use block_spiller::{BlockSpiller, RowWriter};
 pub use block_utils::{
-    to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short, BlockUtils,
+    to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short,
     MAP_DATA_VECTOR_NAME, MAP_KEY_NAME, MAP_VALUE_NAME, UTC_ZONE_ID,
 };
-pub use block_writer::{BlockWriter, RowWriter};
-pub use date_time_formatter_util::{
-    DateTimeFormatterUtil, TimeStampMicroTzHolder, TimeStampMilliTzHolder,
-};
+pub use date_time_formatter_util::{TimeStampMicroTzHolder, TimeStampMilliTzHolder};
 pub use field_builder::FieldBuilder;
 pub use field_resolver::{DefaultFieldResolver, FieldResolver};
 pub use java_time::{
@@ -51,14 +44,13 @@ pub use java_time::{
 };
 pub use record_batch_serde::{
     deserialize_record_batch_message, deserialize_schema, schema_ref, serialize_record_batch,
-    serialize_schema, ArrowRecordBatch, AthenaFederationIpcOption, RecordBatchSerDe, SchemaSerDe,
+    serialize_schema, ArrowRecordBatch, RecordBatchSerDe,
 };
 pub use s3_block_spill_reader::S3BlockSpillReader;
 pub use s3_block_spiller::S3BlockSpiller;
 pub use s3_client::{
     GetObjectRequest, PutObjectRequest, PutObjectRequestBuilder, S3Client, S3HeadBucketClient,
 };
-pub use schema_aware::SchemaAware;
 pub use schema_builder::SchemaBuilder;
 pub use simple_block_writer::SimpleBlockWriter;
 pub use supported_types::SupportedTypes;

@@ -21,7 +21,7 @@ struct Setup {
 impl Drop for Setup {
     fn drop(&mut self) {
         self.allocator.close();
-        DateTimeFormatterUtil::enable_timezone_packing();
+        date_time_formatter_util::enable_timezone_packing();
     }
 }
 
@@ -29,7 +29,7 @@ fn setup() -> Setup {
     let guard = PACKING_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    DateTimeFormatterUtil::enable_timezone_packing();
+    date_time_formatter_util::enable_timezone_packing();
     Setup {
         allocator: BlockAllocatorImpl::new(),
         _guard: guard,
@@ -44,7 +44,7 @@ fn ldt_2020() -> NaiveDateTime {
 }
 
 fn set(block: &mut Block, name: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut(name).unwrap(),
         row,
         &value.into(),
@@ -68,7 +68,7 @@ fn copy_rows() {
     let s = setup();
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
         if time_unit == TimeUnit::Microsecond {
-            DateTimeFormatterUtil::disable_timezone_packing();
+            date_time_formatter_util::disable_timezone_packing();
         }
         let schema = SchemaBuilder::new_builder()
             .add_field_with_type("col1", DataType::Int32)
@@ -90,7 +90,7 @@ fn copy_rows() {
         src.set_row_count(3);
 
         let mut dst = s.allocator.create_block(Arc::new(schema));
-        assert_eq!(3, BlockUtils::copy_rows(&src, &mut dst, 0, 2).unwrap());
+        assert_eq!(3, block_utils::copy_rows(&src, &mut dst, 0, 2).unwrap());
         assert_eq!(src, dst);
     }
 }
@@ -100,7 +100,7 @@ fn is_null_row() {
     let s = setup();
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
         if time_unit == TimeUnit::Microsecond {
-            DateTimeFormatterUtil::disable_timezone_packing();
+            date_time_formatter_util::disable_timezone_packing();
         }
         let schema = SchemaBuilder::new_builder()
             .add_field_with_type("col1", DataType::Int32)
@@ -117,9 +117,9 @@ fn is_null_row() {
         set(&mut block, "col3", 1, zoned(ldt, "-05:00"));
         block.set_row_count(2);
 
-        assert!(!BlockUtils::is_null_row(&block, 1).unwrap());
-        BlockUtils::unset_row(1, &mut block).unwrap();
-        assert!(BlockUtils::is_null_row(&block, 1).unwrap());
+        assert!(!block_utils::is_null_row(&block, 1).unwrap());
+        block_utils::unset_row(1, &mut block).unwrap();
+        assert!(block_utils::is_null_row(&block, 1).unwrap());
     }
 }
 
@@ -129,7 +129,7 @@ fn field_to_string() {
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
         let mut expected_string = "Block{rows=2, col1=[10, 11], col2=[2020-03-18T12:54:29Z[UTC], 2020-03-18T12:54:29-05:00], col3=[2020-03-18, 2019-12-29]}";
         if time_unit == TimeUnit::Microsecond {
-            DateTimeFormatterUtil::disable_timezone_packing();
+            date_time_formatter_util::disable_timezone_packing();
             expected_string = "Block{rows=2, col1=[10, 11], col2=[2020-03-18T12:54:29Z[UTC], 2020-03-18T17:54:29Z[UTC]], col3=[2020-03-18, 2019-12-29]}";
         }
         let schema = SchemaBuilder::new_builder()
@@ -250,23 +250,27 @@ fn set_value_rejects_lossy_integer_conversions() {
     let dec = |s: &str| Value::Decimal(BigDecimal::from_str(s).unwrap());
 
     let int_vector = block.get_field_vector_mut("int").unwrap();
-    assert_connector_error(BlockUtils::set_value(int_vector, 0, &dec("12.7")));
-    assert_connector_error(BlockUtils::set_value(int_vector, 0, &dec("3000000000")));
+    assert_connector_error(block_utils::set_value(int_vector, 0, &dec("12.7")));
+    assert_connector_error(block_utils::set_value(int_vector, 0, &dec("3000000000")));
     let bigint_vector = block.get_field_vector_mut("bigint").unwrap();
-    assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &dec("1.9")));
-    assert_connector_error(BlockUtils::set_value(
+    assert_connector_error(block_utils::set_value(bigint_vector, 0, &dec("1.9")));
+    assert_connector_error(block_utils::set_value(
         bigint_vector,
         0,
         &dec("9223372036854775808"),
     ));
-    assert_connector_error(BlockUtils::set_value(
+    assert_connector_error(block_utils::set_value(
         bigint_vector,
         0,
         &Value::BigInteger(max_unsigned_long),
     ));
-    assert_connector_error(BlockUtils::set_value(bigint_vector, 0, &Value::Double(1.9)));
+    assert_connector_error(block_utils::set_value(
+        bigint_vector,
+        0,
+        &Value::Double(1.9),
+    ));
     let tinyint_vector = block.get_field_vector_mut("tinyint").unwrap();
-    assert_connector_error(BlockUtils::set_value(tinyint_vector, 0, &dec("300")));
+    assert_connector_error(block_utils::set_value(tinyint_vector, 0, &dec("300")));
 }
 
 #[test]
@@ -294,7 +298,7 @@ fn write_errors_render_array_values_by_element() {
     let ints = |items: &[i32]| Value::List(items.iter().copied().map(Value::Int).collect());
 
     let list_vector = block.get_field_vector_mut("int_arr").unwrap();
-    let nested = BlockUtils::set_complex_value(
+    let nested = block_utils::set_complex_value(
         list_vector,
         0,
         &DefaultFieldResolver,
@@ -307,13 +311,14 @@ fn write_errors_render_array_values_by_element() {
     );
 
     let int_vector = block.get_field_vector_mut("int").unwrap();
-    let bytes = BlockUtils::set_value(int_vector, 0, &Value::Bytes(vec![0, 255, 127])).unwrap_err();
+    let bytes =
+        block_utils::set_value(int_vector, 0, &Value::Bytes(vec![0, 255, 127])).unwrap_err();
     assert_eq!(
         "Unable to set value for field int using value [0, -1, 127] of type INT",
         bytes.to_string()
     );
 
-    let deep = BlockUtils::set_value(
+    let deep = block_utils::set_value(
         int_vector,
         0,
         &Value::List(vec![
@@ -333,7 +338,7 @@ fn complex_write_error(field: arrow::datatypes::Field, value: &Value) -> String 
     let schema = arrow::datatypes::Schema::new(vec![field]);
     let mut block = s.allocator.create_block(Arc::new(schema));
     let vector = block.get_field_vector_mut("c").unwrap();
-    BlockUtils::set_complex_value(vector, 0, &DefaultFieldResolver, value)
+    block_utils::set_complex_value(vector, 0, &DefaultFieldResolver, value)
         .unwrap_err()
         .to_string()
 }
@@ -425,7 +430,7 @@ fn complex_write_result(field: arrow::datatypes::Field, value: &Value) -> String
     let schema = arrow::datatypes::Schema::new(vec![field]);
     let mut block = s.allocator.create_block(Arc::new(schema));
     let vector = block.get_field_vector_mut("c").unwrap();
-    match BlockUtils::set_complex_value(vector, 0, &DefaultFieldResolver, value) {
+    match block_utils::set_complex_value(vector, 0, &DefaultFieldResolver, value) {
         Ok(()) => "OK".to_string(),
         Err(error) => error.to_string(),
     }

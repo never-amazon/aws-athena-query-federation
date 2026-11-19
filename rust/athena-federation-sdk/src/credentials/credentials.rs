@@ -1,9 +1,31 @@
-use std::any::Any;
 use std::collections::HashMap;
-use std::fmt::Debug;
 
-pub trait Credentials: Debug + Send + Sync {
-    fn properties(&self) -> HashMap<String, String>;
+use super::default_credentials::DefaultCredentials;
+use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
 
-    fn as_any(&self) -> &dyn Any;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Credentials {
+    UserPassword(DefaultCredentials),
+    AccessToken(OAuthAccessTokenCredentials),
+}
+
+impl Credentials {
+    pub fn properties(&self) -> HashMap<String, String> {
+        match self {
+            Credentials::UserPassword(c) => c.properties(),
+            Credentials::AccessToken(c) => c.properties(),
+        }
+    }
+}
+
+impl From<DefaultCredentials> for Credentials {
+    fn from(credentials: DefaultCredentials) -> Credentials {
+        Credentials::UserPassword(credentials)
+    }
+}
+
+impl From<OAuthAccessTokenCredentials> for Credentials {
+    fn from(credentials: OAuthAccessTokenCredentials) -> Credentials {
+        Credentials::AccessToken(credentials)
+    }
 }

@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::{DataType, Field};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
-use athena_federation_sdk::Result;
 
 pub struct MockConstraintProjector {
     stubs: Mutex<Vec<(Value, bool)>>,
@@ -36,17 +35,20 @@ impl MockConstraintProjector {
             .filter(|v| *v == value)
             .count()
     }
-}
 
-impl ConstraintProjector for MockConstraintProjector {
-    fn apply(&self, value: &Value) -> Result<bool> {
+    pub fn as_projector(self: &Arc<Self>) -> ConstraintProjector {
+        let mock = Arc::clone(self);
+        Arc::new(move |value: &Value| Ok(mock.apply(value)))
+    }
+
+    fn apply(&self, value: &Value) -> bool {
         self.calls.lock().unwrap().push(value.clone());
         let stubs = self.stubs.lock().unwrap();
-        Ok(stubs
+        stubs
             .iter()
             .rev()
             .find(|(v, _)| v == value)
-            .is_some_and(|(_, r)| *r))
+            .is_some_and(|(_, r)| *r)
     }
 }
 

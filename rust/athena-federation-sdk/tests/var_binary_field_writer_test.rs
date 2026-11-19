@@ -1,14 +1,12 @@
 mod common_field_writer;
 
-use std::any::Any;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 
-use athena_federation_sdk::data::writers::extractors::VarBinaryExtractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, VarBinaryFieldWriter};
-use athena_federation_sdk::data::writers::holders::NullableVarBinaryHolder;
+use athena_federation_sdk::data::writers::extractors::Extractor;
+use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, ScalarFieldWriter};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
 
@@ -24,20 +22,12 @@ struct Fixture {
     projector: Arc<MockConstraintProjector>,
 }
 
-fn configure_extractor(
-    value: Vec<u8>,
-    is_set: i32,
-    calls: &CallCounter,
-) -> Arc<dyn VarBinaryExtractor> {
+fn configure_extractor(value: Vec<u8>, is_set: i32, calls: &CallCounter) -> Extractor<()> {
     let counter = calls.0.clone();
-    Arc::new(
-        move |_ctx: &dyn Any, holder: &mut NullableVarBinaryHolder| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            holder.is_set = is_set;
-            holder.value.clone_from(&value);
-            Ok(())
-        },
-    )
+    Extractor::VarBinary(Arc::new(move |_ctx: &()| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Ok((is_set > 0).then(|| value.clone()))
+    }))
 }
 
 fn set_up() -> Fixture {
@@ -53,13 +43,13 @@ fn writer(
     value: Vec<u8>,
     is_set: i32,
     with_constraint: bool,
-) -> VarBinaryFieldWriter {
-    let constraint: Option<Arc<dyn ConstraintProjector>> = if with_constraint {
-        Some(fx.projector.clone())
+) -> ScalarFieldWriter<()> {
+    let constraint: Option<ConstraintProjector> = if with_constraint {
+        Some(fx.projector.as_projector())
     } else {
         None
     };
-    VarBinaryFieldWriter::new(
+    ScalarFieldWriter::new(
         configure_extractor(value, is_set, &fx.extractor_calls),
         constraint,
     )

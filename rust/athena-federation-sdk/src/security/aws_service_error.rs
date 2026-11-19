@@ -71,35 +71,52 @@ impl AwsService {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AwsErrorKind {
+    Service {
+        service: AwsService,
+        error_code: Option<String>,
+        status_code: Option<u16>,
+        request_id: Option<String>,
+        extended_request_id: Option<String>,
+        error_details: bool,
+    },
+    Client,
+    Other {
+        error_code: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwsServiceError {
-    error_code: Option<String>,
+    kind: AwsErrorKind,
     message: Option<String>,
-    status_code: Option<u16>,
-    service: Option<AwsService>,
-    error_details: bool,
-    client_error: bool,
-    request_id: Option<String>,
-    extended_request_id: Option<String>,
     num_attempts: Option<u32>,
+}
+
+impl Default for AwsServiceError {
+    fn default() -> AwsServiceError {
+        AwsServiceError::other(None, None)
+    }
 }
 
 impl AwsServiceError {
     pub const IO_ERROR_CODE: &'static str = "IOException";
 
-    pub fn new(message: impl Into<String>) -> AwsServiceError {
+    fn other(error_code: Option<String>, message: Option<String>) -> AwsServiceError {
         AwsServiceError {
-            message: Some(message.into()),
-            ..AwsServiceError::default()
+            kind: AwsErrorKind::Other { error_code },
+            message,
+            num_attempts: None,
         }
     }
 
+    pub fn new(message: impl Into<String>) -> AwsServiceError {
+        AwsServiceError::other(None, Some(message.into()))
+    }
+
     pub fn with_code(error_code: impl Into<String>, message: impl Into<String>) -> AwsServiceError {
-        AwsServiceError {
-            error_code: Some(error_code.into()),
-            message: Some(message.into()),
-            ..AwsServiceError::default()
-        }
+        AwsServiceError::other(Some(error_code.into()), Some(message.into()))
     }
 
     pub fn service(
@@ -108,18 +125,24 @@ impl AwsServiceError {
         message: Option<String>,
     ) -> AwsServiceError {
         AwsServiceError {
-            error_code,
+            kind: AwsErrorKind::Service {
+                service,
+                error_code,
+                status_code: None,
+                request_id: None,
+                extended_request_id: None,
+                error_details: false,
+            },
             message,
-            service: Some(service),
-            ..AwsServiceError::default()
+            num_attempts: None,
         }
     }
 
     pub fn client(message: impl Into<String>) -> AwsServiceError {
         AwsServiceError {
+            kind: AwsErrorKind::Client,
             message: Some(message.into()),
-            client_error: true,
-            ..AwsServiceError::default()
+            num_attempts: None,
         }
     }
 
@@ -128,29 +151,38 @@ impl AwsServiceError {
     }
 
     #[must_use]
-    pub fn with_status_code(mut self, status_code: u16) -> AwsServiceError {
-        self.status_code = Some(status_code);
+    pub fn with_status_code(mut self, status: u16) -> AwsServiceError {
+        if let AwsErrorKind::Service { status_code, .. } = &mut self.kind {
+            *status_code = Some(status);
+        }
         self
     }
 
     #[must_use]
     pub fn with_error_details(mut self) -> AwsServiceError {
-        self.error_details = true;
+        if let AwsErrorKind::Service { error_details, .. } = &mut self.kind {
+            *error_details = true;
+        }
         self
     }
 
     #[must_use]
-    pub fn with_request_id(mut self, request_id: impl Into<String>) -> AwsServiceError {
-        self.request_id = Some(request_id.into());
+    pub fn with_request_id(mut self, id: impl Into<String>) -> AwsServiceError {
+        if let AwsErrorKind::Service { request_id, .. } = &mut self.kind {
+            *request_id = Some(id.into());
+        }
         self
     }
 
     #[must_use]
-    pub fn with_extended_request_id(
-        mut self,
-        extended_request_id: impl Into<String>,
-    ) -> AwsServiceError {
-        self.extended_request_id = Some(extended_request_id.into());
+    pub fn with_extended_request_id(mut self, id: impl Into<String>) -> AwsServiceError {
+        if let AwsErrorKind::Service {
+            extended_request_id,
+            ..
+        } = &mut self.kind
+        {
+            *extended_request_id = Some(id.into());
+        }
         self
     }
 
@@ -161,7 +193,12 @@ impl AwsServiceError {
     }
 
     pub fn error_code(&self) -> Option<&str> {
-        self.error_code.as_deref()
+        match &self.kind {
+            AwsErrorKind::Service { error_code, .. } | AwsErrorKind::Other { error_code } => {
+                error_code.as_deref()
+            }
+            AwsErrorKind::Client => None,
+        }
     }
 
     pub fn message(&self) -> &str {
@@ -169,19 +206,34 @@ impl AwsServiceError {
     }
 
     pub fn status_code(&self) -> Option<u16> {
-        self.status_code
+        match &self.kind {
+            AwsErrorKind::Service { status_code, .. } => *status_code,
+            AwsErrorKind::Client | AwsErrorKind::Other { .. } => None,
+        }
     }
 
     pub fn get_service(&self) -> Option<AwsService> {
-        self.service
+        match &self.kind {
+            AwsErrorKind::Service { service, .. } => Some(*service),
+            AwsErrorKind::Client | AwsErrorKind::Other { .. } => None,
+        }
     }
 
     pub fn request_id(&self) -> Option<&str> {
-        self.request_id.as_deref()
+        match &self.kind {
+            AwsErrorKind::Service { request_id, .. } => request_id.as_deref(),
+            AwsErrorKind::Client | AwsErrorKind::Other { .. } => None,
+        }
     }
 
     pub fn extended_request_id(&self) -> Option<&str> {
-        self.extended_request_id.as_deref()
+        match &self.kind {
+            AwsErrorKind::Service {
+                extended_request_id,
+                ..
+            } => extended_request_id.as_deref(),
+            AwsErrorKind::Client | AwsErrorKind::Other { .. } => None,
+        }
     }
 
     pub fn num_attempts(&self) -> Option<u32> {
@@ -189,23 +241,27 @@ impl AwsServiceError {
     }
 
     pub fn is_client_error(&self) -> bool {
-        self.client_error
+        self.kind == AwsErrorKind::Client
     }
 
     pub fn is_service_exception_of(&self, service: AwsService) -> bool {
-        self.service == Some(service)
+        self.get_service() == Some(service)
     }
 
     pub fn is_error_code(&self, code: &str) -> bool {
-        self.error_code.as_deref() == Some(code)
+        self.error_code() == Some(code)
     }
 
     pub fn java_class_name(&self) -> Option<String> {
-        if self.client_error {
-            return Some(SDK_CLIENT_EXCEPTION.to_string());
+        match &self.kind {
+            AwsErrorKind::Client => Some(SDK_CLIENT_EXCEPTION.to_string()),
+            AwsErrorKind::Service {
+                service,
+                error_code,
+                ..
+            } => Some(service.java_exception_class(error_code.as_deref())),
+            AwsErrorKind::Other { .. } => None,
         }
-        self.service
-            .map(|s| s.java_exception_class(self.error_code.as_deref()))
     }
 
     pub fn get_message(&self) -> Option<String> {
@@ -213,16 +269,21 @@ impl AwsServiceError {
         if let Some(message) = &self.message {
             parts.push(message.clone());
         }
-        if let (true, Some(service)) = (self.error_details, self.service) {
+        if let AwsErrorKind::Service {
+            service,
+            status_code,
+            request_id,
+            extended_request_id,
+            error_details: true,
+            ..
+        } = &self.kind
+        {
             let mut details = vec![
                 format!("Service: {}", service.service_name()),
-                format!("Status Code: {}", self.status_code.unwrap_or(0)),
-                format!(
-                    "Request ID: {}",
-                    self.request_id.as_deref().unwrap_or("null")
-                ),
+                format!("Status Code: {}", status_code.unwrap_or(0)),
+                format!("Request ID: {}", request_id.as_deref().unwrap_or("null")),
             ];
-            if let Some(extended) = &self.extended_request_id {
+            if let Some(extended) = extended_request_id {
                 details.push(format!("Extended Request ID: {extended}"));
             }
             parts.push(format!("({})", details.join(", ")));
@@ -249,16 +310,18 @@ impl AwsServiceError {
         };
         let raw = err.raw_response();
         let header = |name: &str| raw.and_then(|r| r.headers().get(name)).map(str::to_string);
-        let mut error = AwsServiceError::service(
-            service,
-            service_error.code().map(str::to_string),
-            service_error.message().map(str::to_string),
-        )
-        .with_error_details();
-        error.status_code = raw.map(|r| r.status().as_u16());
-        error.request_id = REQUEST_ID_HEADERS.iter().find_map(|h| header(h));
-        error.extended_request_id = header(EXTENDED_REQUEST_ID_HEADER);
-        error
+        AwsServiceError {
+            kind: AwsErrorKind::Service {
+                service,
+                error_code: service_error.code().map(str::to_string),
+                status_code: raw.map(|r| r.status().as_u16()),
+                request_id: REQUEST_ID_HEADERS.iter().find_map(|h| header(h)),
+                extended_request_id: header(EXTENDED_REQUEST_ID_HEADER),
+                error_details: true,
+            },
+            message: service_error.message().map(str::to_string),
+            num_attempts: None,
+        }
     }
 }
 
@@ -293,11 +356,10 @@ impl From<FederationError> for AwsServiceError {
     fn from(e: FederationError) -> Self {
         match e {
             FederationError::AwsService(inner) => inner,
-            other => AwsServiceError {
-                error_code: other.error_code().map(|c| c.as_str().to_string()),
-                message: Some(other.to_string()),
-                ..AwsServiceError::default()
-            },
+            other => AwsServiceError::other(
+                other.error_code().map(|c| c.as_str().to_string()),
+                Some(other.to_string()),
+            ),
         }
     }
 }

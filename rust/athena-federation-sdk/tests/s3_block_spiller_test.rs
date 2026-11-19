@@ -1,3 +1,4 @@
+use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -5,12 +6,12 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, BlockUtils, GetObjectRequest,
-    PutObjectRequest, S3BlockSpiller, S3Client, SchemaBuilder, Value,
+    Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, GetObjectRequest, PutObjectRequest,
+    S3BlockSpiller, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::security::{AwsServiceError, EncryptionKeyFactory, LocalKeyFactory};
+use athena_federation_sdk::security::{AwsServiceError, KeySource};
 use athena_federation_sdk::FederationError;
 use aws_credential_types::Credentials;
 
@@ -124,7 +125,7 @@ fn spill_location() -> SpillLocation {
 }
 
 fn set(block: &mut Block, field: &str, row: usize, value: impl Into<Value>) {
-    BlockUtils::set_value(
+    block_utils::set_value(
         block.get_field_vector_mut(field).unwrap(),
         row,
         &value.into(),
@@ -154,7 +155,7 @@ async fn setup() -> Setup {
     let mock_s3 = Arc::new(MockS3::default());
     let schema = two_column_schema();
     let spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_request_id(REQUEST_ID)
@@ -186,7 +187,7 @@ async fn setup() -> Setup {
 
 async fn async_spill_config(max_block_bytes: i64, num_spill_threads: i32) -> SpillConfig {
     SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_request_id(REQUEST_ID)
@@ -379,7 +380,7 @@ async fn get_spill_locations_throws_on_async_s3_error() {
 async fn get_spill_locations_rethrows_sync_final_spill_error() {
     let s = setup().await;
     let sync_spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(LocalKeyFactory::new().create().await.unwrap()))
+        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
         .with_request_id(REQUEST_ID)
         .with_spill_location(spill_location())
         .with_max_block_bytes(1_000_000)
@@ -563,11 +564,11 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
             .await
             .unwrap();
         let expected =
-            BlockUtils::new_block(allocator.as_ref(), "col1", &DataType::Int32, vec![number])
+            block_utils::new_block(allocator.as_ref(), "col1", &DataType::Int32, vec![number])
                 .unwrap();
         assert_eq!(
-            BlockUtils::row_to_string(&expected, 0).unwrap(),
-            BlockUtils::row_to_string(&block, 0).unwrap(),
+            block_utils::row_to_string(&expected, 0).unwrap(),
+            block_utils::row_to_string(&block, 0).unwrap(),
             "block spilled to {} is not block {}",
             location.key(),
             number
