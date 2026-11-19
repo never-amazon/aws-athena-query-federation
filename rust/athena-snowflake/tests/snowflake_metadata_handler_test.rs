@@ -25,9 +25,8 @@ use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
 use athena_jdbc::resolver::DefaultJdbcCaseResolver;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlError, SqlValue, Types};
 use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
-use athena_snowflake::sql::SNOWFLAKE_SQL_EXCEPTION;
 use athena_snowflake::{
     create_credentials_provider, create_snowflake_credentials_provider, SnowflakeConstants,
     SnowflakeMetadataDialect, SnowflakeMetadataHandler,
@@ -318,15 +317,11 @@ fn splits_request(
     )
 }
 
-fn snowflake_error(message: &str) -> SqlException {
-    SqlException::with_class_name(SNOWFLAKE_SQL_EXCEPTION, message)
+fn snowflake_error(message: &str) -> SqlError {
+    SqlError::snowflake(message)
 }
 
-fn route_partitions(
-    connection: &FakeConnection,
-    count: i64,
-    uniqueness: Result<i32, SqlException>,
-) {
+fn route_partitions(connection: &FakeConnection, count: i64, uniqueness: Result<i32, SqlError>) {
     let uniqueness = Arc::new(uniqueness);
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
@@ -376,14 +371,14 @@ async fn do_get_table_sql_exception() {
     let f = fixture();
     f.connection
         .meta
-        .set_columns(Err(SqlException::new("columns failed")));
+        .set_columns(Err(SqlError::new("columns failed")));
     let error = f
         .handler
         .get_table(&table_request(TableName::new("testSchema", "testTable")))
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).unwrap();
-    assert_eq!("java.sql.SQLException", sql.class_name());
+    let sql = SqlError::from_federation_error(&error).unwrap();
+    assert_eq!("java.sql.SQLException", sql.java_class_name());
     assert_eq!("columns failed", sql.message());
 }
 
@@ -1187,7 +1182,7 @@ async fn test_get_storage_integration_properties_not_found() {
             "DESC STORAGE INTEGRATION \"NONEXISTENT_INTEGRATION\"",
             statement.sql()
         );
-        Err(SqlException::new(
+        Err(SqlError::new(
             "Integration does not exist or not authorized",
         ))
     });
@@ -1203,16 +1198,15 @@ async fn test_get_storage_integration_properties_not_found() {
 #[tokio::test]
 async fn test_get_storage_integration_properties_sql_exception() {
     let f = fixture();
-    f.connection.on_query(|_statement: &PreparedStatement| {
-        Err(SqlException::new("Database connection error"))
-    });
+    f.connection
+        .on_query(|_statement: &PreparedStatement| Err(SqlError::new("Database connection error")));
     let error = f
         .handler
         .dialect()
         .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).unwrap();
+    let sql = SqlError::from_federation_error(&error).unwrap();
     assert_eq!("Database connection error", sql.message());
 }
 
@@ -1436,7 +1430,7 @@ async fn get_partitions_uniqueness_check_times_out_falls_back_to_single_partitio
     route_partitions(
         &f.connection,
         1_000_000,
-        Err(SqlException::new("statement timed out")),
+        Err(SqlError::new("statement timed out")),
     );
     let request = layout_request(
         identity(),
@@ -1564,7 +1558,7 @@ async fn export_split_error_mapping() {
         .connection
         .on_query(move |_statement: &PreparedStatement| {
             *counter.lock().unwrap() += 1;
-            Err(SqlException::new(
+            Err(SqlError::new(
                 "Integration TEST_INTEGRATION does not exist or not authorized",
             ))
         });

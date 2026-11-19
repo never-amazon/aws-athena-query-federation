@@ -5,11 +5,13 @@ use async_trait::async_trait;
 use athena_jdbc::connection::{JdbcDriver, JdbcProperties};
 use athena_jdbc::sql::{
     ColumnMetadata, DatabaseMetaData, JdbcConnection, Nullability, PreparedStatement, ResultSet,
-    ResultSetMetaData, RowSource, SqlException, SqlValue, StatementHandle, Types,
+    ResultSetMetaData, RowSource, SqlError, SqlValue, StatementHandle, Types,
 };
 use tokio::sync::Mutex;
 
-use super::error::{psql, psql_with_cause, CONNECTION_FAILURE, DATA_TYPE_MISMATCH, NO_DATA};
+use super::error::{
+    psql, psql_with_cause, CONNECTION_FAILURE, DATA_TYPE_MISMATCH, INVALID_PARAMETER_VALUE, NO_DATA,
+};
 use super::metadata::PgDatabaseMetaData;
 use super::parser::{to_native_sql, NativeSql};
 use super::session::{lock_buffer, FieldDescription, Session, SharedBuffer};
@@ -32,7 +34,7 @@ impl JdbcDriver for PgDriver {
         &self,
         url: &str,
         properties: &JdbcProperties,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         Ok(Box::new(PgConnection::connect(url, properties).await?))
     }
 }
@@ -112,7 +114,7 @@ struct PgRowSource {
 
 #[async_trait]
 impl RowSource for PgRowSource {
-    async fn next_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+    async fn next_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlError> {
         let next = self.read_row().await;
         if !matches!(next, Ok(Some(_))) {
             self.timer = QueryTimer(None);
@@ -122,7 +124,7 @@ impl RowSource for PgRowSource {
 }
 
 impl PgRowSource {
-    async fn read_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+    async fn read_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlError> {
         if let Some(next) = lock_buffer(&self.buffer).pop() {
             return next;
         }
@@ -158,7 +160,7 @@ fn native_sql(statement: &PreparedStatement) -> NativeSql {
         .unwrap_or_else(|| to_native_sql(statement.sql()))
 }
 
-fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result<(), SqlException> {
+fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result<(), SqlError> {
     let bound = statement.parameters().len();
     if bound > native.parameter_count {
         return Err(psql(
@@ -166,23 +168,20 @@ fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result
                 "The column index is out of range: {bound}, number of columns: {}.",
                 native.parameter_count
             ),
-            "22023",
+            INVALID_PARAMETER_VALUE,
         ));
     }
     if bound < native.parameter_count {
         return Err(psql(
             format!("No value specified for parameter {}.", bound + 1),
-            "22023",
+            INVALID_PARAMETER_VALUE,
         ));
     }
     Ok(())
 }
 
 impl PgConnection {
-    pub async fn connect(
-        url: &str,
-        properties: &JdbcProperties,
-    ) -> Result<PgConnection, SqlException> {
+    pub async fn connect(url: &str, properties: &JdbcProperties) -> Result<PgConnection, SqlError> {
         let info: HashMap<String, String> = properties.clone();
         let settings = parse_url(url, &info)?;
         let (session, host) = connect(&settings).await?;
@@ -199,7 +198,7 @@ impl PgConnection {
         })
     }
 
-    pub async fn cancel_query(&self) -> Result<(), SqlException> {
+    pub async fn cancel_query(&self) -> Result<(), SqlError> {
         let Some(target) = &self.cancel else {
             return Ok(());
         };
@@ -230,7 +229,7 @@ impl PgConnection {
         &self,
         session: &mut Session,
         fields: &[FieldDescription],
-    ) -> Result<Vec<Option<FieldMetadata>>, SqlException> {
+    ) -> Result<Vec<Option<FieldMetadata>>, SqlError> {
         let keys: Vec<(u32, i16)> = fields
             .iter()
             .filter(|f| f.table_oid != 0)
@@ -293,7 +292,7 @@ impl JdbcConnection for PgConnection {
         &self.metadata
     }
 
-    async fn get_catalog(&self) -> Result<Option<String>, SqlException> {
+    async fn get_catalog(&self) -> Result<Option<String>, SqlError> {
         let mut session = self.session.lock().await;
         let (_, rows) = session
             .query_all("select current_catalog", &[], true)
@@ -304,7 +303,7 @@ impl JdbcConnection for PgConnection {
             .and_then(SqlValue::to_java_string))
     }
 
-    async fn get_schema(&self) -> Result<Option<String>, SqlException> {
+    async fn get_schema(&self) -> Result<Option<String>, SqlError> {
         let mut session = self.session.lock().await;
         let (_, rows) = session
             .query_all("select current_schema()", &[], true)
@@ -315,7 +314,7 @@ impl JdbcConnection for PgConnection {
             .and_then(SqlValue::to_java_string))
     }
 
-    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlException> {
+    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlError> {
         if self.session.lock().await.is_closed() {
             return Err(super::error::connection_closed());
         }
@@ -323,10 +322,7 @@ impl JdbcConnection for PgConnection {
         Ok(PreparedStatement::new(sql).with_handle(StatementHandle::new(native)))
     }
 
-    async fn execute_query(
-        &self,
-        statement: &PreparedStatement,
-    ) -> Result<ResultSet, SqlException> {
+    async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
         let native = native_sql(statement);
         check_parameters(&native, statement)?;
         let timer = self.query_timer(statement);
@@ -355,7 +351,7 @@ impl JdbcConnection for PgConnection {
         ))
     }
 
-    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlException> {
+    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlError> {
         let native = native_sql(statement);
         check_parameters(&native, statement)?;
         let _timer = self.query_timer(statement);
@@ -372,7 +368,7 @@ impl JdbcConnection for PgConnection {
     async fn statement_metadata(
         &self,
         statement: &PreparedStatement,
-    ) -> Result<Option<Arc<ResultSetMetaData>>, SqlException> {
+    ) -> Result<Option<Arc<ResultSetMetaData>>, SqlError> {
         let native = native_sql(statement);
         let mut session = self.session.lock().await;
         let described = session.describe(&native.sql).await?;
@@ -393,18 +389,18 @@ impl JdbcConnection for PgConnection {
     async fn parameter_count(
         &self,
         statement: &PreparedStatement,
-    ) -> Result<Option<usize>, SqlException> {
+    ) -> Result<Option<usize>, SqlError> {
         let native = native_sql(statement);
         let mut session = self.session.lock().await;
         let described = session.describe(&native.sql).await?;
         Ok(Some(described.parameter_types.len()))
     }
 
-    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlException> {
+    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlError> {
         self.session.lock().await.set_auto_commit(auto_commit).await
     }
 
-    async fn get_auto_commit(&self) -> Result<bool, SqlException> {
+    async fn get_auto_commit(&self) -> Result<bool, SqlError> {
         let session = self.session.lock().await;
         if session.is_closed() {
             return Err(super::error::connection_closed());
@@ -412,15 +408,15 @@ impl JdbcConnection for PgConnection {
         Ok(session.auto_commit())
     }
 
-    async fn commit(&self) -> Result<(), SqlException> {
+    async fn commit(&self) -> Result<(), SqlError> {
         self.session.lock().await.commit().await
     }
 
-    async fn rollback(&self) -> Result<(), SqlException> {
+    async fn rollback(&self) -> Result<(), SqlError> {
         self.session.lock().await.rollback().await
     }
 
-    async fn is_valid(&self, timeout_seconds: i32) -> Result<bool, SqlException> {
+    async fn is_valid(&self, timeout_seconds: i32) -> Result<bool, SqlError> {
         if timeout_seconds < 0 {
             return Err(psql("Invalid timeout (<0).", DATA_TYPE_MISMATCH));
         }
@@ -436,7 +432,7 @@ impl JdbcConnection for PgConnection {
         Ok(tokio::time::timeout(limit, check).await.unwrap_or(false))
     }
 
-    async fn close(&self) -> Result<(), SqlException> {
+    async fn close(&self) -> Result<(), SqlError> {
         self.session.lock().await.close().await;
         Ok(())
     }

@@ -18,7 +18,7 @@ use athena_federation_sdk::handlers::HandlerContext;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
-    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlError, SqlValue, Types,
 };
 use athena_postgresql::{
     PostGreSqlConstants, PostGreSqlQueryStringBuilder, PostGreSqlRecordDialect,
@@ -376,7 +376,7 @@ async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static st
         if sql == CHAR_COLUMNS_QUERY {
             Ok(PreparedStatement::new(sql))
         } else {
-            Err(SqlException::new(message))
+            Err(SqlError::new(message))
         }
     });
     let schema = schema_with(&[("col1", DataType::Int32)]);

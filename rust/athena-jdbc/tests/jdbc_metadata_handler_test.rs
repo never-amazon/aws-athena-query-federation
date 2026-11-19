@@ -23,7 +23,7 @@ use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialec
 use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
 use athena_jdbc::resolver::DefaultJdbcCaseResolver;
 use athena_jdbc::sql::{
-    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlError, SqlValue, Types,
 };
 use jdbc_support::{
     FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetColumnsCall,
@@ -190,7 +190,7 @@ fn assert_connector_exception(error: &FederationError) {
 
 fn assert_sql_exception(error: &FederationError) {
     assert!(
-        SqlException::from_federation_error(error).is_some(),
+        SqlError::from_federation_error(error).is_some(),
         "{error:?}"
     );
 }
@@ -617,10 +617,7 @@ async fn do_get_table_no_columns() {
 #[tokio::test]
 async fn do_get_table_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_columns(Err(SqlException::new("")));
+    fixture.connection.meta.set_columns(Err(SqlError::new("")));
     let input_table_name = TableName::new("testSchema", "testTable");
     let error = fixture
         .handler
@@ -633,10 +630,7 @@ async fn do_get_table_sql_exception() {
 #[tokio::test]
 async fn do_list_schema_names_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_schemas(Err(SqlException::new("")));
+    fixture.connection.meta.set_schemas(Err(SqlError::new("")));
     let error = fixture
         .handler
         .list_schema_names(&ListSchemasRequest::new(
@@ -652,10 +646,7 @@ async fn do_list_schema_names_sql_exception() {
 #[tokio::test]
 async fn do_list_tables_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_tables(Err(SqlException::new("")));
+    fixture.connection.meta.set_tables(Err(SqlError::new("")));
     let error = fixture
         .handler
         .list_tables(&list_tables_request(

@@ -6,7 +6,7 @@ use bigdecimal::BigDecimal;
 use chrono::{NaiveDate, NaiveDateTime};
 
 use super::result_set_metadata::ResultSetMetaData;
-use super::sql_exception::SqlException;
+use super::sql_error::SqlError;
 use super::sql_value::SqlValue;
 
 #[derive(Clone)]
@@ -99,9 +99,9 @@ impl PreparedStatement {
         self.fetch_size
     }
 
-    pub fn set_fetch_size(&mut self, rows: i32) -> Result<(), SqlException> {
+    pub fn set_fetch_size(&mut self, rows: i32) -> Result<(), SqlError> {
         if rows < 0 {
-            return Err(SqlException::new(
+            return Err(SqlError::new(
                 "Fetch size must be a value greater to or equal to 0.",
             ));
         }
@@ -113,9 +113,9 @@ impl PreparedStatement {
         self.query_timeout
     }
 
-    pub fn set_query_timeout(&mut self, seconds: i32) -> Result<(), SqlException> {
+    pub fn set_query_timeout(&mut self, seconds: i32) -> Result<(), SqlError> {
         if seconds < 0 {
-            return Err(SqlException::new(
+            return Err(SqlError::new(
                 "Query timeout must be a value greater than or equals to 0.",
             ));
         }
@@ -123,10 +123,10 @@ impl PreparedStatement {
         Ok(())
     }
 
-    pub fn set_object(&mut self, index: usize, value: SqlValue) -> Result<(), SqlException> {
-        let position = index.checked_sub(1).ok_or_else(|| {
-            SqlException::new(format!("The column index is out of range: {index}"))
-        })?;
+    pub fn set_object(&mut self, index: usize, value: SqlValue) -> Result<(), SqlError> {
+        let position = index
+            .checked_sub(1)
+            .ok_or_else(|| SqlError::new(format!("The column index is out of range: {index}")))?;
         if self.parameters.len() <= position {
             self.parameters.resize(position + 1, SqlValue::Null);
         }
@@ -134,63 +134,55 @@ impl PreparedStatement {
         Ok(())
     }
 
-    pub fn set_null(&mut self, index: usize) -> Result<(), SqlException> {
+    pub fn set_null(&mut self, index: usize) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Null)
     }
 
-    pub fn set_boolean(&mut self, index: usize, value: bool) -> Result<(), SqlException> {
+    pub fn set_boolean(&mut self, index: usize, value: bool) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Boolean(value))
     }
 
-    pub fn set_byte(&mut self, index: usize, value: i8) -> Result<(), SqlException> {
+    pub fn set_byte(&mut self, index: usize, value: i8) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::TinyInt(value))
     }
 
-    pub fn set_short(&mut self, index: usize, value: i16) -> Result<(), SqlException> {
+    pub fn set_short(&mut self, index: usize, value: i16) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::SmallInt(value))
     }
 
-    pub fn set_int(&mut self, index: usize, value: i32) -> Result<(), SqlException> {
+    pub fn set_int(&mut self, index: usize, value: i32) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Integer(value))
     }
 
-    pub fn set_long(&mut self, index: usize, value: i64) -> Result<(), SqlException> {
+    pub fn set_long(&mut self, index: usize, value: i64) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::BigInt(value))
     }
 
-    pub fn set_float(&mut self, index: usize, value: f32) -> Result<(), SqlException> {
+    pub fn set_float(&mut self, index: usize, value: f32) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Real(value))
     }
 
-    pub fn set_double(&mut self, index: usize, value: f64) -> Result<(), SqlException> {
+    pub fn set_double(&mut self, index: usize, value: f64) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Double(value))
     }
 
-    pub fn set_big_decimal(&mut self, index: usize, value: BigDecimal) -> Result<(), SqlException> {
+    pub fn set_big_decimal(&mut self, index: usize, value: BigDecimal) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Decimal(value))
     }
 
-    pub fn set_string(
-        &mut self,
-        index: usize,
-        value: impl Into<String>,
-    ) -> Result<(), SqlException> {
+    pub fn set_string(&mut self, index: usize, value: impl Into<String>) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::String(value.into()))
     }
 
-    pub fn set_bytes(&mut self, index: usize, value: Vec<u8>) -> Result<(), SqlException> {
+    pub fn set_bytes(&mut self, index: usize, value: Vec<u8>) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Bytes(value))
     }
 
-    pub fn set_date(&mut self, index: usize, value: NaiveDate) -> Result<(), SqlException> {
+    pub fn set_date(&mut self, index: usize, value: NaiveDate) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Date(value))
     }
 
-    pub fn set_timestamp(
-        &mut self,
-        index: usize,
-        value: NaiveDateTime,
-    ) -> Result<(), SqlException> {
+    pub fn set_timestamp(&mut self, index: usize, value: NaiveDateTime) -> Result<(), SqlError> {
         self.set_object(index, SqlValue::Timestamp(value))
     }
 }

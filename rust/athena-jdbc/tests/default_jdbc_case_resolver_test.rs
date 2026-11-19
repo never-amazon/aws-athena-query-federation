@@ -15,7 +15,7 @@ use athena_jdbc::resolver::{
     default_do_get_schema_name_case_insensitively, default_do_get_table_name_case_insensitively,
     DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt,
 };
-use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
+use athena_jdbc::sql::{JdbcConnection, SqlError, SqlValue};
 use jdbc_support::{FakeConnection, ResultSetData};
 
 const TEST_SCHEMA_NAME: &str = "oRaNgE";
@@ -348,7 +348,7 @@ async fn test_schema_name_case_insensitively() {
 async fn test_do_get_schema_name_case_insensitively_sql_exception_thrown() {
     let helper = TestableHelper::new(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("DB error")));
+    connection.on_query(|_| Err(SqlError::new("DB error")));
     let error = helper
         .do_get_schema_name_case_insensitively(&connection, TEST_INVALID_SCHEMA, &HashMap::new())
         .await
@@ -388,7 +388,7 @@ async fn test_table_name_case_insensitively() {
 async fn test_do_get_table_name_case_insensitively_sql_exception_thrown() {
     let helper = TestableHelper::new(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("DB error")));
+    connection.on_query(|_| Err(SqlError::new("DB error")));
     let error = helper
         .do_get_table_name_case_insensitively(
             &connection,

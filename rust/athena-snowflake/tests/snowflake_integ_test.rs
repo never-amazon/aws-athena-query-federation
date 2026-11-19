@@ -18,7 +18,7 @@ use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcDriver, JdbcProperties,
 };
-use athena_jdbc::sql::{JdbcConnection, RowSource, SqlException, SqlValue, VecRowSource};
+use athena_jdbc::sql::{JdbcConnection, RowSource, SqlError, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
 use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
 use athena_snowflake::sql::{
@@ -285,7 +285,7 @@ impl SnowflakeExecutor for FakeSnowflake {
         sql: &str,
         binds: &[SqlValue],
         _timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException> {
+    ) -> Result<SnowflakeQueryResult, SqlError> {
         self.queries
             .lock()
             .unwrap()
@@ -308,7 +308,7 @@ impl JdbcDriver for FakeDriver {
         &self,
         _url: &str,
         properties: &JdbcProperties,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         Ok(Box::new(SnowflakeConnection::new(
             Arc::new(self.database.clone()),
             properties.get("user").cloned(),
@@ -323,7 +323,7 @@ impl SnowflakeDriver for FakeDriver {
         url: &str,
         properties: &JdbcProperties,
         _private_key: &SnowflakePrivateKey,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         self.connect(url, properties).await
     }
 }

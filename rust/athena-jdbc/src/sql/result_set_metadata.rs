@@ -1,4 +1,4 @@
-use super::sql_exception::SqlException;
+use super::sql_error::SqlError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Nullability {
@@ -174,55 +174,55 @@ impl ResultSetMetaData {
         self.columns.len()
     }
 
-    pub fn column(&self, column: usize) -> Result<&ColumnMetadata, SqlException> {
+    pub fn column(&self, column: usize) -> Result<&ColumnMetadata, SqlError> {
         column
             .checked_sub(1)
             .and_then(|i| self.columns.get(i))
             .ok_or_else(|| {
-                SqlException::new(format!(
+                SqlError::new(format!(
                     "The column index is out of range: {column}, number of columns: {}.",
                     self.columns.len()
                 ))
             })
     }
 
-    pub fn column_name(&self, column: usize) -> Result<&str, SqlException> {
+    pub fn column_name(&self, column: usize) -> Result<&str, SqlError> {
         self.column(column).map(ColumnMetadata::name)
     }
 
-    pub fn column_label(&self, column: usize) -> Result<&str, SqlException> {
+    pub fn column_label(&self, column: usize) -> Result<&str, SqlError> {
         self.column(column).map(ColumnMetadata::label)
     }
 
-    pub fn column_type(&self, column: usize) -> Result<i32, SqlException> {
+    pub fn column_type(&self, column: usize) -> Result<i32, SqlError> {
         self.column(column).map(ColumnMetadata::jdbc_type)
     }
 
-    pub fn column_type_name(&self, column: usize) -> Result<&str, SqlException> {
+    pub fn column_type_name(&self, column: usize) -> Result<&str, SqlError> {
         self.column(column).map(ColumnMetadata::type_name)
     }
 
-    pub fn precision(&self, column: usize) -> Result<i32, SqlException> {
+    pub fn precision(&self, column: usize) -> Result<i32, SqlError> {
         self.column(column).map(ColumnMetadata::precision)
     }
 
-    pub fn scale(&self, column: usize) -> Result<i32, SqlException> {
+    pub fn scale(&self, column: usize) -> Result<i32, SqlError> {
         self.column(column).map(ColumnMetadata::scale)
     }
 
-    pub fn column_display_size(&self, column: usize) -> Result<i32, SqlException> {
+    pub fn column_display_size(&self, column: usize) -> Result<i32, SqlError> {
         self.column(column).map(ColumnMetadata::display_size)
     }
 
-    pub fn table_name(&self, column: usize) -> Result<&str, SqlException> {
+    pub fn table_name(&self, column: usize) -> Result<&str, SqlError> {
         self.column(column).map(ColumnMetadata::table_name)
     }
 
-    pub fn is_nullable(&self, column: usize) -> Result<Nullability, SqlException> {
+    pub fn is_nullable(&self, column: usize) -> Result<Nullability, SqlError> {
         self.column(column).map(ColumnMetadata::nullability)
     }
 
-    pub fn find_column(&self, label: &str) -> Result<usize, SqlException> {
+    pub fn find_column(&self, label: &str) -> Result<usize, SqlError> {
         self.columns
             .iter()
             .position(|c| c.label == label)
@@ -233,7 +233,7 @@ impl ResultSetMetaData {
             })
             .map(|i| i + 1)
             .ok_or_else(|| {
-                SqlException::new(format!(
+                SqlError::new(format!(
                     "The column name {label} was not found in this ResultSet."
                 ))
             })

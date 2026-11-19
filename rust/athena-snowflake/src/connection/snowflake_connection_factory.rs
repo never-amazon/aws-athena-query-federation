@@ -9,7 +9,7 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
     JdbcConnectionFactory, JdbcDriver, JdbcProperties,
 };
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::sql::{url_decode, SnowflakeDriver, SnowflakeJdbcDriver};
@@ -87,7 +87,7 @@ impl SnowflakeConnectionFactory {
             .await
             .map_err(|message| {
                 tracing::error!("{KEY_PAIR_FAILURE}: {message}");
-                FederationError::from(SqlException::new(format!("{KEY_PAIR_FAILURE}: {message}")))
+                FederationError::from(SqlError::new(format!("{KEY_PAIR_FAILURE}: {message}")))
             })
     }
 

@@ -1,7 +1,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use athena_jdbc::sql::SqlException;
+use athena_jdbc::sql::SqlError;
 use bytes::BytesMut;
 use postgres_protocol::message::frontend;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -218,7 +218,7 @@ async fn connect_host(
     }
 }
 
-fn final_error(host: &HostSpec, error: StartupError) -> SqlException {
+fn final_error(host: &HostSpec, error: StartupError) -> SqlError {
     match error {
         StartupError::Sql(e) => e,
         StartupError::Io(e) if e.kind() == io::ErrorKind::ConnectionRefused => psql_with_cause(
@@ -237,7 +237,7 @@ fn final_error(host: &HostSpec, error: StartupError) -> SqlException {
     }
 }
 
-async fn connect_hosts(settings: &ConnectSettings) -> Result<(Session, HostSpec), SqlException> {
+async fn connect_hosts(settings: &ConnectSettings) -> Result<(Session, HostSpec), SqlError> {
     let started = Instant::now();
     let mut last = None;
     for host in &settings.hosts {
@@ -262,9 +262,7 @@ async fn connect_hosts(settings: &ConnectSettings) -> Result<(Session, HostSpec)
     }))
 }
 
-pub(crate) async fn connect(
-    settings: &ConnectSettings,
-) -> Result<(Session, HostSpec), SqlException> {
+pub(crate) async fn connect(settings: &ConnectSettings) -> Result<(Session, HostSpec), SqlError> {
     match settings.login_timeout {
         Some(limit) => tokio::time::timeout(limit, connect_hosts(settings))
             .await

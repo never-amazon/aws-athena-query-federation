@@ -1,8 +1,6 @@
 use std::io;
 
-use athena_jdbc::sql::SqlException;
-
-pub(crate) const PSQL_EXCEPTION: &str = "org.postgresql.util.PSQLException";
+use athena_jdbc::sql::SqlError;
 
 pub(crate) const CONNECTION_UNABLE_TO_CONNECT: &str = "08001";
 pub(crate) const CONNECTION_DOES_NOT_EXIST: &str = "08003";
@@ -10,23 +8,24 @@ pub(crate) const CONNECTION_REJECTED: &str = "08004";
 pub(crate) const CONNECTION_FAILURE: &str = "08006";
 pub(crate) const PROTOCOL_VIOLATION: &str = "08P01";
 pub(crate) const INVALID_PARAMETER_VALUE: &str = "22023";
+pub(crate) const INVALID_TRANSACTION_STATE: &str = "25000";
 pub(crate) const INVALID_AUTHORIZATION: &str = "28000";
 pub(crate) const NO_DATA: &str = "02000";
 pub(crate) const DATA_TYPE_MISMATCH: &str = "42821";
 
-pub(crate) fn psql(message: impl Into<String>, sql_state: &str) -> SqlException {
-    SqlException::with_class_name(PSQL_EXCEPTION, message).with_sql_state(sql_state)
+pub(crate) fn psql(message: impl Into<String>, sql_state: &str) -> SqlError {
+    SqlError::postgres(message, sql_state)
 }
 
 pub(crate) fn psql_with_cause(
     message: impl Into<String>,
     sql_state: &str,
     cause: io::Error,
-) -> SqlException {
+) -> SqlError {
     psql(message, sql_state).with_cause(cause)
 }
 
-pub(crate) fn io_failure(cause: io::Error) -> SqlException {
+pub(crate) fn io_failure(cause: io::Error) -> SqlError {
     psql_with_cause(
         "An I/O error occurred while sending to the backend.",
         CONNECTION_FAILURE,
@@ -34,14 +33,14 @@ pub(crate) fn io_failure(cause: io::Error) -> SqlException {
     )
 }
 
-pub(crate) fn connection_closed() -> SqlException {
+pub(crate) fn connection_closed() -> SqlError {
     psql(
         "This connection has been closed.",
         CONNECTION_DOES_NOT_EXIST,
     )
 }
 
-pub(crate) fn protocol_violation(message: impl Into<String>) -> SqlException {
+pub(crate) fn protocol_violation(message: impl Into<String>) -> SqlError {
     psql(message, PROTOCOL_VIOLATION)
 }
 
@@ -77,8 +76,7 @@ pub(crate) fn server_error_message(fields: &[(u8, String)]) -> String {
     message
 }
 
-pub(crate) fn server_error(fields: &[(u8, String)]) -> SqlException {
+pub(crate) fn server_error(fields: &[(u8, String)]) -> SqlError {
     let state = field(fields, b'C').unwrap_or_default().to_string();
-    SqlException::with_class_name(PSQL_EXCEPTION, server_error_message(fields))
-        .with_sql_state(state)
+    SqlError::postgres(server_error_message(fields), state)
 }

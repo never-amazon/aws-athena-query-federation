@@ -79,7 +79,7 @@ impl<'a> PreparedStatementBuilder<'a> {
             Ok(statement)
         }
         .await;
-        prepared.map_err(|e: crate::sql::SqlException| {
+        prepared.map_err(|e: crate::sql::SqlError| {
             let message = format!("{}: {}", e.error_code(), e.message());
             runtime_with_cause(message, FederationError::from(e))
         })

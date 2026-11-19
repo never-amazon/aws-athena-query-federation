@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    DatabaseMetaData, JdbcConnection, PreparedStatement, RowSource, SqlException, SqlValue, Types,
+    DatabaseMetaData, JdbcConnection, PreparedStatement, RowSource, SqlError, SqlValue, Types,
     VecRowSource,
 };
 use athena_snowflake::sql::{
@@ -12,9 +12,8 @@ use athena_snowflake::sql::{
     SnowflakeConnection, SnowflakeExecutor, SnowflakeQueryResult, EXTRA_TYPES_TIMESTAMP_LTZ,
 };
 
-type Answer = Box<
-    dyn Fn(&str) -> Result<(Vec<SnowflakeColumn>, Vec<Vec<SqlValue>>), SqlException> + Send + Sync,
->;
+type Answer =
+    Box<dyn Fn(&str) -> Result<(Vec<SnowflakeColumn>, Vec<Vec<SqlValue>>), SqlError> + Send + Sync>;
 
 type RecordedQuery = (String, Vec<SqlValue>, Option<Duration>);
 
@@ -48,7 +47,7 @@ impl SnowflakeExecutor for RecordingExecutor {
         sql: &str,
         binds: &[SqlValue],
         timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException> {
+    ) -> Result<SnowflakeQueryResult, SqlError> {
         self.queries
             .lock()
             .unwrap()
@@ -285,7 +284,7 @@ async fn get_primary_keys_and_schemas_build_show_sql() {
 #[tokio::test]
 async fn show_commands_return_empty_for_missing_objects() {
     let executor = RecordingExecutor::new(Box::new(|_| {
-        Err(SqlException::new("Object does not exist").with_sql_state("02000"))
+        Err(SqlError::new("Object does not exist").with_sql_state("02000"))
     }));
     let connection = connection(&executor);
     let mut result = connection

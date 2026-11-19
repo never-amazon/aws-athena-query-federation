@@ -25,7 +25,7 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::MetadataDialect;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlError, SqlValue, Types};
 use athena_postgresql::{
     get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
     PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
@@ -554,13 +554,13 @@ async fn test_list_tables_with_no_materialized_views() {
 async fn test_list_tables_with_database_connection_error() {
     let f = setup();
     let connection = FakeConnection::new();
-    connection.on_prepare(|_| Err(SqlException::new("Database error")));
+    connection.on_prepare(|_| Err(SqlError::new("Database error")));
     let error = f
         .handler
         .list_schema_tables(&connection, TEST_SCHEMA)
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).expect("SQLException");
+    let sql = SqlError::from_federation_error(&error).expect("SQLException");
     assert_eq!("Database error", sql.message());
 }
 
@@ -599,7 +599,7 @@ async fn do_get_table_layout_with_no_partitions() {
 async fn do_get_table_layout_with_sql_exception() {
     let f = setup();
     f.connection
-        .on_query(|_| Err(SqlException::new("partition query failed")));
+        .on_query(|_| Err(SqlError::new("partition query failed")));
     let result = f
         .handler
         .get_table_layout(
@@ -973,7 +973,7 @@ async fn test_get_char_columns_with_empty_result_set() {
 #[tokio::test]
 async fn test_get_char_columns_with_sql_exception() {
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("Database connection error")));
+    connection.on_query(|_| Err(SqlError::new("Database connection error")));
     let result = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
     assert_eq!("Database connection error", result.unwrap_err().message());
 }
@@ -1046,7 +1046,7 @@ async fn test_do_get_splits_with_partition_splitter() {
         if sql == DATA_TYPE_SQL {
             return Ok(ResultSetData::empty(&["data_type"]));
         }
-        Err(SqlException::new(format!("unexpected query {sql}")))
+        Err(SqlError::new(format!("unexpected query {sql}")))
     });
     let layout = handler
         .get_table_layout(
@@ -1253,7 +1253,7 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
     let f = setup();
     f.connection
         .meta
-        .set_primary_keys(Err(SqlException::new("Database connection error")));
+        .set_primary_keys(Err(SqlError::new("Database connection error")));
     let result =
         get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, "errorTable"), None).await;
     assert!(result.is_empty());
@@ -1276,7 +1276,7 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
     split_clause_routes(&f.connection, Some("id"), None, Some((1, 100)));
     f.connection.on_prepare(|sql| {
         if sql == DATA_TYPE_SQL {
-            Err(SqlException::new("UUID check failed"))
+            Err(SqlError::new("UUID check failed"))
         } else {
             Ok(PreparedStatement::new(sql))
         }

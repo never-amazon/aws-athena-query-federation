@@ -42,7 +42,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
-use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlException};
+use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
@@ -53,7 +53,6 @@ use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
 use crate::snowflake_environment_properties::SnowflakeEnvironmentProperties;
 use crate::snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
 use crate::snowflake_query_string_builder::SnowflakeQueryStringBuilder;
-use crate::sql::SNOWFLAKE_SQL_EXCEPTION;
 use crate::utils::SnowflakeArrowTypeConverter;
 
 const MAX_SPLITS_PER_REQUEST: usize = 1_000_000;
@@ -77,9 +76,8 @@ pub(crate) fn java_text(error: &FederationError) -> String {
     error.java_message().unwrap_or_else(|| "null".to_string())
 }
 
-fn snowflake_sql_exception(error: &FederationError) -> Option<&SqlException> {
-    SqlException::from_federation_error(error)
-        .filter(|sql| sql.class_name() == SNOWFLAKE_SQL_EXCEPTION)
+fn snowflake_sql_exception(error: &FederationError) -> Option<&SqlError> {
+    SqlError::from_federation_error(error).filter(|sql| matches!(sql, SqlError::Snowflake { .. }))
 }
 
 fn identity_option<'a>(
@@ -243,7 +241,7 @@ impl SnowflakeMetadataDialect {
         database_name: &str,
         offset: i32,
         limit: i32,
-    ) -> std::result::Result<Vec<TableName>, SqlException> {
+    ) -> std::result::Result<Vec<TableName>, SqlError> {
         let mut statement = connection
             .prepare_statement(SnowflakeConstants::LIST_PAGINATED_TABLES_QUERY)
             .await?;
@@ -286,7 +284,7 @@ impl SnowflakeMetadataDialect {
                     .snowflake_query_string_builder
                     .quote(&integration_name.to_uppercase()),
             );
-        let described: std::result::Result<HashMap<String, String>, SqlException> = async {
+        let described: std::result::Result<HashMap<String, String>, SqlError> = async {
             let mut result_set = connection
                 .execute_query_with_sql(&check_integration_query)
                 .await?;
@@ -310,7 +308,7 @@ impl SnowflakeMetadataDialect {
                 tracing::error!(
                     "Error checking for integration {}: exception:{}, message: {}",
                     integration_name,
-                    e.class_name(),
+                    e.java_class_name(),
                     e.message()
                 );
                 if e.message().contains(INTEGRATION_NOT_FOUND) {
@@ -659,7 +657,7 @@ impl SnowflakeMetadataDialect {
             "SELECT {primary_key}, count(*) as COUNTS FROM {} GROUP BY {primary_key} ORDER BY COUNTS DESC LIMIT 1",
             self.quoted_table_name(table_name)
         );
-        let checked: std::result::Result<bool, SqlException> = async {
+        let checked: std::result::Result<bool, SqlError> = async {
             let mut statement = connection.prepare_statement(&sql).await?;
             statement.set_query_timeout(SnowflakeConstants::UNIQUENESS_CHECK_TIMEOUT_SECONDS)?;
             let mut result_set = connection.execute_query(&statement).await?;

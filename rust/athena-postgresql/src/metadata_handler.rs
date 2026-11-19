@@ -29,7 +29,7 @@ use athena_jdbc::manager::{
     TABLES_AND_VIEWS,
 };
 use athena_jdbc::splits::SplitterFactory;
-use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
+use athena_jdbc::sql::{JdbcConnection, SqlError, SqlValue};
 use indexmap::IndexMap;
 
 use crate::constants::PostGreSqlConstants;
@@ -168,7 +168,7 @@ pub async fn get_char_columns(
     connection: &dyn JdbcConnection,
     schema: &str,
     table: &str,
-) -> std::result::Result<Vec<String>, SqlException> {
+) -> std::result::Result<Vec<String>, SqlError> {
     let mut statement = connection.prepare_statement(CHAR_COLUMNS_QUERY).await?;
     statement.set_string(1, schema)?;
     statement.set_string(2, table)?;
@@ -200,7 +200,7 @@ pub fn wrap_name_with_escaped_character(input: &str) -> String {
 async fn get_materialized_views(
     connection: &dyn JdbcConnection,
     database_name: &str,
-) -> std::result::Result<Vec<TableName>, SqlException> {
+) -> std::result::Result<Vec<TableName>, SqlError> {
     let mut statement = connection
         .prepare_statement(MATERIALIZED_VIEWS_QUERY)
         .await?;
@@ -218,7 +218,7 @@ async fn get_paginated_results(
     database_name: Option<&str>,
     token: i32,
     limit: i32,
-) -> std::result::Result<Vec<TableName>, SqlException> {
+) -> std::result::Result<Vec<TableName>, SqlError> {
     let mut statement = connection
         .prepare_statement(LIST_PAGINATED_TABLES_QUERY)
         .await?;
@@ -240,7 +240,7 @@ async fn is_uuid_column(
     table_name: &TableName,
     column_name: &str,
 ) -> bool {
-    let result: std::result::Result<bool, SqlException> = async {
+    let result: std::result::Result<bool, SqlError> = async {
         let mut statement = connection.prepare_statement(GET_DATA_TYPE_QUERY).await?;
         statement.set_string(1, table_name.schema_name())?;
         statement.set_string(2, table_name.table_name())?;

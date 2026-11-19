@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use athena_jdbc::sql::SqlException;
+use athena_jdbc::sql::SqlError;
 
 use super::error::{psql, CONNECTION_UNABLE_TO_CONNECT, INVALID_PARAMETER_VALUE};
 
@@ -39,7 +39,7 @@ impl SslMode {
         ("verify-full", SslMode::VerifyFull),
     ];
 
-    fn of(properties: &HashMap<String, String>) -> Result<SslMode, SqlException> {
+    fn of(properties: &HashMap<String, String>) -> Result<SslMode, SqlError> {
         let Some(value) = properties.get("sslmode") else {
             let ssl = properties.get("ssl").map(String::as_str);
             return Ok(match ssl {
@@ -126,7 +126,7 @@ impl AuthMethod {
         AuthMethod::ScramSha256,
     ];
 
-    fn from_name(name: &str) -> Result<AuthMethod, SqlException> {
+    fn from_name(name: &str) -> Result<AuthMethod, SqlError> {
         match name {
             "none" => Ok(AuthMethod::None),
             "password" => Ok(AuthMethod::Password),
@@ -142,7 +142,7 @@ impl AuthMethod {
     }
 }
 
-pub(crate) fn parse_require_auth(text: &str) -> Result<Option<Vec<AuthMethod>>, SqlException> {
+pub(crate) fn parse_require_auth(text: &str) -> Result<Option<Vec<AuthMethod>>, SqlError> {
     let methods: Vec<&str> = text.split(',').map(str::trim).collect();
     let disallow = methods.first().is_some_and(|m| m.starts_with('!'));
     let mut allowed: Vec<AuthMethod> = if disallow {
@@ -209,7 +209,7 @@ pub(crate) struct ConnectSettings {
     pub(crate) time_zone: String,
 }
 
-fn bad_url() -> SqlException {
+fn bad_url() -> SqlError {
     psql(
         "No suitable driver found for the given URL",
         CONNECTION_UNABLE_TO_CONNECT,
@@ -225,7 +225,7 @@ fn hex_value(b: u8) -> Option<u8> {
     }
 }
 
-pub(crate) fn url_decode(text: &str) -> Result<String, SqlException> {
+pub(crate) fn url_decode(text: &str) -> Result<String, SqlError> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -258,7 +258,7 @@ pub(crate) fn url_decode(text: &str) -> Result<String, SqlException> {
     })
 }
 
-fn parse_host(spec: &str) -> Result<HostSpec, SqlException> {
+fn parse_host(spec: &str) -> Result<HostSpec, SqlError> {
     let (host, port) = if let Some(rest) = spec.strip_prefix('[') {
         let end = rest.find(']').ok_or_else(bad_url)?;
         let host = &rest[..end];
@@ -287,7 +287,7 @@ fn parse_host(spec: &str) -> Result<HostSpec, SqlException> {
 pub(crate) fn parse_url(
     url: &str,
     info: &HashMap<String, String>,
-) -> Result<ConnectSettings, SqlException> {
+) -> Result<ConnectSettings, SqlError> {
     let rest = url.strip_prefix(URL_PREFIX).ok_or_else(bad_url)?;
     let (address, query) = match rest.find('?') {
         Some(at) => (&rest[..at], &rest[at + 1..]),
@@ -360,7 +360,7 @@ pub(crate) fn default_time_zone() -> String {
         .unwrap_or_else(|| "UTC".to_string())
 }
 
-fn channel_binding(properties: &HashMap<String, String>) -> Result<ChannelBinding, SqlException> {
+fn channel_binding(properties: &HashMap<String, String>) -> Result<ChannelBinding, SqlError> {
     match properties
         .get("channelBinding")
         .map_or("prefer", String::as_str)
@@ -375,7 +375,7 @@ fn channel_binding(properties: &HashMap<String, String>) -> Result<ChannelBindin
     }
 }
 
-fn ssl_negotiation(properties: &HashMap<String, String>) -> Result<SslNegotiation, SqlException> {
+fn ssl_negotiation(properties: &HashMap<String, String>) -> Result<SslNegotiation, SqlError> {
     match properties
         .get("sslNegotiation")
         .map_or("postgres", String::as_str)
@@ -393,7 +393,7 @@ fn settings_from(
     hosts: Vec<HostSpec>,
     database: String,
     properties: &HashMap<String, String>,
-) -> Result<ConnectSettings, SqlException> {
+) -> Result<ConnectSettings, SqlError> {
     let ssl_response_millis = u64::try_from(number(
         properties,
         "sslResponseTimeout",
@@ -527,7 +527,7 @@ mod tests {
 mod ssl_tests {
     use super::*;
 
-    fn mode(url: &str) -> Result<SslMode, SqlException> {
+    fn mode(url: &str) -> Result<SslMode, SqlError> {
         parse_url(url, &HashMap::new()).map(|s| s.ssl_mode)
     }
 

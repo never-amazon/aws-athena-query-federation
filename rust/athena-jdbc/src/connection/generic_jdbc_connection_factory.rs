@@ -12,7 +12,7 @@ use super::database_connection_config::DatabaseConnectionConfig;
 use super::database_connection_info::DatabaseConnectionInfo;
 use super::jdbc_connection_factory::JdbcConnectionFactory;
 use crate::sql::{
-    DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, ResultSetMetaData, SqlException,
+    DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, ResultSetMetaData, SqlError,
 };
 
 pub type JdbcProperties = HashMap<String, String>;
@@ -32,7 +32,7 @@ pub trait JdbcDriver: Send + Sync {
         &self,
         url: &str,
         properties: &JdbcProperties,
-    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlException>;
+    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlError>;
 }
 
 #[derive(Default)]
@@ -220,7 +220,7 @@ fn build_pool_identity(derived_jdbc_string: &str, properties: &JdbcProperties) -
     identity
 }
 
-fn handle_sql_exception_when_get_connection(e: SqlException) -> FederationError {
+fn handle_sql_exception_when_get_connection(e: SqlError) -> FederationError {
     let message = e.message();
     if !message.trim().is_empty() && message.contains("Name or service not known") {
         return FederationError::invalid_input(message);
@@ -253,7 +253,7 @@ async fn reset_for_reuse(connection: Arc<dyn JdbcConnection>) -> Option<Arc<dyn 
             connection.rollback().await?;
             connection.set_auto_commit(true).await?;
         }
-        Ok::<bool, SqlException>(true)
+        Ok::<bool, SqlError>(true)
     }
     .await;
     match reset {
@@ -328,77 +328,71 @@ impl JdbcConnection for PooledConnection {
         self.inner().metadata()
     }
 
-    async fn get_catalog(&self) -> std::result::Result<Option<String>, SqlException> {
+    async fn get_catalog(&self) -> std::result::Result<Option<String>, SqlError> {
         self.inner().get_catalog().await
     }
 
-    async fn get_schema(&self) -> std::result::Result<Option<String>, SqlException> {
+    async fn get_schema(&self) -> std::result::Result<Option<String>, SqlError> {
         self.inner().get_schema().await
     }
 
     async fn prepare_statement(
         &self,
         sql: &str,
-    ) -> std::result::Result<PreparedStatement, SqlException> {
+    ) -> std::result::Result<PreparedStatement, SqlError> {
         self.inner().prepare_statement(sql).await
     }
 
     async fn execute_query(
         &self,
         statement: &PreparedStatement,
-    ) -> std::result::Result<ResultSet, SqlException> {
+    ) -> std::result::Result<ResultSet, SqlError> {
         self.inner().execute_query(statement).await
     }
 
-    async fn execute(
-        &self,
-        statement: &PreparedStatement,
-    ) -> std::result::Result<bool, SqlException> {
+    async fn execute(&self, statement: &PreparedStatement) -> std::result::Result<bool, SqlError> {
         self.inner().execute(statement).await
     }
 
-    async fn execute_query_with_sql(
-        &self,
-        sql: &str,
-    ) -> std::result::Result<ResultSet, SqlException> {
+    async fn execute_query_with_sql(&self, sql: &str) -> std::result::Result<ResultSet, SqlError> {
         self.inner().execute_query_with_sql(sql).await
     }
 
     async fn statement_metadata(
         &self,
         statement: &PreparedStatement,
-    ) -> std::result::Result<Option<Arc<ResultSetMetaData>>, SqlException> {
+    ) -> std::result::Result<Option<Arc<ResultSetMetaData>>, SqlError> {
         self.inner().statement_metadata(statement).await
     }
 
     async fn parameter_count(
         &self,
         statement: &PreparedStatement,
-    ) -> std::result::Result<Option<usize>, SqlException> {
+    ) -> std::result::Result<Option<usize>, SqlError> {
         self.inner().parameter_count(statement).await
     }
 
-    async fn set_auto_commit(&self, auto_commit: bool) -> std::result::Result<(), SqlException> {
+    async fn set_auto_commit(&self, auto_commit: bool) -> std::result::Result<(), SqlError> {
         self.inner().set_auto_commit(auto_commit).await
     }
 
-    async fn get_auto_commit(&self) -> std::result::Result<bool, SqlException> {
+    async fn get_auto_commit(&self) -> std::result::Result<bool, SqlError> {
         self.inner().get_auto_commit().await
     }
 
-    async fn commit(&self) -> std::result::Result<(), SqlException> {
+    async fn commit(&self) -> std::result::Result<(), SqlError> {
         self.inner().commit().await
     }
 
-    async fn rollback(&self) -> std::result::Result<(), SqlException> {
+    async fn rollback(&self) -> std::result::Result<(), SqlError> {
         self.inner().rollback().await
     }
 
-    async fn is_valid(&self, timeout_seconds: i32) -> std::result::Result<bool, SqlException> {
+    async fn is_valid(&self, timeout_seconds: i32) -> std::result::Result<bool, SqlError> {
         self.inner().is_valid(timeout_seconds).await
     }
 
-    async fn close(&self) -> std::result::Result<(), SqlException> {
+    async fn close(&self) -> std::result::Result<(), SqlError> {
         Ok(())
     }
 }

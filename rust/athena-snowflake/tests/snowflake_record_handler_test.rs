@@ -27,7 +27,7 @@ use athena_federation_sdk::{FederationError, QueryStatusChecker};
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
 use athena_jdbc::qpt::QUERY;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, Types};
+use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlError, Types};
 use athena_snowflake::{
     construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, ExportReader,
     S3ParquetExportReader, SnowflakeConstants, SnowflakeCredentialsProvider,
@@ -672,7 +672,7 @@ fn test_construct_s3_uri() {
 async fn test_build_split_sql_exception() {
     let f = fixture(false, None);
     f.connection
-        .on_prepare(|_sql: &str| Err(SqlException::new("Test exception")));
+        .on_prepare(|_sql: &str| Err(SqlError::new("Test exception")));
     let error = f
         .handler
         .build_split_sql(

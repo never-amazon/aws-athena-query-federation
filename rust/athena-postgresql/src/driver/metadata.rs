@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, ResultSet, ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, ResultSet, ResultSetMetaData, SqlError, SqlValue, Types,
 };
 
 use super::connection::{driver_column, result_metadata, varchar_column, SharedSession};
@@ -245,7 +245,7 @@ impl PgDatabaseMetaData {
         PgDatabaseMetaData { session }
     }
 
-    async fn query(&self, sql: &str, parameters: Vec<SqlValue>) -> Result<ResultSet, SqlException> {
+    async fn query(&self, sql: &str, parameters: Vec<SqlValue>) -> Result<ResultSet, SqlError> {
         let mut session = self.session.lock().await;
         let (fields, rows) = session.query_all(sql, &parameters, false).await?;
         let metadata = result_metadata(session.types(), &fields);
@@ -258,7 +258,7 @@ impl PgDatabaseMetaData {
 
 #[async_trait]
 impl DatabaseMetaData for PgDatabaseMetaData {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlException> {
+    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
         self.get_schemas_with_catalog(None, None).await
     }
 
@@ -266,7 +266,7 @@ impl DatabaseMetaData for PgDatabaseMetaData {
         &self,
         _catalog: Option<&str>,
         schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         let mut sql = SCHEMAS_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -284,7 +284,7 @@ impl DatabaseMetaData for PgDatabaseMetaData {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         let mut sql = TABLES_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -318,7 +318,7 @@ impl DatabaseMetaData for PgDatabaseMetaData {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         let mut sql = COLUMNS_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -359,7 +359,7 @@ impl DatabaseMetaData for PgDatabaseMetaData {
         _catalog: Option<&str>,
         schema: Option<&str>,
         table: &str,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         let mut sql = PRIMARY_KEYS_QUERY_START.to_string();
         let mut parameters = Vec::new();
         if let Some(schema) = present(schema) {
@@ -375,19 +375,19 @@ impl DatabaseMetaData for PgDatabaseMetaData {
             .await
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlException> {
+    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
         Ok(Some("\\".to_string()))
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlException> {
+    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
         Ok("\"".to_string())
     }
 
-    fn get_database_product_name(&self) -> Result<String, SqlException> {
+    fn get_database_product_name(&self) -> Result<String, SqlError> {
         Ok("PostgreSQL".to_string())
     }
 
-    async fn get_user_name(&self) -> Result<Option<String>, SqlException> {
+    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
         Ok(self.session.lock().await.user().map(ToString::to_string))
     }
 }

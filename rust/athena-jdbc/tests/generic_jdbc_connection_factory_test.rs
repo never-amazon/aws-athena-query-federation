@@ -11,7 +11,7 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
     JdbcConnectionFactory, JdbcDriver, JdbcProperties,
 };
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 use jdbc_support::FakeConnection;
 
 const H2_DRIVER_CLASS: &str = "org.h2.Driver";
@@ -24,7 +24,7 @@ const TEST_SECRET_NAME: &str = "testSecret";
 struct DriverState {
     calls: Vec<(String, JdbcProperties)>,
     owner: Option<String>,
-    error: Option<SqlException>,
+    error: Option<SqlError>,
     opened: usize,
 }
 
@@ -46,7 +46,7 @@ impl FakeDriver {
         }
     }
 
-    fn failing(error: SqlException) -> FakeDriver {
+    fn failing(error: SqlError) -> FakeDriver {
         let driver = FakeDriver::new();
         driver.state.lock().unwrap().error = Some(error);
         driver
@@ -67,7 +67,7 @@ impl JdbcDriver for FakeDriver {
         &self,
         url: &str,
         properties: &JdbcProperties,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         let mut state = self.state.lock().unwrap();
         state.calls.push((url.to_string(), properties.clone()));
         if let Some(error) = state.error.clone() {
@@ -77,10 +77,7 @@ impl JdbcDriver for FakeDriver {
         match (&state.owner, &user) {
             (None, Some(user)) => state.owner = Some(user.clone()),
             (Some(owner), Some(user)) if owner != user => {
-                return Err(SqlException::with_class_name(
-                    "org.h2.jdbc.JdbcSQLInvalidAuthorizationSpecException",
-                    "Wrong user name or password [28000-224]",
-                ));
+                return Err(SqlError::new("Wrong user name or password [28000-224]"));
             }
             _ => {}
         }
@@ -381,7 +378,7 @@ async fn get_connection_direct_mode_null_credentials_passes_url_through() {
 
 #[tokio::test]
 async fn get_connection_direct_mode_name_or_service_not_known_wraps_as_invalid_input_exception() {
-    let driver = FakeDriver::failing(SqlException::new(
+    let driver = FakeDriver::failing(SqlError::new(
         "Communications link failure: Name or service not known",
     ));
     let factory = direct_factory(&unique_h2_url(), &driver);
@@ -394,7 +391,7 @@ async fn get_connection_direct_mode_name_or_service_not_known_wraps_as_invalid_i
 
 #[tokio::test]
 async fn get_connection_direct_mode_incorrect_credentials_wraps_as_invalid_credentials_exception() {
-    let driver = FakeDriver::failing(SqlException::new(
+    let driver = FakeDriver::failing(SqlError::new(
         "Incorrect username or password was specified.",
     ));
     let factory = direct_factory(&unique_h2_url(), &driver);
@@ -407,9 +404,9 @@ async fn get_connection_direct_mode_incorrect_credentials_wraps_as_invalid_crede
 
 #[tokio::test]
 async fn get_connection_direct_mode_generic_sql_exception_propagates() {
-    let expected = SqlException::new("Some other database error");
+    let expected = SqlError::new("Some other database error");
     let driver = FakeDriver::failing(expected.clone());
     let factory = direct_factory(&unique_h2_url(), &driver);
     let ex = factory.get_connection(None).await.err().unwrap();
-    assert_eq!(Some(&expected), SqlException::from_federation_error(&ex));
+    assert_eq!(Some(&expected), SqlError::from_federation_error(&ex));
 }
