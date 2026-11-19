@@ -3,7 +3,7 @@ use crate::metadata::ListSchemasRequest;
 use crate::serde::json::{JsonGenerator, JsonParser};
 
 pub fn do_typed_serialize(request: &ListSchemasRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    super::metadata_request_serde::serialize_header(request, jgen)
+    super::metadata_request_serde::serialize_header(request.header(), jgen)
 }
 
 pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListSchemasRequest> {

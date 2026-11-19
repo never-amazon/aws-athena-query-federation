@@ -12,7 +12,7 @@ const TABLE_NAME_FIELD: &str = "tableName";
 const QUERY_PASSTHROUGH_ARGUMENTS: &str = "queryPassthroughArguments";
 
 pub fn do_typed_serialize(request: &GetTableRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    crate::serde::v2::metadata_request_serde::serialize_header(request, jgen)?;
+    crate::serde::v2::metadata_request_serde::serialize_header(request.header(), jgen)?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;
     crate::serde::v2::table_name_serde::serialize(request.table_name(), jgen)?;
     write_string_map(

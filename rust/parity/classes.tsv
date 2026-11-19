@@ -127,7 +127,7 @@ com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest	athena-federat
 com.amazonaws.athena.connector.lambda.metadata.ListSchemasResponse	athena-federation-sdk/src/metadata/list_schemas_response.rs::ListSchemasResponse	ported	
 com.amazonaws.athena.connector.lambda.metadata.ListTablesRequest	athena-federation-sdk/src/metadata/list_tables_request.rs::ListTablesRequest	ported	
 com.amazonaws.athena.connector.lambda.metadata.ListTablesResponse	athena-federation-sdk/src/metadata/list_tables_response.rs::ListTablesResponse	ported	
-com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/metadata_request.rs::MetadataRequest	ported	
+com.amazonaws.athena.connector.lambda.metadata.MetadataRequest	athena-federation-sdk/src/metadata/metadata_request.rs::MetadataHeader	ported	the abstract base class is a borrowed header view returned by each request header() method
 com.amazonaws.athena.connector.lambda.metadata.MetadataRequestType	athena-federation-sdk/src/metadata/metadata_request_type.rs::MetadataRequestType	ported	
 com.amazonaws.athena.connector.lambda.metadata.MetadataResponse	athena-federation-sdk/src/metadata/metadata_response.rs::impl_metadata_response	merged	the abstract base class becomes a macro that adds the shared accessors to each response
 com.amazonaws.athena.connector.lambda.metadata.glue.DefaultGlueType	athena-federation-sdk/src/metadata/glue/default_glue_type.rs::DefaultGlueType	ported	

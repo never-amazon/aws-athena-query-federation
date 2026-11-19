@@ -28,7 +28,7 @@ pub use list_schemas_request::ListSchemasRequest;
 pub use list_schemas_response::ListSchemasResponse;
 pub use list_tables_request::{ListTablesRequest, UNLIMITED_PAGE_SIZE_VALUE};
 pub use list_tables_response::ListTablesResponse;
-pub use metadata_request::MetadataRequest;
+pub use metadata_request::MetadataHeader;
 pub use metadata_request_type::MetadataRequestType;
 
 pub(crate) fn collections_equals<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {

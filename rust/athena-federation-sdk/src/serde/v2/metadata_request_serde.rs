@@ -1,5 +1,5 @@
 use crate::exceptions::Result;
-use crate::metadata::MetadataRequest;
+use crate::metadata::MetadataHeader;
 use crate::request::FederatedIdentity;
 use crate::serde::base::{assert_field_name, get_next_string_field};
 use crate::serde::federated_identity_serde;
@@ -15,11 +15,11 @@ pub struct MetadataRequestHeader {
     pub catalog_name: Option<String>,
 }
 
-pub fn serialize_header(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
+pub fn serialize_header(request: MetadataHeader<'_>, jgen: &mut JsonGenerator) -> Result<()> {
     jgen.write_field_name(IDENTITY_FIELD)?;
-    federated_identity_serde::serialize(request.identity(), jgen)?;
-    jgen.write_string_field(QUERY_ID_FIELD, request.query_id())?;
-    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.catalog_name()))
+    federated_identity_serde::serialize(request.identity, jgen)?;
+    jgen.write_string_field(QUERY_ID_FIELD, request.query_id)?;
+    jgen.write_string_field(CATALOG_NAME_FIELD, Some(request.catalog_name))
 }
 
 pub fn deserialize_header(jparser: &mut JsonParser<'_>) -> Result<MetadataRequestHeader> {
