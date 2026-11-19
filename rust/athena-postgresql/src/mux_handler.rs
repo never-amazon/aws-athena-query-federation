@@ -5,12 +5,13 @@ use athena_federation_sdk::handlers::{
 };
 use athena_federation_sdk::Result;
 use athena_jdbc::handler::{
-    multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, RecordMultiplexer,
+    multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, MultiplexingJdbcRecordHandler,
+    RecordMultiplexer,
 };
 
 use crate::constants;
-use crate::metadata_handler::PostGreSqlMetadataDialect;
-use crate::record_handler::PostGreSqlRecordDialect;
+use crate::metadata_handler::{PostGreSqlMetadataDialect, PostGreSqlMetadataHandler};
+use crate::record_handler::{PostGreSqlRecordDialect, PostGreSqlRecordHandler};
 
 pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler> {
     let clients = AwsClients::from_environment().await?;
@@ -72,3 +73,7 @@ pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler
     )
     .await
 }
+
+pub type PostGreSqlMuxMetadataHandler = MultiplexingJdbcMetadataHandler<PostGreSqlMetadataHandler>;
+
+pub type PostGreSqlMuxRecordHandler = MultiplexingJdbcRecordHandler<PostGreSqlRecordHandler>;
