@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlError, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
+    ResultSetMetaData, SqlError, SqlValue,
 };
 use regex::Regex;
 use tokio::sync::OnceCell;
@@ -37,15 +37,15 @@ pub(crate) fn positive_seconds(seconds: i32) -> Option<Duration> {
 }
 
 fn int_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::INTEGER).with_type_name("INTEGER")
+    ColumnMetadata::new(name, JdbcType::Integer).with_type_name("INTEGER")
 }
 
 fn text_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::VARCHAR).with_type_name("TEXT")
+    ColumnMetadata::new(name, JdbcType::Varchar).with_type_name("TEXT")
 }
 
 fn short_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::SMALLINT).with_type_name("SHORT")
+    ColumnMetadata::new(name, JdbcType::SmallInt).with_type_name("SHORT")
 }
 
 fn schemas_metadata() -> ResultSetMetaData {
@@ -232,7 +232,7 @@ fn column_row(
         SqlValue::String(schema_name),
         SqlValue::String(table_name),
         SqlValue::String(column_name),
-        SqlValue::Integer(column_type.jdbc_type),
+        SqlValue::Integer(column_type.jdbc_type.code()),
         SqlValue::String(column_type.type_name.clone()),
         opt_int(column_type.column_size),
         SqlValue::Null,
@@ -245,7 +245,7 @@ fn column_row(
         }),
         opt_text(comment),
         opt_text(default_value),
-        SqlValue::Integer(column_type.jdbc_type),
+        SqlValue::Integer(column_type.jdbc_type.code()),
         SqlValue::Null,
         opt_int(column_type.char_octet_length),
         SqlValue::Integer(ordinal_position),

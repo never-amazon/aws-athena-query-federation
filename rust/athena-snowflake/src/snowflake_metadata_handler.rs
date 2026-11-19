@@ -42,7 +42,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
-use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlError};
+use athena_jdbc::sql::{JdbcConnection, JdbcType, ResultSetMetaData, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
@@ -1126,7 +1126,7 @@ impl SnowflakeMetadataDialect {
         while result_set.next().await? {
             found = true;
             let column_type = SnowflakeArrowTypeConverter::to_arrow_type(
-                result_set.get_int("DATA_TYPE")?.unwrap_or(0),
+                JdbcType::from_code(result_set.get_int("DATA_TYPE")?.unwrap_or(0)),
                 result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
                 result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
                 handler.config_options(),

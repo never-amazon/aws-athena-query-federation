@@ -1,5 +1,5 @@
 use athena_jdbc::splits::{IntegerSplitter, SplitInfo, SplitRange, Splitter};
-use athena_jdbc::sql::Types;
+use athena_jdbc::sql::JdbcType;
 
 type SplitCase = (
     SplitRange<i32>,
@@ -82,13 +82,13 @@ fn split_test() {
         cases.into_iter().enumerate()
     {
         let split_info =
-            SplitInfo::new(input_range, "testColumn", Types::INTEGER, num_splits).unwrap();
+            SplitInfo::new(input_range, "testColumn", JdbcType::Integer, num_splits).unwrap();
         let split_ranges: Vec<SplitRange<i32>> =
             IntegerSplitter::new(split_info).unwrap().collect();
         assert_eq!(expected_ranges, split_ranges, "case {index}");
 
         let split_clause_info =
-            SplitInfo::new(input_range, "testColumn", Types::INTEGER, num_splits).unwrap();
+            SplitInfo::new(input_range, "testColumn", JdbcType::Integer, num_splits).unwrap();
         let mut clause_splitter = IntegerSplitter::new(split_clause_info).unwrap();
         let mut split_clauses = Vec::new();
         while clause_splitter.has_next() {

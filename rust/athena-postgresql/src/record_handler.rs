@@ -12,7 +12,7 @@ use athena_jdbc::manager::{
     get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
     JdbcSplitQueryBuilder, JdbcUtil, RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
+use athena_jdbc::sql::{JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData};
 
 use crate::constants::PostGreSqlConstants;
 use crate::federation_expression_parser::PostgreSqlFederationExpressionParser;
@@ -91,9 +91,9 @@ fn export_arrow_type(
     let column_type = metadata.column_type(column)?;
     let precision = metadata.precision(column)?;
     let scale = metadata.scale(column)?;
-    if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
+    if column_type == JdbcType::Numeric && precision == 0 && scale <= 0 {
         return Ok(
-            JdbcArrowTypeConverter::to_arrow_type(Types::NUMERIC, 0, 0, config_options)?
+            JdbcArrowTypeConverter::to_arrow_type(JdbcType::Numeric, 0, 0, config_options)?
                 .unwrap_or(DataType::Utf8),
         );
     }

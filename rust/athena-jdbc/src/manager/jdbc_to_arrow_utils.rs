@@ -3,43 +3,48 @@ use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::{FederationError, Result};
 
-use crate::sql::{Nullability, ResultSetMetaData, Types};
+use crate::sql::{JdbcType, Nullability, ResultSetMetaData};
 
 const MAX_DECIMAL128_PRECISION: i32 = 38;
 
 pub fn get_arrow_type_from_jdbc_type(
-    jdbc_type: i32,
+    jdbc_type: JdbcType,
     precision: i32,
     scale: i32,
     time_zone: Option<&str>,
 ) -> Result<ArrowType> {
     let arrow_type = match jdbc_type {
-        Types::BOOLEAN | Types::BIT => DataType::Boolean,
-        Types::TINYINT => DataType::Int8,
-        Types::SMALLINT => DataType::Int16,
-        Types::INTEGER => DataType::Int32,
-        Types::BIGINT => DataType::Int64,
-        Types::NUMERIC | Types::DECIMAL => decimal_type(precision, scale),
-        Types::REAL | Types::FLOAT => DataType::Float32,
-        Types::DOUBLE => DataType::Float64,
-        Types::CHAR
-        | Types::NCHAR
-        | Types::VARCHAR
-        | Types::NVARCHAR
-        | Types::LONGVARCHAR
-        | Types::LONGNVARCHAR
-        | Types::CLOB
-        | Types::NCLOB => DataType::Utf8,
-        Types::DATE => DataType::Date32,
-        Types::TIME => DataType::Time32(TimeUnit::Millisecond),
-        Types::TIMESTAMP => DataType::Timestamp(TimeUnit::Millisecond, time_zone.map(Into::into)),
-        Types::BINARY | Types::VARBINARY | Types::LONGVARBINARY | Types::BLOB => DataType::Binary,
-        Types::ARRAY => DataType::List(Field::new("$data$", DataType::Null, true).into()),
-        Types::NULL => DataType::Null,
-        Types::STRUCT => DataType::Struct(Fields::empty()),
+        JdbcType::Boolean | JdbcType::Bit => DataType::Boolean,
+        JdbcType::TinyInt => DataType::Int8,
+        JdbcType::SmallInt => DataType::Int16,
+        JdbcType::Integer => DataType::Int32,
+        JdbcType::BigInt => DataType::Int64,
+        JdbcType::Numeric | JdbcType::Decimal => decimal_type(precision, scale),
+        JdbcType::Real | JdbcType::Float => DataType::Float32,
+        JdbcType::Double => DataType::Float64,
+        JdbcType::Char
+        | JdbcType::NChar
+        | JdbcType::Varchar
+        | JdbcType::NVarchar
+        | JdbcType::LongVarchar
+        | JdbcType::LongNVarchar
+        | JdbcType::Clob
+        | JdbcType::NClob => DataType::Utf8,
+        JdbcType::Date => DataType::Date32,
+        JdbcType::Time => DataType::Time32(TimeUnit::Millisecond),
+        JdbcType::Timestamp => {
+            DataType::Timestamp(TimeUnit::Millisecond, time_zone.map(Into::into))
+        }
+        JdbcType::Binary | JdbcType::VarBinary | JdbcType::LongVarBinary | JdbcType::Blob => {
+            DataType::Binary
+        }
+        JdbcType::Array => DataType::List(Field::new("$data$", DataType::Null, true).into()),
+        JdbcType::Null => DataType::Null,
+        JdbcType::Struct => DataType::Struct(Fields::empty()),
         other => {
             return Err(FederationError::UnsupportedOperation(format!(
-                "Unmapped JDBC type: {other}"
+                "Unmapped JDBC type: {}",
+                other.code()
             )))
         }
     };

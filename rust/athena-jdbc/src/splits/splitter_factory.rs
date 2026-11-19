@@ -4,7 +4,7 @@ use super::integer_splitter::IntegerSplitter;
 use super::split_info::SplitInfo;
 use super::split_range::SplitRange;
 use super::splitter::Splitter;
-use crate::sql::{ResultSet, Types};
+use crate::sql::{JdbcType, ResultSet};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SplitterFactory;
@@ -22,7 +22,7 @@ impl SplitterFactory {
     ) -> Result<Option<Box<dyn Splitter<i32>>>> {
         let column_type = result_set.metadata().column_type(1)?;
         match column_type {
-            Types::INTEGER => {
+            JdbcType::Integer => {
                 let low = result_set.get_int(1usize)?.unwrap_or(0);
                 let high = result_set.get_int(2usize)?.unwrap_or(0);
                 let split_info = SplitInfo::new(

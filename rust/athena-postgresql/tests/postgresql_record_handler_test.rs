@@ -18,7 +18,7 @@ use athena_federation_sdk::handlers::HandlerContext;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
-    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlError, SqlValue, Types,
+    ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError, SqlValue,
 };
 use athena_postgresql::{
     PostGreSqlConstants, PostGreSqlQueryStringBuilder, PostGreSqlRecordDialect,
@@ -1083,13 +1083,13 @@ async fn test_prepare_export_statement_sets_fetch_size() {
 fn test_derive_export_schema_maps_postgres_types() {
     let f = setup();
     let columns = [
-        ("int4_col", Types::INTEGER, 10, 0),
-        ("numeric_col", Types::NUMERIC, 0, 0),
-        ("numeric_10_2_col", Types::NUMERIC, 10, 2),
-        ("timestamptz_col", Types::TIMESTAMP, 35, 6),
-        ("time_col", Types::TIME, 15, 6),
-        ("uuid_col", Types::OTHER, i32::MAX, 0),
-        ("array_col", Types::ARRAY, 10, 0),
+        ("int4_col", JdbcType::Integer, 10, 0),
+        ("numeric_col", JdbcType::Numeric, 0, 0),
+        ("numeric_10_2_col", JdbcType::Numeric, 10, 2),
+        ("timestamptz_col", JdbcType::Timestamp, 35, 6),
+        ("time_col", JdbcType::Time, 15, 6),
+        ("uuid_col", JdbcType::Other, i32::MAX, 0),
+        ("array_col", JdbcType::Array, 10, 0),
     ];
     let metadata = ResultSetMetaData::new(
         columns

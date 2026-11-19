@@ -12,4 +12,4 @@ pub use result_set::{ColumnIndex, ResultSet, Row, RowSource, VecRowSource};
 pub use result_set_metadata::{ColumnMetadata, Nullability, ResultSetMetaData};
 pub use sql_error::{Driver, SqlError};
 pub use sql_value::SqlValue;
-pub use types::Types;
+pub use types::JdbcType;

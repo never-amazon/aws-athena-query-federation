@@ -1,4 +1,5 @@
 use super::sql_error::SqlError;
+use super::types::JdbcType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Nullability {
@@ -22,7 +23,7 @@ impl Nullability {
 pub struct ColumnMetadata {
     name: String,
     label: String,
-    jdbc_type: i32,
+    jdbc_type: JdbcType,
     type_name: String,
     precision: i32,
     scale: i32,
@@ -34,7 +35,7 @@ pub struct ColumnMetadata {
 }
 
 impl ColumnMetadata {
-    pub fn new(name: impl Into<String>, jdbc_type: i32) -> ColumnMetadata {
+    pub fn new(name: impl Into<String>, jdbc_type: JdbcType) -> ColumnMetadata {
         let name = name.into();
         ColumnMetadata {
             label: name.clone(),
@@ -106,7 +107,7 @@ impl ColumnMetadata {
         &self.label
     }
 
-    pub fn jdbc_type(&self) -> i32 {
+    pub fn jdbc_type(&self) -> JdbcType {
         self.jdbc_type
     }
 
@@ -161,7 +162,7 @@ impl ResultSetMetaData {
         ResultSetMetaData::new(
             labels
                 .into_iter()
-                .map(|label| ColumnMetadata::new(label, super::Types::VARCHAR))
+                .map(|label| ColumnMetadata::new(label, JdbcType::Varchar))
                 .collect(),
         )
     }
@@ -194,7 +195,7 @@ impl ResultSetMetaData {
         self.column(column).map(ColumnMetadata::label)
     }
 
-    pub fn column_type(&self, column: usize) -> Result<i32, SqlError> {
+    pub fn column_type(&self, column: usize) -> Result<JdbcType, SqlError> {
         self.column(column).map(ColumnMetadata::jdbc_type)
     }
 

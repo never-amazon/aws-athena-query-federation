@@ -1,43 +1,136 @@
-pub struct Types;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum JdbcType {
+    Bit,
+    TinyInt,
+    SmallInt,
+    Integer,
+    BigInt,
+    Float,
+    Real,
+    Double,
+    Numeric,
+    Decimal,
+    Char,
+    Varchar,
+    LongVarchar,
+    Date,
+    Time,
+    Timestamp,
+    Binary,
+    VarBinary,
+    LongVarBinary,
+    #[default]
+    Null,
+    Other,
+    JavaObject,
+    Distinct,
+    Struct,
+    Array,
+    Blob,
+    Clob,
+    Ref,
+    DataLink,
+    Boolean,
+    RowId,
+    NChar,
+    NVarchar,
+    LongNVarchar,
+    NClob,
+    SqlXml,
+    RefCursor,
+    TimeWithTimezone,
+    TimestampWithTimezone,
+    Vendor(i32),
+}
 
-impl Types {
-    pub const BIT: i32 = -7;
-    pub const TINYINT: i32 = -6;
-    pub const SMALLINT: i32 = 5;
-    pub const INTEGER: i32 = 4;
-    pub const BIGINT: i32 = -5;
-    pub const FLOAT: i32 = 6;
-    pub const REAL: i32 = 7;
-    pub const DOUBLE: i32 = 8;
-    pub const NUMERIC: i32 = 2;
-    pub const DECIMAL: i32 = 3;
-    pub const CHAR: i32 = 1;
-    pub const VARCHAR: i32 = 12;
-    pub const LONGVARCHAR: i32 = -1;
-    pub const DATE: i32 = 91;
-    pub const TIME: i32 = 92;
-    pub const TIMESTAMP: i32 = 93;
-    pub const BINARY: i32 = -2;
-    pub const VARBINARY: i32 = -3;
-    pub const LONGVARBINARY: i32 = -4;
-    pub const NULL: i32 = 0;
-    pub const OTHER: i32 = 1111;
-    pub const JAVA_OBJECT: i32 = 2000;
-    pub const DISTINCT: i32 = 2001;
-    pub const STRUCT: i32 = 2002;
-    pub const ARRAY: i32 = 2003;
-    pub const BLOB: i32 = 2004;
-    pub const CLOB: i32 = 2005;
-    pub const REF: i32 = 2006;
-    pub const DATALINK: i32 = 70;
-    pub const BOOLEAN: i32 = 16;
-    pub const ROWID: i32 = -8;
-    pub const NCHAR: i32 = -15;
-    pub const NVARCHAR: i32 = -9;
-    pub const LONGNVARCHAR: i32 = -16;
-    pub const NCLOB: i32 = 2011;
-    pub const SQLXML: i32 = 2009;
-    pub const REF_CURSOR: i32 = 2012;
-    pub const TIME_WITH_TIMEZONE: i32 = 2013;
-    pub const TIMESTAMP_WITH_TIMEZONE: i32 = 2014;
+impl JdbcType {
+    pub const fn code(self) -> i32 {
+        match self {
+            JdbcType::Bit => -7,
+            JdbcType::TinyInt => -6,
+            JdbcType::SmallInt => 5,
+            JdbcType::Integer => 4,
+            JdbcType::BigInt => -5,
+            JdbcType::Float => 6,
+            JdbcType::Real => 7,
+            JdbcType::Double => 8,
+            JdbcType::Numeric => 2,
+            JdbcType::Decimal => 3,
+            JdbcType::Char => 1,
+            JdbcType::Varchar => 12,
+            JdbcType::LongVarchar => -1,
+            JdbcType::Date => 91,
+            JdbcType::Time => 92,
+            JdbcType::Timestamp => 93,
+            JdbcType::Binary => -2,
+            JdbcType::VarBinary => -3,
+            JdbcType::LongVarBinary => -4,
+            JdbcType::Null => 0,
+            JdbcType::Other => 1111,
+            JdbcType::JavaObject => 2000,
+            JdbcType::Distinct => 2001,
+            JdbcType::Struct => 2002,
+            JdbcType::Array => 2003,
+            JdbcType::Blob => 2004,
+            JdbcType::Clob => 2005,
+            JdbcType::Ref => 2006,
+            JdbcType::DataLink => 70,
+            JdbcType::Boolean => 16,
+            JdbcType::RowId => -8,
+            JdbcType::NChar => -15,
+            JdbcType::NVarchar => -9,
+            JdbcType::LongNVarchar => -16,
+            JdbcType::NClob => 2011,
+            JdbcType::SqlXml => 2009,
+            JdbcType::RefCursor => 2012,
+            JdbcType::TimeWithTimezone => 2013,
+            JdbcType::TimestampWithTimezone => 2014,
+            JdbcType::Vendor(code) => code,
+        }
+    }
+
+    pub const fn from_code(code: i32) -> JdbcType {
+        match code {
+            -7 => JdbcType::Bit,
+            -6 => JdbcType::TinyInt,
+            5 => JdbcType::SmallInt,
+            4 => JdbcType::Integer,
+            -5 => JdbcType::BigInt,
+            6 => JdbcType::Float,
+            7 => JdbcType::Real,
+            8 => JdbcType::Double,
+            2 => JdbcType::Numeric,
+            3 => JdbcType::Decimal,
+            1 => JdbcType::Char,
+            12 => JdbcType::Varchar,
+            -1 => JdbcType::LongVarchar,
+            91 => JdbcType::Date,
+            92 => JdbcType::Time,
+            93 => JdbcType::Timestamp,
+            -2 => JdbcType::Binary,
+            -3 => JdbcType::VarBinary,
+            -4 => JdbcType::LongVarBinary,
+            0 => JdbcType::Null,
+            1111 => JdbcType::Other,
+            2000 => JdbcType::JavaObject,
+            2001 => JdbcType::Distinct,
+            2002 => JdbcType::Struct,
+            2003 => JdbcType::Array,
+            2004 => JdbcType::Blob,
+            2005 => JdbcType::Clob,
+            2006 => JdbcType::Ref,
+            70 => JdbcType::DataLink,
+            16 => JdbcType::Boolean,
+            -8 => JdbcType::RowId,
+            -15 => JdbcType::NChar,
+            -9 => JdbcType::NVarchar,
+            -16 => JdbcType::LongNVarchar,
+            2011 => JdbcType::NClob,
+            2009 => JdbcType::SqlXml,
+            2012 => JdbcType::RefCursor,
+            2013 => JdbcType::TimeWithTimezone,
+            2014 => JdbcType::TimestampWithTimezone,
+            other => JdbcType::Vendor(other),
+        }
+    }
 }

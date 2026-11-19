@@ -18,8 +18,8 @@ use athena_federation_sdk::security::{
 use athena_federation_sdk::AthenaClient;
 use athena_jdbc::connection::JdbcConnectionFactory;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlError, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
+    ResultSetMetaData, SqlError, SqlValue,
 };
 use aws_credential_types::Credentials;
 use aws_sdk_kms::types::DataKeySpec;
@@ -674,7 +674,7 @@ impl Fakes {
 }
 
 pub fn string_column(label: &str) -> ColumnMetadata {
-    ColumnMetadata::new(label, Types::VARCHAR)
+    ColumnMetadata::new(label, JdbcType::Varchar)
 }
 
 pub fn addr<T: ?Sized>(value: &T) -> usize {

@@ -27,7 +27,7 @@ use athena_federation_sdk::{FederationError, QueryStatusChecker};
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
 use athena_jdbc::qpt::QUERY;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlError, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError};
 use athena_snowflake::{
     construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, ExportReader,
     S3ParquetExportReader, SnowflakeConstants, SnowflakeCredentialsProvider,
@@ -231,8 +231,8 @@ fn checker(f: &Fixture) -> QueryStatusChecker {
 fn id_name_result() -> ResultSetData {
     ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("id", Types::BIGINT).with_precision(19),
-            ColumnMetadata::new("name", Types::VARCHAR).with_precision(255),
+            ColumnMetadata::new("id", JdbcType::BigInt).with_precision(19),
+            ColumnMetadata::new("name", JdbcType::Varchar).with_precision(255),
         ],
         Vec::new(),
     )
@@ -268,7 +268,7 @@ async fn assert_export_uses_jdbc(f: &Fixture, split: Split, reader: &FakeExportR
     f.connection.on_query(|statement: &PreparedStatement| {
         assert_eq!(EXPORT_QUERY, statement.sql());
         Ok(ResultSetData::of_columns(
-            vec![ColumnMetadata::new("id", Types::BIGINT).with_precision(19)],
+            vec![ColumnMetadata::new("id", JdbcType::BigInt).with_precision(19)],
             Vec::new(),
         ))
     });
@@ -840,19 +840,19 @@ async fn export_schema_respills_exported_parquet() {
 fn derive_export_schema_maps_scale_zero_number_to_decimal() {
     let f = fixture(false, None);
     let metadata = ResultSetMetaData::new(vec![
-        ColumnMetadata::new("number_19_0", Types::BIGINT)
+        ColumnMetadata::new("number_19_0", JdbcType::BigInt)
             .with_precision(19)
             .with_scale(0),
-        ColumnMetadata::new("number_precision_0", Types::BIGINT)
+        ColumnMetadata::new("number_precision_0", JdbcType::BigInt)
             .with_precision(0)
             .with_scale(0),
-        ColumnMetadata::new("number_precision_39", Types::BIGINT)
+        ColumnMetadata::new("number_precision_39", JdbcType::BigInt)
             .with_precision(39)
             .with_scale(0),
-        ColumnMetadata::new("bigint_scale_2", Types::BIGINT)
+        ColumnMetadata::new("bigint_scale_2", JdbcType::BigInt)
             .with_precision(19)
             .with_scale(2),
-        ColumnMetadata::new("number_10_2", Types::DECIMAL)
+        ColumnMetadata::new("number_10_2", JdbcType::Decimal)
             .with_precision(10)
             .with_scale(2),
     ]);

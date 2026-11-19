@@ -25,7 +25,7 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::MetadataDialect;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlError, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
 use athena_postgresql::{
     get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
     PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
@@ -255,22 +255,24 @@ fn string_params(statement: &PreparedStatement) -> Vec<SqlValue> {
     statement.parameters().to_vec()
 }
 
-type ColumnRow<'a> = (i32, &'a str, Option<i32>, Option<i32>, Option<&'a str>);
+const ARRAY: JdbcType = JdbcType::Array;
+
+type ColumnRow<'a> = (JdbcType, &'a str, Option<i32>, Option<i32>, Option<&'a str>);
 
 fn columns(rows: &[ColumnRow<'_>]) -> ResultSetData {
     let metadata = vec![
-        ColumnMetadata::new("DATA_TYPE", Types::INTEGER),
-        ColumnMetadata::new("COLUMN_NAME", Types::VARCHAR),
-        ColumnMetadata::new("COLUMN_SIZE", Types::INTEGER),
-        ColumnMetadata::new("DECIMAL_DIGITS", Types::INTEGER),
-        ColumnMetadata::new("TYPE_NAME", Types::VARCHAR),
+        ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
+        ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
+        ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
+        ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
+        ColumnMetadata::new("TYPE_NAME", JdbcType::Varchar),
     ];
     let int = |v: Option<i32>| v.map_or(SqlValue::Null, SqlValue::Integer);
     let rows = rows
         .iter()
         .map(|(data_type, name, size, digits, type_name)| {
             vec![
-                SqlValue::Integer(*data_type),
+                SqlValue::Integer(data_type.code()),
                 SqlValue::String((*name).to_string()),
                 int(*size),
                 int(*digits),
@@ -343,8 +345,8 @@ fn min_max_sql(column: &str) -> String {
 fn min_max(min: i32, max: i32) -> ResultSetData {
     ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("min", Types::INTEGER),
-            ColumnMetadata::new("max", Types::INTEGER),
+            ColumnMetadata::new("min", JdbcType::Integer),
+            ColumnMetadata::new("max", JdbcType::Integer),
         ],
         vec![vec![SqlValue::Integer(min), SqlValue::Integer(max)]],
     )
@@ -672,66 +674,24 @@ async fn do_get_table_with_array_columns() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "smallint_array", Some(0), Some(0), Some("_int2")),
+        (ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
+        (ARRAY, "bigint_array", Some(0), Some(0), Some("_int8")),
+        (ARRAY, "float_array", Some(0), Some(0), Some("_float4")),
+        (ARRAY, "double_array", Some(0), Some(0), Some("_float8")),
+        (ARRAY, "date_array", Some(0), Some(0), Some("_date")),
         (
-            Types::ARRAY,
-            "smallint_array",
-            Some(0),
-            Some(0),
-            Some("_int2"),
-        ),
-        (Types::ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
-        (
-            Types::ARRAY,
-            "bigint_array",
-            Some(0),
-            Some(0),
-            Some("_int8"),
-        ),
-        (
-            Types::ARRAY,
-            "float_array",
-            Some(0),
-            Some(0),
-            Some("_float4"),
-        ),
-        (
-            Types::ARRAY,
-            "double_array",
-            Some(0),
-            Some(0),
-            Some("_float8"),
-        ),
-        (Types::ARRAY, "date_array", Some(0), Some(0), Some("_date")),
-        (
-            Types::ARRAY,
+            ARRAY,
             "timestamp_array",
             Some(0),
             Some(0),
             Some("_timestamp"),
         ),
-        (
-            Types::ARRAY,
-            "binary_array",
-            Some(0),
-            Some(0),
-            Some("_bytea"),
-        ),
-        (
-            Types::ARRAY,
-            "decimal_array",
-            Some(38),
-            Some(2),
-            Some("_numeric"),
-        ),
-        (
-            Types::ARRAY,
-            "string_array",
-            Some(0),
-            Some(0),
-            Some("_text"),
-        ),
-        (Types::ARRAY, "uuid_array", Some(0), Some(0), Some("_uuid")),
+        (ARRAY, "binary_array", Some(0), Some(0), Some("_bytea")),
+        (ARRAY, "decimal_array", Some(38), Some(2), Some("_numeric")),
+        (ARRAY, "string_array", Some(0), Some(0), Some("_text")),
+        (ARRAY, "uuid_array", Some(0), Some(0), Some("_uuid")),
     ])));
     route(
         &f.connection,
@@ -764,22 +724,10 @@ async fn do_get_table_materialized_view() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
-        (Types::ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
-        (
-            Types::ARRAY,
-            "bigint_array",
-            Some(0),
-            Some(0),
-            Some("_int8"),
-        ),
-        (
-            Types::ARRAY,
-            "float_array",
-            Some(0),
-            Some(0),
-            Some("_float4"),
-        ),
+        (ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
+        (ARRAY, "bigint_array", Some(0), Some(0), Some("_int8")),
+        (ARRAY, "float_array", Some(0), Some(0), Some("_float4")),
     ])));
     route(
         &f.connection,
@@ -983,15 +931,9 @@ async fn test_get_table_with_null_array_types() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "null_array", None, None, Some("_int4")),
-        (
-            Types::ARRAY,
-            "null_size_array",
-            Some(0),
-            None,
-            Some("_numeric"),
-        ),
-        (Types::ARRAY, "null_type_array", Some(0), Some(0), None),
+        (JdbcType::Array, "null_array", None, None, Some("_int4")),
+        (ARRAY, "null_size_array", Some(0), None, Some("_numeric")),
+        (JdbcType::Array, "null_type_array", Some(0), Some(0), None),
     ])));
     route(
         &f.connection,
@@ -1136,7 +1078,7 @@ async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_t
     let h = &f.handler;
     assert_eq!(
         athena_jdbc::manager::JdbcArrowTypeConverter::to_arrow_type(
-            Types::TIMESTAMP,
+            JdbcType::Timestamp,
             0,
             0,
             &HashMap::new()

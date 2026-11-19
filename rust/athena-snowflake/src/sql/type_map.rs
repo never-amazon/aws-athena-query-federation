@@ -1,13 +1,13 @@
-use athena_jdbc::sql::{ColumnMetadata, Nullability, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, Nullability};
 use serde_json::Value;
 
-pub const EXTRA_TYPES_TIMESTAMP_LTZ: i32 = 50000;
-pub const EXTRA_TYPES_TIMESTAMP_TZ: i32 = 50001;
-pub const EXTRA_TYPES_TIMESTAMP_NTZ: i32 = 50002;
-pub const EXTRA_TYPES_VECTOR: i32 = 50003;
-pub const EXTRA_TYPES_DECFLOAT: i32 = 50004;
-pub const EXTRA_TYPES_YEAR_MONTH_INTERVAL: i32 = 50005;
-pub const EXTRA_TYPES_DAY_TIME_INTERVAL: i32 = 50006;
+pub const EXTRA_TYPES_TIMESTAMP_LTZ: JdbcType = JdbcType::Vendor(50000);
+pub const EXTRA_TYPES_TIMESTAMP_TZ: JdbcType = JdbcType::Vendor(50001);
+pub const EXTRA_TYPES_TIMESTAMP_NTZ: JdbcType = JdbcType::Vendor(50002);
+pub const EXTRA_TYPES_VECTOR: JdbcType = JdbcType::Vendor(50003);
+pub const EXTRA_TYPES_DECFLOAT: JdbcType = JdbcType::Vendor(50004);
+pub const EXTRA_TYPES_YEAR_MONTH_INTERVAL: JdbcType = JdbcType::Vendor(50005);
+pub const EXTRA_TYPES_DAY_TIME_INTERVAL: JdbcType = JdbcType::Vendor(50006);
 
 const DATE_STRING_LENGTH: i32 = 10;
 const TIME_STRING_LENGTH: i32 = 18;
@@ -57,14 +57,14 @@ impl SnowflakeColumn {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypeInfo {
-    pub internal_type: i32,
+    pub internal_type: JdbcType,
     pub type_name: String,
 }
 
-pub(crate) fn external_type(internal_type: i32) -> i32 {
+pub(crate) fn external_type(internal_type: JdbcType) -> JdbcType {
     match internal_type {
-        EXTRA_TYPES_TIMESTAMP_LTZ => Types::TIMESTAMP,
-        EXTRA_TYPES_TIMESTAMP_TZ => Types::TIMESTAMP_WITH_TIMEZONE,
+        EXTRA_TYPES_TIMESTAMP_LTZ => JdbcType::Timestamp,
+        EXTRA_TYPES_TIMESTAMP_TZ => JdbcType::TimestampWithTimezone,
         other => other,
     }
 }
@@ -76,60 +76,60 @@ pub(crate) fn snowflake_type(
     scale: i32,
     is_structured: bool,
 ) -> TypeInfo {
-    let named = |jdbc: i32, default_name: &str| TypeInfo {
+    let named = |jdbc: JdbcType, default_name: &str| TypeInfo {
         internal_type: jdbc,
         type_name: ext_type_name.unwrap_or(default_name).to_string(),
     };
     match internal_name.to_uppercase().as_str() {
-        "TEXT" => named(Types::VARCHAR, "VARCHAR"),
-        "CHAR" => named(Types::CHAR, "CHAR"),
-        "INTEGER" => named(Types::INTEGER, "INTEGER"),
+        "TEXT" => named(JdbcType::Varchar, "VARCHAR"),
+        "CHAR" => named(JdbcType::Char, "CHAR"),
+        "INTEGER" => named(JdbcType::Integer, "INTEGER"),
         "DECFLOAT" => TypeInfo {
-            internal_type: Types::DECIMAL,
+            internal_type: JdbcType::Decimal,
             type_name: "DECFLOAT".to_string(),
         },
         "FIXED" => {
             let fixed = if scale == 0 {
-                Types::BIGINT
+                JdbcType::BigInt
             } else {
-                Types::DECIMAL
+                JdbcType::Decimal
             };
             named(fixed, "NUMBER")
         }
-        "REAL" => named(Types::DOUBLE, "DOUBLE"),
+        "REAL" => named(JdbcType::Double, "DOUBLE"),
         "TIMESTAMP" | "TIMESTAMP_LTZ" => named(EXTRA_TYPES_TIMESTAMP_LTZ, "TIMESTAMPLTZ"),
         "INTERVAL_YEAR_MONTH" => named(EXTRA_TYPES_YEAR_MONTH_INTERVAL, "INTERVAL_YEAR_MONTH"),
         "INTERVAL_DAY_TIME" => named(EXTRA_TYPES_DAY_TIME_INTERVAL, "INTERVAL_DAY_TIME"),
-        "TIMESTAMP_NTZ" => named(Types::TIMESTAMP, "TIMESTAMPNTZ"),
+        "TIMESTAMP_NTZ" => named(JdbcType::Timestamp, "TIMESTAMPNTZ"),
         "TIMESTAMP_TZ" => named(EXTRA_TYPES_TIMESTAMP_TZ, "TIMESTAMPTZ"),
-        "DATE" => named(Types::DATE, "DATE"),
-        "TIME" => named(Types::TIME, "TIME"),
-        "BOOLEAN" => named(Types::BOOLEAN, "BOOLEAN"),
+        "DATE" => named(JdbcType::Date, "DATE"),
+        "TIME" => named(JdbcType::Time, "TIME"),
+        "BOOLEAN" => named(JdbcType::Boolean, "BOOLEAN"),
         "VECTOR" => named(EXTRA_TYPES_VECTOR, "VECTOR"),
         "ARRAY" => named(
             if is_structured {
-                Types::ARRAY
+                JdbcType::Array
             } else {
-                Types::VARCHAR
+                JdbcType::Varchar
             },
             "ARRAY",
         ),
-        "MAP" => named(Types::STRUCT, "OBJECT"),
+        "MAP" => named(JdbcType::Struct, "OBJECT"),
         "OBJECT" => {
             let geo = matches!(ext_type_name, Some("GEOMETRY" | "GEOGRAPHY"));
             let jdbc = if is_structured && !geo {
-                Types::STRUCT
+                JdbcType::Struct
             } else {
-                Types::VARCHAR
+                JdbcType::Varchar
             };
             named(jdbc, "OBJECT")
         }
-        "VARIANT" => named(Types::VARCHAR, "VARIANT"),
-        "BINARY" => named(Types::BINARY, "BINARY"),
+        "VARIANT" => named(JdbcType::Varchar, "VARIANT"),
+        "BINARY" => named(JdbcType::Binary, "BINARY"),
         "GEOGRAPHY" | "GEOMETRY" => {
             let jdbc = match output_type.map(str::to_uppercase).as_deref() {
-                Some("BINARY") => Types::BINARY,
-                _ => Types::VARCHAR,
+                Some("BINARY") => JdbcType::Binary,
+                _ => JdbcType::Varchar,
             };
             TypeInfo {
                 internal_type: jdbc,
@@ -137,7 +137,7 @@ pub(crate) fn snowflake_type(
             }
         }
         _ => TypeInfo {
-            internal_type: Types::OTHER,
+            internal_type: JdbcType::Other,
             type_name: ext_type_name
                 .map_or_else(|| internal_name.to_uppercase(), ToString::to_string),
         },
@@ -199,31 +199,31 @@ impl SnowflakeColumnType {
     }
 }
 
-fn result_precision(internal_type: i32, column_type: &SnowflakeColumnType) -> i32 {
+fn result_precision(internal_type: JdbcType, column_type: &SnowflakeColumnType) -> i32 {
     match internal_type {
-        Types::CHAR | Types::VARCHAR | Types::BINARY => column_type.length(),
-        Types::INTEGER | Types::DECIMAL | Types::BIGINT => column_type.precision(),
-        Types::DATE => DATE_STRING_LENGTH,
-        Types::TIME => TIME_STRING_LENGTH,
-        EXTRA_TYPES_TIMESTAMP_LTZ | EXTRA_TYPES_TIMESTAMP_TZ | Types::TIMESTAMP => {
+        JdbcType::Char | JdbcType::Varchar | JdbcType::Binary => column_type.length(),
+        JdbcType::Integer | JdbcType::Decimal | JdbcType::BigInt => column_type.precision(),
+        JdbcType::Date => DATE_STRING_LENGTH,
+        JdbcType::Time => TIME_STRING_LENGTH,
+        EXTRA_TYPES_TIMESTAMP_LTZ | EXTRA_TYPES_TIMESTAMP_TZ | JdbcType::Timestamp => {
             TIMESTAMP_STRING_LENGTH
         }
         _ => 0,
     }
 }
 
-fn result_display_size(internal_type: i32, column_type: &SnowflakeColumnType) -> i32 {
+fn result_display_size(internal_type: JdbcType, column_type: &SnowflakeColumnType) -> i32 {
     match internal_type {
-        Types::CHAR | Types::VARCHAR | Types::BINARY => column_type.length(),
-        Types::INTEGER | Types::BIGINT => column_type.precision() + 1,
-        Types::DECIMAL => column_type.precision() + 2,
-        Types::DOUBLE => 24,
-        Types::DATE => DATE_STRING_LENGTH,
-        Types::TIME => TIME_STRING_LENGTH,
-        EXTRA_TYPES_TIMESTAMP_LTZ | EXTRA_TYPES_TIMESTAMP_TZ | Types::TIMESTAMP => {
+        JdbcType::Char | JdbcType::Varchar | JdbcType::Binary => column_type.length(),
+        JdbcType::Integer | JdbcType::BigInt => column_type.precision() + 1,
+        JdbcType::Decimal => column_type.precision() + 2,
+        JdbcType::Double => 24,
+        JdbcType::Date => DATE_STRING_LENGTH,
+        JdbcType::Time => TIME_STRING_LENGTH,
+        EXTRA_TYPES_TIMESTAMP_LTZ | EXTRA_TYPES_TIMESTAMP_TZ | JdbcType::Timestamp => {
             TIMESTAMP_STRING_LENGTH
         }
-        Types::BOOLEAN => 5,
+        JdbcType::Boolean => 5,
         _ => 25,
     }
 }
@@ -245,7 +245,7 @@ pub(crate) fn result_column_metadata(column: &SnowflakeColumn) -> ColumnMetadata
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ShowColumnType {
-    pub jdbc_type: i32,
+    pub jdbc_type: JdbcType,
     pub type_name: String,
     pub column_size: Option<i32>,
     pub scale: i32,
@@ -304,20 +304,20 @@ pub(crate) fn show_column_type(data_type: &Value) -> ShowColumnType {
         is_structured,
     );
     let column_size = match info.internal_type {
-        Types::CHAR | Types::VARCHAR | Types::BINARY | Types::VARBINARY => Some(length),
-        Types::DECIMAL
-        | Types::NUMERIC
-        | Types::BIGINT
-        | Types::INTEGER
-        | Types::SMALLINT
-        | Types::TINYINT
-        | Types::FLOAT
-        | Types::DOUBLE
-        | Types::REAL
-        | Types::DATE
-        | Types::TIME
-        | Types::TIMESTAMP
-        | Types::TIMESTAMP_WITH_TIMEZONE
+        JdbcType::Char | JdbcType::Varchar | JdbcType::Binary | JdbcType::VarBinary => Some(length),
+        JdbcType::Decimal
+        | JdbcType::Numeric
+        | JdbcType::BigInt
+        | JdbcType::Integer
+        | JdbcType::SmallInt
+        | JdbcType::TinyInt
+        | JdbcType::Float
+        | JdbcType::Double
+        | JdbcType::Real
+        | JdbcType::Date
+        | JdbcType::Time
+        | JdbcType::Timestamp
+        | JdbcType::TimestampWithTimezone
         | EXTRA_TYPES_TIMESTAMP_LTZ
         | EXTRA_TYPES_TIMESTAMP_TZ
         | EXTRA_TYPES_TIMESTAMP_NTZ
@@ -326,7 +326,7 @@ pub(crate) fn show_column_type(data_type: &Value) -> ShowColumnType {
         _ => None,
     };
     let char_octet_length =
-        matches!(info.internal_type, Types::VARCHAR | Types::CHAR).then_some(length);
+        matches!(info.internal_type, JdbcType::Varchar | JdbcType::Char).then_some(length);
     ShowColumnType {
         jdbc_type: external_type(info.internal_type),
         type_name: info.type_name,

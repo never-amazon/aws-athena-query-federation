@@ -21,8 +21,8 @@ use athena_federation_sdk::security::{
 use athena_federation_sdk::AthenaClient;
 use athena_jdbc::connection::JdbcConnectionFactory;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlError, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
+    ResultSetMetaData, SqlError, SqlValue,
 };
 use athena_snowflake::{BatchIterator, ExportReader, S3ObjectLister, S3ObjectSummary};
 use aws_credential_types::Credentials;
@@ -683,7 +683,7 @@ impl Fakes {
 }
 
 pub fn string_column(label: &str) -> ColumnMetadata {
-    ColumnMetadata::new(label, Types::VARCHAR)
+    ColumnMetadata::new(label, JdbcType::Varchar)
 }
 
 #[derive(Clone, Default)]

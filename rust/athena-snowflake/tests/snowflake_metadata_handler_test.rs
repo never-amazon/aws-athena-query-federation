@@ -25,7 +25,7 @@ use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
 use athena_jdbc::resolver::DefaultJdbcCaseResolver;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlError, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
 use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
 use athena_snowflake::{
     create_credentials_provider, create_snowflake_credentials_provider, SnowflakeConstants,
@@ -201,11 +201,11 @@ fn column_row(data_type: i32, size: i32, name: &str) -> Vec<SqlValue> {
 fn columns(rows: Vec<Vec<SqlValue>>) -> ResultSetData {
     ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("DATA_TYPE", Types::INTEGER),
-            ColumnMetadata::new("COLUMN_SIZE", Types::INTEGER),
-            ColumnMetadata::new("COLUMN_NAME", Types::VARCHAR),
-            ColumnMetadata::new("DECIMAL_DIGITS", Types::INTEGER),
-            ColumnMetadata::new("NUM_PREC_RADIX", Types::INTEGER),
+            ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
+            ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
+            ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
+            ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
+            ColumnMetadata::new("NUM_PREC_RADIX", JdbcType::Integer),
         ],
         rows,
     )
@@ -213,10 +213,10 @@ fn columns(rows: Vec<Vec<SqlValue>>) -> ResultSetData {
 
 fn four_columns() -> ResultSetData {
     columns(vec![
-        column_row(Types::INTEGER, 12, "testCol1"),
-        column_row(Types::VARCHAR, 25, "testCol2"),
-        column_row(Types::TIMESTAMP, 93, "testCol3"),
-        column_row(Types::TIMESTAMP_WITH_TIMEZONE, 93, "testCol4"),
+        column_row(JdbcType::Integer.code(), 12, "testCol1"),
+        column_row(JdbcType::Varchar.code(), 25, "testCol2"),
+        column_row(JdbcType::Timestamp.code(), 93, "testCol3"),
+        column_row(JdbcType::TimestampWithTimezone.code(), 93, "testCol4"),
     ])
 }
 
@@ -236,14 +236,14 @@ fn strings(labels: &[&str], rows: &[&[&str]]) -> ResultSetData {
 
 fn count_rows(count: i64) -> ResultSetData {
     ResultSetData::of_columns(
-        vec![ColumnMetadata::new("row_count", Types::BIGINT)],
+        vec![ColumnMetadata::new("row_count", JdbcType::BigInt)],
         vec![vec![SqlValue::BigInt(count)]],
     )
 }
 
 fn counts_rows(count: i32) -> ResultSetData {
     ResultSetData::of_columns(
-        vec![ColumnMetadata::new("COUNTS", Types::INTEGER)],
+        vec![ColumnMetadata::new("COUNTS", JdbcType::Integer)],
         vec![vec![SqlValue::Integer(count)]],
     )
 }
@@ -666,10 +666,10 @@ async fn test_list_database_names() {
 async fn test_get_schema_with_data_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(Types::INTEGER, 10, "intCol"),
-        column_row(Types::VARCHAR, 255, "varcharCol"),
-        column_row(Types::TIMESTAMP, 0, "timestampCol"),
-        column_row(Types::TIMESTAMP_WITH_TIMEZONE, 0, "timestampTzCol"),
+        column_row(JdbcType::Integer.code(), 10, "intCol"),
+        column_row(JdbcType::Varchar.code(), 255, "varcharCol"),
+        column_row(JdbcType::Timestamp.code(), 0, "timestampCol"),
+        column_row(JdbcType::TimestampWithTimezone.code(), 0, "timestampTzCol"),
     ])));
     let schema = f
         .handler
@@ -723,8 +723,8 @@ async fn test_get_schema_no_matching_columns() {
 async fn test_get_schema_unsupported_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(Types::ARRAY, 0, "arrayCol"),
-        column_row(Types::INTEGER, 10, "intCol"),
+        column_row(JdbcType::Array.code(), 0, "arrayCol"),
+        column_row(JdbcType::Integer.code(), 10, "intCol"),
     ])));
     let schema = f
         .handler

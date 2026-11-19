@@ -3,13 +3,14 @@ use std::fmt;
 use athena_federation_sdk::Result;
 
 use super::split_range::SplitRange;
+use crate::sql::JdbcType;
 use crate::validate::not_blank;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SplitInfo<T> {
     split_range: SplitRange<T>,
     column_name: String,
-    column_type: i32,
+    column_type: JdbcType,
     num_splits: i32,
 }
 
@@ -17,7 +18,7 @@ impl<T> SplitInfo<T> {
     pub fn new(
         split_range: SplitRange<T>,
         column_name: &str,
-        column_type: i32,
+        column_type: JdbcType,
         num_splits: i32,
     ) -> Result<SplitInfo<T>> {
         let column_name = not_blank(Some(column_name), "columnName must not be blank")?;
@@ -37,7 +38,7 @@ impl<T> SplitInfo<T> {
         &self.column_name
     }
 
-    pub fn column_type(&self) -> i32 {
+    pub fn column_type(&self) -> JdbcType {
         self.column_type
     }
 
@@ -51,7 +52,10 @@ impl<T: fmt::Display> fmt::Display for SplitInfo<T> {
         write!(
             f,
             "SplitInfo{{splitRange={}, columnName='{}', columnType={}, numSplits={}}}",
-            self.split_range, self.column_name, self.column_type, self.num_splits
+            self.split_range,
+            self.column_name,
+            self.column_type.code(),
+            self.num_splits
         )
     }
 }

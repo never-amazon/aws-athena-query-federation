@@ -496,7 +496,7 @@ mod tests {
     }
 
     use super::*;
-    use athena_jdbc::sql::Types;
+    use athena_jdbc::sql::JdbcType;
     use chrono::{NaiveDate, NaiveDateTime};
 
     fn cache() -> TypeCache {
@@ -609,7 +609,7 @@ mod tests {
             encoded(&SqlValue::Boolean(true), false),
             (oid::BOOL, Some("TRUE".to_string()))
         );
-        assert_eq!(Types::ARRAY, cache().sql_type(1007));
+        assert_eq!(JdbcType::Array, cache().sql_type(1007));
     }
 
     #[test]

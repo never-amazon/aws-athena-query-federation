@@ -28,7 +28,7 @@ use super::jdbc_record_handler::{missing_factory, ConnectionSource};
 use super::jdbc_util::JdbcUtil;
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
-use crate::sql::{DatabaseMetaData, JdbcConnection, ResultSet, ResultSetMetaData};
+use crate::sql::{DatabaseMetaData, JdbcConnection, JdbcType, ResultSet, ResultSetMetaData};
 use crate::validate::close_after;
 
 pub const TABLES_AND_VIEWS: &str = "Tables and Views";
@@ -335,7 +335,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
         let mut found = false;
         while result_set.next().await? {
             let column_type = JdbcArrowTypeConverter::to_arrow_type(
-                result_set.get_int("DATA_TYPE")?.unwrap_or(0),
+                JdbcType::from_code(result_set.get_int("DATA_TYPE")?.unwrap_or(0)),
                 result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
                 result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
                 config_options,

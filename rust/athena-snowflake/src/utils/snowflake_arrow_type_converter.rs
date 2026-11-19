@@ -4,7 +4,7 @@ use arrow::datatypes::DataType;
 use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::manager::get_arrow_type_from_jdbc_type;
-use athena_jdbc::sql::Types;
+use athena_jdbc::sql::JdbcType;
 
 const DEFAULT_SCALE_KEY: &str = "default_scale";
 
@@ -14,7 +14,7 @@ impl SnowflakeArrowTypeConverter {
     pub const DEFAULT_PRECISION: i32 = 38;
 
     pub fn to_arrow_type(
-        jdbc_type: i32,
+        jdbc_type: JdbcType,
         precision: i32,
         scale: i32,
         config_options: &HashMap<String, String>,
@@ -27,16 +27,16 @@ impl SnowflakeArrowTypeConverter {
         })?;
         let mut resolved_precision = precision;
         let mut resolved_scale = scale;
-        let needs_resolving = jdbc_type == Types::NUMERIC && precision == 0 && scale <= 0;
+        let needs_resolving = jdbc_type == JdbcType::Numeric && precision == 0 && scale <= 0;
         let decimal_exceeding_precision =
-            jdbc_type == Types::DECIMAL && precision > Self::DEFAULT_PRECISION;
+            jdbc_type == JdbcType::Decimal && precision > Self::DEFAULT_PRECISION;
         if needs_resolving {
             resolved_precision = Self::DEFAULT_PRECISION;
             resolved_scale = default_scale;
         } else if decimal_exceeding_precision {
             resolved_precision = Self::DEFAULT_PRECISION;
         }
-        if jdbc_type == Types::BIGINT {
+        if jdbc_type == JdbcType::BigInt {
             return Ok(Some(decimal(resolved_precision, resolved_scale)));
         }
         match get_arrow_type_from_jdbc_type(jdbc_type, resolved_precision, resolved_scale, None) {
@@ -44,9 +44,15 @@ impl SnowflakeArrowTypeConverter {
             Ok(DataType::Timestamp(_, _)) => Ok(Some(DataType::Date64)),
             Ok(arrow_type) => Ok(Some(arrow_type)),
             Err(FederationError::UnsupportedOperation(message)) => {
-                tracing::warn!("Error converting JDBC Type [{jdbc_type}] to arrow: {message}");
-                if jdbc_type == Types::TIMESTAMP_WITH_TIMEZONE {
-                    tracing::debug!("Converting JDBC Type [{jdbc_type}] to arrow: {message}");
+                tracing::warn!(
+                    "Error converting JDBC Type [{}] to arrow: {message}",
+                    jdbc_type.code()
+                );
+                if jdbc_type == JdbcType::TimestampWithTimezone {
+                    tracing::debug!(
+                        "Converting JDBC Type [{}] to arrow: {message}",
+                        jdbc_type.code()
+                    );
                     return Ok(Some(DataType::Date64));
                 }
                 Ok(None)
