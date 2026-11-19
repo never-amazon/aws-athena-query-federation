@@ -14,11 +14,35 @@ use super::sql_error::{Driver, SqlError};
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaTemporal {
+    DateMillis { millis: i64, epoch_day: i64 },
+    SqlDate { millis: i64, epoch_day: i64 },
+    Timestamp { epoch_millis: i64, epoch_day: i64 },
+}
+
+impl JavaTemporal {
+    fn epoch_day(self) -> i64 {
+        match self {
+            JavaTemporal::DateMillis { epoch_day, .. }
+            | JavaTemporal::SqlDate { epoch_day, .. }
+            | JavaTemporal::Timestamp { epoch_day, .. } => epoch_day,
+        }
+    }
+
+    fn date_millis(self) -> Option<i64> {
+        match self {
+            JavaTemporal::DateMillis { millis, .. } | JavaTemporal::SqlDate { millis, .. } => {
+                Some(millis)
+            }
+            JavaTemporal::Timestamp { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderedKind {
     Typed,
-    JavaDateMillis { millis: i64, epoch_day: i64 },
-    JavaSqlDate { millis: i64, epoch_day: i64 },
-    JavaTimestamp { epoch_millis: i64, epoch_day: i64 },
+    Temporal(JavaTemporal),
     InvalidElement(&'static str),
     InvalidDateTime,
 }
@@ -141,10 +165,10 @@ impl SqlValue {
             value: Box::new(value),
             text: text.into(),
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaTimestamp {
+            kind: RenderedKind::Temporal(JavaTemporal::Timestamp {
                 epoch_millis,
                 epoch_day,
-            },
+            }),
         }
     }
 
@@ -154,7 +178,7 @@ impl SqlValue {
             value: Box::new(SqlValue::String(text.clone())),
             text,
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaDateMillis { millis, epoch_day },
+            kind: RenderedKind::Temporal(JavaTemporal::DateMillis { millis, epoch_day }),
         }
     }
 
@@ -171,7 +195,7 @@ impl SqlValue {
             value: Box::new(SqlValue::Date(date)),
             text: text.into(),
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaSqlDate { millis, epoch_day },
+            kind: RenderedKind::Temporal(JavaTemporal::SqlDate { millis, epoch_day }),
         }
     }
 
@@ -214,13 +238,8 @@ impl SqlValue {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
         }
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaDateMillis { millis, .. } | RenderedKind::JavaSqlDate { millis, .. },
-            ..
-        } = self
-        {
-            return Ok(Some(*millis));
+        if let Some(millis) = self.temporal().and_then(JavaTemporal::date_millis) {
+            return Ok(Some(millis));
         }
         Ok(self
             .to_timestamp()?
@@ -228,18 +247,20 @@ impl SqlValue {
     }
 
     pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlError> {
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaTimestamp {
-                    epoch_millis: millis,
-                    ..
-                },
-            ..
-        } = self
-        {
-            return Ok(Some(*millis));
+        if let Some(JavaTemporal::Timestamp { epoch_millis, .. }) = self.temporal() {
+            return Ok(Some(epoch_millis));
         }
         self.to_timestamp_millis()
+    }
+
+    fn temporal(&self) -> Option<JavaTemporal> {
+        match self {
+            SqlValue::Rendered {
+                kind: RenderedKind::Temporal(temporal),
+                ..
+            } => Some(*temporal),
+            _ => None,
+        }
     }
 
     pub fn is_null(&self) -> bool {
@@ -411,7 +432,7 @@ impl SqlValue {
     pub fn is_date_time(&self) -> bool {
         match self {
             SqlValue::Rendered {
-                kind: RenderedKind::JavaDateMillis { .. },
+                kind: RenderedKind::Temporal(JavaTemporal::DateMillis { .. }),
                 ..
             } => true,
             SqlValue::Rendered { value, .. } => value.is_date_time(),
@@ -423,15 +444,8 @@ impl SqlValue {
     }
 
     pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlError> {
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaSqlDate { epoch_day, .. }
-                | RenderedKind::JavaTimestamp { epoch_day, .. }
-                | RenderedKind::JavaDateMillis { epoch_day, .. },
-            ..
-        } = self
-        {
-            return Ok(Some(*epoch_day));
+        if let Some(temporal) = self.temporal() {
+            return Ok(Some(temporal.epoch_day()));
         }
         Ok(self
             .to_date()?
@@ -519,8 +533,10 @@ impl SqlValue {
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
             SqlValue::Rendered {
                 kind:
-                    RenderedKind::JavaDateMillis { millis, .. }
-                    | RenderedKind::JavaSqlDate { millis, .. },
+                    RenderedKind::Temporal(
+                        JavaTemporal::DateMillis { millis, .. }
+                        | JavaTemporal::SqlDate { millis, .. },
+                    ),
                 ..
             } => Value::Date(*millis),
             SqlValue::Rendered { value, text, .. } => match value.as_ref() {
