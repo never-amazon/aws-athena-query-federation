@@ -13,6 +13,7 @@ use athena_jdbc::manager::{
 };
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
+use crate::partition_page::PartitionPage;
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::snowflake_dialect::SnowflakeDialect;
 
@@ -95,7 +96,7 @@ impl SnowflakeQueryStringBuilder {
         constraints: &Constraints,
     ) -> String {
         let order_by_clause = self.extract_order_by_clause(constraints);
-        let Some(page) = split.and_then(split_page) else {
+        let Some(page) = split.and_then(PartitionPage::from_split) else {
             let order_by = if order_by_clause.is_empty() {
                 String::new()
             } else {
@@ -120,64 +121,6 @@ impl SnowflakeQueryStringBuilder {
             )
         )
     }
-}
-
-struct SplitPage<'a> {
-    primary_key: &'a str,
-    limit: &'a str,
-    offset: &'a str,
-}
-
-impl SplitPage<'_> {
-    fn limit_within(&self, constraint_limit: i64) -> String {
-        if constraint_limit <= 0 {
-            return self.limit.to_string();
-        }
-        self.limit
-            .parse::<i64>()
-            .map_or(constraint_limit, |limit| limit.min(constraint_limit))
-            .to_string()
-    }
-}
-
-fn split_page(split: &Split) -> Option<SplitPage<'_>> {
-    let partition_val = split.get_property(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME)?;
-    let primary_marker = SnowflakeConstants::PARTITION_PRIMARY_MARKER;
-    let limit_marker_text = SnowflakeConstants::PARTITION_LIMIT_MARKER;
-    let offset_marker_text = SnowflakeConstants::PARTITION_OFFSET_MARKER;
-    let (Some(primary_index), Some(limit_marker), Some(offset_marker)) = (
-        partition_val.find(primary_marker),
-        partition_val.rfind(limit_marker_text),
-        partition_val.rfind(offset_marker_text),
-    ) else {
-        return None;
-    };
-    let primary_start = primary_index + primary_marker.len();
-    if primary_start > limit_marker || limit_marker > offset_marker {
-        tracing::warn!("Malformed partition value: {partition_val}");
-        return None;
-    }
-    let primary_key = &partition_val[primary_start..limit_marker];
-    let limit = &partition_val[limit_marker + limit_marker_text.len()..offset_marker];
-    let offset = &partition_val[offset_marker + offset_marker_text.len()..];
-    if primary_key.is_empty() {
-        return None;
-    }
-    if !is_ascii_digits(limit) || !is_ascii_digits(offset) {
-        tracing::warn!(
-            "Non-numeric limit/offset in partition value: limit={limit}, offset={offset}"
-        );
-        return None;
-    }
-    Some(SplitPage {
-        primary_key,
-        limit,
-        offset,
-    })
-}
-
-fn is_ascii_digits(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn number_long(value: &Value) -> Result<i64> {
@@ -307,7 +250,7 @@ impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
     }
 
     fn get_split_paging_clause(&self, split: &Split) -> String {
-        split_page(split).map_or_else(String::new, |page| {
+        PartitionPage::from_split(split).map_or_else(String::new, |page| {
             format!(
                 " ORDER BY {}{}",
                 page.primary_key,

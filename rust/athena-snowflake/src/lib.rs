@@ -3,6 +3,7 @@ pub mod resolver;
 pub mod sql;
 pub mod utils;
 
+mod partition_page;
 mod s3_export;
 mod snowflake_composite_handler;
 mod snowflake_constants;

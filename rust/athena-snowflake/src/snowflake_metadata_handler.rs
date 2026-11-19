@@ -46,6 +46,7 @@ use athena_jdbc::sql::{JdbcConnection, JdbcType, ResultSetMetaData, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
+use crate::partition_page::PartitionPage;
 use crate::resolver::SnowflakeJdbcCaseResolver;
 use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
 use crate::snowflake_constants::{is_blank, SnowflakeConstants};
@@ -792,16 +793,14 @@ pub fn partition_values(total_record_count: i64, primary_key: Option<&str>) -> V
     let mut values = Vec::new();
     let mut offset = 0_i64;
     for _ in 1..=number_of_partitions {
-        values.push(format!(
-            "{}{}{}{}{}{}{}",
-            SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME,
-            SnowflakeConstants::PARTITION_PRIMARY_MARKER,
-            primary_key.unwrap_or(""),
-            SnowflakeConstants::PARTITION_LIMIT_MARKER,
-            partition_record_count,
-            SnowflakeConstants::PARTITION_OFFSET_MARKER,
-            offset
-        ));
+        values.push(
+            PartitionPage {
+                primary_key: primary_key.unwrap_or(""),
+                limit: &partition_record_count.to_string(),
+                offset: &offset.to_string(),
+            }
+            .to_string(),
+        );
         offset += partition_record_count;
     }
     values
