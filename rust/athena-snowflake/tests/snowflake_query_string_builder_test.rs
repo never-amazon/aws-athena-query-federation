@@ -512,21 +512,21 @@ fn complex_expression_constraints(allocator: &BlockAllocatorImpl) -> Constraints
     let col2 =
         FederationExpression::Variable(VariableExpression::new("col2", DataType::Int32).unwrap());
     let greater = function(
-        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME,
+        StandardFunctions::GreaterThan,
         vec![
             col2,
             constant(allocator, Value::from(10_i32), DataType::Int32),
         ],
     );
     let equal = function(
-        StandardFunctions::EQUAL_OPERATOR_FUNCTION_NAME,
+        StandardFunctions::Equal,
         vec![
             col1(),
             constant(allocator, Value::from("it's"), DataType::Utf8),
         ],
     );
-    let is_null = function(StandardFunctions::IS_NULL_FUNCTION_NAME, vec![col1()]);
-    let or = function(StandardFunctions::OR_FUNCTION_NAME, vec![equal, is_null]);
+    let is_null = function(StandardFunctions::IsNull, vec![col1()]);
+    let or = function(StandardFunctions::Or, vec![equal, is_null]);
     let range = Range::less_than_or_equal(allocator, &DataType::Int32, 100_i32).unwrap();
     Constraints::new(
         int_summary(range),
