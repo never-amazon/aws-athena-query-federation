@@ -49,7 +49,7 @@ use crate::resolver::SnowflakeJdbcCaseResolver;
 use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
 use crate::snowflake_constants::{is_blank, SnowflakeConstants};
 use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
-use crate::snowflake_environment_properties::SnowflakeEnvironmentProperties;
+use crate::snowflake_environment_properties::snowflake_parameters;
 use crate::snowflake_query_string_builder::{
     base_export_sql, query_string_builder, single_quote, SnowflakeQueryStringBuilder,
 };
@@ -102,7 +102,7 @@ impl SnowflakeMetadataDialect {
     ) -> Result<SnowflakeConnectionFactory> {
         SnowflakeConnectionFactory::new_with_config_options(
             config.clone(),
-            Some(SnowflakeEnvironmentProperties::get_snow_flake_parameter(
+            Some(snowflake_parameters(
                 &SnowflakeConstants::jdbc_properties(),
                 config_options,
             )),

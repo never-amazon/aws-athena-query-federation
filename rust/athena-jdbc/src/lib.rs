@@ -11,7 +11,7 @@ mod multiplexing_jdbc_metadata_handler;
 mod multiplexing_jdbc_record_handler;
 mod validate;
 
-pub use jdbc_environment_properties::JdbcEnvironmentProperties;
+pub use jdbc_environment_properties::ConnectionStringFormat;
 pub use multiplexing_jdbc_composite_handler::{
     has_catalog_connections, multiplexing_composite_handler,
 };

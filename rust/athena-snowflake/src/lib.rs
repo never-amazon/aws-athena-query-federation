@@ -24,7 +24,9 @@ pub use snowflake_composite_handler::composite_handler_from_environment;
 pub use snowflake_constants::SnowflakeConstants;
 pub use snowflake_credentials_provider::SnowflakeCredentialsProvider;
 pub use snowflake_dialect::SnowflakeDialect;
-pub use snowflake_environment_properties::SnowflakeEnvironmentProperties;
+pub use snowflake_environment_properties::{
+    connection_properties_to_environment, snowflake_parameters, SNOWFLAKE_CONNECTION_STRING,
+};
 pub use snowflake_metadata_handler::{
     create_credentials_provider, create_snowflake_credentials_provider, partition_values,
     SnowflakeMetadataDialect, SnowflakeMetadataHandler,

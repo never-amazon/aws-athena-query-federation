@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use athena_federation_sdk::connection::environment_constants;
-use athena_jdbc::JdbcEnvironmentProperties;
-use athena_snowflake::{SnowflakeConstants, SnowflakeEnvironmentProperties};
+use athena_snowflake::{
+    connection_properties_to_environment, snowflake_parameters, SnowflakeConstants,
+    SNOWFLAKE_CONNECTION_STRING,
+};
 
 const DEFAULT_WAREHOUSE: &str = "warehouse";
 const TEST_WAREHOUSE: &str = "test_warehouse";
@@ -40,7 +42,7 @@ fn quoted(value: &str) -> String {
 }
 
 fn to_environment(properties: &HashMap<String, String>) -> HashMap<String, String> {
-    SnowflakeEnvironmentProperties::new().connection_properties_to_environment(properties.clone())
+    connection_properties_to_environment(properties)
 }
 
 fn base_property() -> HashMap<String, String> {
@@ -86,7 +88,6 @@ fn connection_properties_to_environment_without_port_returns_environment_without
 
 #[test]
 fn connection_properties_to_environment_with_invalid_port_values_skips_invalid_ports() {
-    let env_props = SnowflakeEnvironmentProperties::new();
     let mut properties = map(&[
         (WAREHOUSE, TEST_WAREHOUSE),
         (DATABASE, TEST_DATABASE),
@@ -106,7 +107,7 @@ fn connection_properties_to_environment_with_invalid_port_values_skips_invalid_p
     ];
     for (port, expected) in cases {
         properties.insert(PORT.to_string(), port.to_string());
-        let environment = env_props.connection_properties_to_environment(properties.clone());
+        let environment = connection_properties_to_environment(&properties);
         assert_eq!(
             Some(expected.as_str()),
             get(&environment, DEFAULT),
@@ -130,20 +131,19 @@ fn connection_properties_to_environment_with_null_values_excludes_null_propertie
 
 #[test]
 fn get_connection_string_prefix_with_properties_returns_snowflake_jdbc_prefix() {
-    let prefix =
-        SnowflakeEnvironmentProperties::new().get_connection_string_prefix(&HashMap::new());
+    let prefix = SNOWFLAKE_CONNECTION_STRING.prefix;
     assert_eq!(SNOWFLAKE_JDBC_SNOWFLAKE, prefix);
 }
 
 #[test]
 fn get_database_with_properties_returns_empty_string() {
-    let database = SnowflakeEnvironmentProperties::new().get_database(&HashMap::new());
+    let database = SNOWFLAKE_CONNECTION_STRING.database(&HashMap::new());
     assert_eq!("", database);
 }
 
 #[test]
 fn get_jdbc_parameters_separator_always_returns_ampersand() {
-    let separator = SnowflakeEnvironmentProperties::new().get_jdbc_parameters_separator();
+    let separator = SNOWFLAKE_CONNECTION_STRING.params_separator;
     assert_eq!("&", separator);
 }
 
@@ -156,10 +156,7 @@ fn get_snow_flake_parameter_with_glue_connection_returns_all_parameters() {
         (SCHEMA, TEST_SCHEMA),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert_eq!(
@@ -181,10 +178,7 @@ fn get_snow_flake_parameter_without_glue_connection_excludes_warehouse_database_
         (SCHEMA, TEST_SCHEMA),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
@@ -200,10 +194,7 @@ fn get_snow_flake_parameter_without_schema_excludes_schema_parameter() {
         (DATABASE, TEST_DATABASE),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert_eq!(
@@ -218,10 +209,7 @@ fn get_snow_flake_parameter_without_schema_excludes_schema_parameter() {
 fn get_snow_flake_parameter_with_null_values_excludes_null_parameters() {
     let connection_properties = map(&[(GLUE, "true")]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
@@ -237,10 +225,7 @@ fn get_snow_flake_parameter_with_partial_null_values_excludes_only_null_paramete
         (SCHEMA, TEST_SCHEMA),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert_eq!(
@@ -311,7 +296,6 @@ fn connection_properties_to_environment_with_special_characters_returns_environm
 
 #[test]
 fn connection_properties_to_environment_with_case_sensitivity_preserves_case() {
-    let env_props = SnowflakeEnvironmentProperties::new();
     let mut properties = map(&[
         (WAREHOUSE, "TEST_WAREHOUSE"),
         (DATABASE, "TestDatabase"),
@@ -320,7 +304,7 @@ fn connection_properties_to_environment_with_case_sensitivity_preserves_case() {
     ]);
     let expected = format!("{SNOWFLAKE_JDBC_SNOWFLAKE}{TEST_HOST}");
 
-    let environment = env_props.connection_properties_to_environment(properties.clone());
+    let environment = connection_properties_to_environment(&properties);
 
     assert_eq!(Some("TEST_WAREHOUSE"), get(&environment, WAREHOUSE));
     assert_eq!(Some("TestDatabase"), get(&environment, DATABASE));
@@ -329,7 +313,7 @@ fn connection_properties_to_environment_with_case_sensitivity_preserves_case() {
 
     properties.insert(WAREHOUSE.to_string(), "test_warehouse".to_string());
     properties.insert(SCHEMA.to_string(), "test_schema".to_string());
-    let environment = env_props.connection_properties_to_environment(properties);
+    let environment = connection_properties_to_environment(&properties);
 
     assert_eq!(Some("test_warehouse"), get(&environment, WAREHOUSE));
     assert_eq!(Some("test_schema"), get(&environment, SCHEMA));
@@ -338,8 +322,7 @@ fn connection_properties_to_environment_with_case_sensitivity_preserves_case() {
 
 #[test]
 fn get_snow_flake_parameter_with_empty_hash_map_returns_empty_parameters() {
-    let parameters =
-        SnowflakeEnvironmentProperties::get_snow_flake_parameter(&HashMap::new(), &HashMap::new());
+    let parameters = snowflake_parameters(&HashMap::new(), &HashMap::new());
     assert!(parameters.is_empty());
 }
 
@@ -352,10 +335,7 @@ fn get_snow_flake_parameter_with_empty_string_values_excludes_parameters() {
         (SCHEMA, ""),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
@@ -372,10 +352,7 @@ fn get_snow_flake_parameter_with_null_literal_values_excludes_parameters() {
         (SCHEMA, "null"),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
@@ -392,10 +369,7 @@ fn get_snow_flake_parameter_with_null_literal_mixed_case_and_whitespace_excludes
         (SCHEMA, "   "),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
     assert!(!parameters.contains_key(DB));
@@ -411,10 +385,7 @@ fn get_snow_flake_parameter_with_null_literal_warehouse_only_keeps_other_paramet
         (SCHEMA, TEST_SCHEMA),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert!(!parameters.contains_key(DEFAULT_WAREHOUSE));
     assert_eq!(Some(quoted(TEST_DATABASE).as_str()), get(&parameters, DB));
@@ -432,10 +403,7 @@ fn get_snow_flake_parameter_with_value_containing_null_is_preserved() {
         (DATABASE, "nullsafe_db"),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some("\"NULLABLE_WH\""), get(&parameters, DEFAULT_WAREHOUSE));
     assert_eq!(Some("\"nullsafe_db\""), get(&parameters, DB));
@@ -450,10 +418,7 @@ fn get_snow_flake_parameter_with_special_characters_returns_quoted_special_chara
         (SCHEMA, "schema$name"),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert_eq!(
@@ -473,10 +438,7 @@ fn get_snow_flake_parameter_with_case_sensitivity_preserves_case() {
         (SCHEMA, "test_schema"),
     ]);
 
-    let parameters = SnowflakeEnvironmentProperties::get_snow_flake_parameter(
-        &base_property(),
-        &connection_properties,
-    );
+    let parameters = snowflake_parameters(&base_property(), &connection_properties);
 
     assert_eq!(Some(TEST_USER), get(&parameters, USER));
     assert_eq!(

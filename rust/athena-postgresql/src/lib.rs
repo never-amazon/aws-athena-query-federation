@@ -14,7 +14,9 @@ mod sql_dialect;
 pub use composite_handler::composite_handler_from_environment;
 pub use constants::PostGreSqlConstants;
 pub use driver::{PgConnection, PgDatabaseMetaData, PgDriver, POSTGRESQL_DRIVER_CLASS};
-pub use environment_properties::PostGreSqlEnvironmentProperties;
+pub use environment_properties::{
+    connection_properties_to_environment, POSTGRESQL_CONNECTION_STRING,
+};
 pub use metadata_handler::{
     escape_identifier, get_char_columns, get_split_clauses, is_valid_split_column, jdbc_properties,
     wrap_name_with_escaped_character, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,

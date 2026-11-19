@@ -266,7 +266,7 @@ com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	-	not_ported	th
 com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no Rust connector reads the limit or sort from the plan through this helper
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
 com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::manual_pagination	merged	the static-method class becomes free functions in the pagination_helper module
-com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::JdbcEnvironmentProperties	ported	
+com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::ConnectionStringFormat	ported	the abstract getters are const fields of a format struct
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcCompositeHandler	athena-jdbc/src/multiplexing_jdbc_composite_handler.rs::multiplexing_composite_handler	merged	the constructor is a function that picks the multiplexing or single handlers and returns a CompositeHandler
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcMetadataHandler	athena-jdbc/src/multiplexing_jdbc_metadata_handler.rs::MultiplexingJdbcMetadataHandler	ported	
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcRecordHandler	athena-jdbc/src/multiplexing_jdbc_record_handler.rs::MultiplexingJdbcRecordHandler	ported	
@@ -297,7 +297,7 @@ com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/spli
 com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::SplitterFactory	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/constants.rs::PostGreSqlConstants	ported	
-com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::PostGreSqlEnvironmentProperties	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::connection_properties_to_environment	merged	a const ConnectionStringFormat and one conversion function
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMetadataHandler	athena-postgresql/src/metadata_handler.rs::PostGreSqlMetadataHandler	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxCompositeHandler	athena-postgresql/src/mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-postgresql/src/mux_metadata_handler.rs::PostGreSqlMuxMetadataHandler	ported	type alias for the athena-jdbc MultiplexingJdbcMetadataHandler over PostGreSqlMetadataHandler
@@ -311,7 +311,7 @@ com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowf
 com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/src/snowflake_constants.rs::SnowflakeConstants	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::SnowflakeEnvironmentProperties	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::connection_properties_to_environment	merged	module functions; getSnowFlakeParameter is snowflake_parameters
 com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	identical to the shared athena-jdbc parser
 com.amazonaws.athena.connectors.snowflake.SnowflakeMetadataHandler	athena-snowflake/src/snowflake_metadata_handler.rs::SnowflakeMetadataHandler	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures

@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use athena_federation_sdk::connection::environment_constants;
-use athena_jdbc::JdbcEnvironmentProperties;
-use athena_postgresql::PostGreSqlEnvironmentProperties;
+use athena_postgresql::connection_properties_to_environment;
 
 fn connection_properties() -> HashMap<String, String> {
     HashMap::from([
@@ -22,9 +21,8 @@ fn connection_properties() -> HashMap<String, String> {
     ])
 }
 
-fn connection_string(properties: HashMap<String, String>) -> String {
-    PostGreSqlEnvironmentProperties::new()
-        .connection_properties_to_environment(properties)
+fn connection_string(properties: &HashMap<String, String>) -> String {
+    connection_properties_to_environment(properties)
         .remove(environment_constants::DEFAULT)
         .unwrap()
 }
@@ -33,7 +31,7 @@ fn connection_string(properties: HashMap<String, String>) -> String {
 fn test_basic_connection_string() {
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?${postgres-secret}",
-        connection_string(connection_properties())
+        connection_string(&connection_properties())
     );
 }
 
@@ -47,7 +45,7 @@ fn test_connection_string_with_jdbc_params() {
     properties.remove(environment_constants::SECRET_NAME);
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?ssl=true",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -60,7 +58,7 @@ fn test_connection_string_with_jdbc_params_and_secret() {
     );
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?ssl=true&${postgres-secret}",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -70,7 +68,7 @@ fn test_connection_string_without_optional_params() {
     properties.remove(environment_constants::SECRET_NAME);
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -87,7 +85,7 @@ fn test_connection_string_with_empty_values() {
     );
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?&${}",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -100,7 +98,7 @@ fn test_empty_jdbc_params_with_secret() {
     );
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?&${postgres-secret}",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -121,7 +119,7 @@ fn test_special_characters_in_parameters() {
     );
     assert_eq!(
         "postgres://jdbc:postgresql://postgres.example.com:5000/test/db?currentSchema=public&search_path=public%2Cshared&${postgres-secret}",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
 
@@ -135,6 +133,6 @@ fn test_multiple_jdbc_parameters() {
     );
     assert_eq!(
         "postgres://jdbc:postgresql://postgres-endpoint:5000/testdb?ssl=true&sslmode=verify-full&connectTimeout=10&socketTimeout=20&tcpKeepAlive=true&${postgres-secret}",
-        connection_string(properties)
+        connection_string(&properties)
     );
 }
