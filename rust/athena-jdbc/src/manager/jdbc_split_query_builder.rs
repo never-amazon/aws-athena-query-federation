@@ -11,8 +11,8 @@ use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::{
-    SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName, SubstraitAccumulatorVisitor,
-    SubstraitSqlUtils, SubstraitTypeAndValue, SubstraitValue,
+    parameterize, plan, SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName,
+    SubstraitTypeAndValue, SubstraitValue,
 };
 
 use super::default_jdbc_federation_expression_parser::DefaultJdbcFederationExpressionParser;
@@ -399,18 +399,14 @@ fn build_calcite_sql(
     split_table: &str,
     split_restriction: &str,
 ) -> Result<(String, Vec<SubstraitTypeAndValue>)> {
-    let sql_node =
-        SubstraitSqlUtils::get_sql_node_from_substrait_plan(base64_encoded_plan, sql_dialect)?;
+    let sql_node = plan::to_sql_node(base64_encoded_plan, sql_dialect)?;
     if sql_node.as_select().is_none() {
         return Err(FederationError::Runtime(
             "Unsupported Query Type. Only SELECT Query is supported.".to_string(),
         ));
     }
-    let table_schema =
-        SubstraitSqlUtils::get_table_schema_from_substrait_plan(base64_encoded_plan, sql_dialect)?;
-    let mut accumulator = Vec::new();
-    let mut parameterized_node =
-        SubstraitAccumulatorVisitor::new(&mut accumulator, &table_schema).visit(&sql_node)?;
+    let table_schema = plan::table_schema(base64_encoded_plan, sql_dialect)?;
+    let (mut parameterized_node, accumulator) = parameterize(sql_node, &table_schema)?;
     tracing::debug!(
         "CalciteSql parameterized sql with dialect {:?}: {}",
         sql_dialect,
@@ -883,7 +879,7 @@ pub(crate) fn handle_data_types_for_prepared_statement(
     for (i, type_and_value) in accumulator.iter().enumerate() {
         let index = i + 1;
         let value = type_and_value.value();
-        match type_and_value.get_type() {
+        match type_and_value.ty() {
             SqlTypeName::Bigint => statement.set_long(index, substrait_long_value(value)?)?,
             SqlTypeName::Double => statement.set_double(index, substrait_double_value(value)?)?,
             SqlTypeName::Integer => statement.set_int(index, substrait_int_value(value)?)?,
@@ -953,7 +949,7 @@ pub(crate) fn handle_data_types_for_prepared_statement(
                 other => {
                     return Err(FederationError::not_supported(format!(
                         "Can't handle timestamp format: {}, value class: {}",
-                        type_and_value.get_type(),
+                        type_and_value.ty(),
                         other.java_class_name()
                     )))
                 }
@@ -991,7 +987,7 @@ fn bind_substrait_date(
             Err(_) => {
                 return Err(FederationError::not_supported(format!(
                     "Can't handle date format: {}, value type: {}, value: {}",
-                    type_and_value.get_type(),
+                    type_and_value.ty(),
                     other.java_class_name(),
                     other
                 )))

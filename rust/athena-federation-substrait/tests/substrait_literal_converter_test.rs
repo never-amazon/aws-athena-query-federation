@@ -2,8 +2,8 @@ use arrow_schema::{DataType, TimeUnit};
 use athena_federation_substrait::proto::expression::literal::{Decimal, LiteralType, VarChar};
 use athena_federation_substrait::proto::expression::{Literal, RexType};
 use athena_federation_substrait::proto::Expression;
-use athena_federation_substrait::ErrorKind;
-use athena_federation_substrait::{LiteralValue, SubstraitLiteralConverter};
+use athena_federation_substrait::SubstraitError;
+use athena_federation_substrait::{literal, LiteralValue};
 use bigdecimal::BigDecimal;
 use chrono::{FixedOffset, TimeZone};
 use std::str::FromStr;
@@ -18,11 +18,11 @@ fn literal_expr(literal_type: Option<LiteralType>) -> Expression {
 }
 
 fn extract(literal_type: LiteralType) -> (LiteralValue, DataType) {
-    SubstraitLiteralConverter::extract_literal_value(&literal_expr(Some(literal_type))).unwrap()
+    literal::extract(&literal_expr(Some(literal_type))).unwrap()
 }
 
 fn created_literal(value: &LiteralValue, arrow_type: &DataType) -> LiteralType {
-    let expr = SubstraitLiteralConverter::create_literal_expression(value, arrow_type).unwrap();
+    let expr = literal::to_expression(value, arrow_type).unwrap();
     match expr.rex_type {
         Some(RexType::Literal(l)) => {
             assert!(l.nullable);
@@ -117,8 +117,8 @@ fn test_create_decimal_literal() {
 
 #[test]
 fn test_extract_non_literal_expression() {
-    let err = SubstraitLiteralConverter::extract_literal_value(&Expression::default()).unwrap_err();
-    assert_eq!(ErrorKind::IllegalArgument, err.kind());
+    let err = literal::extract(&Expression::default()).unwrap_err();
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
 }
 
 #[test]
@@ -305,16 +305,13 @@ fn test_create_unsupported_arrow_type() {
         DataType::Utf8,
         true,
     )));
-    let err = SubstraitLiteralConverter::create_literal_expression(
-        &LiteralValue::String("test".to_string()),
-        &list_type,
-    )
-    .unwrap_err();
-    assert_eq!(ErrorKind::IllegalArgument, err.kind());
+    let err =
+        literal::to_expression(&LiteralValue::String("test".to_string()), &list_type).unwrap_err();
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
 }
 
 #[test]
 fn test_extract_unsupported_literal_type() {
-    let err = SubstraitLiteralConverter::extract_literal_value(&literal_expr(None)).unwrap_err();
-    assert_eq!(ErrorKind::UnsupportedOperation, err.kind());
+    let err = literal::extract(&literal_expr(None)).unwrap_err();
+    assert!(matches!(err, SubstraitError::Unsupported(_)));
 }

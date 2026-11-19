@@ -153,10 +153,6 @@ impl Direction {
             Direction::Descending => NullDirection::First,
         }
     }
-
-    pub fn is_descending(self) -> bool {
-        self == Direction::Descending
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -228,7 +224,7 @@ pub enum RexNode {
 }
 
 impl RexNode {
-    pub fn get_type(&self) -> &RelDataType {
+    pub fn ty(&self) -> &RelDataType {
         match self {
             RexNode::InputRef { ty, .. } | RexNode::CorrelField { ty, .. } => ty,
             RexNode::Literal(l) => &l.ty,
@@ -284,7 +280,7 @@ impl RexNode {
                 ..
             }) => *b,
             RexNode::Call(c) => match c.op.kind {
-                SqlKind::IsNotNull => !c.operands[0].get_type().is_nullable(),
+                SqlKind::IsNotNull => !c.operands[0].ty().is_nullable(),
                 SqlKind::IsNotTrue | SqlKind::IsFalse | SqlKind::Not => {
                     c.operands[0].is_always_false()
                 }
@@ -304,7 +300,7 @@ impl RexNode {
                 ..
             }) => !*b,
             RexNode::Call(c) => match c.op.kind {
-                SqlKind::IsNull => !c.operands[0].get_type().is_nullable(),
+                SqlKind::IsNull => !c.operands[0].ty().is_nullable(),
                 SqlKind::IsNotTrue | SqlKind::IsFalse | SqlKind::Not => {
                     c.operands[0].is_always_true()
                 }
@@ -364,7 +360,7 @@ impl RexNode {
         }
     }
 
-    pub fn shift_refs(&self, map: &dyn Fn(usize) -> RexNode) -> RexNode {
+    pub fn shift_refs(&self, map: &impl Fn(usize) -> RexNode) -> RexNode {
         match self {
             RexNode::InputRef { index, .. } => map(*index),
             RexNode::Literal(_) | RexNode::CorrelField { .. } => self.clone(),
@@ -470,7 +466,7 @@ impl RexBuilder {
     }
 
     pub fn infer_type(self, op: &'static SqlOperator, operands: &[RexNode]) -> RelDataType {
-        let any_nullable = operands.iter().any(|o| o.get_type().is_nullable());
+        let any_nullable = operands.iter().any(|o| o.ty().is_nullable());
         match op.kind {
             SqlKind::IsNull
             | SqlKind::IsNotNull
@@ -481,7 +477,7 @@ impl RexBuilder {
             | SqlKind::IsDistinctFrom
             | SqlKind::IsNotDistinctFrom => self.boolean_type(false),
             SqlKind::Search => {
-                let nullable = operands.first().is_some_and(|o| o.get_type().is_nullable())
+                let nullable = operands.first().is_some_and(|o| o.ty().is_nullable())
                     && match operands.get(1) {
                         Some(RexNode::Literal(RexLiteral {
                             value: LiteralValue::Sarg(s),
@@ -506,7 +502,7 @@ impl RexBuilder {
             | SqlKind::Between => self.boolean_type(any_nullable),
             _ => operands.first().map_or_else(
                 || self.boolean_type(any_nullable),
-                |o| o.get_type().with_nullability(any_nullable),
+                |o| o.ty().with_nullability(any_nullable),
             ),
         }
     }

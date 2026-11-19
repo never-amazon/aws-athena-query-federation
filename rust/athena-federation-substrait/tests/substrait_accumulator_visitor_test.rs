@@ -1,9 +1,8 @@
-use athena_federation_substrait::ErrorKind;
 use athena_federation_substrait::SqlTypeName;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
+use athena_federation_substrait::SubstraitError;
 use athena_federation_substrait::{operators, SqlKind, SqlOperator};
+use athena_federation_substrait::{plan, SqlDialect};
 use athena_federation_substrait::{RelDataType, RelDataTypeSystem};
-use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
 use athena_federation_substrait::{SqlIdentifier, SqlLiteral, SqlNode, SqlSelect};
 use athena_federation_substrait::{SubstraitTypeAndValue, SubstraitValue};
 
@@ -43,7 +42,7 @@ fn compound(names: &[&str]) -> SqlNode {
 }
 
 fn num(v: &str) -> SqlNode {
-    SqlNode::literal(SqlLiteral::exact(v))
+    SqlNode::literal(SqlLiteral::exact(v.parse().expect("decimal")))
 }
 
 fn chars(v: &str) -> SqlNode {
@@ -55,11 +54,7 @@ fn call(op: &'static SqlOperator, operands: Vec<SqlNode>) -> SqlNode {
 }
 
 fn run(schema: &RelDataType, node: &SqlNode) -> (SqlNode, Vec<SubstraitTypeAndValue>) {
-    let mut accumulator = Vec::new();
-    let result = SubstraitAccumulatorVisitor::new(&mut accumulator, schema)
-        .visit(node)
-        .expect("visit");
-    (result, accumulator)
+    athena_federation_substrait::parameterize(node.clone(), schema).expect("visit")
 }
 
 fn operand(node: &SqlNode, i: usize) -> &SqlNode {
@@ -77,7 +72,7 @@ fn select_where(where_clause: SqlNode) -> SqlNode {
 
 fn where_of(node: &SqlNode) -> &SqlNode {
     node.as_select()
-        .and_then(SqlSelect::get_where)
+        .and_then(|select| select.where_clause.as_ref())
         .expect("where")
 }
 
@@ -108,7 +103,7 @@ fn test_accumulator_non_nls_string_value() {
         &call(&operators::EQUALS, vec![id("int_col"), num("123")]),
     );
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Integer);
+    assert_eq!(acc[0].ty(), SqlTypeName::Integer);
     assert_eq!(acc[0].column_name(), "int_col");
 }
 
@@ -119,24 +114,22 @@ fn test_accumulator_nls_string_value() {
         &call(&operators::EQUALS, vec![id("varchar_col"), chars("hello")]),
     );
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Varchar);
+    assert_eq!(acc[0].ty(), SqlTypeName::Varchar);
     assert_eq!(acc[0].value(), &SubstraitValue::String("hello".to_string()));
 }
 
 #[test]
 fn test_accumulator_field_not_found_throws() {
     let s = schema();
-    let mut accumulator = Vec::new();
-    let err = SubstraitAccumulatorVisitor::new(&mut accumulator, &s)
-        .visit(&call(
-            &operators::EQUALS,
-            vec![id("no_such_col"), chars("x")],
-        ))
-        .expect_err("missing field");
-    assert_eq!(err.kind(), ErrorKind::IllegalArgument);
-    assert!(err.message().contains("field no_such_col not found"));
+    let err = athena_federation_substrait::parameterize(
+        call(&operators::EQUALS, vec![id("no_such_col"), chars("x")]),
+        &s,
+    )
+    .expect_err("missing field");
+    assert!(matches!(err, SubstraitError::IllegalArgument(_)));
+    assert!(err.to_string().contains("field no_such_col not found"));
     assert_eq!(
-        err.message(),
+        err.to_string(),
         "field no_such_col not found in schema with fields: [int_col, bigint_col, varchar_col, bool_col, float_col]"
     );
 }
@@ -144,15 +137,16 @@ fn test_accumulator_field_not_found_throws() {
 #[test]
 fn test_accumulator_null_value_throws() {
     let null_schema = struct_type(&[("null_col", SqlTypeName::Null)]);
-    let mut accumulator = Vec::new();
-    let err = SubstraitAccumulatorVisitor::new(&mut accumulator, &null_schema)
-        .visit(&call(
+    let err = athena_federation_substrait::parameterize(
+        call(
             &operators::EQUALS,
             vec![id("null_col"), SqlNode::literal(SqlLiteral::null())],
-        ))
-        .expect_err("null value");
-    assert_eq!(err.kind(), ErrorKind::NullPointer);
-    assert!(err.message().contains("value is null"));
+        ),
+        &null_schema,
+    )
+    .expect_err("null value");
+    assert!(matches!(err, SubstraitError::NullPointer(_)));
+    assert!(err.to_string().contains("value is null"));
 }
 
 #[test]
@@ -334,7 +328,7 @@ fn test_not_on_boolean_column() {
     let select = select_where(call(&operators::NOT, vec![id("bool_col")]));
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
+    assert_eq!(acc[0].ty(), SqlTypeName::Boolean);
     assert_eq!(acc[0].value(), &SubstraitValue::Boolean(false));
     assert_eq!(where_of(&result).kind(), SqlKind::Equals);
 }
@@ -344,7 +338,7 @@ fn test_standalone_boolean_column() {
     let select = select_where(id("bool_col"));
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
+    assert_eq!(acc[0].ty(), SqlTypeName::Boolean);
     assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
     assert_eq!(acc[0].column_name(), "bool_col");
     let w = where_of(&result);
@@ -354,7 +348,7 @@ fn test_standalone_boolean_column() {
     assert_eq!(
         operand(w, 0)
             .as_identifier()
-            .and_then(SqlIdentifier::get_simple),
+            .and_then(SqlIdentifier::as_simple),
         Some("bool_col")
     );
 }
@@ -365,10 +359,10 @@ fn test_boolean_column_in_and_operator() {
     let select = select_where(call(&operators::AND, vec![id("bool_col"), int_cmp]));
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 2);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
+    assert_eq!(acc[0].ty(), SqlTypeName::Boolean);
     assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
     assert_eq!(acc[0].column_name(), "bool_col");
-    assert_eq!(acc[1].get_type(), SqlTypeName::Integer);
+    assert_eq!(acc[1].ty(), SqlTypeName::Integer);
     let w = where_of(&result);
     assert_eq!(w.kind(), SqlKind::And);
     assert!(matches!(operand(w, 0), SqlNode::Call(_)));
@@ -382,7 +376,7 @@ fn test_boolean_column_in_or_operator() {
     let select = select_where(call(&operators::OR, vec![id("bool_col"), int_cmp]));
     let (result, acc) = run(&schema(), &select);
     assert_eq!(acc.len(), 2);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
+    assert_eq!(acc[0].ty(), SqlTypeName::Boolean);
     assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
     assert_eq!(where_of(&result).kind(), SqlKind::Or);
 }
@@ -395,7 +389,7 @@ fn test_explicit_boolean_comparison() {
     );
     let (result, acc) = run(&schema(), &select_where(eq));
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Boolean);
+    assert_eq!(acc[0].ty(), SqlTypeName::Boolean);
     assert_eq!(acc[0].value(), &SubstraitValue::Boolean(true));
     assert_eq!(where_of(&result).kind(), SqlKind::Equals);
 }
@@ -446,7 +440,7 @@ fn test_visit_like_with_concat() {
         &call(&operators::LIKE, vec![id("cc_call_center_id"), concat]),
     );
     assert_eq!(acc.len(), 1);
-    assert_eq!(acc[0].get_type(), SqlTypeName::Varchar);
+    assert_eq!(acc[0].ty(), SqlTypeName::Varchar);
     assert_eq!(acc[0].value(), &SubstraitValue::String("a".to_string()));
     assert_eq!(acc[0].column_name(), "cc_call_center_id");
 }
@@ -455,17 +449,15 @@ fn test_visit_like_with_concat() {
 fn scalar_subquery_binds_each_literal_once() {
     let plan = include_str!("fixtures/scalar-subquery-bool-where.plan").trim();
     let dialect = SqlDialect::ansi();
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .unwrap();
+    let node = plan::to_sql_node(plan, &dialect).unwrap();
+    let schema = plan::table_schema(plan, &dialect).unwrap();
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).unwrap();
     let sql = rewritten.to_sql_string(&dialect);
     assert!(sql.ends_with("WHERE `bool_col` = ?))))"), "{sql}");
     assert!(!sql.contains("(`bool_col` = ?) = ?"), "{sql}");
     assert_eq!(1, accumulator.len());
-    assert_eq!(SqlTypeName::Boolean, accumulator[0].get_type());
+    assert_eq!(SqlTypeName::Boolean, accumulator[0].ty());
     assert_eq!(&SubstraitValue::Boolean(true), accumulator[0].value());
     assert_eq!("bool_col", accumulator[0].column_name());
 }
@@ -486,12 +478,10 @@ fn extended_plan(query: &str) -> String {
 
 fn parameterize(plan: &str) -> (String, Vec<SubstraitTypeAndValue>) {
     let dialect = SqlDialect::ansi();
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &dialect).unwrap();
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &dialect).unwrap();
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .unwrap();
+    let node = plan::to_sql_node(plan, &dialect).unwrap();
+    let schema = plan::table_schema(plan, &dialect).unwrap();
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).unwrap();
     (rewritten.to_sql_string(&dialect), accumulator)
 }
 
@@ -505,10 +495,10 @@ fn test_scalar_subquery_where_visited_once() {
         "{sql}"
     );
     assert_eq!(2, accumulator.len());
-    assert_eq!(SqlTypeName::Boolean, accumulator[0].get_type());
+    assert_eq!(SqlTypeName::Boolean, accumulator[0].ty());
     assert_eq!(&SubstraitValue::Boolean(true), accumulator[0].value());
     assert_eq!("bool_col", accumulator[0].column_name());
-    assert_eq!(SqlTypeName::Bigint, accumulator[1].get_type());
+    assert_eq!(SqlTypeName::Bigint, accumulator[1].ty());
     assert_eq!("3", accumulator[1].value().to_string());
     assert_eq!("bigint_col", accumulator[1].column_name());
 }
@@ -523,10 +513,10 @@ fn scalar_subquery_not_bool_with_literal_binds_once() {
         "{sql}"
     );
     assert_eq!(2, accumulator.len());
-    assert_eq!(SqlTypeName::Bigint, accumulator[0].get_type());
+    assert_eq!(SqlTypeName::Bigint, accumulator[0].ty());
     assert_eq!("3", accumulator[0].value().to_string());
     assert_eq!("bigint_col", accumulator[0].column_name());
-    assert_eq!(SqlTypeName::Boolean, accumulator[1].get_type());
+    assert_eq!(SqlTypeName::Boolean, accumulator[1].ty());
     assert_eq!(&SubstraitValue::Boolean(false), accumulator[1].value());
     assert_eq!("bool_col", accumulator[1].column_name());
 }

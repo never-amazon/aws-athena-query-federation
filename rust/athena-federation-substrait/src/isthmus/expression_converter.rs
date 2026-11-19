@@ -1,11 +1,10 @@
-use std::collections::HashMap;
+use std::rc::Rc;
 
 use bigdecimal::BigDecimal;
 
-use super::function_mappings::{
-    aggregate_operator, scalar_operator, window_operator, FunctionDecl,
-};
+use super::function_mappings::{aggregate_operator, scalar_operator, window_operator};
 use super::type_converter::{to_calcite, type_string};
+use super::SubstraitToCalcite;
 use crate::calcite::operators::{self, SqlOperator};
 use crate::calcite::rel::RelNode;
 use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem};
@@ -19,6 +18,7 @@ use crate::calcite::sql_type_name::{SqlTypeFamily, SqlTypeName};
 use crate::calcite::values::{BitString, DateString, TimeString, TimestampString};
 use crate::error::{Result, SubstraitError};
 use crate::java_cast::{int_to_byte, int_to_short, long_to_int};
+use crate::literal::big_decimal_from_bytes;
 use crate::proto::expression::field_reference::{ReferenceType, RootType};
 use crate::proto::expression::literal::LiteralType;
 use crate::proto::expression::reference_segment;
@@ -29,30 +29,35 @@ use crate::proto::expression::{
 use crate::proto::function_argument::ArgType;
 use crate::proto::sort_field::{SortDirection, SortKind};
 use crate::proto::{Expression, FunctionArgument, SortField, Type};
-use crate::substrait_literal_converter::big_decimal_from_bytes;
 
-pub(crate) struct ExpressionConverter<'a> {
-    pub(crate) system: RelDataTypeSystem,
-    pub(crate) rex_builder: RexBuilder,
-    pub(crate) functions: &'a HashMap<u32, FunctionDecl>,
-    pub(crate) rels: &'a super::SubstraitToCalcite,
+fn lit(value: LiteralValue, ty: RelDataType) -> RexNode {
+    RexNode::Literal(RexLiteral { value, ty })
 }
 
 fn required<'b, T>(v: Option<&'b T>, what: &str) -> Result<&'b T> {
-    v.ok_or_else(|| SubstraitError::illegal_argument(format!("Unknown type: {what}")))
+    v.ok_or_else(|| SubstraitError::IllegalArgument(format!("Unknown type: {what}")))
 }
 
-pub(crate) fn sort_direction(field: &SortField) -> Result<SortDirection> {
+pub(crate) fn sort_direction(field: &SortField) -> Result<Option<(Direction, NullDirection)>> {
     let raw = match field.sort_kind {
         Some(SortKind::Direction(d)) => d,
         _ => 0,
     };
     match SortDirection::try_from(raw) {
-        Ok(SortDirection::Unspecified) | Err(_) => Err(SubstraitError::illegal_argument(format!(
+        Ok(SortDirection::AscNullsFirst) => Ok(Some((Direction::Ascending, NullDirection::First))),
+        Ok(SortDirection::AscNullsLast) => Ok(Some((Direction::Ascending, NullDirection::Last))),
+        Ok(SortDirection::DescNullsFirst) => {
+            Ok(Some((Direction::Descending, NullDirection::First)))
+        }
+        Ok(SortDirection::DescNullsLast) => Ok(Some((Direction::Descending, NullDirection::Last))),
+        Ok(SortDirection::Clustered) => Ok(None),
+        Ok(d @ SortDirection::Unspecified) => Err(SubstraitError::IllegalArgument(format!(
             "Unknown type: {}",
-            SortDirection::try_from(raw).map_or("UNRECOGNIZED", |d| d.as_str_name())
+            d.as_str_name()
         ))),
-        Ok(d) => Ok(d),
+        Err(_) => Err(SubstraitError::IllegalArgument(
+            "Unknown type: UNRECOGNIZED".into(),
+        )),
     }
 }
 
@@ -73,7 +78,7 @@ fn time_unit(name: &str) -> Result<TimeUnit> {
         "DOY" => TimeUnit::Doy,
         "EPOCH" => TimeUnit::Epoch,
         other => {
-            return Err(SubstraitError::illegal_argument(format!(
+            return Err(SubstraitError::IllegalArgument(format!(
                 "No enum constant org.apache.calcite.avatica.util.TimeUnitRange.{other}"
             )))
         }
@@ -86,7 +91,7 @@ fn trim_flag(name: &str) -> Result<TrimFlag> {
         "BOTH" => Ok(TrimFlag::Both),
         "LEADING" => Ok(TrimFlag::Leading),
         "TRAILING" => Ok(TrimFlag::Trailing),
-        other => Err(SubstraitError::illegal_argument(format!(
+        other => Err(SubstraitError::IllegalArgument(format!(
             "No enum constant org.apache.calcite.sql.fun.SqlTrimFunction.Flag.{other}"
         ))),
     }
@@ -97,20 +102,20 @@ fn decimal_literal(
     d: &crate::proto::expression::literal::Decimal,
 ) -> Result<RexNode> {
     if d.value.len() != 16 {
-        return Err(SubstraitError::illegal_argument(
-            "Decimal value must be 16 bytes",
+        return Err(SubstraitError::IllegalArgument(
+            "Decimal value must be 16 bytes".into(),
         ));
     }
     let value = big_decimal_from_bytes(&d.value, i64::from(d.scale));
     let ty = RelDataType::create_sql_type_with_scale(s, SqlTypeName::Decimal, d.precision, d.scale);
-    Ok(ExpressionConverter::lit(LiteralValue::Exact(value), ty))
+    Ok(lit(LiteralValue::Exact(value), ty))
 }
 
 fn empty_list_literal(s: RelDataTypeSystem, l: &crate::proto::r#type::List) -> Result<RexNode> {
     let element = l
         .r#type
         .as_deref()
-        .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+        .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
     let ty = RelDataType::array(
         to_calcite(s, element)?,
         super::type_converter::is_nullable(l.nullability),
@@ -131,13 +136,13 @@ fn precision_timestamp_literal(
 ) -> Result<RexNode> {
     let max = s.max_precision(type_name);
     if precision > max {
-        return Err(SubstraitError::unsupported(format!(
+        return Err(SubstraitError::Unsupported(format!(
             "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
         )));
     }
     let value = timestamp_string(value, precision)?;
     let ty = RelDataType::create_sql_type_with_precision(s, type_name, precision);
-    Ok(ExpressionConverter::lit(LiteralValue::Timestamp(value), ty))
+    Ok(lit(LiteralValue::Timestamp(value), ty))
 }
 
 fn time_literal(s: RelDataTypeSystem, micros: i64) -> RexNode {
@@ -145,7 +150,7 @@ fn time_literal(s: RelDataTypeSystem, micros: i64) -> RexNode {
     let nanos = long_to_int((micros - seconds * 1_000_000) * 1_000).cast_unsigned();
     let ts = TimeString::from_millis_of_day(long_to_int(seconds * 1000)).with_nanos(nanos);
     let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Time, 6);
-    ExpressionConverter::lit(LiteralValue::Time(ts), ty)
+    lit(LiteralValue::Time(ts), ty)
 }
 
 #[allow(
@@ -167,7 +172,7 @@ fn interval_day_to_second_literal(
         subseconds * 10i64.pow((3 - precision).unsigned_abs())
     };
     let total = i64::from(id.days) * 86_400_000 + i64::from(id.seconds) * 1000 + millis;
-    ExpressionConverter::lit(
+    lit(
         LiteralValue::Interval(BigDecimal::from(total)),
         RelDataType::interval(SqlTypeName::IntervalDaySecond, 3),
     )
@@ -208,7 +213,7 @@ fn check_year(kind: &str, epoch_day: i64) -> Result<()> {
     } else {
         format!("{year:04}")
     };
-    Err(SubstraitError::illegal_argument(format!(
+    Err(SubstraitError::IllegalArgument(format!(
         "{kind}{year_text}-{month:02}-{day:02} is outside the years 0001 to 9999"
     )))
 }
@@ -220,7 +225,7 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
         6 => millis_to_seconds_split(value, 1_000_000, 1_000),
         9 => millis_to_seconds_split(value, 1_000_000_000, 1),
         other => {
-            return Err(SubstraitError::unsupported(format!(
+            return Err(SubstraitError::Unsupported(format!(
                 "Cannot handle PrecisionTimestamp with precision {other}."
             )))
         }
@@ -229,25 +234,21 @@ fn timestamp_string(value: i64, precision: i32) -> Result<TimestampString> {
     Ok(TimestampString::from_millis_since_epoch(seconds * 1000).with_nanos(nanos))
 }
 
-impl ExpressionConverter<'_> {
+impl SubstraitToCalcite {
     fn ty(&self, t: Option<&Type>) -> Result<RelDataType> {
-        let t = t.ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+        let t =
+            t.ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         to_calcite(self.system, t)
-    }
-
-    fn lit(value: LiteralValue, ty: RelDataType) -> RexNode {
-        RexNode::Literal(RexLiteral { value, ty })
     }
 
     fn not_null(&self, name: SqlTypeName) -> RelDataType {
         RelDataType::create_sql_type(self.system, name)
     }
 
-    pub(crate) fn convert(&self, expr: &Expression, input: &RelDataType) -> Result<RexNode> {
-        let rex = expr
-            .rex_type
-            .as_ref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: REXTYPE_NOT_SET"))?;
+    pub(crate) fn rex(&mut self, expr: &Expression, input: &RelDataType) -> Result<RexNode> {
+        let rex = expr.rex_type.as_ref().ok_or_else(|| {
+            SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
+        })?;
         match rex {
             RexType::Literal(l) => self.literal(l),
             RexType::Selection(f) => self.field_reference(f, input),
@@ -256,77 +257,81 @@ impl ExpressionConverter<'_> {
             RexType::IfThen(it) => {
                 let mut args = Vec::new();
                 for clause in &it.ifs {
-                    args.push(self.convert(required(clause.r#if.as_ref(), "IF")?, input)?);
-                    args.push(self.convert(required(clause.then.as_ref(), "THEN")?, input)?);
+                    args.push(self.rex(required(clause.r#if.as_ref(), "IF")?, input)?);
+                    args.push(self.rex(required(clause.then.as_ref(), "THEN")?, input)?);
                 }
-                args.push(self.convert(required(it.r#else.as_deref(), "ELSE")?, input)?);
+                args.push(self.rex(required(it.r#else.as_deref(), "ELSE")?, input)?);
                 let ty = case_type(&args);
                 Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SwitchExpression(sw) => {
-                let m = self.convert(required(sw.r#match.as_deref(), "MATCH")?, input)?;
+                let m = self.rex(required(sw.r#match.as_deref(), "MATCH")?, input)?;
                 let mut args = Vec::new();
                 for clause in &sw.ifs {
                     let cond = self.literal(required(clause.r#if.as_ref(), "IF")?)?;
                     args.push(self.rex_builder.make_call(&operators::EQUALS, vec![m.clone(), cond]));
-                    args.push(self.convert(required(clause.then.as_ref(), "THEN")?, input)?);
+                    args.push(self.rex(required(clause.then.as_ref(), "THEN")?, input)?);
                 }
-                args.push(self.convert(required(sw.r#else.as_deref(), "ELSE")?, input)?);
+                args.push(self.rex(required(sw.r#else.as_deref(), "ELSE")?, input)?);
                 let ty = case_type(&args);
                 Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SingularOrList(or) => {
-                let lhs = self.convert(required(or.value.as_deref(), "VALUE")?, input)?;
+                let lhs = self.rex(required(or.value.as_deref(), "VALUE")?, input)?;
                 let mut options = Vec::with_capacity(or.options.len());
                 for o in &or.options {
-                    options.push(self.convert(o, input)?);
+                    options.push(self.rex(o, input)?);
                 }
                 Ok(self.make_in(lhs, options))
             }
             RexType::Cast(c) => {
                 let ty = self.ty(c.r#type.as_ref())?;
-                let operand = self.convert(required(c.input.as_deref(), "INPUT")?, input)?;
+                let operand = self.rex(required(c.input.as_deref(), "INPUT")?, input)?;
                 let safe = c.failure_behavior == crate::proto::expression::cast::FailureBehavior::ReturnNull as i32;
                 Ok(RexBuilder::make_cast(ty, operand, safe))
             }
-            RexType::MultiOrList(_) => Err(SubstraitError::unsupported(
-                "Expression MultiOrList not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-            )),
+            RexType::MultiOrList(_) => Err(SubstraitError::Unsupported("Expression MultiOrList not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into())),
             RexType::Subquery(q) => self.subquery(q, input),
-            RexType::Nested(_) => Err(SubstraitError::illegal_argument("Unknown type: NESTED")),
-            RexType::DynamicParameter(_) => Err(SubstraitError::illegal_argument("Unknown type: DYNAMIC_PARAMETER")),
+            RexType::Nested(_) => Err(SubstraitError::IllegalArgument("Unknown type: NESTED".into())),
+            RexType::DynamicParameter(_) => Err(SubstraitError::IllegalArgument("Unknown type: DYNAMIC_PARAMETER".into())),
             #[allow(deprecated, reason = "reads deprecated Substrait proto fields that the Java converter still reads")]
-            RexType::Enum(_) => Err(SubstraitError::unsupported("Unsupported type: ENUM")),
+            RexType::Enum(_) => Err(SubstraitError::Unsupported("Unsupported type: ENUM".into())),
         }
     }
 
+    fn subquery_rel(
+        &mut self,
+        rel: Option<&crate::proto::Rel>,
+        input: &RelDataType,
+    ) -> Result<RelNode> {
+        let rel = rel.ok_or_else(|| {
+            SubstraitError::IllegalArgument("Unsupported RelTypeCase of RELTYPE_NOT_SET".into())
+        })?;
+        self.convert_sub_query(rel, input)
+    }
+
     fn subquery(
-        &self,
+        &mut self,
         q: &crate::proto::expression::Subquery,
         input: &RelDataType,
     ) -> Result<RexNode> {
         use crate::proto::expression::subquery::set_predicate::PredicateOp;
         use crate::proto::expression::subquery::SubqueryType;
-        let rel_of = |r: Option<&crate::proto::Rel>| -> Result<RelNode> {
-            let r = r.ok_or_else(|| {
-                SubstraitError::illegal_argument("Unsupported RelTypeCase of RELTYPE_NOT_SET")
-            })?;
-            self.rels.convert_sub_query(r, input)
-        };
-        let boolean = |nullable: bool| self.rex_builder.boolean_type(nullable);
+        let rex_builder = self.rex_builder;
+        let boolean = |nullable: bool| rex_builder.boolean_type(nullable);
         let node = match q
             .subquery_type
             .as_ref()
-            .ok_or_else(|| SubstraitError::illegal_argument("Unknown type: SUBQUERYTYPE_NOT_SET"))?
+            .ok_or_else(|| SubstraitError::IllegalArgument("Unknown type: SUBQUERYTYPE_NOT_SET".into()))?
         {
             SubqueryType::Scalar(s) => {
-                let rel = rel_of(s.input.as_deref())?;
+                let rel = self.subquery_rel(s.input.as_deref(), input)?;
                 let ty = rel
                     .row_type()
                     .field_list()
                     .first()
-                    .map(|f| f.get_type().with_nullability(true))
-                    .ok_or_else(|| SubstraitError::illegal_argument("scalar sub-query must return one column"))?;
+                    .map(|f| f.ty().with_nullability(true))
+                    .ok_or_else(|| SubstraitError::IllegalArgument("scalar sub-query must return one column".into()))?;
                 RexSubQuery {
                     kind: SubQueryKind::Scalar,
                     operands: Vec::new(),
@@ -337,11 +342,11 @@ impl ExpressionConverter<'_> {
             SubqueryType::InPredicate(p) => {
                 let mut operands = Vec::with_capacity(p.needles.len());
                 for n in &p.needles {
-                    operands.push(self.convert(n, input)?);
+                    operands.push(self.rex(n, input)?);
                 }
-                let rel = rel_of(p.haystack.as_deref())?;
-                let nullable = operands.iter().any(|o| o.get_type().is_nullable())
-                    || rel.row_type().field_list().iter().any(|f| f.get_type().is_nullable());
+                let rel = self.subquery_rel(p.haystack.as_deref(), input)?;
+                let nullable = operands.iter().any(|o| o.ty().is_nullable())
+                    || rel.row_type().field_list().iter().any(|f| f.ty().is_nullable());
                 RexSubQuery {
                     kind: SubQueryKind::In,
                     operands,
@@ -354,13 +359,13 @@ impl ExpressionConverter<'_> {
                     Ok(PredicateOp::Exists) => SubQueryKind::Exists,
                     Ok(PredicateOp::Unique) => SubQueryKind::Unique,
                     _ => {
-                        return Err(SubstraitError::unsupported(format!(
+                        return Err(SubstraitError::Unsupported(format!(
                             "Unsupported set predicate operation: {}",
                             p.predicate_op
                         )))
                     }
                 };
-                let rel = rel_of(p.tuples.as_deref())?;
+                let rel = self.subquery_rel(p.tuples.as_deref(), input)?;
                 RexSubQuery {
                     kind,
                     operands: Vec::new(),
@@ -369,19 +374,17 @@ impl ExpressionConverter<'_> {
                 }
             }
             SubqueryType::SetComparison(_) => {
-                return Err(SubstraitError::unsupported(
-                    "Expression SetComparison of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Expression SetComparison of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into()))
             }
         };
         Ok(RexNode::SubQuery(Box::new(node)))
     }
 
     fn make_in(&self, lhs: RexNode, options: Vec<RexNode>) -> RexNode {
-        let family = lhs.get_type().sql_type_name().family();
+        let family = lhs.ty().sql_type_name().family();
         let assignable = options
             .iter()
-            .all(|o| same_family(family, o.get_type().sql_type_name().family()));
+            .all(|o| same_family(family, o.ty().sql_type_name().family()));
         if assignable {
             let mut values = Vec::new();
             for o in &options {
@@ -411,8 +414,7 @@ impl ExpressionConverter<'_> {
                         .rex_builder
                         .make_call(&operators::EQUALS, vec![lhs, options[0].clone()]);
                 }
-                let types: Vec<RelDataType> =
-                    options.iter().map(|o| o.get_type().clone()).collect();
+                let types: Vec<RelDataType> = options.iter().map(|o| o.ty().clone()).collect();
                 let ty = least_restrictive(&types);
                 return self.rex_builder.make_search(lhs, sarg, ty);
             }
@@ -427,24 +429,24 @@ impl ExpressionConverter<'_> {
         compose_disjunction(self.rex_builder, calls)
     }
 
-    fn field_reference(&self, f: &FieldReference, input: &RelDataType) -> Result<RexNode> {
+    fn field_reference(&mut self, f: &FieldReference, input: &RelDataType) -> Result<RexNode> {
         let segment = match &f.reference_type {
             Some(ReferenceType::DirectReference(s)) => s,
             Some(ReferenceType::MaskedReference(_)) => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unsupported type: MASKED_REFERENCE",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unsupported type: MASKED_REFERENCE".into(),
                 ))
             }
             None => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unhandled type: REFERENCETYPE_NOT_SET",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unhandled type: REFERENCETYPE_NOT_SET".into(),
                 ))
             }
         };
         match &f.root_type {
             Some(RootType::RootReference(_) | RootType::OuterReference(_)) => {}
             Some(RootType::Expression(_)) | None => {
-                return Err(SubstraitError::unsupported(format!(
+                return Err(SubstraitError::Unsupported(format!(
                     "Expression {f:?} of type io.substrait.expression.FieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                 )))
             }
@@ -452,116 +454,114 @@ impl ExpressionConverter<'_> {
         let field = match &segment.reference_type {
             Some(reference_segment::ReferenceType::StructField(sf)) if sf.child.is_none() => sf.field,
             Some(_) => {
-                return Err(SubstraitError::unsupported(
-                    "Expression FieldReference with nested segments not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                ))
+                return Err(SubstraitError::Unsupported("Expression FieldReference with nested segments not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into()))
             }
             None => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unhandled type: REFERENCETYPE_NOT_SET",
-                ))
+                return Err(SubstraitError::IllegalArgument("Unhandled type: REFERENCETYPE_NOT_SET".into()))
             }
         };
         if let Some(RootType::OuterReference(o)) = &f.root_type {
             let index = usize::try_from(field).map_err(|_| {
-                SubstraitError::index_out_of_bounds(format!("Index {field} out of bounds"))
+                SubstraitError::IndexOutOfBounds(format!("Index {field} out of bounds"))
             })?;
-            return self.rels.outer_field(o.steps_out, index);
+            return self.outer_field(o.steps_out, index);
         }
         let fields = input.field_list();
         let index = usize::try_from(field).map_err(|_| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {field} out of bounds for length {}",
                 fields.len()
             ))
         })?;
         let f = fields.get(index).ok_or_else(|| {
-            SubstraitError::index_out_of_bounds(format!(
+            SubstraitError::IndexOutOfBounds(format!(
                 "Index {index} out of bounds for length {}",
                 fields.len()
             ))
         })?;
-        Ok(RexBuilder::make_input_ref(index, f.get_type().clone()))
+        Ok(RexBuilder::make_input_ref(index, f.ty().clone()))
     }
 
-    fn function_decl(&self, reference: u32) -> Result<&FunctionDecl> {
-        self.functions.get(&reference).ok_or_else(|| {
-            SubstraitError::illegal_argument(
-                "Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.",
-            )
+    fn function_decl(&self, reference: u32) -> Result<Rc<str>> {
+        self.functions.get(&reference).cloned().ok_or_else(|| {
+            SubstraitError::IllegalArgument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.".into())
         })
     }
 
     fn arguments(
-        &self,
-        decl: &FunctionDecl,
+        &mut self,
+        decl: &str,
         args: &[FunctionArgument],
         input: &RelDataType,
-        extra_enum: Option<String>,
+        trim: Option<TrimFlag>,
     ) -> Result<Vec<RexNode>> {
         let mut out = Vec::new();
         let mut index = 0usize;
-        if let Some(flag) = extra_enum {
-            out.push(self.enum_arg(decl, 0, &flag)?);
+        if let Some(flag) = trim {
+            out.push(Self::symbol(
+                self.not_null(SqlTypeName::Symbol),
+                Symbol::Trim(flag),
+            ));
             index = 1;
         }
         for a in args {
             match &a.arg_type {
-                Some(ArgType::Value(e)) => out.push(self.convert(e, input)?),
+                Some(ArgType::Value(e)) => out.push(self.rex(e, input)?),
                 Some(ArgType::Enum(v)) => out.push(self.enum_arg(decl, index, v)?),
                 Some(ArgType::Type(t)) => {
-                    return Err(SubstraitError::unsupported(format!(
+                    return Err(SubstraitError::Unsupported(format!(
                         "FunctionArg {t:?} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                     )))
                 }
-                None => return Err(SubstraitError::illegal_argument("Unknown type: ARGTYPE_NOT_SET")),
+                None => return Err(SubstraitError::IllegalArgument("Unknown type: ARGTYPE_NOT_SET".into())),
             }
             index += 1;
         }
         Ok(out)
     }
 
-    fn enum_arg(&self, decl: &FunctionDecl, index: usize, value: &str) -> Result<RexNode> {
+    fn symbol(ty: RelDataType, symbol: Symbol) -> RexNode {
+        lit(LiteralValue::Symbol(symbol), ty)
+    }
+
+    fn enum_arg(&self, decl: &str, index: usize, value: &str) -> Result<RexNode> {
         let not_handled = || {
-            SubstraitError::unsupported(format!(
+            SubstraitError::Unsupported(format!(
                 "EnumArg(value={value}) not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
             ))
         };
         if index != 0 {
             return Err(not_handled());
         }
-        let symbol = match decl.name.as_str() {
+        let symbol = match decl {
             "extract" => Symbol::TimeUnit(time_unit(value)?),
             "trim" | "ltrim" | "rtrim" => Symbol::Trim(trim_flag(value)?),
             _ => return Err(not_handled()),
         };
-        Ok(Self::lit(
-            LiteralValue::Symbol(symbol),
-            self.not_null(SqlTypeName::Symbol),
-        ))
+        Ok(Self::symbol(self.not_null(SqlTypeName::Symbol), symbol))
     }
 
-    fn scalar_function(&self, f: &ScalarFunction, input: &RelDataType) -> Result<RexNode> {
+    fn scalar_function(&mut self, f: &ScalarFunction, input: &RelDataType) -> Result<RexNode> {
         let decl = self.function_decl(f.function_reference)?;
         let output = f
             .output_type
             .as_ref()
-            .ok_or_else(|| SubstraitError::unsupported("Unsupported type: KIND_NOT_SET"))?;
+            .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
-        let op = scalar_operator(&decl.name, type_string(output)).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
+        let op = scalar_operator(&decl, output.kind.as_ref()).ok_or_else(|| {
+            SubstraitError::IllegalArgument(format!(
                 "Unable to convert scalar function {}({}).",
-                decl.name,
+                decl,
                 Self::describe_args(&f.arguments)
             ))
         })?;
-        let extra = match decl.name.as_str() {
-            "trim" => Some("BOTH".to_string()),
-            "ltrim" => Some("LEADING".to_string()),
-            "rtrim" => Some("TRAILING".to_string()),
+        let trim = match &*decl {
+            "trim" => Some(TrimFlag::Both),
+            "ltrim" => Some(TrimFlag::Leading),
+            "rtrim" => Some(TrimFlag::Trailing),
             _ => None,
         };
-        let args = self.arguments(decl, &f.arguments, input, extra)?;
+        let args = self.arguments(&decl, &f.arguments, input, trim)?;
         Ok(RexBuilder::make_call_typed(return_type, op, args))
     }
 
@@ -576,35 +576,27 @@ impl ExpressionConverter<'_> {
             .join(", ")
     }
 
-    fn window_function(&self, w: &WindowFunction, input: &RelDataType) -> Result<RexNode> {
+    fn window_function(&mut self, w: &WindowFunction, input: &RelDataType) -> Result<RexNode> {
         let decl = self.function_decl(w.function_reference)?;
-        let op = window_operator(&decl.name).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
+        let op = window_operator(&decl).ok_or_else(|| {
+            SubstraitError::IllegalArgument(format!(
                 "Unable to convert window function {}({}).",
-                decl.name,
+                decl,
                 Self::describe_args(&w.arguments)
             ))
         })?;
         let output_type = self.ty(w.output_type.as_ref())?;
-        let args = self.arguments(decl, &w.arguments, input, None)?;
+        let args = self.arguments(&decl, &w.arguments, input, None)?;
         let mut partition_keys = Vec::with_capacity(w.partitions.len());
         for p in &w.partitions {
-            partition_keys.push(self.convert(p, input)?);
+            partition_keys.push(self.rex(p, input)?);
         }
         let mut order_keys = Vec::with_capacity(w.sorts.len());
         for s in &w.sorts {
-            let expr = self.convert(required(s.expr.as_ref(), "EXPR")?, input)?;
-            let (direction, null_direction) = match sort_direction(s)? {
-                SortDirection::AscNullsFirst => (Direction::Ascending, NullDirection::First),
-                SortDirection::AscNullsLast => (Direction::Ascending, NullDirection::Last),
-                SortDirection::DescNullsFirst => (Direction::Descending, NullDirection::First),
-                SortDirection::DescNullsLast => (Direction::Descending, NullDirection::Last),
-                _ => {
-                    return Err(SubstraitError::illegal_argument(
-                        "SORT_DIRECTION_CLUSTERED is not supported",
-                    ))
-                }
-            };
+            let expr = self.rex(required(s.expr.as_ref(), "EXPR")?, input)?;
+            let (direction, null_direction) = sort_direction(s)?.ok_or_else(|| {
+                SubstraitError::IllegalArgument("SORT_DIRECTION_CLUSTERED is not supported".into())
+            })?;
             order_keys.push(RexFieldCollation {
                 expr,
                 direction,
@@ -619,13 +611,13 @@ impl ExpressionConverter<'_> {
             Ok(window_function::BoundsType::Rows) => true,
             Ok(window_function::BoundsType::Range) => false,
             Ok(window_function::BoundsType::Unspecified) => {
-                return Err(SubstraitError::illegal_argument(
-                    "bounds type on window function must be specified",
+                return Err(SubstraitError::IllegalArgument(
+                    "bounds type on window function must be specified".into(),
                 ))
             }
             Err(_) => {
-                return Err(SubstraitError::illegal_argument(
-                    "Unknown type: UNRECOGNIZED",
+                return Err(SubstraitError::IllegalArgument(
+                    "Unknown type: UNRECOGNIZED".into(),
                 ))
             }
         };
@@ -634,8 +626,8 @@ impl ExpressionConverter<'_> {
                 Ok(crate::proto::aggregate_function::AggregationInvocation::Distinct) => true,
                 Ok(_) => false,
                 Err(_) => {
-                    return Err(SubstraitError::illegal_argument(
-                        "Unknown type: UNRECOGNIZED",
+                    return Err(SubstraitError::IllegalArgument(
+                        "Unknown type: UNRECOGNIZED".into(),
                     ))
                 }
             };
@@ -675,20 +667,17 @@ impl ExpressionConverter<'_> {
     pub(crate) fn aggregate_operator_for(
         &self,
         reference: u32,
-    ) -> Result<(&FunctionDecl, &'static SqlOperator)> {
+    ) -> Result<(Rc<str>, &'static SqlOperator)> {
         let decl = self.function_decl(reference)?;
-        let op = aggregate_operator(&decl.name).ok_or_else(|| {
-            SubstraitError::illegal_argument(format!(
-                "Unable to find binding for call {}",
-                decl.name
-            ))
+        let op = aggregate_operator(&decl).ok_or_else(|| {
+            SubstraitError::IllegalArgument(format!("Unable to find binding for call {decl}"))
         })?;
         Ok((decl, op))
     }
 
     pub(crate) fn convert_arguments(
-        &self,
-        decl: &FunctionDecl,
+        &mut self,
+        decl: &str,
         args: &[FunctionArgument],
         input: &RelDataType,
     ) -> Result<Vec<RexNode>> {
@@ -702,23 +691,23 @@ impl ExpressionConverter<'_> {
     pub(crate) fn literal(&self, l: &Literal) -> Result<RexNode> {
         let nullable = l.nullable;
         let lt = l.literal_type.as_ref().ok_or_else(|| {
-            SubstraitError::illegal_state("Unexpected value: LITERALTYPE_NOT_SET")
+            SubstraitError::IllegalState("Unexpected value: LITERALTYPE_NOT_SET".into())
         })?;
         let s = self.system;
         let exact = |v: i64, name: SqlTypeName| -> RexNode {
-            Self::lit(
+            lit(
                 LiteralValue::Exact(BigDecimal::from(v)),
                 RelDataType::create_sql_type(s, name),
             )
         };
         let node = match lt {
-            LiteralType::Boolean(b) => Self::lit(LiteralValue::Boolean(*b), self.not_null(SqlTypeName::Boolean)),
+            LiteralType::Boolean(b) => lit(LiteralValue::Boolean(*b), self.not_null(SqlTypeName::Boolean)),
             LiteralType::I8(v) => exact(i64::from(int_to_byte(*v)), SqlTypeName::Tinyint),
             LiteralType::I16(v) => exact(i64::from(int_to_short(*v)), SqlTypeName::Smallint),
             LiteralType::I32(v) => exact(i64::from(*v), SqlTypeName::Integer),
             LiteralType::I64(v) => exact(*v, SqlTypeName::Bigint),
-            LiteralType::Fp32(v) => Self::lit(LiteralValue::Approx(f64::from(*v)), self.not_null(SqlTypeName::Real)),
-            LiteralType::Fp64(v) => Self::lit(LiteralValue::Approx(*v), self.not_null(SqlTypeName::Double)),
+            LiteralType::Fp32(v) => lit(LiteralValue::Approx(f64::from(*v)), self.not_null(SqlTypeName::Real)),
+            LiteralType::Fp64(v) => lit(LiteralValue::Approx(*v), self.not_null(SqlTypeName::Double)),
             LiteralType::String(v) => self.string_literal(v, RelDataType::create_sql_type(s, SqlTypeName::Varchar), nullable),
             LiteralType::VarChar(v) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Varchar, v.length.cast_signed());
@@ -727,7 +716,7 @@ impl ExpressionConverter<'_> {
             LiteralType::FixedChar(v) => {
                 let len = char_length(v);
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Char, len);
-                Self::lit(LiteralValue::Char(v.clone()), ty)
+                lit(LiteralValue::Char(v.clone()), ty)
             }
             LiteralType::Binary(v) => {
                 let ty = RelDataType::create_sql_type(s, SqlTypeName::Varbinary);
@@ -735,11 +724,11 @@ impl ExpressionConverter<'_> {
             }
             LiteralType::FixedBinary(v) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Binary, i32::try_from(v.len()).unwrap_or(i32::MAX));
-                Self::lit(LiteralValue::Binary(BitString::create_from_bytes(v)), ty)
+                lit(LiteralValue::Binary(BitString::create_from_bytes(v)), ty)
             }
             LiteralType::Date(d) => {
                 check_year("Date literal ", i64::from(*d))?;
-                Self::lit(
+                lit(
                     LiteralValue::Date(DateString::from_days_since_epoch(*d)),
                     self.not_null(SqlTypeName::Date),
                 )
@@ -747,11 +736,11 @@ impl ExpressionConverter<'_> {
             LiteralType::Time(micros) => time_literal(s, *micros),
             LiteralType::Timestamp(micros) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::Timestamp, 6);
-                Self::lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
+                lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
             }
             LiteralType::TimestampTz(micros) => {
                 let ty = RelDataType::create_sql_type_with_precision(s, SqlTypeName::TimestampWithLocalTimeZone, 6);
-                Self::lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
+                lit(LiteralValue::Timestamp(timestamp_string(*micros, 6)?), ty)
             }
             LiteralType::PrecisionTimestamp(p) => precision_timestamp_literal(
                 s,
@@ -770,7 +759,7 @@ impl ExpressionConverter<'_> {
             LiteralType::Decimal(d) => decimal_literal(s, d)?,
             LiteralType::IntervalYearToMonth(iy) => {
                 let months = i64::from(iy.years) * 12 + i64::from(iy.months);
-                Self::lit(
+                lit(
                     LiteralValue::Interval(BigDecimal::from(months)),
                     RelDataType::interval(SqlTypeName::IntervalYearMonth, crate::calcite::rel_data_type::PRECISION_NOT_SPECIFIED),
                 )
@@ -783,9 +772,9 @@ impl ExpressionConverter<'_> {
             LiteralType::List(list) => self.list_literal(list)?,
             LiteralType::EmptyList(l) => empty_list_literal(s, l)?,
             other => {
-                return Err(SubstraitError::unsupported(format!(
+                return Err(SubstraitError::Unsupported(format!(
                     "Expression {} of type io.substrait.expression.Expression not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
-                    crate::substrait_literal_converter::literal_type_case_name(other)
+                    crate::literal::literal_type_case_name(other)
                 )))
             }
         };
@@ -797,10 +786,9 @@ impl ExpressionConverter<'_> {
         for v in &list.values {
             args.push(self.literal(v)?);
         }
-        let component = args.first().map_or_else(
-            || self.not_null(SqlTypeName::Null),
-            |a| a.get_type().clone(),
-        );
+        let component = args
+            .first()
+            .map_or_else(|| self.not_null(SqlTypeName::Null), |a| a.ty().clone());
         let ty = RelDataType::array(least_restrictive_or(&args, component), false);
         Ok(RexBuilder::make_call_typed(
             ty,
@@ -814,14 +802,14 @@ impl ExpressionConverter<'_> {
         let precision = ty.precision();
         let nullable_ty = nullable.then(|| ty.with_nullability(true));
         let literal = if precision < 0 || precision >= len {
-            Self::lit(LiteralValue::Char(value.to_string()), ty)
+            lit(LiteralValue::Char(value.to_string()), ty)
         } else {
             let char_ty = RelDataType::create_sql_type_with_precision(
                 self.system,
                 SqlTypeName::Char,
                 len.max(1),
             );
-            let inner = Self::lit(LiteralValue::Char(value.to_string()), char_ty);
+            let inner = lit(LiteralValue::Char(value.to_string()), char_ty);
             RexBuilder::make_cast(ty, inner, false)
         };
         match nullable_ty {
@@ -832,7 +820,7 @@ impl ExpressionConverter<'_> {
 
     fn binary_literal(value: &[u8], ty: RelDataType, nullable: bool) -> RexNode {
         let nullable_ty = nullable.then(|| ty.with_nullability(true));
-        let literal = Self::lit(
+        let literal = lit(
             LiteralValue::Binary(BitString::create_from_bytes(value)),
             ty,
         );
@@ -851,7 +839,7 @@ fn least_restrictive_or(args: &[RexNode], fallback: RelDataType) -> RelDataType 
     if args.is_empty() {
         return fallback;
     }
-    let types: Vec<RelDataType> = args.iter().map(|a| a.get_type().clone()).collect();
+    let types: Vec<RelDataType> = args.iter().map(|a| a.ty().clone()).collect();
     least_restrictive(&types)
 }
 
@@ -919,11 +907,11 @@ pub(crate) fn case_type(args: &[RexNode]) -> RelDataType {
     let mut values: Vec<RelDataType> = Vec::new();
     let mut i = 1;
     while i < n {
-        values.push(args[i].get_type().clone());
+        values.push(args[i].ty().clone());
         i += 2;
     }
     if let Some(last) = args.last() {
-        values.push(last.get_type().clone());
+        values.push(last.ty().clone());
     }
     least_restrictive(&values)
 }

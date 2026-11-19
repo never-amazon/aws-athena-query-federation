@@ -1,6 +1,5 @@
+use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
-use athena_federation_substrait::SubstraitSqlUtils;
 
 struct Case {
     query: String,
@@ -88,8 +87,7 @@ fn calcite_reference_sql_matches() {
         for (d, expected) in &case.sql {
             total += 1;
             let actual =
-                SubstraitSqlUtils::get_sql_node_from_substrait_plan(&case.plan, &dialect(d))
-                    .map(|n| n.to_sql_string(&dialect(d)));
+                plan::to_sql_node(&case.plan, &dialect(d)).map(|n| n.to_sql_string(&dialect(d)));
             match actual {
                 Ok(a) if &a == expected => {}
                 Ok(a) => failures.push(format!(
@@ -110,14 +108,10 @@ fn calcite_reference_sql_matches() {
 }
 
 fn parameterize(plan: &str, d: &SqlDialect) -> Result<(String, String), String> {
-    let node = SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, d)
-        .map_err(|e| format!("{e:?}"))?;
-    let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, d)
-        .map_err(|e| format!("{e:?}"))?;
-    let mut accumulator = Vec::new();
-    let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema)
-        .visit(&node)
-        .map_err(|e| format!("{e:?}"))?;
+    let node = plan::to_sql_node(plan, d).map_err(|e| format!("{e:?}"))?;
+    let schema = plan::table_schema(plan, d).map_err(|e| format!("{e:?}"))?;
+    let (rewritten, accumulator) =
+        athena_federation_substrait::parameterize(node, &schema).map_err(|e| format!("{e:?}"))?;
     let values: Vec<String> = accumulator.iter().map(ToString::to_string).collect();
     Ok((
         rewritten.to_sql_string(d),
@@ -157,8 +151,7 @@ fn calcite_reference_column_remapping_matches() {
     let cases = load();
     let mut failures = Vec::new();
     for case in &cases {
-        let remap = SubstraitSqlUtils::get_column_remapping(&case.plan, &SqlDialect::ansi())
-            .expect("remap");
+        let remap = plan::column_remapping(&case.plan, &SqlDialect::ansi()).expect("remap");
         let entries: Vec<String> = remap
             .iter()
             .map(|(k, v)| format!("{k}={}", v.as_deref().unwrap_or("null")))

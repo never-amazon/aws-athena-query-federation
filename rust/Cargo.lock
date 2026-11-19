@@ -428,6 +428,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "protox",
+ "thiserror",
  "tracing",
 ]
 

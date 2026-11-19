@@ -29,7 +29,7 @@ use athena_federation_sdk::security::{
 };
 use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
-use athena_federation_substrait::{SqlDialect, SubstraitSqlUtils};
+use athena_federation_substrait::{plan, SqlDialect};
 
 use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
@@ -590,10 +590,8 @@ pub trait JdbcRecordHandler: RecordHandler {
         let Some(plan) = request.constraints().query_plan() else {
             return Ok(HashMap::new());
         };
-        let renamed_to_original = SubstraitSqlUtils::get_column_remapping(
-            plan.substrait_plan(),
-            &self.get_sql_dialect(),
-        )?;
+        let renamed_to_original =
+            plan::column_remapping(plan.substrait_plan(), &self.get_sql_dialect())?;
         Ok(renamed_to_original
             .into_iter()
             .filter_map(|(renamed, original)| original.map(|original| (original, renamed)))

@@ -55,21 +55,25 @@ pub enum FrameType {
 }
 
 #[derive(Debug, Clone)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "mirrors the layout flags of Calcite SqlPrettyWriter.FrameImpl"
-)]
 struct Frame {
     kind: FrameType,
-    open: String,
-    close: String,
+    close: &'static str,
     item_count: usize,
-    newline_after_open: bool,
-    newline_before_sep: bool,
-    newline_after_sep: bool,
-    newline_before_close: bool,
-    newline_after_close: bool,
-    from_list: bool,
+}
+
+impl Frame {
+    fn newline_before_sep(&self) -> bool {
+        matches!(
+            self.kind,
+            FrameType::Select
+                | FrameType::Offset
+                | FrameType::Fetch
+                | FrameType::SubQuery
+                | FrameType::Join
+                | FrameType::FromList
+                | FrameType::SetOp
+        )
+    }
 }
 
 pub struct SqlWriter<'a> {
@@ -123,57 +127,21 @@ impl<'a> SqlWriter<'a> {
         self.need_whitespace = false;
     }
 
-    fn create_frame(&mut self, frame_type: FrameType, open: &str, close: &str) -> Frame {
-        let mut f = Frame {
-            kind: frame_type,
-            open: open.to_string(),
-            close: close.to_string(),
-            item_count: 0,
-            newline_after_open: false,
-            newline_before_sep: false,
-            newline_after_sep: false,
-            newline_before_close: false,
-            newline_after_close: false,
-            from_list: false,
-        };
-        match frame_type {
-            FrameType::Select
-            | FrameType::Offset
-            | FrameType::Fetch
-            | FrameType::SubQuery
-            | FrameType::Join => {
-                f.newline_before_sep = true;
-            }
-            FrameType::FunCall => {
-                self.need_whitespace = false;
-            }
-            FrameType::FromList => {
-                f.from_list = true;
-                f.newline_before_sep = true;
-            }
-            FrameType::SetOp => {
-                f.newline_before_sep = true;
-                f.newline_after_sep = true;
-            }
-            _ => {}
-        }
-        f
-    }
-
-    pub fn start_list(&mut self, frame_type: FrameType, open: &str, close: &str) {
+    pub fn start_list(&mut self, frame_type: FrameType, open: &'static str, close: &'static str) {
         if let Some(mut parent) = self.frame.take() {
-            let first = parent.item_count == 0;
             parent.item_count += 1;
-            if first && parent.newline_after_open {
-                self.newline_and_indent();
-            }
             self.list_stack.push(parent);
         }
-        let frame = self.create_frame(frame_type, open, close);
-        let open_s = frame.open.clone();
-        self.frame = Some(frame);
-        if !open_s.is_empty() {
-            self.keyword(&open_s);
+        if frame_type == FrameType::FunCall {
+            self.need_whitespace = false;
+        }
+        self.frame = Some(Frame {
+            kind: frame_type,
+            close,
+            item_count: 0,
+        });
+        if !open.is_empty() {
+            self.keyword(open);
         }
     }
 
@@ -181,13 +149,7 @@ impl<'a> SqlWriter<'a> {
         let Some(ended) = self.frame.take() else {
             return;
         };
-        if ended.newline_before_close {
-            self.newline_and_indent();
-        }
-        self.keyword(&ended.close);
-        if ended.newline_after_close {
-            self.newline_and_indent();
-        }
+        self.keyword(ended.close);
         self.frame = self.list_stack.pop();
     }
 
@@ -258,17 +220,16 @@ impl<'a> SqlWriter<'a> {
         let Some(mut f) = self.frame.take() else {
             return;
         };
-        let comma_list = f.from_list || matches!(f.kind, FrameType::Join | FrameType::Values);
+        let comma_list = matches!(
+            f.kind,
+            FrameType::FromList | FrameType::Join | FrameType::Values
+        );
         let (before, after) = if comma_list && sep == "," {
             (false, true)
         } else {
-            (f.newline_before_sep, f.newline_after_sep)
+            (f.newline_before_sep(), f.kind == FrameType::SetOp)
         };
-        if f.item_count == 0 {
-            if f.newline_after_open {
-                self.newline_and_indent();
-            }
-        } else if before {
+        if f.item_count > 0 && before {
             self.newline_and_indent();
         }
         if f.item_count > 0 || print_first {
@@ -343,7 +304,7 @@ pub fn unparse(w: &mut SqlWriter<'_>, node: &SqlNode, left_prec: i32, right_prec
 }
 
 fn unparse_identifier(w: &mut SqlWriter<'_>, id: &SqlIdentifier) {
-    if let Some(simple) = id.get_simple() {
+    if let Some(simple) = id.as_simple() {
         let upper = simple.to_uppercase();
         if !simple.is_empty() && FUNCTION_ID_NAMES.contains(&upper.as_str()) {
             w.start_list(FrameType::Identifier, "", "");
@@ -372,8 +333,7 @@ fn unparse_literal(w: &mut SqlWriter<'_>, l: &SqlLiteral) {
         SqlLiteralValue::Exact(d) => w.literal(&java_big_decimal_to_plain_string(d)),
         SqlLiteralValue::Approx(d) => w.literal(&super::values::java_big_decimal_to_scientific(d)),
         SqlLiteralValue::Char(s) => {
-            let q = w.dialect().quote_string_literal(s);
-            w.literal(&q);
+            w.literal(&format!("'{}'", s.replace('\'', "''")));
         }
         SqlLiteralValue::Date(d) => w.literal(&format!("DATE '{d}'")),
         SqlLiteralValue::Time(t, p) => {
@@ -425,7 +385,7 @@ fn dialect_unparse_call(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, r
         let rewritten = SqlCall {
             op: &operators::LENGTH,
             operands: call.operands.clone(),
-            quantifier: None,
+            distinct: false,
         };
         unparse_operator(w, &rewritten, left_prec, right_prec);
         return;
@@ -645,8 +605,8 @@ fn unparse_by_syntax(w: &mut SqlWriter<'_>, call: &SqlCall, left_prec: i32, righ
         _ => {
             w.keyword(op.name);
             w.start_list(FrameType::FunCall, "(", ")");
-            if let Some(q) = &call.quantifier {
-                w.keyword(q);
+            if call.distinct {
+                w.keyword("DISTINCT");
             }
             if call.operands.is_empty() && op.syntax == SqlSyntax::FunctionStar {
                 w.sep("*");

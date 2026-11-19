@@ -159,9 +159,9 @@ pub fn derive_aggregate_row_type(
             contained.push(f.name().to_string());
             let in_all = group_sets.iter().all(|set| set.contains(&g));
             let ty = if in_all {
-                f.get_type().clone()
+                f.ty().clone()
             } else {
-                f.get_type().with_nullability(true)
+                f.ty().with_nullability(true)
             };
             builder.add(f.name(), ty);
         }
@@ -230,9 +230,9 @@ pub fn derive_join_row_type(
         }
         names.insert(name.clone());
         let ty = if nullable {
-            f.get_type().with_nullability(true)
+            f.ty().with_nullability(true)
         } else {
-            f.get_type().clone()
+            f.ty().clone()
         };
         builder.add(name, ty);
     };

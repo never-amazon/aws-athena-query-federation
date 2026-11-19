@@ -36,7 +36,7 @@ impl SqlIdentifier {
         self.names.last().is_some_and(String::is_empty)
     }
 
-    pub fn get_simple(&self) -> Option<&str> {
+    pub fn as_simple(&self) -> Option<&str> {
         if self.is_simple() {
             self.names.first().map(String::as_str)
         } else {
@@ -109,21 +109,19 @@ impl SqlLiteral {
         }
     }
 
-    pub fn exact(s: &str) -> SqlLiteral {
-        let value = s.parse::<BigDecimal>().unwrap_or_default();
+    pub fn exact(value: BigDecimal) -> SqlLiteral {
+        let (_, scale) = value.as_bigint_and_exponent();
+        let value = if scale < 0 {
+            value.with_scale(0)
+        } else {
+            value
+        };
         SqlLiteral {
             value: SqlLiteralValue::Exact(value),
         }
     }
 
-    pub fn exact_decimal(d: BigDecimal) -> SqlLiteral {
-        SqlLiteral {
-            value: SqlLiteralValue::Exact(d),
-        }
-    }
-
-    pub fn approx(s: &str) -> SqlLiteral {
-        let value = s.parse::<BigDecimal>().unwrap_or_default();
+    pub fn approx(value: BigDecimal) -> SqlLiteral {
         SqlLiteral {
             value: SqlLiteralValue::Approx(value),
         }
@@ -157,7 +155,7 @@ impl SqlLiteral {
         }
     }
 
-    pub fn get_value(&self) -> LiteralObject {
+    pub fn value(&self) -> LiteralObject {
         match &self.value {
             SqlLiteralValue::Null => LiteralObject::Null,
             SqlLiteralValue::Boolean(b) => LiteralObject::Boolean(*b),
@@ -215,7 +213,7 @@ pub struct SqlDataTypeSpec {
 pub struct SqlCall {
     pub op: &'static SqlOperator,
     pub operands: Vec<SqlNode>,
-    pub quantifier: Option<String>,
+    pub distinct: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -253,42 +251,6 @@ pub struct SqlSelect {
 impl SqlSelect {
     pub fn is_select_star(&self) -> bool {
         is_singleton_star(&self.select_list)
-    }
-
-    pub fn get_where(&self) -> Option<&SqlNode> {
-        self.where_clause.as_ref()
-    }
-
-    pub fn set_where(&mut self, w: Option<SqlNode>) {
-        self.where_clause = w;
-    }
-
-    pub fn select_list(&self) -> &[SqlNode] {
-        &self.select_list
-    }
-
-    pub fn from(&self) -> Option<&SqlNode> {
-        self.from.as_ref()
-    }
-
-    pub fn group(&self) -> Option<&[SqlNode]> {
-        self.group_by.as_deref()
-    }
-
-    pub fn having(&self) -> Option<&SqlNode> {
-        self.having.as_ref()
-    }
-
-    pub fn order_list(&self) -> Option<&[SqlNode]> {
-        self.order_by.as_deref()
-    }
-
-    pub fn offset(&self) -> Option<&SqlNode> {
-        self.offset.as_ref()
-    }
-
-    pub fn fetch(&self) -> Option<&SqlNode> {
-        self.fetch.as_ref()
     }
 }
 
@@ -332,19 +294,7 @@ impl SqlNode {
         SqlNode::Call(SqlCall {
             op,
             operands,
-            quantifier: None,
-        })
-    }
-
-    pub fn call_with_quantifier(
-        op: &'static SqlOperator,
-        quantifier: Option<String>,
-        operands: Vec<SqlNode>,
-    ) -> SqlNode {
-        SqlNode::Call(SqlCall {
-            op,
-            operands,
-            quantifier,
+            distinct: false,
         })
     }
 

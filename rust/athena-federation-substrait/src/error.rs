@@ -1,157 +1,82 @@
 use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
 
 use athena_federation_sdk::exceptions::{class_cast_message, JavaExceptionKind};
 use athena_federation_sdk::FederationError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorKind {
-    Runtime,
-    IllegalArgument,
-    IllegalState,
-    UnsupportedOperation,
-    IndexOutOfBounds,
-    NullPointer,
-    ClassCast,
+#[derive(Debug, thiserror::Error)]
+pub enum SubstraitError {
+    #[error("{0}")]
+    Runtime(String),
+    #[error("{0}")]
+    IllegalArgument(String),
+    #[error("{0}")]
+    IllegalState(String),
+    #[error("{0}")]
+    Unsupported(String),
+    #[error("{0}")]
+    IndexOutOfBounds(String),
+    #[error("{0}")]
+    NullPointer(String),
+    #[error("{}", class_cast_message(from, to))]
+    ClassCast {
+        from: &'static str,
+        to: &'static str,
+    },
+    #[error("{message}")]
+    Wrapped {
+        message: &'static str,
+        #[source]
+        cause: Box<SubstraitError>,
+    },
+    #[error("{0}")]
+    Base64(#[from] base64::DecodeError),
+    #[error("{0}")]
+    Decode(#[from] prost::DecodeError),
 }
 
-#[derive(Debug, Clone)]
-pub struct SubstraitError {
-    kind: ErrorKind,
-    message: String,
-    cause: Option<Box<SubstraitError>>,
-    source: Option<Arc<dyn Error + Send + Sync>>,
-}
+pub(crate) const REX_CALL: &str = "org.apache.calcite.rex.RexCall";
+pub(crate) const REX_INPUT_REF: &str = "org.apache.calcite.rex.RexInputRef";
+pub(crate) const REX_SLOT: &str = "org.apache.calcite.rex.RexSlot";
 
 pub type Result<T> = std::result::Result<T, SubstraitError>;
 
 impl SubstraitError {
-    pub fn new(kind: ErrorKind, message: impl Into<String>) -> SubstraitError {
-        SubstraitError {
-            kind,
-            message: message.into(),
-            cause: None,
-            source: None,
+    pub fn wrap(message: &'static str, cause: SubstraitError) -> SubstraitError {
+        SubstraitError::Wrapped {
+            message,
+            cause: Box::new(cause),
         }
     }
 
-    pub fn from_source(
-        kind: ErrorKind,
-        source: impl Error + Send + Sync + 'static,
-    ) -> SubstraitError {
-        SubstraitError {
-            kind,
-            message: source.to_string(),
-            cause: None,
-            source: Some(Arc::new(source)),
-        }
-    }
-
-    pub fn runtime(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::Runtime, message)
-    }
-
-    pub fn illegal_argument(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::IllegalArgument, message)
-    }
-
-    pub fn illegal_state(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::IllegalState, message)
-    }
-
-    pub fn unsupported(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::UnsupportedOperation, message)
-    }
-
-    pub fn index_out_of_bounds(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::IndexOutOfBounds, message)
-    }
-
-    pub fn class_cast(from: &str, to: &str) -> SubstraitError {
-        SubstraitError::new(ErrorKind::ClassCast, class_cast_message(from, to))
-    }
-
-    pub fn null_pointer(message: impl Into<String>) -> SubstraitError {
-        SubstraitError::new(ErrorKind::NullPointer, message)
-    }
-
-    #[must_use]
-    pub fn with_cause(mut self, cause: SubstraitError) -> SubstraitError {
-        self.cause = Some(Box::new(cause));
-        self
-    }
-
-    pub fn wrap(message: impl Into<String>, cause: SubstraitError) -> SubstraitError {
-        SubstraitError::runtime(message).with_cause(cause)
-    }
-
-    pub fn kind(&self) -> ErrorKind {
-        self.kind
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    pub fn cause(&self) -> Option<&SubstraitError> {
-        self.cause.as_deref()
-    }
-
-    pub fn root_cause(&self) -> &SubstraitError {
-        let mut current = self;
-        while let Some(next) = current.cause.as_deref() {
-            current = next;
-        }
-        current
-    }
-}
-
-impl fmt::Display for SubstraitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl PartialEq for SubstraitError {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.message == other.message && self.cause == other.cause
-    }
-}
-
-impl Error for SubstraitError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match (&self.cause, &self.source) {
-            (Some(c), _) => Some(c.as_ref()),
-            (None, Some(s)) => Some(s.as_ref()),
-            (None, None) => None,
-        }
-    }
-}
-
-impl From<ErrorKind> for JavaExceptionKind {
-    fn from(kind: ErrorKind) -> Self {
-        match kind {
-            ErrorKind::Runtime => JavaExceptionKind::Runtime,
-            ErrorKind::IllegalArgument => JavaExceptionKind::IllegalArgument,
-            ErrorKind::IllegalState => JavaExceptionKind::IllegalState,
-            ErrorKind::UnsupportedOperation => JavaExceptionKind::UnsupportedOperation,
-            ErrorKind::IndexOutOfBounds => JavaExceptionKind::IndexOutOfBounds,
-            ErrorKind::NullPointer => JavaExceptionKind::NullPointer,
-            ErrorKind::ClassCast => JavaExceptionKind::Unchecked("java.lang.ClassCastException"),
+    pub fn java_kind(&self) -> JavaExceptionKind {
+        match self {
+            SubstraitError::Runtime(_)
+            | SubstraitError::Wrapped { .. }
+            | SubstraitError::Decode(_) => JavaExceptionKind::Runtime,
+            SubstraitError::IllegalArgument(_) | SubstraitError::Base64(_) => {
+                JavaExceptionKind::IllegalArgument
+            }
+            SubstraitError::IllegalState(_) => JavaExceptionKind::IllegalState,
+            SubstraitError::Unsupported(_) => JavaExceptionKind::UnsupportedOperation,
+            SubstraitError::IndexOutOfBounds(_) => JavaExceptionKind::IndexOutOfBounds,
+            SubstraitError::NullPointer(_) => JavaExceptionKind::NullPointer,
+            SubstraitError::ClassCast { .. } => {
+                JavaExceptionKind::Unchecked("java.lang.ClassCastException")
+            }
         }
     }
 }
 
 #[derive(Debug)]
 struct CausedSubstraitError {
-    error: SubstraitError,
+    message: &'static str,
     cause: FederationError,
 }
 
 impl fmt::Display for CausedSubstraitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.error, f)
+        f.write_str(self.message)
     }
 }
 
@@ -163,16 +88,16 @@ impl Error for CausedSubstraitError {
 
 impl From<SubstraitError> for FederationError {
     fn from(error: SubstraitError) -> Self {
-        let kind = error.kind.into();
-        match error.cause.clone() {
-            Some(cause) => FederationError::wrapped(
+        let kind = error.java_kind();
+        match error {
+            SubstraitError::Wrapped { message, cause } => FederationError::wrapped(
                 kind,
                 CausedSubstraitError {
-                    error,
+                    message,
                     cause: FederationError::from(*cause),
                 },
             ),
-            None => FederationError::wrapped(kind, error),
+            other => FederationError::wrapped(kind, other),
         }
     }
 }
@@ -185,20 +110,22 @@ mod tests {
 
     #[test]
     fn substrait_error_keeps_kind_message_and_source() {
-        let cause = SubstraitError::illegal_argument("bad input");
-        let error = SubstraitError::wrap("Failed to parse Substrait plan", cause.clone());
-        let federation = FederationError::from(error.clone());
+        let cause = SubstraitError::IllegalArgument("bad input".into());
+        let cause_text = cause.to_string();
+        let error = SubstraitError::wrap("Failed to parse Substrait plan", cause);
+        let error_text = error.to_string();
+        let federation = FederationError::from(error);
         assert_eq!(federation.to_string(), "Failed to parse Substrait plan");
         let FederationError::Wrapped { kind, source } = &federation else {
             panic!("expected a wrapped error, got {federation:?}");
         };
         assert_eq!(*kind, JavaExceptionKind::Runtime);
-        assert_eq!(source.to_string(), error.to_string());
+        assert_eq!(source.to_string(), error_text);
         let inner = federation
             .source()
             .and_then(|s| s.source())
             .and_then(|s| s.downcast_ref::<FederationError>());
-        assert_eq!(inner.map(ToString::to_string), Some(cause.to_string()));
+        assert_eq!(inner.map(ToString::to_string), Some(cause_text));
         assert_eq!(
             inner.map(FederationError::java_class_name).as_deref(),
             Some("java.lang.IllegalArgumentException")

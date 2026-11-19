@@ -37,7 +37,9 @@ fn resolve_group_sets(
         let mut set = Vec::with_capacity(list.len());
         for e in list {
             let idx = extra.iter().position(|x| x == e).ok_or_else(|| {
-                SubstraitError::illegal_argument("group set element must be a subset of group key")
+                SubstraitError::IllegalArgument(
+                    "group set element must be a subset of group key".into(),
+                )
             })?;
             set.push(idx);
         }
@@ -47,9 +49,7 @@ fn resolve_group_sets(
     }
     sets.sort_by(|a, b| bit_set_compare(a, b));
     if sets.windows(2).any(|w| w[0] == w[1]) {
-        return Err(SubstraitError::unsupported(
-            "Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter",
-        ));
+        return Err(SubstraitError::Unsupported("Aggregates with duplicate grouping sets are not supported by the Rust Substrait converter".into()));
     }
     Ok(sets)
 }
@@ -98,7 +98,7 @@ fn prune_project(
                 for &i in &used {
                     new_exprs.push(exprs[i].clone());
                     let f = &row_type.field_list()[i];
-                    builder.add(f.name(), f.get_type().clone());
+                    builder.add(f.name(), f.ty().clone());
                 }
                 RelNode::Project {
                     input: p_input,
@@ -122,7 +122,7 @@ fn is_identity(nodes: &[RexNode], row_type: &RelDataType) -> bool {
     let fields = row_type.field_list();
     nodes.len() == fields.len()
         && nodes.iter().enumerate().all(|(i, n)| match n {
-            RexNode::InputRef { index, ty } => *index == i && ty == fields[i].get_type(),
+            RexNode::InputRef { index, ty } => *index == i && ty == fields[i].ty(),
             _ => false,
         })
 }
@@ -247,27 +247,27 @@ impl RelBuilder {
         let mut inputs = inputs;
         if inputs.len() == 1 {
             return inputs.pop().ok_or_else(|| {
-                SubstraitError::illegal_argument("bad INTERSECT/UNION/EXCEPT input count")
+                SubstraitError::IllegalArgument("bad INTERSECT/UNION/EXCEPT input count".into())
             });
         }
         let first = inputs.first().ok_or_else(|| {
-            SubstraitError::illegal_argument("bad INTERSECT/UNION/EXCEPT input count")
+            SubstraitError::IllegalArgument("bad INTERSECT/UNION/EXCEPT input count".into())
         })?;
         let mut fields: Vec<(String, RelDataType)> = first
             .row_type()
             .field_list()
             .iter()
-            .map(|f| (f.name().to_string(), f.get_type().clone()))
+            .map(|f| (f.name().to_string(), f.ty().clone()))
             .collect();
         for other in inputs.iter().skip(1) {
             let other_fields = other.row_type().field_list();
             if other_fields.len() != fields.len() {
-                return Err(SubstraitError::illegal_argument(
-                    "set op inputs must have the same number of fields",
+                return Err(SubstraitError::IllegalArgument(
+                    "set op inputs must have the same number of fields".into(),
                 ));
             }
             for (f, o) in fields.iter_mut().zip(other_fields) {
-                let types = [f.1.clone(), o.get_type().clone()];
+                let types = [f.1.clone(), o.ty().clone()];
                 f.1 = crate::isthmus::least_restrictive(&types);
             }
         }
@@ -375,7 +375,7 @@ impl RelBuilder {
                 let mut builder = RelDataTypeBuilder::new();
                 let mut tuple = Vec::new();
                 for (name, n) in final_names.iter().zip(nodes.iter()) {
-                    builder.add(name.clone(), n.get_type().clone());
+                    builder.add(name.clone(), n.ty().clone());
                     if let RexNode::Literal(l) = n {
                         tuple.push(l.clone());
                     }
@@ -388,7 +388,7 @@ impl RelBuilder {
         }
         let mut builder = RelDataTypeBuilder::new();
         for (name, n) in final_names.iter().zip(nodes.iter()) {
-            builder.add(name.clone(), n.get_type().clone());
+            builder.add(name.clone(), n.ty().clone());
         }
         RelNode::Project {
             input: Box::new(input),
@@ -403,7 +403,7 @@ impl RelBuilder {
             .field_list()
             .iter()
             .enumerate()
-            .map(|(i, f)| RexBuilder::make_input_ref(i, f.get_type().clone()))
+            .map(|(i, f)| RexBuilder::make_input_ref(i, f.ty().clone()))
             .collect()
     }
 

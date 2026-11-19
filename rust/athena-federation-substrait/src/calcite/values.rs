@@ -103,7 +103,7 @@ impl DateString {
         DateString(format!("{y:04}-{m:02}-{d:02}"))
     }
 
-    pub fn get_days_since_epoch(&self) -> i32 {
+    pub fn days_since_epoch(&self) -> i32 {
         let y = self
             .0
             .get(0..4)
@@ -211,7 +211,7 @@ impl TimestampString {
         fixed_precision(&self.0, 19, precision)
     }
 
-    pub fn get_millis_since_epoch(&self) -> i64 {
+    pub fn millis_since_epoch(&self) -> i64 {
         let v = &self.0;
         let num =
             |a: usize, b: usize| -> i64 { v.get(a..b).and_then(|s| s.parse().ok()).unwrap_or(0) };

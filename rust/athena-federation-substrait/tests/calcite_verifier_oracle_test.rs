@@ -1,7 +1,7 @@
+use athena_federation_substrait::parameterize;
+use athena_federation_substrait::plan;
 use athena_federation_substrait::SqlDialect;
 use athena_federation_substrait::SqlNode;
-use athena_federation_substrait::SubstraitAccumulatorVisitor;
-use athena_federation_substrait::SubstraitSqlUtils;
 use std::fmt::Write;
 
 const DIALECTS: [&str; 5] = [
@@ -66,14 +66,13 @@ fn esc(s: &str) -> String {
 }
 
 fn error_text(e: &athena_federation_substrait::SubstraitError) -> String {
-    format!("ERROR {}", esc(e.message()))
+    format!("ERROR {}", esc(&e.to_string()))
 }
 
 fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
     let run = || -> athena_federation_substrait::Result<String> {
-        let schema = SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, d)?;
-        let mut accumulator = Vec::new();
-        let rewritten = SubstraitAccumulatorVisitor::new(&mut accumulator, &schema).visit(node)?;
+        let schema = plan::table_schema(plan, d)?;
+        let (rewritten, accumulator) = parameterize(node.clone(), &schema)?;
         let mut out = esc(&rewritten.to_sql_string(d));
         for v in &accumulator {
             let class = v.value().java_class_name();
@@ -81,7 +80,7 @@ fn param_row(plan: &str, d: &SqlDialect, node: &SqlNode) -> String {
             write!(
                 out,
                 "\t{}|{}|{}|{}",
-                v.get_type(),
+                v.ty(),
                 simple,
                 esc(&v.value().to_string()),
                 v.column_name()
@@ -97,7 +96,7 @@ fn rust_rows(plan: &str) -> Vec<(String, String)> {
     let mut rows = Vec::new();
     for name in DIALECTS {
         let d = dialect(name);
-        match SubstraitSqlUtils::get_sql_node_from_substrait_plan(plan, &d) {
+        match plan::to_sql_node(plan, &d) {
             Ok(node) => {
                 rows.push((format!("CALCITE_{name}"), esc(&node.to_sql_string(&d))));
                 if matches!(node, SqlNode::Select(_)) {
@@ -107,13 +106,12 @@ fn rust_rows(plan: &str) -> Vec<(String, String)> {
             Err(e) => rows.push((format!("CALCITE_{name}"), error_text(&e))),
         }
     }
-    let schema =
-        match SubstraitSqlUtils::get_table_schema_from_substrait_plan(plan, &SqlDialect::ansi()) {
-            Ok(t) => esc(&t.get_full_type_string()),
-            Err(e) => error_text(&e),
-        };
+    let schema = match plan::table_schema(plan, &SqlDialect::ansi()) {
+        Ok(t) => esc(&t.full_type_string()),
+        Err(e) => error_text(&e),
+    };
     rows.push(("SCHEMA".to_string(), schema));
-    let remap = match SubstraitSqlUtils::get_column_remapping(plan, &SqlDialect::ansi()) {
+    let remap = match plan::column_remapping(plan, &SqlDialect::ansi()) {
         Ok(m) => m.iter().fold(String::new(), |mut acc, (k, v)| {
             write!(acc, "\t{k}={}", v.as_deref().unwrap_or("null")).unwrap();
             acc

@@ -89,7 +89,7 @@ impl RelDataTypeField {
         self.index
     }
 
-    pub fn get_type(&self) -> &RelDataType {
+    pub fn ty(&self) -> &RelDataType {
         &self.data_type
     }
 }
@@ -294,7 +294,7 @@ impl RelDataType {
         self.value.as_deref()
     }
 
-    pub fn get_field(
+    pub fn field(
         &self,
         name: &str,
         case_sensitive: bool,
@@ -313,7 +313,7 @@ impl RelDataType {
         if elide_record {
             for f in &self.fields {
                 if f.data_type.is_struct() {
-                    if let Some(inner) = f.data_type.get_field(name, case_sensitive, elide_record) {
+                    if let Some(inner) = f.data_type.field(name, case_sensitive, elide_record) {
                         return Some(inner);
                     }
                 }
@@ -326,7 +326,7 @@ impl RelDataType {
         self.with_nullability(false) == other.with_nullability(false)
     }
 
-    pub fn get_full_type_string(&self) -> String {
+    pub fn full_type_string(&self) -> String {
         let mut s = self.type_string();
         if self.type_name.is_character() {
             s.push_str(" CHARACTER SET \"UTF-8\"");
@@ -343,25 +343,25 @@ impl RelDataType {
                 "{} ARRAY",
                 self.component
                     .as_ref()
-                    .map(|c| c.get_full_type_string())
+                    .map(|c| c.full_type_string())
                     .unwrap_or_default()
             ),
             SqlTypeName::Map => format!(
                 "({}, {}) MAP",
                 self.component
                     .as_ref()
-                    .map(|c| c.get_full_type_string())
+                    .map(|c| c.full_type_string())
                     .unwrap_or_default(),
                 self.value
                     .as_ref()
-                    .map(|c| c.get_full_type_string())
+                    .map(|c| c.full_type_string())
                     .unwrap_or_default()
             ),
             SqlTypeName::Row => {
                 let inner: Vec<String> = self
                     .fields
                     .iter()
-                    .map(|f| format!("{} {}", f.data_type.get_full_type_string(), f.name))
+                    .map(|f| format!("{} {}", f.data_type.full_type_string(), f.name))
                     .collect();
                 format!("RecordType({})", inner.join(", "))
             }
@@ -402,8 +402,7 @@ impl RelDataTypeBuilder {
 
     pub fn add_all(&mut self, fields: &[RelDataTypeField]) -> &mut Self {
         for f in fields {
-            self.fields
-                .push((f.name().to_string(), f.get_type().clone()));
+            self.fields.push((f.name().to_string(), f.ty().clone()));
         }
         self
     }
