@@ -7,13 +7,13 @@ use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
 
 use athena_federation_sdk::credentials::CredentialsProvider;
-use athena_federation_sdk::data::spill_config::SpillConfig;
-use athena_federation_sdk::data::writers::extractors::Extractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
-use athena_federation_sdk::data::writers::GeneratedRowWriter;
+use athena_federation_sdk::data::writers::{
+    Extractor, FieldWriter, FieldWriterFactory, GeneratedRowWriter,
+};
 use athena_federation_sdk::data::{
     block_utils, minor_type_of, Block, BlockAllocator, BlockSpiller, DefaultFieldResolver,
-    FieldVector, MinorType, PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
+    FieldVector, MinorType, PutObjectRequest, S3BlockSpiller, S3Client, SpillConfig, TzEncoding,
+    Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,

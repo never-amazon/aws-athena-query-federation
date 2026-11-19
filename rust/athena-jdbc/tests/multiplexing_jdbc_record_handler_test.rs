@@ -6,9 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::Schema;
 use async_trait::async_trait;
-use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpiller,
+    BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpiller, SpillConfig,
 };
 use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints};
 use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};

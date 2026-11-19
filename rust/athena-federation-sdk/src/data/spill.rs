@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -8,11 +9,9 @@ use async_trait::async_trait;
 use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinHandle;
 
-use super::block::Block;
-use super::block_allocator::BlockAllocator;
-use super::block_spiller::{BlockSpiller, RowWriter};
-use super::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
-use super::spill_config::SpillConfig;
+use crate::data::block::Block;
+use crate::data::block_allocator::BlockAllocator;
+use crate::data::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::{S3SpillLocation, SpillLocation};
 use crate::exceptions::{FederationError, Result};
@@ -459,5 +458,132 @@ impl BlockSpiller for S3BlockSpiller {
                 abort.abort();
             }
         }
+    }
+}
+
+pub type RowWriter<'a> = dyn FnMut(&mut Block, usize) -> Result<usize> + Send + 'a;
+
+#[async_trait]
+pub trait BlockSpiller: Send + Sync {
+    async fn write_rows(&self, row_writer: &mut RowWriter<'_>) -> Result<()>;
+
+    fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator>;
+
+    async fn spilled(&self) -> Result<bool>;
+
+    async fn get_block(&self) -> Result<Block>;
+
+    async fn get_spill_locations(&self) -> Result<Vec<SpillLocation>>;
+
+    async fn close(&self);
+}
+
+pub struct SimpleBlockWriter<'a> {
+    block: &'a mut Block,
+}
+
+impl<'a> SimpleBlockWriter<'a> {
+    pub fn new(block: &'a mut Block) -> SimpleBlockWriter<'a> {
+        SimpleBlockWriter { block }
+    }
+
+    pub fn block(&self) -> &Block {
+        self.block
+    }
+
+    pub fn write_rows(
+        &mut self,
+        row_writer: &mut dyn FnMut(&mut Block, usize) -> Result<usize>,
+    ) -> Result<()> {
+        let row_count = self.block.row_count();
+        let rows = row_writer(self.block, row_count)?;
+        if rows > 0 {
+            self.block.set_row_count(row_count + rows);
+        }
+        Ok(())
+    }
+
+    pub fn constraint_evaluator(&self) -> Arc<ConstraintEvaluator> {
+        self.block.constraint_evaluator().clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpillConfig {
+    pub spill_location: SpillLocation,
+    pub request_id: String,
+    pub encryption_key: Option<EncryptionKey>,
+    pub max_block_bytes: i64,
+    pub max_inline_block_bytes: i64,
+    pub spill_threads: Option<NonZeroUsize>,
+}
+
+impl SpillConfig {
+    pub fn new(spill_location: SpillLocation, request_id: impl Into<String>) -> SpillConfig {
+        SpillConfig {
+            spill_location,
+            request_id: request_id.into(),
+            encryption_key: None,
+            max_block_bytes: 0,
+            max_inline_block_bytes: 0,
+            spill_threads: Some(NonZeroUsize::MIN),
+        }
+    }
+}
+
+pub struct S3BlockSpillReader {
+    amazon_s3: Arc<dyn S3Client>,
+    allocator: Arc<dyn BlockAllocator>,
+}
+
+impl S3BlockSpillReader {
+    pub fn new(
+        amazon_s3: Arc<dyn S3Client>,
+        allocator: Arc<dyn BlockAllocator>,
+    ) -> S3BlockSpillReader {
+        S3BlockSpillReader {
+            amazon_s3,
+            allocator,
+        }
+    }
+
+    async fn get_object(&self, spill_location: &S3SpillLocation) -> Result<Vec<u8>> {
+        tracing::debug!("read: Started reading block from S3");
+        let bytes = self
+            .amazon_s3
+            .get_object(GetObjectRequest::new(
+                spill_location.bucket(),
+                spill_location.key(),
+            ))
+            .await?;
+        tracing::debug!("read: Completed reading block from S3");
+        Ok(bytes)
+    }
+
+    pub async fn read_with_schema(
+        &self,
+        spill_location: &S3SpillLocation,
+        key: Option<&EncryptionKey>,
+        schema: SchemaRef,
+    ) -> Result<Block> {
+        let bytes = self.get_object(spill_location).await?;
+        let block_crypto = BlockCrypto::for_key(key.cloned());
+        let allocator = Arc::clone(&self.allocator);
+        let block = run_blocking(move || {
+            block_crypto.decrypt_with_schema(allocator.as_ref(), &bytes, schema)
+        })
+        .await?;
+        tracing::debug!("read: Completed decrypting block of size.");
+        Ok(block)
+    }
+
+    pub async fn read(
+        &self,
+        spill_location: &S3SpillLocation,
+        key: Option<&EncryptionKey>,
+    ) -> Result<Vec<u8>> {
+        let bytes = self.get_object(spill_location).await?;
+        let block_crypto = BlockCrypto::for_key(key.cloned());
+        run_blocking(move || block_crypto.decrypt(&bytes)).await
     }
 }

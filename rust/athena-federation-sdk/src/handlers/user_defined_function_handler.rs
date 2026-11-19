@@ -1,15 +1,12 @@
-use crate::data::block_utils;
 use std::fmt;
 use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 
 use crate::data::projectors::ArrowValueProjector;
-use crate::data::writers::extractors::Extractor;
-use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
-use crate::data::writers::GeneratedRowWriter;
+use crate::data::writers::{Extractor, FieldWriter, FieldWriterFactory, GeneratedRowWriter};
 use crate::data::{
-    local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, minor_type_of, Block,
+    block_utils, local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, minor_type_of, Block,
     BlockAllocator, DefaultFieldResolver, FieldVector, MinorType, Value,
 };
 use crate::domain::predicate::ConstraintProjector;

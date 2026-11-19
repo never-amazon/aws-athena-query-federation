@@ -10,10 +10,9 @@ use bigdecimal::{BigDecimal, RoundingMode};
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use super::block::Block;
+use super::block::{Block, FieldResolver};
 use super::block_allocator::BlockAllocator;
 use super::date_time_formatter_util::{self, TzEncoding};
-use super::field_resolver::FieldResolver;
 use super::java_format::{big_decimal_to_string, bytes_to_hex, double_to_string, float_to_string};
 use super::java_time::{
     local_date_of_epoch_day, local_date_to_epoch_day, local_date_to_string, ZoneId,

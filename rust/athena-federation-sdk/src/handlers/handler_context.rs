@@ -7,8 +7,7 @@ use aws_credential_types::Credentials;
 
 use crate::connection::environment_constants;
 use crate::credentials::{CredentialsProvider, DefaultCredentialsProvider};
-use crate::data::spill_config::SpillConfig;
-use crate::data::S3Client;
+use crate::data::{S3Client, SpillConfig};
 use crate::exceptions::{FederationError, Result};
 use crate::records::ReadRecordsRequest;
 use crate::request::FederationRequest;

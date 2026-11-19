@@ -446,3 +446,67 @@ pub fn arrow_type_to_string(arrow_type: &ArrowType) -> String {
         other => format!("{other:?}"),
     }
 }
+
+pub fn remap_arrow_types_within_field(
+    input_field: &Field,
+    arrow_type_mapper: &dyn Fn(&ArrowType) -> ArrowType,
+) -> Field {
+    let updated_children: Vec<FieldRef> = get_children(input_field)
+        .iter()
+        .map(|f| Arc::new(remap_arrow_types_within_field(f, arrow_type_mapper)))
+        .collect();
+    let new_type = arrow_type_mapper(input_field.data_type());
+    let new_type = if updated_children.is_empty() {
+        new_type
+    } else {
+        with_children(&new_type, updated_children)
+    };
+    Field::new(
+        input_field.name().clone(),
+        new_type,
+        input_field.is_nullable(),
+    )
+    .with_metadata(input_field.metadata().clone())
+}
+
+impl MinorType {
+    pub fn is_supported(self) -> bool {
+        matches!(
+            self,
+            MinorType::Bit
+                | MinorType::DateMilli
+                | MinorType::DateDay
+                | MinorType::TimestampMilliTz
+                | MinorType::TimestampMicroTz
+                | MinorType::Float8
+                | MinorType::Float4
+                | MinorType::Int
+                | MinorType::TinyInt
+                | MinorType::SmallInt
+                | MinorType::BigInt
+                | MinorType::VarBinary
+                | MinorType::Decimal
+                | MinorType::VarChar
+                | MinorType::Struct
+                | MinorType::List
+                | MinorType::Map
+        )
+    }
+}
+
+fn is_supported_field(field: &Field) -> bool {
+    minor_type_of(field.data_type()).is_supported()
+        && get_children(field).iter().all(|c| is_supported_field(c))
+}
+
+pub fn assert_supported(field: &Field) -> Result<()> {
+    if !is_supported_field(field) {
+        return Err(FederationError::not_supported(format!(
+            "Detected unsupported type[{} / {} for column[{}]",
+            arrow_type_to_string(field.data_type()),
+            minor_type_of(field.data_type()),
+            field.name()
+        )));
+    }
+    Ok(())
+}

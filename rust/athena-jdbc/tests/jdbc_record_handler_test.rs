@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
-use athena_federation_sdk::data::spill_config::SpillConfig;
-use athena_federation_sdk::data::writers::extractors::Extractor;
+use athena_federation_sdk::data::writers::Extractor;
 use athena_federation_sdk::data::{
     date_time_formatter_util, local_date_time_of_epoch_milli_utc, BlockAllocator,
-    BlockAllocatorImpl, BlockSpiller, FieldBuilder, S3BlockSpiller, SchemaBuilder, Value,
+    BlockAllocatorImpl, BlockSpiller, FieldBuilder, S3BlockSpiller, SchemaBuilder, SpillConfig,
+    Value,
 };
 use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints};
 use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};
