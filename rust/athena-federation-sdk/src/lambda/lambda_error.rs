@@ -1,14 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
-use std::sync::Arc;
 
-use crate::exceptions::{AthenaConnectorException, FederationError};
-use crate::security::AwsServiceError;
-
-const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
-const IO_EXCEPTION: &str = "java.io.IOException";
-const ATHENA_CONNECTOR_EXCEPTION: &str =
-    "com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException";
+use crate::exceptions::FederationError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LambdaErrorCause {
@@ -40,13 +33,13 @@ impl LambdaError {
             .as_connector_exception()
             .map(|e| e.error_details().error_code().unwrap_or("null").to_string());
         let mut causes = Vec::new();
-        let mut next = federation_cause(error);
+        let mut next = error.java_cause();
         while let Some(cause) = next {
             causes.push(LambdaErrorCause {
-                error_type: java_class_of(cause),
-                error_message: java_message_of(cause),
+                error_type: cause.java_class_name(),
+                error_message: cause.java_message(),
             });
-            next = java_cause(cause);
+            next = cause.java_cause();
         }
         LambdaError {
             error_type: error.java_class_name(),
@@ -134,52 +127,4 @@ fn one_line(message: Option<&str>) -> String {
         || "null".to_string(),
         |m| m.replace('\r', "\\r").replace('\n', "\\n"),
     )
-}
-
-fn java_message_of(error: &(dyn StdError + 'static)) -> Option<String> {
-    match as_federation(error) {
-        Some(federation) => federation.java_message(),
-        None => Some(error.to_string()),
-    }
-}
-
-fn federation_cause(error: &FederationError) -> Option<&(dyn StdError + 'static)> {
-    match error {
-        FederationError::Wrapped { source, .. } => source.source(),
-        FederationError::IoError(source) => source.source(),
-        FederationError::Arrow(source) => source.source(),
-        FederationError::RuntimeWrapper { source } => Some(source.as_ref()),
-        other => other.source(),
-    }
-}
-
-fn as_federation<'a>(error: &'a (dyn StdError + 'static)) -> Option<&'a FederationError> {
-    error.downcast_ref::<FederationError>().or_else(|| {
-        error
-            .downcast_ref::<Arc<FederationError>>()
-            .map(AsRef::as_ref)
-    })
-}
-
-fn java_cause<'a>(error: &'a (dyn StdError + 'static)) -> Option<&'a (dyn StdError + 'static)> {
-    match as_federation(error) {
-        Some(federation) => federation_cause(federation),
-        None => error.source(),
-    }
-}
-
-fn java_class_of(error: &(dyn StdError + 'static)) -> String {
-    if let Some(federation) = as_federation(error) {
-        return federation.java_class_name();
-    }
-    if error.is::<AthenaConnectorException>() {
-        return ATHENA_CONNECTOR_EXCEPTION.to_string();
-    }
-    if let Some(aws) = error.downcast_ref::<AwsServiceError>() {
-        return FederationError::AwsService(aws.clone()).java_class_name();
-    }
-    if error.is::<std::io::Error>() {
-        return IO_EXCEPTION.to_string();
-    }
-    RUNTIME_EXCEPTION.to_string()
 }
