@@ -167,8 +167,8 @@ impl<D: SplitDialect> SplitQueryBuilder<D> {
         let mut accumulator = Vec::new();
         let sql = self.build_sql_string_literal(query, column_names, &mut accumulator)?;
         let mut statement = jdbc_connection.prepare_statement(&sql).await?;
-        for (i, type_and_value) in accumulator.iter().enumerate() {
-            bind_type_and_value(&mut statement, i + 1, type_and_value)?;
+        for type_and_value in &accumulator {
+            bind_type_and_value(&mut statement, type_and_value)?;
         }
         Ok(statement)
     }
@@ -576,7 +576,6 @@ fn number_long_value(value: &Value) -> Result<i64> {
 
 fn bind_type_and_value(
     statement: &mut PreparedStatement,
-    index: usize,
     type_and_value: &TypeAndValue,
 ) -> Result<()> {
     let value = type_and_value.value();
@@ -586,16 +585,16 @@ fn bind_type_and_value(
             let v = value
                 .as_i64()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Long"))?;
-            statement.set_long(index, v)?;
+            statement.bind(v);
         }
-        MinorType::INT => statement.set_int(index, number_int_value(value)?)?,
+        MinorType::INT => statement.bind(number_int_value(value)?),
         MinorType::SMALLINT => {
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "Number.shortValue narrows the same way"
             )]
             let v = number_int_value(value)? as i16;
-            statement.set_short(index, v)?;
+            statement.bind(v);
         }
         MinorType::TINYINT => {
             #[allow(
@@ -603,49 +602,49 @@ fn bind_type_and_value(
                 reason = "Number.byteValue narrows the same way"
             )]
             let v = number_int_value(value)? as i8;
-            statement.set_byte(index, v)?;
+            statement.bind(v);
         }
         MinorType::FLOAT8 => {
             let Value::Double(v) = value else {
                 return Err(java_class_cast(value, "java.lang.Double"));
             };
-            statement.set_double(index, *v)?;
+            statement.bind(*v);
         }
         MinorType::FLOAT4 => {
             let v = value
                 .as_f32()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Float"))?;
-            statement.set_float(index, v)?;
+            statement.bind(v);
         }
         MinorType::BIT => {
             let v = value
                 .as_bool()
                 .ok_or_else(|| java_class_cast(value, "java.lang.Boolean"))?;
-            statement.set_boolean(index, v)?;
+            statement.bind(v);
         }
         MinorType::DATEDAY => {
             let days = number_long_value(value)?;
             let utc_millis = days.wrapping_mul(MILLIS_PER_DAY);
-            statement.set_date(index, date_of_epoch_millis(utc_millis))?;
+            statement.bind(date_of_epoch_millis(utc_millis));
         }
         MinorType::DATEMILLI => {
             let Value::LocalDateTime(timestamp) = value else {
                 return Err(java_class_cast(value, "java.time.LocalDateTime"));
             };
-            statement.set_timestamp(index, *timestamp)?;
+            statement.bind(*timestamp);
         }
-        MinorType::VARCHAR => statement.set_string(index, value.java_to_string())?,
+        MinorType::VARCHAR => statement.bind(value.java_to_string()),
         MinorType::VARBINARY => {
             let bytes = value
                 .as_bytes()
                 .ok_or_else(|| java_class_cast(value, "[B"))?;
-            statement.set_bytes(index, bytes.to_vec())?;
+            statement.bind(bytes.to_vec());
         }
         MinorType::DECIMAL => {
             let Value::Decimal(decimal) = value else {
                 return Err(java_class_cast(value, "java.math.BigDecimal"));
             };
-            statement.set_big_decimal(index, decimal.clone())?;
+            statement.bind(decimal.clone());
         }
         other => {
             return Err(FederationError::not_supported(format!(
@@ -797,20 +796,19 @@ pub(crate) fn handle_data_types_for_prepared_statement(
     statement: &mut PreparedStatement,
     accumulator: &[SubstraitTypeAndValue],
 ) -> Result<()> {
-    for (i, type_and_value) in accumulator.iter().enumerate() {
-        let index = i + 1;
+    for type_and_value in accumulator {
         let value = type_and_value.value();
         match type_and_value.ty() {
-            SqlTypeName::Bigint => statement.set_long(index, substrait_long_value(value)?)?,
-            SqlTypeName::Double => statement.set_double(index, substrait_double_value(value)?)?,
-            SqlTypeName::Integer => statement.set_int(index, substrait_int_value(value)?)?,
+            SqlTypeName::Bigint => statement.bind(substrait_long_value(value)?),
+            SqlTypeName::Double => statement.bind(substrait_double_value(value)?),
+            SqlTypeName::Integer => statement.bind(substrait_int_value(value)?),
             SqlTypeName::Smallint => {
                 #[allow(
                     clippy::cast_possible_truncation,
                     reason = "Number.shortValue narrows the same way"
                 )]
                 let v = substrait_int_value(value)? as i16;
-                statement.set_short(index, v)?;
+                statement.bind(v);
             }
             SqlTypeName::Tinyint => {
                 #[allow(
@@ -818,10 +816,10 @@ pub(crate) fn handle_data_types_for_prepared_statement(
                     reason = "Number.byteValue narrows the same way"
                 )]
                 let v = substrait_int_value(value)? as i8;
-                statement.set_byte(index, v)?;
+                statement.bind(v);
             }
             SqlTypeName::Char | SqlTypeName::Varchar => {
-                statement.set_string(index, value.to_string())?;
+                statement.bind(value.to_string());
             }
             SqlTypeName::Varbinary => {
                 let SubstraitValue::Bits(bits) = value else {
@@ -830,7 +828,7 @@ pub(crate) fn handle_data_types_for_prepared_statement(
                         "org.apache.calcite.util.BitString",
                     ));
                 };
-                statement.set_bytes(index, bits.as_byte_array().to_vec())?;
+                statement.bind(bits.as_byte_array().to_vec());
             }
             SqlTypeName::Float => {
                 #[allow(
@@ -841,31 +839,28 @@ pub(crate) fn handle_data_types_for_prepared_statement(
                     SubstraitValue::Float(f) => *f,
                     other => substrait_double_value(other)? as f32,
                 };
-                statement.set_float(index, v)?;
+                statement.bind(v);
             }
             SqlTypeName::Decimal => {
                 let SubstraitValue::Decimal(decimal) = value else {
                     return Err(substrait_class_cast(value, "java.math.BigDecimal"));
                 };
-                statement.set_big_decimal(index, BigDecimal::clone(decimal))?;
+                statement.bind(BigDecimal::clone(decimal));
             }
             SqlTypeName::Boolean => {
                 let SubstraitValue::Boolean(b) = value else {
                     return Err(substrait_class_cast(value, "java.lang.Boolean"));
                 };
-                statement.set_boolean(index, *b)?;
+                statement.bind(*b);
             }
-            SqlTypeName::Date => bind_substrait_date(statement, index, type_and_value)?,
+            SqlTypeName::Date => bind_substrait_date(statement, type_and_value)?,
             SqlTypeName::Timestamp => match value {
                 SubstraitValue::Timestamp(timestamp) => {
-                    statement.set_timestamp(
-                        index,
-                        java_sql_timestamp_value_of(&timestamp.to_string())?,
-                    )?;
+                    statement.bind(java_sql_timestamp_value_of(&timestamp.to_string())?);
                 }
                 other if substrait_is_number(other) => {
                     let millis = substrait_long_value(other)?;
-                    statement.set_timestamp(index, timestamp_of_epoch_millis(millis))?;
+                    statement.bind(timestamp_of_epoch_millis(millis));
                 }
                 other => {
                     return Err(FederationError::not_supported(format!(
@@ -887,7 +882,6 @@ pub(crate) fn handle_data_types_for_prepared_statement(
 
 fn bind_substrait_date(
     statement: &mut PreparedStatement,
-    index: usize,
     type_and_value: &SubstraitTypeAndValue,
 ) -> Result<()> {
     let value = type_and_value.value();
@@ -895,16 +889,16 @@ fn bind_substrait_date(
         number if substrait_is_number(number) => {
             let days = substrait_long_value(number)?;
             let utc_millis = days.wrapping_mul(MILLIS_PER_DAY);
-            statement.set_date(index, date_of_epoch_millis(utc_millis))?;
+            statement.bind(date_of_epoch_millis(utc_millis));
         }
         SubstraitValue::Date(date) => {
-            statement.set_date(index, java_sql_date_value_of(&date.to_string())?)?;
+            statement.bind(java_sql_date_value_of(&date.to_string())?);
         }
         SubstraitValue::Timestamp(timestamp) => {
-            statement.set_timestamp(index, java_sql_timestamp_value_of(&timestamp.to_string())?)?;
+            statement.bind(java_sql_timestamp_value_of(&timestamp.to_string())?);
         }
         other => match java_sql_date_value_of(&other.to_string()) {
-            Ok(date) => statement.set_date(index, date)?,
+            Ok(date) => statement.bind(date),
             Err(_) => {
                 return Err(FederationError::not_supported(format!(
                     "Can't handle date format: {}, value type: {}, value: {}",
@@ -1029,7 +1023,7 @@ mod tests {
         )])
         .unwrap();
         assert!(matches!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(SqlValue::Timestamp(_))
         ));
         assert_eq!(statement.parameters().len(), 1);
@@ -1047,7 +1041,10 @@ mod tests {
         let expected = chrono::DateTime::from_timestamp_millis(expected_millis)
             .unwrap()
             .naive_utc();
-        assert_eq!(statement.parameter(1), Some(&SqlValue::Timestamp(expected)));
+        assert_eq!(
+            statement.parameters().first(),
+            Some(&SqlValue::Timestamp(expected))
+        );
     }
 
     #[test]
@@ -1080,13 +1077,16 @@ mod tests {
         ])
         .unwrap();
         assert!(matches!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(SqlValue::Timestamp(_))
         ));
         let expected = chrono::DateTime::from_timestamp_millis(ts2_millis)
             .unwrap()
             .naive_utc();
-        assert_eq!(statement.parameter(2), Some(&SqlValue::Timestamp(expected)));
+        assert_eq!(
+            statement.parameters().get(1),
+            Some(&SqlValue::Timestamp(expected))
+        );
     }
 
     #[test]
@@ -1110,14 +1110,17 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::String("test_value".to_string()))
         );
         assert_eq!(
-            statement.parameter(2),
+            statement.parameters().get(1),
             Some(&SqlValue::Timestamp(timestamp("2025-01-10 10:10:10")))
         );
-        assert_eq!(statement.parameter(3), Some(&SqlValue::Integer(12345)));
+        assert_eq!(
+            statement.parameters().get(2),
+            Some(&SqlValue::Integer(12345))
+        );
     }
 
     #[test]
@@ -1129,7 +1132,7 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::Date(date("2025-01-10")))
         );
     }
@@ -1148,7 +1151,7 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::Date(date("2025-01-10")))
         );
     }
@@ -1169,7 +1172,10 @@ mod tests {
             "EVENT_DATE",
         )])
         .unwrap();
-        assert_eq!(statement.parameter(1), Some(&SqlValue::Date(instant)));
+        assert_eq!(
+            statement.parameters().first(),
+            Some(&SqlValue::Date(instant))
+        );
     }
 
     #[test]
@@ -1181,7 +1187,7 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::Date(date("2025-01-10")))
         );
     }
@@ -1195,7 +1201,7 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::Date(
                 NaiveDate::default() + chrono::Days::new(19000)
             ))
@@ -1210,7 +1216,10 @@ mod tests {
             "EVENT_DATE",
         )])
         .unwrap();
-        assert!(matches!(statement.parameter(1), Some(SqlValue::Date(_))));
+        assert!(matches!(
+            statement.parameters().first(),
+            Some(SqlValue::Date(_))
+        ));
     }
 
     #[test]
@@ -1222,7 +1231,7 @@ mod tests {
         )])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::Timestamp(timestamp("2025-01-10 10:10:10")))
         );
     }
@@ -1263,14 +1272,17 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            statement.parameter(1),
+            statement.parameters().first(),
             Some(&SqlValue::String("test_value".to_string()))
         );
         assert_eq!(
-            statement.parameter(2),
+            statement.parameters().get(1),
             Some(&SqlValue::Date(date("2025-01-10")))
         );
-        assert_eq!(statement.parameter(3), Some(&SqlValue::Integer(12345)));
+        assert_eq!(
+            statement.parameters().get(2),
+            Some(&SqlValue::Integer(12345))
+        );
     }
 
     fn java_multiple_parameters_run() -> Vec<Vec<&'static str>> {
@@ -1329,7 +1341,7 @@ mod tests {
                 SqlValue::Boolean(true),
             ]
         );
-        let Some(SqlValue::Decimal(decimal)) = stmt.parameter(2) else {
+        let Some(SqlValue::Decimal(decimal)) = stmt.parameters().get(1) else {
             panic!("expected a decimal parameter");
         };
         assert_eq!(big_decimal_to_string(decimal), "80000.00");

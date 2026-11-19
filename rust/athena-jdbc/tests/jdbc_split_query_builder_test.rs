@@ -597,7 +597,7 @@ async fn test_build_sql_with_decimal_type() {
     let stmt = f.build(&schema, &constraints).await.unwrap();
     assert_eq!(stmt.sql(), f.prepared());
     assert!(f.prepared().contains("\"decimal_col\""));
-    assert_eq!(stmt.parameter(1), Some(&SqlValue::Decimal(value)));
+    assert_eq!(stmt.parameters().first(), Some(&SqlValue::Decimal(value)));
 }
 
 #[tokio::test]

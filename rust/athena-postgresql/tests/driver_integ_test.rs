@@ -55,7 +55,7 @@ async fn fetch_size_partial_read_of_two_million_rows_commits_without_buffering()
         .prepare_statement("SELECT g, repeat('x', 100) FROM generate_series(1, 2000000) g")
         .await
         .unwrap();
-    statement.set_fetch_size(1000).unwrap();
+    statement.set_fetch_size(1000);
     let mut rows = connection.execute_query(&statement).await.unwrap();
     assert!(rows.next().await.unwrap());
     let before = rss_kb();
@@ -84,7 +84,7 @@ async fn full_read_through_a_portal_returns_every_row() {
         .prepare_statement("SELECT g FROM generate_series(1, 2500) g")
         .await
         .unwrap();
-    statement.set_fetch_size(1000).unwrap();
+    statement.set_fetch_size(1000);
     let mut rows = connection.execute_query(&statement).await.unwrap();
     let mut last = 0;
     let mut count = 0;
@@ -111,7 +111,7 @@ async fn query_timeout_cancels_the_running_statement() {
         .prepare_statement("select pg_sleep(10)")
         .await
         .unwrap();
-    statement.set_query_timeout(1).unwrap();
+    statement.set_query_timeout(std::time::Duration::from_secs(1));
     let started = Instant::now();
     let result = async {
         let mut rows = connection.execute_query(&statement).await?;

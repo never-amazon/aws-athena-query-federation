@@ -373,8 +373,8 @@ async fn query_timeout_and_binds_reach_the_executor() {
     let executor = RecordingExecutor::new(empty());
     let connection = connection(&executor);
     let mut statement = PreparedStatement::new("select x from t where y = ?");
-    statement.set_string(1, "v").unwrap();
-    statement.set_query_timeout(120).unwrap();
+    statement.bind("v");
+    statement.set_query_timeout(Duration::from_mins(2));
     connection.execute_query(&statement).await.unwrap();
     let (sql, binds, timeout) = executor.queries.lock().unwrap()[0].clone();
     assert_eq!("select x from t where y = ?", sql);

@@ -18,7 +18,7 @@ use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
 use crate::query_string_builder::{self, query_string_builder, PostGreSqlQueryStringBuilder};
 
-const FETCH_SIZE: i32 = 1000;
+const FETCH_SIZE: u32 = 1000;
 
 pub struct PostGreSqlRecordDialect {
     query_builder: PostGreSqlQueryStringBuilder,
@@ -108,7 +108,7 @@ impl RecordDialect for PostGreSqlRecordDialect {
             } else {
                 query_string_builder::build_sql(&self.query_builder, connection, query).await?
             };
-            prepared_statement.set_fetch_size(FETCH_SIZE)?;
+            prepared_statement.set_fetch_size(FETCH_SIZE);
             Ok(prepared_statement)
         }
         .await;
@@ -121,7 +121,7 @@ impl RecordDialect for PostGreSqlRecordDialect {
         query: &str,
     ) -> Result<PreparedStatement> {
         let mut prepared_statement = connection.prepare_statement(query).await?;
-        prepared_statement.set_fetch_size(FETCH_SIZE)?;
+        prepared_statement.set_fetch_size(FETCH_SIZE);
         Ok(prepared_statement)
     }
 

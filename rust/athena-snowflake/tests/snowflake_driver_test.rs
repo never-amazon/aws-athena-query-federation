@@ -214,7 +214,7 @@ async fn statement_query_timeout_cancels_the_query_in_snowflake() {
         .await
         .unwrap();
     let mut statement = PreparedStatement::new("select 1");
-    statement.set_query_timeout(1).unwrap();
+    statement.set_query_timeout(std::time::Duration::from_secs(1));
     let error = connection.execute_query(&statement).await.unwrap_err();
     assert_eq!("SQL execution canceled", error.message());
     assert_eq!(604, error.error_code());

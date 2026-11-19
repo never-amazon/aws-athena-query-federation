@@ -453,7 +453,7 @@ impl JdbcConnection for SnowflakeConnection {
     }
 
     async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
-        let timeout = positive_seconds(statement.query_timeout());
+        let timeout = statement.query_timeout();
         let result = self
             .run(statement.sql(), statement.parameters(), timeout)
             .await?;

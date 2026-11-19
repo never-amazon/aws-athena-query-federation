@@ -566,3 +566,87 @@ impl fmt::Display for SqlValue {
         }
     }
 }
+
+impl From<bool> for SqlValue {
+    fn from(value: bool) -> SqlValue {
+        SqlValue::Boolean(value)
+    }
+}
+
+impl From<i8> for SqlValue {
+    fn from(value: i8) -> SqlValue {
+        SqlValue::TinyInt(value)
+    }
+}
+
+impl From<i16> for SqlValue {
+    fn from(value: i16) -> SqlValue {
+        SqlValue::SmallInt(value)
+    }
+}
+
+impl From<i32> for SqlValue {
+    fn from(value: i32) -> SqlValue {
+        SqlValue::Integer(value)
+    }
+}
+
+impl From<i64> for SqlValue {
+    fn from(value: i64) -> SqlValue {
+        SqlValue::BigInt(value)
+    }
+}
+
+impl From<f32> for SqlValue {
+    fn from(value: f32) -> SqlValue {
+        SqlValue::Real(value)
+    }
+}
+
+impl From<f64> for SqlValue {
+    fn from(value: f64) -> SqlValue {
+        SqlValue::Double(value)
+    }
+}
+
+impl From<BigDecimal> for SqlValue {
+    fn from(value: BigDecimal) -> SqlValue {
+        SqlValue::Decimal(value)
+    }
+}
+
+impl From<String> for SqlValue {
+    fn from(value: String) -> SqlValue {
+        SqlValue::String(value)
+    }
+}
+
+impl From<Vec<u8>> for SqlValue {
+    fn from(value: Vec<u8>) -> SqlValue {
+        SqlValue::Bytes(value)
+    }
+}
+
+impl From<NaiveDate> for SqlValue {
+    fn from(value: NaiveDate) -> SqlValue {
+        SqlValue::Date(value)
+    }
+}
+
+impl From<NaiveDateTime> for SqlValue {
+    fn from(value: NaiveDateTime) -> SqlValue {
+        SqlValue::Timestamp(value)
+    }
+}
+
+impl From<&str> for SqlValue {
+    fn from(value: &str) -> SqlValue {
+        SqlValue::String(value.to_string())
+    }
+}
+
+impl<T: Into<SqlValue>> From<Option<T>> for SqlValue {
+    fn from(value: Option<T>) -> SqlValue {
+        value.map_or(SqlValue::Null, Into::into)
+    }
+}

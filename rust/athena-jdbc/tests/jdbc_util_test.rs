@@ -279,7 +279,8 @@ async fn test_get_tables() {
     assert_eq!(
         Some(TEST_SCHEMA),
         connection.executed()[0]
-            .parameter(1)
+            .parameters()
+            .first()
             .and_then(athena_jdbc::sql::SqlValue::to_java_string)
             .as_deref()
     );

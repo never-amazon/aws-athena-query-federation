@@ -554,7 +554,7 @@ async fn fetch_size_reads_through_a_portal_and_commit_does_not_drain_it() {
     let connection = connect(&server.url("sslmode=disable")).await.unwrap();
     connection.set_auto_commit(false).await.unwrap();
     let mut statement = connection.prepare_statement("select x").await.unwrap();
-    statement.set_fetch_size(5).unwrap();
+    statement.set_fetch_size(5);
     let mut rows = connection.execute_query(&statement).await.unwrap();
     assert!(rows.next().await.unwrap());
     connection.commit().await.unwrap();
@@ -646,7 +646,7 @@ async fn query_timeout_sends_a_cancel_request_with_the_backend_key() {
         .prepare_statement("select pg_sleep(5)")
         .await
         .unwrap();
-    statement.set_query_timeout(1).unwrap();
+    statement.set_query_timeout(std::time::Duration::from_secs(1));
     let mut rows = connection.execute_query(&statement).await.unwrap();
     let error = rows.next().await.unwrap_err();
     assert_eq!(error.sql_state(), Some("57014"));

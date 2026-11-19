@@ -31,7 +31,7 @@ use crate::snowflake_metadata_handler::{
 use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
 use crate::utils;
 
-const FETCH_SIZE: i32 = 1000;
+const FETCH_SIZE: u32 = 1000;
 const UTC: &str = "UTC";
 
 pub struct SnowflakeRecordDialect {
@@ -356,7 +356,7 @@ impl RecordDialect for SnowflakeRecordDialect {
             } else {
                 self.query_builder.build_sql(connection, query).await?
             };
-            prepared_statement.set_fetch_size(FETCH_SIZE)?;
+            prepared_statement.set_fetch_size(FETCH_SIZE);
             Ok(prepared_statement)
         }
         .await;

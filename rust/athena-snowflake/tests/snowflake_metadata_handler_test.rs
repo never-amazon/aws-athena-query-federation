@@ -1411,7 +1411,7 @@ async fn get_partitions_table_below_threshold_applies_uniqueness_check_timeout()
         .find(|statement| statement.sql().contains("GROUP BY"))
         .unwrap();
     assert_eq!(
-        snowflake_constants::UNIQUENESS_CHECK_TIMEOUT_SECONDS,
+        Some(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT),
         uniqueness.query_timeout()
     );
     assert_eq!(

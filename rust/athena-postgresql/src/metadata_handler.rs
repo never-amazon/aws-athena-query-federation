@@ -163,8 +163,8 @@ pub async fn get_char_columns(
     table: &str,
 ) -> std::result::Result<Vec<String>, SqlError> {
     let mut statement = connection.prepare_statement(CHAR_COLUMNS_QUERY).await?;
-    statement.set_string(1, schema)?;
-    statement.set_string(2, table)?;
+    statement.bind(schema);
+    statement.bind(table);
     let mut result_set = connection.execute_query(&statement).await?;
     let mut char_columns = Vec::new();
     while result_set.next().await? {
@@ -197,7 +197,7 @@ async fn get_materialized_views(
     let mut statement = connection
         .prepare_statement(MATERIALIZED_VIEWS_QUERY)
         .await?;
-    statement.set_string(1, database_name)?;
+    statement.bind(database_name);
     tracing::debug!(
         "Prepared Statement for getting Materialized View in schema {} : {}",
         database_name,
@@ -216,10 +216,10 @@ async fn get_paginated_results(
         .prepare_statement(LIST_PAGINATED_TABLES_QUERY)
         .await?;
     let name = database_name.map_or(SqlValue::Null, |n| SqlValue::String(n.to_string()));
-    statement.set_object(1, name.clone())?;
-    statement.set_object(2, name)?;
-    statement.set_int(3, limit)?;
-    statement.set_int(4, token)?;
+    statement.bind(name.clone());
+    statement.bind(name);
+    statement.bind(limit);
+    statement.bind(token);
     tracing::debug!(
         "Prepared Statement for getting tables in schema {:?} : {}",
         database_name,
@@ -235,9 +235,9 @@ async fn is_uuid_column(
 ) -> bool {
     let result: std::result::Result<bool, SqlError> = async {
         let mut statement = connection.prepare_statement(GET_DATA_TYPE_QUERY).await?;
-        statement.set_string(1, table_name.schema_name())?;
-        statement.set_string(2, table_name.table_name())?;
-        statement.set_string(3, column_name)?;
+        statement.bind(table_name.schema_name());
+        statement.bind(table_name.table_name());
+        statement.bind(column_name);
         let mut result_set = connection.execute_query(&statement).await?;
         if result_set.next().await? {
             let data_type = result_set.get_string("data_type")?;

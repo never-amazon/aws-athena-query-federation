@@ -241,9 +241,9 @@ impl SnowflakeMetadataDialect {
         let mut statement = connection
             .prepare_statement(snowflake_constants::LIST_PAGINATED_TABLES_QUERY)
             .await?;
-        statement.set_string(1, database_name)?;
-        statement.set_int(2, limit)?;
-        statement.set_int(3, offset)?;
+        statement.bind(database_name);
+        statement.bind(limit);
+        statement.bind(offset);
         jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
     }
 
@@ -652,7 +652,7 @@ impl SnowflakeMetadataDialect {
         );
         let checked: std::result::Result<bool, SqlError> = async {
             let mut statement = connection.prepare_statement(&sql).await?;
-            statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT_SECONDS)?;
+            statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT);
             let mut result_set = connection.execute_query(&statement).await?;
             Ok(result_set.next().await?
                 && result_set.get_int(COUNTS_COLUMN_NAME)?.unwrap_or(0) == 1)

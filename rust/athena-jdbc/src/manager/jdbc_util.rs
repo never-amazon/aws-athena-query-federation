@@ -117,7 +117,7 @@ pub async fn tables(
 ) -> std::result::Result<Vec<TableName>, SqlError> {
     let sql = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?";
     let mut prepared_statement = connection.prepare_statement(sql).await?;
-    prepared_statement.set_string(1, database_name)?;
+    prepared_statement.bind(database_name);
     tracing::debug!(
         "Prepared Statement for getting tables in schema {} : {}",
         database_name,
