@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use athena_federation_sdk::data::ZoneId;
 use athena_jdbc::sql::SqlError;
 
 use super::codec::hex_digit;
@@ -344,7 +345,13 @@ fn flag(properties: &HashMap<String, String>, key: &str, default: bool) -> bool 
         .map_or(default, |v| v.eq_ignore_ascii_case("true"))
 }
 
-pub(crate) fn default_time_zone() -> String {
+impl ConnectSettings {
+    pub(crate) fn zone(&self) -> ZoneId {
+        ZoneId::of(&self.time_zone).unwrap_or_else(|_| ZoneId::utc())
+    }
+}
+
+fn default_time_zone() -> String {
     std::env::var("TZ")
         .ok()
         .map(|tz| tz.trim_start_matches(':').to_string())

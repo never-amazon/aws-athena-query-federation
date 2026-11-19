@@ -3,6 +3,7 @@ use std::io;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::Duration;
 
+use athena_federation_sdk::data::ZoneId;
 use athena_jdbc::sql::{SqlError, SqlValue};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
@@ -120,6 +121,7 @@ pub(crate) struct SessionOptions {
     pub(crate) string_type_unspecified: bool,
     pub(crate) log_server_error_detail: bool,
     pub(crate) socket_timeout: Option<Duration>,
+    pub(crate) zone: ZoneId,
 }
 
 pub(crate) struct Session {
@@ -353,13 +355,14 @@ impl Session {
     fn decode_row(
         decoders: &[Decoder],
         body: &postgres_protocol::message::backend::DataRowBody,
+        zone: &ZoneId,
     ) -> Result<Vec<SqlValue>, SqlError> {
         let buffer = body.buffer();
         body.ranges()
             .enumerate()
             .map(|(i, range)| {
                 let raw = range.map(|r| &buffer[r]);
-                Ok(decoders.get(i).unwrap_or(&Decoder::Text).decode(raw))
+                Ok(decoders.get(i).unwrap_or(&Decoder::Text).decode(raw, zone))
             })
             .collect()
             .map_err(|e| protocol_violation(format!("Invalid DataRow message: {e}")))
@@ -381,7 +384,7 @@ impl Session {
             };
             match self.receive().await? {
                 Message::DataRow(body) => {
-                    return Self::decode_row(&decoders, &body).map(Some);
+                    return Self::decode_row(&decoders, &body, &self.options.zone).map(Some);
                 }
                 Message::PortalSuspended => {
                     if let Some(active) = self.active.as_mut() {

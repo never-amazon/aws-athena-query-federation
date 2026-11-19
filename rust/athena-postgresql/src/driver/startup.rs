@@ -138,6 +138,7 @@ fn session_options(settings: &ConnectSettings) -> SessionOptions {
         string_type_unspecified: settings.string_type_unspecified,
         log_server_error_detail: settings.log_server_error_detail,
         socket_timeout: settings.socket_timeout,
+        zone: settings.zone(),
     }
 }
 
