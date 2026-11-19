@@ -9,7 +9,6 @@ mod snowflake_constants;
 mod snowflake_credentials_provider;
 mod snowflake_dialect;
 mod snowflake_environment_properties;
-mod snowflake_federation_expression_parser;
 mod snowflake_metadata_handler;
 mod snowflake_mux_composite_handler;
 mod snowflake_mux_metadata_handler;
@@ -26,7 +25,6 @@ pub use snowflake_constants::SnowflakeConstants;
 pub use snowflake_credentials_provider::SnowflakeCredentialsProvider;
 pub use snowflake_dialect::SnowflakeDialect;
 pub use snowflake_environment_properties::SnowflakeEnvironmentProperties;
-pub use snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
 pub use snowflake_metadata_handler::{
     create_credentials_provider, create_snowflake_credentials_provider, partition_values,
     SnowflakeMetadataDialect, SnowflakeMetadataHandler,
@@ -34,8 +32,10 @@ pub use snowflake_metadata_handler::{
 pub use snowflake_mux_composite_handler::mux_composite_handler_from_environment;
 pub use snowflake_mux_metadata_handler::SnowflakeMuxMetadataHandler;
 pub use snowflake_mux_record_handler::SnowflakeMuxRecordHandler;
-pub use snowflake_query_string_builder::SnowflakeQueryStringBuilder;
+pub use snowflake_query_string_builder::{
+    append_order_by_limit_offset, base_export_sql, expand_sql, query_string_builder, single_quote,
+    SnowflakeQueryStringBuilder, SnowflakeSplitDialect,
+};
 pub use snowflake_record_handler::{
-    convert_timestamp_tz_milli_to_date_milli_fast, default_query_builder, SnowflakeRecordDialect,
-    SnowflakeRecordHandler,
+    convert_timestamp_tz_milli_to_date_milli_fast, SnowflakeRecordDialect, SnowflakeRecordHandler,
 };

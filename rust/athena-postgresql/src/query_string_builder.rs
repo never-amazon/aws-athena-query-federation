@@ -1,16 +1,11 @@
-use std::sync::Arc;
-
-use arrow::datatypes::Schema;
-use async_trait::async_trait;
-use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::Result;
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{
-    FederationExpressionParser, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase,
-};
+use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
+use crate::constants::PostGreSqlConstants;
 use crate::driver::check_parameters;
 use crate::metadata_handler::{
     get_char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME,
@@ -18,96 +13,71 @@ use crate::metadata_handler::{
 };
 use crate::sql_dialect::PostgresqlSqlDialect;
 
-pub struct PostGreSqlQueryStringBuilder {
-    base: JdbcSplitQueryBuilderBase,
+pub struct PostGreSqlSplitDialect;
+
+pub type PostGreSqlQueryStringBuilder = SplitQueryBuilder<PostGreSqlSplitDialect>;
+
+pub fn query_string_builder() -> PostGreSqlQueryStringBuilder {
+    SplitQueryBuilder::new(
+        PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
+        PostGreSqlSplitDialect,
+    )
 }
 
-impl PostGreSqlQueryStringBuilder {
-    pub fn new(
-        quote_characters: impl Into<String>,
-        federation_expression_parser: Arc<dyn FederationExpressionParser>,
-    ) -> PostGreSqlQueryStringBuilder {
-        PostGreSqlQueryStringBuilder {
-            base: JdbcSplitQueryBuilderBase::new_with_federation_expression_parser(
-                quote_characters,
-                federation_expression_parser,
-            ),
-        }
-    }
+pub async fn build_sql(
+    builder: &PostGreSqlQueryStringBuilder,
+    jdbc_connection: &dyn JdbcConnection,
+    query: &SplitQuery<'_>,
+) -> Result<PreparedStatement> {
+    let char_columns = get_char_columns(
+        jdbc_connection,
+        query.table_name.schema_name(),
+        query.table_name.table_name(),
+    )
+    .await?;
+    let column_names = query
+        .schema
+        .fields()
+        .iter()
+        .map(|field| field.name())
+        .filter(|name| !query.split.properties().contains_key(name.as_str()))
+        .map(|name| {
+            if char_columns.contains(name) {
+                format!("RTRIM({}) AS {}", builder.quote(name), builder.quote(name))
+            } else {
+                builder.quote(name)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let statement = builder
+        .prepare_statement_with_sql(jdbc_connection, query, &column_names)
+        .await?;
+    check_parameters(statement.parameters())?;
+    Ok(statement)
 }
 
-#[async_trait]
-impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-        &self.base
-    }
-
-    async fn build_sql(
+impl SplitDialect for PostGreSqlSplitDialect {
+    fn table_clause(
         &self,
-        jdbc_connection: &dyn JdbcConnection,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
-    ) -> Result<PreparedStatement> {
-        let char_columns = get_char_columns(jdbc_connection, schema, table).await?;
-        let column_names = table_schema
-            .fields()
-            .iter()
-            .map(|field| field.name())
-            .filter(|name| !split.properties().contains_key(name.as_str()))
-            .map(|name| {
-                if char_columns.contains(name) {
-                    format!("RTRIM({}) AS {}", self.quote(name), self.quote(name))
-                } else {
-                    self.quote(name)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let statement = self
-            .prepare_statement_with_sql(
-                jdbc_connection,
-                catalog,
-                schema,
-                table,
-                table_schema,
-                constraints,
-                split,
-                &column_names,
-            )
-            .await?;
-        check_parameters(statement.parameters())?;
-        Ok(statement)
-    }
-
-    fn get_from_clause_with_split(
-        &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
+        builder: &PostGreSqlQueryStringBuilder,
+        table: &TableName,
         split: &Split,
     ) -> String {
+        let split_table = self.split_table(builder, split);
+        if !split_table.is_empty() {
+            return format!(" FROM {split_table} ");
+        }
         let mut table_name = String::new();
-        if !catalog.is_empty() {
-            table_name.push_str(&self.quote(catalog));
+        if !table.schema_name().is_empty() {
+            table_name.push_str(&builder.quote(table.schema_name()));
             table_name.push('.');
         }
-        if !schema.is_empty() {
-            table_name.push_str(&self.quote(schema));
-            table_name.push('.');
-        }
-        table_name.push_str(&self.quote(table));
-        let split_table = self.get_split_table(split);
-        if split_table.is_empty() {
-            return format!(" FROM {table_name} ");
-        }
-        format!(" FROM {split_table} ")
+        table_name.push_str(&builder.quote(table.table_name()));
+        format!(" FROM {table_name} ")
     }
 
-    fn get_split_table(&self, split: &Split) -> String {
+    fn split_table(&self, builder: &PostGreSqlQueryStringBuilder, split: &Split) -> String {
         let partition_schema_name = split.get_property(BLOCK_PARTITION_SCHEMA_COLUMN_NAME);
         let partition_name = split.get_property(BLOCK_PARTITION_COLUMN_NAME);
         let all = Some(ALL_PARTITIONS);
@@ -116,12 +86,12 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
         }
         format!(
             "{}.{}",
-            self.quote(partition_schema_name.unwrap_or_default()),
-            self.quote(partition_name.unwrap_or_default())
+            builder.quote(partition_schema_name.unwrap_or_default()),
+            builder.quote(partition_name.unwrap_or_default())
         )
     }
 
-    fn get_partition_where_clauses(&self, split: &Split) -> Vec<String> {
+    fn partition_where_clauses(&self, split: &Split) -> Vec<String> {
         let all = Some(ALL_PARTITIONS);
         let partition_name = split.get_property(BLOCK_PARTITION_COLUMN_NAME);
         if split.get_property(BLOCK_PARTITION_SCHEMA_COLUMN_NAME) == all && partition_name != all {
@@ -133,14 +103,10 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
         Vec::new()
     }
 
-    fn get_sql_dialect(&self) -> SqlDialect {
-        PostgresqlSqlDialect::default_dialect()
-    }
-
-    fn get_sql_dialect_with_catalog_casing_filter(
-        &self,
-        catalog_casing_filter: bool,
-    ) -> SqlDialect {
-        PostgresqlSqlDialect::new(catalog_casing_filter).sql_dialect()
+    fn sql_dialect(&self, uppercase_only: Option<bool>) -> SqlDialect {
+        match uppercase_only {
+            None => PostgresqlSqlDialect::default_dialect(),
+            Some(filter) => PostgresqlSqlDialect::new(filter).sql_dialect(),
+        }
     }
 }

@@ -36,8 +36,8 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
 };
 use athena_jdbc::manager::{
-    columns, ConnectionSource, JdbcMetadataHandler, JdbcSplitQueryBuilder, JdbcUtil,
-    MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
+    columns, ConnectionSource, JdbcMetadataHandler, JdbcUtil, MetadataDialect,
+    PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
@@ -50,8 +50,9 @@ use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
 use crate::snowflake_constants::{is_blank, SnowflakeConstants};
 use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
 use crate::snowflake_environment_properties::SnowflakeEnvironmentProperties;
-use crate::snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
-use crate::snowflake_query_string_builder::SnowflakeQueryStringBuilder;
+use crate::snowflake_query_string_builder::{
+    base_export_sql, query_string_builder, single_quote, SnowflakeQueryStringBuilder,
+};
 use crate::sql::SNOWFLAKE_SQL_EXCEPTION;
 use crate::utils::SnowflakeArrowTypeConverter;
 
@@ -168,12 +169,7 @@ impl SnowflakeMetadataDialect {
     pub fn new(amazon_s3: Option<Arc<dyn S3ObjectLister>>) -> SnowflakeMetadataDialect {
         SnowflakeMetadataDialect {
             amazon_s3,
-            snowflake_query_string_builder: SnowflakeQueryStringBuilder::new(
-                SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-                Arc::new(SnowflakeFederationExpressionParser::new(
-                    SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-                )),
-            ),
+            snowflake_query_string_builder: query_string_builder(),
         }
     }
 
@@ -402,15 +398,12 @@ impl SnowflakeMetadataDialect {
             )
         })?;
         let schema = schema_from_bytes(&bytes)?;
-        let generated = self
-            .snowflake_query_string_builder
-            .get_base_export_sql_string(
-                request.catalog_name(),
-                request.table_name().schema_name(),
-                request.table_name().table_name(),
-                &schema,
-                constraints,
-            )?;
+        let generated = base_export_sql(
+            &self.snowflake_query_string_builder,
+            request.table_name(),
+            &schema,
+            constraints,
+        )?;
         Ok(generated.unwrap_or_else(|| "null".to_string()))
     }
 
@@ -504,7 +497,7 @@ impl SnowflakeMetadataDialect {
             let snowflake_export_query = fill_template(
                 SnowflakeConstants::COPY_INTO_QUERY_TEMPLATE,
                 &[
-                    &self.snowflake_query_string_builder.single_quote(&s3_path),
+                    &single_quote(&s3_path),
                     &snowflake_export_sql,
                     &self
                         .snowflake_query_string_builder

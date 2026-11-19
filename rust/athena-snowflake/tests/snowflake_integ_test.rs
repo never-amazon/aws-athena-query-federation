@@ -27,8 +27,8 @@ use athena_snowflake::sql::{
 };
 use athena_snowflake::utils::SnowflakePrivateKey;
 use athena_snowflake::{
-    default_query_builder, S3ParquetExportReader, SnowflakeConstants, SnowflakeMetadataDialect,
-    SnowflakeMetadataHandler, SnowflakeRecordDialect, SnowflakeRecordHandler,
+    S3ParquetExportReader, SnowflakeConstants, SnowflakeMetadataDialect, SnowflakeMetadataHandler,
+    SnowflakeRecordDialect, SnowflakeRecordHandler,
 };
 use indexmap::IndexMap;
 use snowflake_support::Fakes;
@@ -380,13 +380,7 @@ fn lambda() -> Lambda {
     let record_clients = fakes.clients();
     let export_reader = Arc::new(S3ParquetExportReader::new(Arc::clone(&record_clients.s3)));
     let record_context = HandlerContext::new(config.engine(), record_clients, options).unwrap();
-    let record = SnowflakeRecordDialect::handler(
-        record_context,
-        config,
-        factory,
-        default_query_builder(),
-        export_reader,
-    );
+    let record = SnowflakeRecordDialect::handler(record_context, config, factory, export_reader);
     Lambda {
         database,
         metadata,

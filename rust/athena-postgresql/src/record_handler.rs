@@ -10,38 +10,27 @@ use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
     get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
-    JdbcSplitQueryBuilder, JdbcUtil, RecordDialect, SplitQuery,
+    JdbcUtil, RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
 use crate::constants::PostGreSqlConstants;
-use crate::federation_expression_parser::PostgreSqlFederationExpressionParser;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
-use crate::query_string_builder::PostGreSqlQueryStringBuilder;
+use crate::query_string_builder::{self, query_string_builder, PostGreSqlQueryStringBuilder};
 
 const FETCH_SIZE: i32 = 1000;
 
 pub struct PostGreSqlRecordDialect {
-    query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+    query_builder: PostGreSqlQueryStringBuilder,
 }
 
 pub type PostGreSqlRecordHandler = JdbcRecordHandler<PostGreSqlRecordDialect>;
-
-pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
-    Arc::new(PostGreSqlQueryStringBuilder::new(
-        PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-        Arc::new(PostgreSqlFederationExpressionParser::new(
-            PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-        )),
-    ))
-}
 
 impl PostGreSqlRecordDialect {
     pub fn handler(
         context: HandlerContext,
         config: DatabaseConnectionConfig,
         connection_factory: Arc<dyn JdbcConnectionFactory>,
-        query_builder: Arc<dyn JdbcSplitQueryBuilder>,
     ) -> PostGreSqlRecordHandler {
         JdbcRecordHandler::new(
             context,
@@ -49,7 +38,9 @@ impl PostGreSqlRecordDialect {
                 config,
                 factory: connection_factory,
             },
-            PostGreSqlRecordDialect { query_builder },
+            PostGreSqlRecordDialect {
+                query_builder: query_string_builder(),
+            },
         )
     }
 
@@ -63,12 +54,7 @@ impl PostGreSqlRecordDialect {
             &config_options,
         )?);
         let context = HandlerContext::new(config.engine(), clients, config_options)?;
-        Ok(PostGreSqlRecordDialect::handler(
-            context,
-            config,
-            factory,
-            default_query_builder(),
-        ))
+        Ok(PostGreSqlRecordDialect::handler(context, config, factory))
     }
 
     pub fn from_config_options(
@@ -123,17 +109,7 @@ impl RecordDialect for PostGreSqlRecordDialect {
                     .build_query_passthrough_sql(connection, query.constraints)
                     .await?
             } else {
-                self.query_builder
-                    .build_sql(
-                        connection,
-                        "",
-                        query.table_name.schema_name(),
-                        query.table_name.table_name(),
-                        query.schema,
-                        query.constraints,
-                        query.split,
-                    )
-                    .await?
+                query_string_builder::build_sql(&self.query_builder, connection, query).await?
             };
             prepared_statement.set_fetch_size(FETCH_SIZE)?;
             Ok(prepared_statement)

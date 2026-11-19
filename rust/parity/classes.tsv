@@ -275,16 +275,16 @@ com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfigBuilder	
 com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo	athena-jdbc/src/connection/database_connection_info.rs::DatabaseConnectionInfo	ported	
 com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory	athena-jdbc/src/connection/generic_jdbc_connection_factory.rs::GenericJdbcConnectionFactory	ported	
 com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory	athena-jdbc/src/connection/jdbc_connection_factory.rs::JdbcConnectionFactory	ported	
-com.amazonaws.athena.connectors.jdbc.manager.DefaultJdbcFederationExpressionParser	athena-jdbc/src/manager/default_jdbc_federation_expression_parser.rs::DefaultJdbcFederationExpressionParser	ported	
-com.amazonaws.athena.connectors.jdbc.manager.FederationExpressionParser	athena-jdbc/src/manager/federation_expression_parser.rs::FederationExpressionParser	ported	
+com.amazonaws.athena.connectors.jdbc.manager.DefaultJdbcFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	the parser is one concrete type; the throwing default has no caller
+com.amazonaws.athena.connectors.jdbc.manager.FederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	the abstract walker and the JDBC syntax are one concrete type
 com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil	athena-jdbc/src/manager/jdbc_util.rs::JdbcUtil	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter	athena-jdbc/src/manager/jdbc_arrow_type_converter.rs::JdbcArrowTypeConverter	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcFederationExpressionParser	athena-jdbc/src/manager/jdbc_federation_expression_parser.rs::JdbcFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.jdbc.manager.JdbcFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandler	athena-jdbc/src/manager/jdbc_metadata_handler.rs::JdbcMetadataHandler	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
 com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler	athena-jdbc/src/manager/jdbc_record_handler.rs::JdbcRecordHandler	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
-com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder	athena-jdbc/src/manager/jdbc_split_query_builder.rs::JdbcSplitQueryBuilder	ported	
+com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder	athena-jdbc/src/manager/jdbc_split_query_builder.rs::SplitQueryBuilder	ported	generic over a SplitDialect that supplies the per-connector clauses
 com.amazonaws.athena.connectors.jdbc.manager.PreparedStatementBuilder	athena-jdbc/src/manager/prepared_statement_builder.rs::PreparedStatementBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.TypeAndValue	athena-jdbc/src/manager/type_and_value.rs::TypeAndValue	ported	
 com.amazonaws.athena.connectors.jdbc.qpt.JdbcQueryPassthrough	athena-jdbc/src/qpt/jdbc_query_passthrough.rs::JDBC_QUERY_PASSTHROUGH	merged	the signature subclass becomes a QueryPassthroughSignature constant
@@ -304,7 +304,7 @@ com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-p
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxRecordHandler	athena-postgresql/src/mux_record_handler.rs::PostGreSqlMuxRecordHandler	ported	type alias for the athena-jdbc MultiplexingJdbcRecordHandler over PostGreSqlRecordHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlQueryStringBuilder	athena-postgresql/src/query_string_builder.rs::PostGreSqlQueryStringBuilder	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlRecordHandler	athena-postgresql/src/record_handler.rs::PostGreSqlRecordHandler	ported	
-com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
+com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	identical to the shared athena-jdbc parser
 com.amazonaws.athena.connectors.postgresql.PostgresqlSqlDialect	athena-postgresql/src/sql_dialect.rs::PostgresqlSqlDialect	ported	
 com.amazonaws.athena.connectors.postgresql.resolver.PostGreSqlJDBCCaseResolver	athena-postgresql/src/resolver/postgresql_jdbc_case_resolver.rs::PostGreSqlJdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
@@ -312,7 +312,7 @@ com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/sr
 com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::SnowflakeEnvironmentProperties	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
+com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	identical to the shared athena-jdbc parser
 com.amazonaws.athena.connectors.snowflake.SnowflakeMetadataHandler	athena-snowflake/src/snowflake_metadata_handler.rs::SnowflakeMetadataHandler	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-snowflake/src/snowflake_mux_metadata_handler.rs::SnowflakeMuxMetadataHandler	ported	type alias for the athena-jdbc MultiplexingJdbcMetadataHandler over SnowflakeMetadataHandler

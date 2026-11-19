@@ -7,30 +7,16 @@ use athena_federation_sdk::domain::predicate::expression::{
     ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
     DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
 };
-use athena_federation_sdk::domain::predicate::functions::FunctionName;
+use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::Result;
-use athena_jdbc::manager::{FederationExpressionParser, TypeAndValue};
+use athena_jdbc::manager::{ExpressionParser, TypeAndValue};
 use indexmap::IndexMap;
 
-const TEST_FUNCTION_NAME: &str = "ADD";
-const TEST_IS_NULL_FUNCTION: &str = "IS_NULL";
+const ADD: StandardFunctions = StandardFunctions::ADD_FUNCTION_NAME;
+const IS_NULL: StandardFunctions = StandardFunctions::IS_NULL_FUNCTION_NAME;
 
-struct TestParser;
-
-impl FederationExpressionParser for TestParser {
-    fn map_function_to_data_source_syntax(
-        &self,
-        function_name: &FunctionName,
-        _arrow_type: &ArrowType,
-        arguments: &[String],
-    ) -> Result<String> {
-        Ok(format!(
-            "{}({})",
-            function_name.function_name(),
-            arguments.join(",")
-        ))
-    }
+fn parser() -> ExpressionParser {
+    ExpressionParser::new("")
 }
 
 fn int32() -> ArrowType {
@@ -59,10 +45,10 @@ fn constant<V: Into<Value> + Clone>(
 
 fn call(
     arrow_type: ArrowType,
-    name: &str,
+    function: StandardFunctions,
     args: Vec<FederationExpression>,
 ) -> FunctionCallExpression {
-    FunctionCallExpression::new(arrow_type, FunctionName::new(name), args)
+    FunctionCallExpression::new(arrow_type, function.function_name(), args)
 }
 
 fn constraints_with(expressions: Vec<FederationExpression>) -> Constraints {
@@ -84,24 +70,22 @@ fn parse(expressions: Vec<FunctionCallExpression>) -> Vec<String> {
             .collect(),
     );
     let mut acc: Vec<TypeAndValue> = Vec::new();
-    TestParser
-        .parse_complex_expressions(&[], &constraints, &mut acc)
+    parser()
+        .parse_complex_expressions(&constraints, &mut acc)
         .unwrap()
 }
 
 #[test]
 fn test_parse_variable_expression() {
     let expr = VariableExpression::new("column", int32()).unwrap();
-    assert_eq!("column", TestParser.parse_variable_expression(&expr));
+    assert_eq!("column", parser().parse_variable_expression(&expr));
 }
 
 #[test]
 fn test_parse_constant_expression() {
     let expr = constant(2, "val", DataType::Utf8);
     let mut acc = Vec::new();
-    let result = TestParser
-        .parse_constant_expression(&expr, &mut acc)
-        .unwrap();
+    let result = parser().parse_constant_expression(&expr, &mut acc).unwrap();
     assert_eq!("?,?", result);
     assert_eq!(2, acc.len());
     assert_eq!(&Value::String("val".to_string()), acc[0].value());
@@ -111,17 +95,17 @@ fn test_parse_constant_expression() {
 fn test_parse_function_call_expression_with_all_types() {
     let nested = call(
         int32(),
-        TEST_FUNCTION_NAME,
+        ADD,
         vec![
             var("age", int32()),
             FederationExpression::Constant(constant(1, 25, int32())),
         ],
     );
     let mut acc = Vec::new();
-    let result = TestParser
+    let result = parser()
         .parse_function_call_expression(&nested, &mut acc)
         .unwrap();
-    assert!(result.starts_with("ADD("));
+    assert_eq!("(age + ?)", result);
     assert_eq!(1, acc.len());
     assert_eq!(&Value::Int(25), acc[0].value());
 }
@@ -130,21 +114,21 @@ fn test_parse_function_call_expression_with_all_types() {
 fn test_parse_function_call_expression_with_unknown_argument() {
     let function_call = call(
         DataType::Boolean,
-        "EQUALS",
+        StandardFunctions::AND_FUNCTION_NAME,
         vec![
             var("a", int32()),
             FederationExpression::Constant(constant(1, 1, int32())),
-            FederationExpression::FunctionCall(call(int32(), "NESTED", vec![var("b", int32())])),
+            FederationExpression::FunctionCall(call(int32(), IS_NULL, vec![var("b", int32())])),
         ],
     );
     let mut acc = Vec::new();
-    let result = TestParser
+    let result = parser()
         .parse_function_call_expression(&function_call, &mut acc)
         .unwrap();
-    assert_eq!("EQUALS(a,?,NESTED(b))", result);
+    assert_eq!("(a AND ? AND (b IS NULL))", result);
     let constraints = constraints_with(vec![var("a", int32())]);
-    let err = TestParser
-        .parse_complex_expressions(&[], &constraints, &mut acc)
+    let err = parser()
+        .parse_complex_expressions(&constraints, &mut acc)
         .unwrap_err();
     assert!(err.to_string().contains("cannot be cast to class"));
 }
@@ -152,12 +136,12 @@ fn test_parse_function_call_expression_with_unknown_argument() {
 #[test]
 fn test_parse_complex_expressions_with_empty_constraints() {
     let mut acc = Vec::new();
-    assert!(TestParser
-        .parse_complex_expressions(&[], &Constraints::empty(), &mut acc)
+    assert!(parser()
+        .parse_complex_expressions(&Constraints::empty(), &mut acc)
         .unwrap()
         .is_empty());
-    assert!(TestParser
-        .parse_complex_expressions(&[], &constraints_with(Vec::new()), &mut acc)
+    assert!(parser()
+        .parse_complex_expressions(&constraints_with(Vec::new()), &mut acc)
         .unwrap()
         .is_empty());
 }
@@ -166,28 +150,24 @@ fn test_parse_complex_expressions_with_empty_constraints() {
 fn test_parse_complex_expressions_single_function() {
     let expressions = parse(vec![call(
         DataType::Boolean,
-        TEST_IS_NULL_FUNCTION,
+        IS_NULL,
         vec![var("col", int32())],
     )]);
-    assert_eq!(vec!["IS_NULL(col)".to_string()], expressions);
+    assert_eq!(vec!["(col IS NULL)".to_string()], expressions);
 }
 
 #[test]
 fn test_parse_complex_expressions_multiple_functions() {
     let expressions = parse(vec![
+        call(DataType::Boolean, IS_NULL, vec![var("col1", int32())]),
         call(
             DataType::Boolean,
-            TEST_IS_NULL_FUNCTION,
-            vec![var("col1", int32())],
-        ),
-        call(
-            DataType::Boolean,
-            "NOT_NULL",
+            StandardFunctions::NOT_FUNCTION_NAME,
             vec![var("col2", DataType::Utf8)],
         ),
     ]);
     assert_eq!(
-        vec!["IS_NULL(col1)".to_string(), "NOT_NULL(col2)".to_string()],
+        vec!["(col1 IS NULL)".to_string(), "( NOT col2)".to_string()],
         expressions
     );
 }
@@ -198,9 +178,7 @@ fn test_parse_constant_expression_single_value() {
     let mut acc = Vec::new();
     assert_eq!(
         "?",
-        TestParser
-            .parse_constant_expression(&expr, &mut acc)
-            .unwrap()
+        parser().parse_constant_expression(&expr, &mut acc).unwrap()
     );
     assert_eq!(1, acc.len());
     assert_eq!(&Value::Int(42), acc[0].value());
@@ -214,7 +192,7 @@ fn test_parse_variable_expression_different_types() {
         ("bool_col", DataType::Boolean),
     ] {
         let expr = VariableExpression::new(name, arrow_type).unwrap();
-        assert_eq!(name, TestParser.parse_variable_expression(&expr));
+        assert_eq!(name, parser().parse_variable_expression(&expr));
     }
 }
 
@@ -222,34 +200,34 @@ fn test_parse_variable_expression_different_types() {
 fn test_parse_complex_expressions_with_nested_functions() {
     let subtract = call(
         int32(),
-        "SUBTRACT",
+        StandardFunctions::SUBTRACT_FUNCTION_NAME,
         vec![var("col1", int32()), var("col2", int32())],
     );
     let multiply = call(
         int32(),
-        "MULTIPLY",
+        StandardFunctions::MULTIPLY_FUNCTION_NAME,
         vec![var("col1", int32()), var("col2", int32())],
     );
     let add = call(
         int32(),
-        TEST_FUNCTION_NAME,
+        ADD,
         vec![
             FederationExpression::FunctionCall(subtract),
             FederationExpression::FunctionCall(multiply),
         ],
     );
     let expressions = parse(vec![add]);
-    assert_eq!(1, expressions.len());
-    assert!(expressions[0].contains("ADD"));
-    assert!(expressions[0].contains("SUBTRACT"));
-    assert!(expressions[0].contains("MULTIPLY"));
+    assert_eq!(
+        vec!["((col1 - col2) + (col1 * col2))".to_string()],
+        expressions
+    );
 }
 
 #[test]
 fn test_parse_complex_expressions_with_case_when() {
     let greater = call(
         DataType::Boolean,
-        "GREATER_THAN",
+        StandardFunctions::GREATER_THAN_OPERATOR_FUNCTION_NAME,
         vec![
             var("age", int32()),
             FederationExpression::Constant(constant(1, 18, int32())),
@@ -257,7 +235,7 @@ fn test_parse_complex_expressions_with_case_when() {
     );
     let case = call(
         int32(),
-        "CASE_WHEN",
+        StandardFunctions::OR_FUNCTION_NAME,
         vec![
             FederationExpression::FunctionCall(greater),
             var("salary", int32()),
@@ -265,68 +243,68 @@ fn test_parse_complex_expressions_with_case_when() {
         ],
     );
     let expressions = parse(vec![case]);
-    assert_eq!(1, expressions.len());
-    assert!(expressions[0].contains("CASE_WHEN"));
-    assert!(expressions[0].contains("GREATER_THAN"));
+    assert_eq!(
+        vec!["((age > ?) OR salary OR bonus)".to_string()],
+        expressions
+    );
 }
 
 #[test]
 fn test_parse_complex_expressions_with_aggregate_functions() {
     let add = call(
         int32(),
-        TEST_FUNCTION_NAME,
+        ADD,
         vec![var("col1", int32()), var("col1", int32())],
     );
     let sum = call(
         int32(),
-        "SUM",
+        StandardFunctions::NEGATE_FUNCTION_NAME,
         vec![FederationExpression::FunctionCall(add)],
     );
     let expressions = parse(vec![sum]);
-    assert_eq!(1, expressions.len());
-    assert!(expressions[0].contains("SUM"));
-    assert!(expressions[0].contains("ADD"));
+    assert_eq!(vec!["(-(col1 + col1))".to_string()], expressions);
 }
 
 #[test]
 fn test_parse_complex_expressions_with_string_functions() {
     let like = call(
         DataType::Boolean,
-        "LIKE",
+        StandardFunctions::LIKE_PATTERN_FUNCTION_NAME,
         vec![var("name", DataType::Utf8), var("pattern", DataType::Utf8)],
     );
     let concat = call(
         DataType::Utf8,
-        "CONCAT",
+        ADD,
         vec![
             var("name", DataType::Utf8),
             FederationExpression::Constant(constant(1, "_suffix", DataType::Utf8)),
         ],
     );
     let expressions = parse(vec![like, concat]);
-    assert_eq!(2, expressions.len());
-    assert!(expressions[0].contains("LIKE"));
-    assert!(expressions[1].contains("CONCAT"));
+    assert_eq!(
+        vec!["(name LIKE pattern)".to_string(), "(name + ?)".to_string()],
+        expressions
+    );
 }
 
 #[test]
 fn test_parse_complex_expressions_with_null_handling() {
     let coalesce = call(
         int32(),
-        "COALESCE",
+        StandardFunctions::AND_FUNCTION_NAME,
         vec![
             var("col1", int32()),
             var("col2", int32()),
             FederationExpression::Constant(constant(1, 0, int32())),
         ],
     );
-    let is_null = call(
-        DataType::Boolean,
-        TEST_IS_NULL_FUNCTION,
-        vec![var("col1", int32())],
-    );
+    let is_null = call(DataType::Boolean, IS_NULL, vec![var("col1", int32())]);
     let expressions = parse(vec![coalesce, is_null]);
-    assert_eq!(2, expressions.len());
-    assert!(expressions[0].contains("COALESCE"));
-    assert!(expressions[1].contains("IS_NULL"));
+    assert_eq!(
+        vec![
+            "(col1 AND col2 AND ?)".to_string(),
+            "(col1 IS NULL)".to_string()
+        ],
+        expressions
+    );
 }

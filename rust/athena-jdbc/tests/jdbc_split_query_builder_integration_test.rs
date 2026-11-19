@@ -1,21 +1,15 @@
 mod jdbc_support;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use arrow::datatypes::FieldRef;
 use indexmap::IndexMap;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
-use athena_federation_sdk::data::ArrowType;
-use athena_federation_sdk::domain::predicate::functions::FunctionName;
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::Result;
+use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{
-    FederationExpressionParser, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase, TypeAndValue,
-};
+use athena_jdbc::manager::{SplitDialect, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException, SqlValue};
 
 use jdbc_support::{FakeConnection, ResultSetData};
@@ -74,59 +68,21 @@ const CALCITE_SQL_TEST_CASES: [(&str, &str, &str, usize); 47] = [
     ("Boolean Column Tests", "Boolean in complex expression", "SELECT * FROM test_table WHERE (int_col > 1000 AND bool_col) OR (int_col < 500 AND NOT bool_col) LIMIT 10", 1),
 ];
 
-struct EmptyExpressionParser;
+struct TestDialect;
 
-impl FederationExpressionParser for EmptyExpressionParser {
-    fn map_function_to_data_source_syntax(
+impl SplitDialect for TestDialect {
+    fn table_clause(
         &self,
-        _function_name: &FunctionName,
-        _arrow_type: &ArrowType,
-        _arguments: &[String],
-    ) -> Result<String> {
-        Ok(String::new())
-    }
-
-    fn parse_complex_expressions(
-        &self,
-        _columns: &[FieldRef],
-        _constraints: &Constraints,
-        _accumulator: &mut Vec<TypeAndValue>,
-    ) -> Result<Vec<String>> {
-        Ok(Vec::new())
-    }
-}
-
-struct TestBuilder {
-    base: JdbcSplitQueryBuilderBase,
-}
-
-impl JdbcSplitQueryBuilder for TestBuilder {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-        &self.base
-    }
-
-    fn get_from_clause_with_split(
-        &self,
-        _catalog: &str,
-        _schema: &str,
-        table: &str,
+        builder: &SplitQueryBuilder<Self>,
+        table: &TableName,
         _split: &Split,
     ) -> String {
-        format!(" FROM {}", self.quote(table))
-    }
-
-    fn get_partition_where_clauses(&self, _split: &Split) -> Vec<String> {
-        Vec::new()
+        format!(" FROM {}", builder.quote(table.table_name()))
     }
 }
 
-fn builder() -> TestBuilder {
-    TestBuilder {
-        base: JdbcSplitQueryBuilderBase::new_with_federation_expression_parser(
-            QUOTE_CHAR,
-            Arc::new(EmptyExpressionParser),
-        ),
-    }
+fn builder() -> SplitQueryBuilder<TestDialect> {
+    SplitQueryBuilder::new(QUOTE_CHAR, TestDialect)
 }
 
 fn plan_constraints(plan: &str) -> Constraints {

@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use arrow::datatypes::{FieldRef, Schema};
-use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 
@@ -9,169 +6,166 @@ use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{arrow_type_to_string, ArrowType, MinorType, Value};
 use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::{
     parameterize, plan, SqlDialect, SqlIdentifier, SqlKind, SqlNode, SqlTypeName,
     SubstraitTypeAndValue, SubstraitValue,
 };
 
-use super::default_jdbc_federation_expression_parser::DefaultJdbcFederationExpressionParser;
-use super::federation_expression_parser::FederationExpressionParser;
+use super::expression_parser::ExpressionParser;
 use super::type_and_value::TypeAndValue;
 use crate::sql::{JdbcConnection, PreparedStatement};
 use crate::validate::runtime_with_cause;
 
 const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
 
-pub struct JdbcSplitQueryBuilderBase {
-    quote_characters: String,
-    federation_expression_parser: Arc<dyn FederationExpressionParser>,
+pub struct SplitQuery<'a> {
+    pub catalog_name: &'a str,
+    pub table_name: &'a TableName,
+    pub schema: &'a Schema,
+    pub constraints: &'a Constraints,
+    pub split: &'a Split,
 }
 
-impl JdbcSplitQueryBuilderBase {
-    pub fn new(quote_characters: impl Into<String>) -> JdbcSplitQueryBuilderBase {
-        JdbcSplitQueryBuilderBase::new_with_federation_expression_parser(
-            quote_characters,
-            Arc::new(DefaultJdbcFederationExpressionParser),
-        )
+impl<'a> SplitQuery<'a> {
+    pub fn of(request: &'a ReadRecordsRequest) -> SplitQuery<'a> {
+        SplitQuery {
+            catalog_name: request.catalog_name(),
+            table_name: request.table_name(),
+            schema: request.schema(),
+            constraints: request.constraints(),
+            split: request.split(),
+        }
+    }
+}
+
+pub trait SplitDialect: Send + Sync + Sized {
+    fn table_clause(
+        &self,
+        builder: &SplitQueryBuilder<Self>,
+        table: &TableName,
+        split: &Split,
+    ) -> String;
+
+    fn partition_where_clauses(&self, _split: &Split) -> Vec<String> {
+        Vec::new()
     }
 
-    pub fn new_with_federation_expression_parser(
-        quote_characters: impl Into<String>,
-        federation_expression_parser: Arc<dyn FederationExpressionParser>,
-    ) -> JdbcSplitQueryBuilderBase {
-        JdbcSplitQueryBuilderBase {
-            quote_characters: quote_characters.into(),
-            federation_expression_parser,
+    fn split_table(&self, _builder: &SplitQueryBuilder<Self>, _split: &Split) -> String {
+        String::new()
+    }
+
+    fn split_paging_clause(&self, _builder: &SplitQueryBuilder<Self>, _split: &Split) -> String {
+        String::new()
+    }
+
+    fn sql_dialect(&self, _uppercase_only: Option<bool>) -> SqlDialect {
+        SqlDialect::ansi()
+    }
+
+    fn complex_expressions(
+        &self,
+        builder: &SplitQueryBuilder<Self>,
+        constraints: &Constraints,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<Vec<String>> {
+        builder
+            .expression_parser()
+            .parse_complex_expressions(constraints, accumulator)
+    }
+
+    fn append_order_by_and_limit(
+        &self,
+        builder: &SplitQueryBuilder<Self>,
+        sql: &mut String,
+        _split: &Split,
+        constraints: &Constraints,
+    ) {
+        let order_by_clause = builder.extract_order_by_clause(constraints);
+        if !order_by_clause.is_empty() {
+            sql.push(' ');
+            sql.push_str(&order_by_clause);
+        }
+        if constraints.limit() > 0 {
+            sql.push_str(" LIMIT ");
+            sql.push_str(&constraints.limit().to_string());
+        }
+        tracing::info!("Generated SQL : {}", sql);
+    }
+}
+
+pub struct SplitQueryBuilder<D> {
+    quote_char: String,
+    expression_parser: ExpressionParser,
+    dialect: D,
+}
+
+impl<D: SplitDialect> SplitQueryBuilder<D> {
+    pub fn new(quote_char: impl Into<String>, dialect: D) -> SplitQueryBuilder<D> {
+        let quote_char = quote_char.into();
+        SplitQueryBuilder {
+            expression_parser: ExpressionParser::new(quote_char.as_str()),
+            quote_char,
+            dialect,
         }
     }
 
-    pub fn quote_characters(&self) -> &str {
-        &self.quote_characters
+    pub fn dialect(&self) -> &D {
+        &self.dialect
     }
 
-    pub fn federation_expression_parser(&self) -> &Arc<dyn FederationExpressionParser> {
-        &self.federation_expression_parser
+    pub fn expression_parser(&self) -> &ExpressionParser {
+        &self.expression_parser
     }
 
-    pub fn empty_string(&self) -> &'static str {
-        ""
+    pub fn quote(&self, name: &str) -> String {
+        let quote = &self.quote_char;
+        let escaped = name.replace(quote.as_str(), &format!("{quote}{quote}"));
+        format!("{quote}{escaped}{quote}")
     }
-}
 
-#[async_trait]
-pub trait JdbcSplitQueryBuilder: Send + Sync {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase;
-
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the signature mirrors JdbcSplitQueryBuilder.buildSql"
-    )]
-    async fn build_sql(
-        &self,
-        jdbc_connection: &dyn JdbcConnection,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
-    ) -> Result<PreparedStatement> {
-        let column_names = table_schema
+    pub fn column_names(&self, query: &SplitQuery<'_>) -> String {
+        query
+            .schema
             .fields()
             .iter()
             .map(|field| field.name())
-            .filter(|name| !split.properties().contains_key(name.as_str()))
+            .filter(|name| !query.split.properties().contains_key(name.as_str()))
             .map(|name| self.quote(name))
             .collect::<Vec<_>>()
-            .join(", ");
-        self.prepare_statement_with_sql(
-            jdbc_connection,
-            catalog,
-            schema,
-            table,
-            table_schema,
-            constraints,
-            split,
-            &column_names,
-        )
-        .await
+            .join(", ")
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the signature mirrors JdbcSplitQueryBuilder.buildSQLStringLiteral"
-    )]
-    fn build_sql_string_literal(
-        &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
-        column_names: &str,
-        accumulator: &mut Vec<TypeAndValue>,
-    ) -> Result<String> {
-        default_build_sql_string_literal(
-            self,
-            catalog,
-            schema,
-            table,
-            table_schema,
-            constraints,
-            split,
-            column_names,
-            accumulator,
-        )
-    }
-
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the signature mirrors JdbcSplitQueryBuilder.prepareStatementWithSql"
-    )]
-    async fn prepare_statement_with_sql(
+    pub async fn build_sql(
         &self,
         jdbc_connection: &dyn JdbcConnection,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
+        query: &SplitQuery<'_>,
+    ) -> Result<PreparedStatement> {
+        self.prepare_statement_with_sql(jdbc_connection, query, &self.column_names(query))
+            .await
+    }
+
+    pub async fn prepare_statement_with_sql(
+        &self,
+        jdbc_connection: &dyn JdbcConnection,
+        query: &SplitQuery<'_>,
         column_names: &str,
     ) -> Result<PreparedStatement> {
-        if constraints.query_plan().is_some() {
-            let sql_dialect = match split.get_property(environment_constants::CATALOG_CASING_FILTER)
-            {
-                Some(filter) => {
-                    tracing::debug!("Found catalogCasingFilter for getSqlDialect: {}", filter);
-                    self.get_sql_dialect_with_catalog_casing_filter(
-                        filter == environment_constants::UPPERCASE_ONLY,
-                    )
-                }
-                None => self.get_sql_dialect(),
-            };
+        if query.constraints.query_plan().is_some() {
+            let sql_dialect = self.sql_dialect_for_split(query.split);
             return self
                 .prepare_statement_with_calcite_sql(
                     jdbc_connection,
-                    constraints,
+                    query.constraints,
                     &sql_dialect,
-                    split,
+                    query.split,
                 )
                 .await;
         }
         let mut accumulator = Vec::new();
-        let sql = self.build_sql_string_literal(
-            catalog,
-            schema,
-            table,
-            table_schema,
-            constraints,
-            split,
-            column_names,
-            &mut accumulator,
-        )?;
+        let sql = self.build_sql_string_literal(query, column_names, &mut accumulator)?;
         let mut statement = jdbc_connection.prepare_statement(&sql).await?;
         for (i, type_and_value) in accumulator.iter().enumerate() {
             bind_type_and_value(&mut statement, i + 1, type_and_value)?;
@@ -179,7 +173,51 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         Ok(statement)
     }
 
-    fn extract_order_by_clause(&self, constraints: &Constraints) -> String {
+    fn sql_dialect_for_split(&self, split: &Split) -> SqlDialect {
+        let uppercase_only = split
+            .get_property(environment_constants::CATALOG_CASING_FILTER)
+            .map(|filter| {
+                tracing::debug!("Found catalogCasingFilter for getSqlDialect: {}", filter);
+                filter == environment_constants::UPPERCASE_ONLY
+            });
+        self.dialect.sql_dialect(uppercase_only)
+    }
+
+    pub fn build_sql_string_literal(
+        &self,
+        query: &SplitQuery<'_>,
+        column_names: &str,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<String> {
+        let mut sql = String::from("SELECT ");
+        sql.push_str(column_names);
+        if column_names.is_empty() {
+            sql.push_str("null");
+        }
+        sql.push_str(
+            &self
+                .dialect
+                .table_clause(self, query.table_name, query.split),
+        );
+
+        let mut clauses = self.to_conjuncts(
+            query.schema.fields(),
+            query.constraints,
+            accumulator,
+            query.split,
+        )?;
+        clauses.extend(self.dialect.partition_where_clauses(query.split));
+        if !clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&clauses.join(" AND "));
+        }
+
+        self.dialect
+            .append_order_by_and_limit(self, &mut sql, query.split, query.constraints);
+        Ok(sql)
+    }
+
+    pub fn extract_order_by_clause(&self, constraints: &Constraints) -> String {
         let order_by_clause = constraints.order_by_clause();
         if order_by_clause.is_empty() {
             return String::new();
@@ -210,90 +248,15 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         format!("ORDER BY {fields}")
     }
 
-    fn get_from_clause_with_split(
-        &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        split: &Split,
-    ) -> String;
-
-    fn add_partition_where_clauses(
-        &self,
-        split: &Split,
-        clauses: &mut Vec<String>,
-        _accumulator: &mut Vec<TypeAndValue>,
-    ) {
-        clauses.extend(self.get_partition_where_clauses(split));
-    }
-
-    fn get_partition_where_clauses(&self, split: &Split) -> Vec<String>;
-
-    fn to_predicate_with_operator(
-        &self,
-        column_name: &str,
-        operator: &str,
-        value: &Value,
-        arrow_type: &ArrowType,
-        accumulator: &mut Vec<TypeAndValue>,
-    ) -> Result<String> {
-        accumulator.push(TypeAndValue::new(arrow_type.clone(), value.clone())?);
-        Ok(format!("{} {} ?", self.quote(column_name), operator))
-    }
-
-    fn quote(&self, name: &str) -> String {
-        let quote = self.query_builder_base().quote_characters();
-        let escaped = name.replace(quote, &format!("{quote}{quote}"));
-        format!("{quote}{escaped}{quote}")
-    }
-
-    fn append_limit_offset(&self, _split: &Split) -> String {
-        self.query_builder_base().empty_string().to_string()
-    }
-
-    fn append_limit_offset_with_constraints(
-        &self,
-        _split: &Split,
-        constraints: &Constraints,
-    ) -> String {
-        format!(" LIMIT {}", constraints.limit())
-    }
-
-    fn append_limit_offset_with_value(&self, limit: &str, offset: Option<&str>) -> String {
-        match offset {
-            None => format!(" LIMIT {limit}"),
-            Some(offset) => format!(" LIMIT {limit} OFFSET {offset}"),
-        }
-    }
-
-    fn get_split_paging_clause(&self, _split: &Split) -> String {
-        String::new()
-    }
-
-    fn get_split_table(&self, _split: &Split) -> String {
-        String::new()
-    }
-
-    fn get_sql_dialect(&self) -> SqlDialect {
-        SqlDialect::ansi()
-    }
-
-    fn get_sql_dialect_with_catalog_casing_filter(
-        &self,
-        _catalog_casing_filter: bool,
-    ) -> SqlDialect {
-        SqlDialect::ansi()
-    }
-
-    async fn prepare_statement_with_calcite_sql(
+    pub async fn prepare_statement_with_calcite_sql(
         &self,
         jdbc_connection: &dyn JdbcConnection,
         constraints: &Constraints,
         sql_dialect: &SqlDialect,
         split: &Split,
     ) -> Result<PreparedStatement> {
-        let split_table = self.get_split_table(split);
-        let split_restriction = split_restriction(self, split);
+        let split_table = self.dialect.split_table(self, split);
+        let split_restriction = self.split_restriction(split);
         let result = async {
             let base64_encoded_plan = constraints
                 .query_plan()
@@ -330,67 +293,177 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
             runtime_with_cause("Failed to prepare statement with Calcite", e)
         })
     }
-}
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the signature mirrors JdbcSplitQueryBuilder.buildSQLStringLiteral"
-)]
-pub fn default_build_sql_string_literal<B: JdbcSplitQueryBuilder + ?Sized>(
-    builder: &B,
-    catalog: &str,
-    schema: &str,
-    table: &str,
-    table_schema: &Schema,
-    constraints: &Constraints,
-    split: &Split,
-    column_names: &str,
-    accumulator: &mut Vec<TypeAndValue>,
-) -> Result<String> {
-    let mut sql = String::from("SELECT ");
-    sql.push_str(column_names);
-    if column_names.is_empty() {
-        sql.push_str("null");
-    }
-    sql.push_str(&builder.get_from_clause_with_split(catalog, schema, table, split));
-
-    let mut clauses = to_conjuncts(
-        builder,
-        table_schema.fields(),
-        constraints,
-        accumulator,
-        split,
-    )?;
-    builder.add_partition_where_clauses(split, &mut clauses, accumulator);
-    if !clauses.is_empty() {
-        sql.push_str(" WHERE ");
-        sql.push_str(&clauses.join(" AND "));
+    fn split_restriction(&self, split: &Split) -> String {
+        let split_clauses = self.dialect.partition_where_clauses(split);
+        let mut restriction = if split_clauses.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", split_clauses.join(" AND "))
+        };
+        restriction.push_str(&self.dialect.split_paging_clause(self, split));
+        restriction
     }
 
-    let order_by_clause = builder.extract_order_by_clause(constraints);
-    if !order_by_clause.is_empty() {
-        sql.push(' ');
-        sql.push_str(&order_by_clause);
+    fn to_conjuncts(
+        &self,
+        columns: &[FieldRef],
+        constraints: &Constraints,
+        accumulator: &mut Vec<TypeAndValue>,
+        split: &Split,
+    ) -> Result<Vec<String>> {
+        let mut conjuncts = Vec::new();
+        for column in columns {
+            if split.properties().contains_key(column.name().as_str()) {
+                continue;
+            }
+            if let Some(value_set) = constraints.summary().get(column.name().as_str()) {
+                conjuncts.push(self.to_predicate(
+                    column.name(),
+                    value_set,
+                    column.data_type(),
+                    accumulator,
+                )?);
+            }
+        }
+        conjuncts.extend(
+            self.dialect
+                .complex_expressions(self, constraints, accumulator)?,
+        );
+        Ok(conjuncts)
     }
 
-    if constraints.limit() > 0 {
-        sql.push_str(&builder.append_limit_offset_with_constraints(split, constraints));
-    } else {
-        sql.push_str(&builder.append_limit_offset(split));
-    }
-    tracing::info!("Generated SQL : {}", sql);
-    Ok(sql)
-}
+    fn to_predicate(
+        &self,
+        column_name: &str,
+        value_set: &ValueSet,
+        arrow_type: &ArrowType,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<String> {
+        let mut disjuncts = Vec::new();
+        let mut single_values: Vec<Value> = Vec::new();
 
-fn split_restriction<B: JdbcSplitQueryBuilder + ?Sized>(builder: &B, split: &Split) -> String {
-    let split_clauses = builder.get_partition_where_clauses(split);
-    let mut restriction = if split_clauses.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", split_clauses.join(" AND "))
-    };
-    restriction.push_str(&builder.get_split_paging_clause(split));
-    restriction
+        if let Some(sorted_range_set) = value_set.as_sorted_range_set() {
+            if value_set.is_none() && value_set.is_null_allowed() {
+                return Ok(format!("({} IS NULL)", self.quote(column_name)));
+            }
+            if value_set.is_null_allowed() {
+                disjuncts.push(format!("({} IS NULL)", self.quote(column_name)));
+            }
+            let ranges = sorted_range_set.ordered_ranges();
+            if ranges.len() == 1
+                && !value_set.is_null_allowed()
+                && ranges[0].low().is_lower_unbounded()
+                && ranges[0].high().is_upper_unbounded()
+            {
+                return Ok(format!("({} IS NOT NULL)", self.quote(column_name)));
+            }
+            for range in ranges {
+                if range.is_single_value() {
+                    single_values.push(range.low().value()?.clone());
+                } else {
+                    let low = if range.low().is_lower_unbounded() {
+                        None
+                    } else {
+                        Some((range.low().bound(), range.low().value()?))
+                    };
+                    let high = if range.high().is_upper_unbounded() {
+                        None
+                    } else {
+                        Some((range.high().bound(), range.high().value()?))
+                    };
+                    disjuncts.push(self.range_to_predicate(
+                        column_name,
+                        low,
+                        high,
+                        arrow_type,
+                        accumulator,
+                    )?);
+                }
+            }
+
+            if single_values.len() == 1 {
+                disjuncts.push(self.to_predicate_with_operator(
+                    column_name,
+                    "=",
+                    &single_values[0],
+                    arrow_type,
+                    accumulator,
+                )?);
+            } else if single_values.len() > 1 {
+                for value in &single_values {
+                    accumulator.push(TypeAndValue::new(arrow_type.clone(), value.clone())?);
+                }
+                let values = vec!["?"; single_values.len()].join(",");
+                disjuncts.push(format!("{} IN ({})", self.quote(column_name), values));
+            }
+        }
+
+        Ok(format!("({})", disjuncts.join(" OR ")))
+    }
+
+    pub(crate) fn range_to_predicate(
+        &self,
+        column_name: &str,
+        low: Option<(Bound, &Value)>,
+        high: Option<(Bound, &Value)>,
+        arrow_type: &ArrowType,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<String> {
+        let mut range_conjuncts = Vec::new();
+        if let Some((bound, value)) = low {
+            let operator = match bound {
+                Bound::Above => ">",
+                Bound::Exactly => ">=",
+                Bound::Below => {
+                    return Err(FederationError::invalid_input(
+                        "Low marker should never use BELOW bound",
+                    ))
+                }
+            };
+            range_conjuncts.push(self.to_predicate_with_operator(
+                column_name,
+                operator,
+                value,
+                arrow_type,
+                accumulator,
+            )?);
+        }
+        if let Some((bound, value)) = high {
+            let operator = match bound {
+                Bound::Above => {
+                    return Err(FederationError::invalid_input(
+                        "High marker should never use ABOVE bound",
+                    ))
+                }
+                Bound::Exactly => "<=",
+                Bound::Below => "<",
+            };
+            range_conjuncts.push(self.to_predicate_with_operator(
+                column_name,
+                operator,
+                value,
+                arrow_type,
+                accumulator,
+            )?);
+        }
+        if range_conjuncts.is_empty() {
+            return Err(FederationError::IllegalState(String::new()));
+        }
+        Ok(format!("({})", range_conjuncts.join(" AND ")))
+    }
+
+    fn to_predicate_with_operator(
+        &self,
+        column_name: &str,
+        operator: &str,
+        value: &Value,
+        arrow_type: &ArrowType,
+        accumulator: &mut Vec<TypeAndValue>,
+    ) -> Result<String> {
+        accumulator.push(TypeAndValue::new(arrow_type.clone(), value.clone())?);
+        Ok(format!("{} {} ?", self.quote(column_name), operator))
+    }
 }
 
 fn build_calcite_sql(
@@ -475,158 +548,6 @@ fn restricted_table(
         split_table.to_string()
     };
     SqlNode::Text(format!("(SELECT * FROM {source}{split_restriction})"))
-}
-
-fn to_conjuncts<B: JdbcSplitQueryBuilder + ?Sized>(
-    builder: &B,
-    columns: &[FieldRef],
-    constraints: &Constraints,
-    accumulator: &mut Vec<TypeAndValue>,
-    split: &Split,
-) -> Result<Vec<String>> {
-    let mut conjuncts = Vec::new();
-    for column in columns {
-        if split.properties().contains_key(column.name().as_str()) {
-            continue;
-        }
-        if let Some(value_set) = constraints.summary().get(column.name().as_str()) {
-            conjuncts.push(to_predicate(
-                builder,
-                column.name(),
-                value_set,
-                column.data_type(),
-                accumulator,
-            )?);
-        }
-    }
-    conjuncts.extend(
-        builder
-            .query_builder_base()
-            .federation_expression_parser()
-            .parse_complex_expressions(columns, constraints, accumulator)?,
-    );
-    Ok(conjuncts)
-}
-
-fn to_predicate<B: JdbcSplitQueryBuilder + ?Sized>(
-    builder: &B,
-    column_name: &str,
-    value_set: &ValueSet,
-    arrow_type: &ArrowType,
-    accumulator: &mut Vec<TypeAndValue>,
-) -> Result<String> {
-    let mut disjuncts = Vec::new();
-    let mut single_values: Vec<Value> = Vec::new();
-
-    if let Some(sorted_range_set) = value_set.as_sorted_range_set() {
-        if value_set.is_none() && value_set.is_null_allowed() {
-            return Ok(format!("({} IS NULL)", builder.quote(column_name)));
-        }
-        if value_set.is_null_allowed() {
-            disjuncts.push(format!("({} IS NULL)", builder.quote(column_name)));
-        }
-        let ranges = sorted_range_set.ordered_ranges();
-        if ranges.len() == 1
-            && !value_set.is_null_allowed()
-            && ranges[0].low().is_lower_unbounded()
-            && ranges[0].high().is_upper_unbounded()
-        {
-            return Ok(format!("({} IS NOT NULL)", builder.quote(column_name)));
-        }
-        for range in ranges {
-            if range.is_single_value() {
-                single_values.push(range.low().value()?.clone());
-            } else {
-                let low = if range.low().is_lower_unbounded() {
-                    None
-                } else {
-                    Some((range.low().bound(), range.low().value()?))
-                };
-                let high = if range.high().is_upper_unbounded() {
-                    None
-                } else {
-                    Some((range.high().bound(), range.high().value()?))
-                };
-                disjuncts.push(range_to_predicate(
-                    builder,
-                    column_name,
-                    low,
-                    high,
-                    arrow_type,
-                    accumulator,
-                )?);
-            }
-        }
-
-        if single_values.len() == 1 {
-            disjuncts.push(builder.to_predicate_with_operator(
-                column_name,
-                "=",
-                &single_values[0],
-                arrow_type,
-                accumulator,
-            )?);
-        } else if single_values.len() > 1 {
-            for value in &single_values {
-                accumulator.push(TypeAndValue::new(arrow_type.clone(), value.clone())?);
-            }
-            let values = vec!["?"; single_values.len()].join(",");
-            disjuncts.push(format!("{} IN ({})", builder.quote(column_name), values));
-        }
-    }
-
-    Ok(format!("({})", disjuncts.join(" OR ")))
-}
-
-pub(crate) fn range_to_predicate<B: JdbcSplitQueryBuilder + ?Sized>(
-    builder: &B,
-    column_name: &str,
-    low: Option<(Bound, &Value)>,
-    high: Option<(Bound, &Value)>,
-    arrow_type: &ArrowType,
-    accumulator: &mut Vec<TypeAndValue>,
-) -> Result<String> {
-    let mut range_conjuncts = Vec::new();
-    if let Some((bound, value)) = low {
-        let operator = match bound {
-            Bound::Above => ">",
-            Bound::Exactly => ">=",
-            Bound::Below => {
-                return Err(FederationError::invalid_input(
-                    "Low marker should never use BELOW bound",
-                ))
-            }
-        };
-        range_conjuncts.push(builder.to_predicate_with_operator(
-            column_name,
-            operator,
-            value,
-            arrow_type,
-            accumulator,
-        )?);
-    }
-    if let Some((bound, value)) = high {
-        let operator = match bound {
-            Bound::Above => {
-                return Err(FederationError::invalid_input(
-                    "High marker should never use ABOVE bound",
-                ))
-            }
-            Bound::Exactly => "<=",
-            Bound::Below => "<",
-        };
-        range_conjuncts.push(builder.to_predicate_with_operator(
-            column_name,
-            operator,
-            value,
-            arrow_type,
-            accumulator,
-        )?);
-    }
-    if range_conjuncts.is_empty() {
-        return Err(FederationError::IllegalState(String::new()));
-    }
-    Ok(format!("({})", range_conjuncts.join(" AND ")))
 }
 
 fn java_class_cast(value: &Value, target: &str) -> FederationError {
@@ -1011,35 +932,30 @@ mod tests {
         DateString, SqlTypeName, SubstraitTypeAndValue, SubstraitValue, TimestampString,
     };
 
-    use super::{
-        handle_data_types_for_prepared_statement, range_to_predicate, JdbcSplitQueryBuilder,
-        JdbcSplitQueryBuilderBase,
-    };
+    use super::{handle_data_types_for_prepared_statement, SplitDialect, SplitQueryBuilder};
     use crate::sql::{PreparedStatement, ResultSet, ResultSetMetaData, SqlValue};
+    use athena_federation_sdk::domain::table_name::TableName;
 
     const JAVA_PROBE: &str =
         include_str!("../../tests/fixtures/split_query_builder_integration.tsv");
 
-    struct TestBuilder {
-        base: JdbcSplitQueryBuilderBase,
-    }
+    struct TestDialect;
 
-    impl JdbcSplitQueryBuilder for TestBuilder {
-        fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-            &self.base
-        }
-
-        fn get_from_clause_with_split(
+    impl SplitDialect for TestDialect {
+        fn table_clause(
             &self,
-            _catalog: &str,
-            schema: &str,
-            table: &str,
+            _builder: &SplitQueryBuilder<Self>,
+            table: &TableName,
             _split: &Split,
         ) -> String {
-            format!(" FROM \"{schema}\".\"{table}\"")
+            format!(
+                " FROM \"{}\".\"{}\"",
+                table.schema_name(),
+                table.table_name()
+            )
         }
 
-        fn get_partition_where_clauses(&self, _split: &Split) -> Vec<String> {
+        fn partition_where_clauses(&self, _split: &Split) -> Vec<String> {
             vec!["\"partition_col\" = '2024'".to_string()]
         }
     }
@@ -1068,42 +984,38 @@ mod tests {
 
     #[test]
     fn test_invalid_bound_below_for_low_marker() {
-        let builder = TestBuilder {
-            base: JdbcSplitQueryBuilderBase::new("\""),
-        };
+        let builder = SplitQueryBuilder::new("\"", TestDialect);
         let low = Value::Int(100);
         let high = Value::Int(200);
         let mut accumulator = Vec::new();
-        let error = range_to_predicate(
-            &builder,
-            "col1",
-            Some((Bound::Below, &low)),
-            Some((Bound::Exactly, &high)),
-            &DataType::Int32,
-            &mut accumulator,
-        )
-        .unwrap_err();
+        let error = builder
+            .range_to_predicate(
+                "col1",
+                Some((Bound::Below, &low)),
+                Some((Bound::Exactly, &high)),
+                &DataType::Int32,
+                &mut accumulator,
+            )
+            .unwrap_err();
         assert!(error.as_connector_exception().is_some());
         assert!(message(&error).contains("Low marker should never use BELOW bound"));
     }
 
     #[test]
     fn test_invalid_bound_above_for_high_marker() {
-        let builder = TestBuilder {
-            base: JdbcSplitQueryBuilderBase::new("\""),
-        };
+        let builder = SplitQueryBuilder::new("\"", TestDialect);
         let low = Value::Int(100);
         let high = Value::Int(200);
         let mut accumulator = Vec::new();
-        let error = range_to_predicate(
-            &builder,
-            "col1",
-            Some((Bound::Exactly, &low)),
-            Some((Bound::Above, &high)),
-            &DataType::Int32,
-            &mut accumulator,
-        )
-        .unwrap_err();
+        let error = builder
+            .range_to_predicate(
+                "col1",
+                Some((Bound::Exactly, &low)),
+                Some((Bound::Above, &high)),
+                &DataType::Int32,
+                &mut accumulator,
+            )
+            .unwrap_err();
         assert!(error.as_connector_exception().is_some());
         assert!(message(&error).contains("High marker should never use ABOVE bound"));
     }

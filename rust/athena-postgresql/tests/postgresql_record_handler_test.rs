@@ -20,10 +20,7 @@ use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
-use athena_postgresql::{
-    PostGreSqlConstants, PostGreSqlQueryStringBuilder, PostGreSqlRecordDialect,
-    PostGreSqlRecordHandler, PostgreSqlFederationExpressionParser,
-};
+use athena_postgresql::{PostGreSqlConstants, PostGreSqlRecordDialect, PostGreSqlRecordHandler};
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use indexmap::IndexMap;
@@ -66,12 +63,8 @@ fn setup() -> Fixture {
         "postgres://jdbc:postgresql://hostname/user=A&password=B",
     )
     .unwrap();
-    let builder = Arc::new(PostGreSqlQueryStringBuilder::new(
-        "\"",
-        Arc::new(PostgreSqlFederationExpressionParser::new("\"")),
-    ));
     let context = HandlerContext::new(config.engine(), fakes.clients(), HashMap::new()).unwrap();
-    let handler = PostGreSqlRecordDialect::handler(context, config, factory, builder);
+    let handler = PostGreSqlRecordDialect::handler(context, config, factory);
     Fixture {
         handler,
         connection,

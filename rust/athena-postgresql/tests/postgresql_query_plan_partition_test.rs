@@ -2,7 +2,6 @@
 mod jdbc_support;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
@@ -12,11 +11,12 @@ use rusqlite::Connection;
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
-use athena_jdbc::manager::JdbcSplitQueryBuilder;
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::SqlValue;
 use athena_postgresql::{
-    PostGreSqlQueryStringBuilder, PostgreSqlFederationExpressionParser,
-    BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+    query_string_builder, PostGreSqlQueryStringBuilder, BLOCK_PARTITION_COLUMN_NAME,
+    BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
 };
 
 use jdbc_support::FakeConnection;
@@ -50,10 +50,7 @@ const PLANS: [(&str, &str); 4] = [
 ];
 
 fn query_builder() -> PostGreSqlQueryStringBuilder {
-    PostGreSqlQueryStringBuilder::new(
-        "\"",
-        Arc::new(PostgreSqlFederationExpressionParser::new("\"")),
-    )
+    query_string_builder()
 }
 
 fn schema() -> Schema {
@@ -118,18 +115,20 @@ fn load_tables() -> Connection {
 
 async fn build_sql(plan: Option<&str>, split: &Split) -> (String, Vec<SqlValue>) {
     let connection = FakeConnection::new();
-    let statement = query_builder()
-        .build_sql(
-            &connection,
-            "",
-            "test_schema",
-            "test_table",
-            &schema(),
-            &constraints(plan),
+    let table_name = TableName::new("test_schema", "test_table");
+    let statement = athena_postgresql::build_sql(
+        &query_builder(),
+        &connection,
+        &SplitQuery {
+            catalog_name: "",
+            table_name: &table_name,
+            schema: &schema(),
+            constraints: &constraints(plan),
             split,
-        )
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     (statement.sql().to_string(), statement.parameters().to_vec())
 }
 

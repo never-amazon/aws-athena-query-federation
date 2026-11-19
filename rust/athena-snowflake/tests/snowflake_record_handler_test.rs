@@ -33,9 +33,7 @@ use athena_snowflake::{
     S3ParquetExportReader, SnowflakeConstants, SnowflakeCredentialsProvider,
     SnowflakeRecordHandler,
 };
-use athena_snowflake::{
-    create_snowflake_credentials_provider, default_query_builder, SnowflakeRecordDialect,
-};
+use athena_snowflake::{create_snowflake_credentials_provider, SnowflakeRecordDialect};
 use bigdecimal::BigDecimal;
 use indexmap::IndexMap;
 use parquet::arrow::ArrowWriter;
@@ -86,13 +84,7 @@ fn fixture_with(
         None => Arc::new(S3ParquetExportReader::new(Arc::clone(&clients.s3))),
     };
     let context = HandlerContext::new(config.engine(), clients, options(export)).unwrap();
-    let handler = SnowflakeRecordDialect::handler(
-        context,
-        config,
-        factory,
-        default_query_builder(),
-        export_reader,
-    );
+    let handler = SnowflakeRecordDialect::handler(context, config, factory, export_reader);
     Fixture {
         fakes,
         connection,

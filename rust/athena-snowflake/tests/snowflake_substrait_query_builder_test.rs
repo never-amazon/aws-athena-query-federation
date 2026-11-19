@@ -1,7 +1,6 @@
 mod snowflake_support;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
@@ -9,9 +8,10 @@ use indexmap::IndexMap;
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
-use athena_jdbc::manager::JdbcSplitQueryBuilder;
+use athena_federation_sdk::domain::table_name::TableName;
+use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
-use athena_snowflake::{SnowflakeFederationExpressionParser, SnowflakeQueryStringBuilder};
+use athena_snowflake::{query_string_builder, SnowflakeQueryStringBuilder};
 
 use snowflake_support::FakeConnection;
 
@@ -20,10 +20,7 @@ const PLAN_WHERE_NAME_EQUALS_ABC: &str = "Ch4IARIaL2Z1bmN0aW9uc19jb21wYXJpc29uLn
 const PLAN_LIMIT_10: &str = "GnkSdwprGmkKAgoAEl86XQoGEgQKAgIDEj0KOwoCCgASGgoCaWQKBG5hbWUSDgoEKgIQAgoEYgIQAhgCOhkKC3Rlc3Rfc2NoZW1hCgp0ZXN0X3RhYmxlGggSBgoCEgAiABoKEggKBBICCAEiABgAIAoSAklEEgROQU1FMgsQSioHaXN0aG11cw==";
 
 fn query_builder() -> SnowflakeQueryStringBuilder {
-    SnowflakeQueryStringBuilder::new(
-        "\"",
-        Arc::new(SnowflakeFederationExpressionParser::new("\"")),
-    )
+    query_string_builder()
 }
 
 fn schema() -> Schema {
@@ -54,12 +51,13 @@ async fn build_sql(substrait_plan: &str) -> (String, PreparedStatement) {
     let statement = query_builder()
         .build_sql(
             &connection,
-            "test_catalog",
-            "test_schema",
-            "test_table",
-            &schema(),
-            &constraints,
-            &split,
+            &SplitQuery {
+                catalog_name: "test_catalog",
+                table_name: &TableName::new("test_schema", "test_table"),
+                schema: &schema(),
+                constraints: &constraints,
+                split: &split,
+            },
         )
         .await
         .unwrap();

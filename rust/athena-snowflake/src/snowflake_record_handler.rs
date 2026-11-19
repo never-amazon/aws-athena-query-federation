@@ -19,25 +19,23 @@ use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
-    jdbc_to_arrow_schema, ConnectionSource, JdbcRecordHandler, JdbcSplitQueryBuilder, JdbcUtil,
-    RecordDialect, SplitQuery,
+    jdbc_to_arrow_schema, ConnectionSource, JdbcRecordHandler, JdbcUtil, RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
 use crate::s3_export::{construct_s3_uri, ExportReader, S3ParquetExportReader};
 use crate::snowflake_constants::SnowflakeConstants;
-use crate::snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
 use crate::snowflake_metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
-use crate::snowflake_query_string_builder::SnowflakeQueryStringBuilder;
+use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
 use crate::utils::SnowflakeArrowTypeConverter;
 
 const FETCH_SIZE: i32 = 1000;
 const UTC: &str = "UTC";
 
 pub struct SnowflakeRecordDialect {
-    query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+    query_builder: SnowflakeQueryStringBuilder,
     export_reader: Arc<dyn ExportReader>,
 }
 
@@ -106,21 +104,11 @@ fn append_batch(
     Ok(batch.num_rows())
 }
 
-pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
-    Arc::new(SnowflakeQueryStringBuilder::new(
-        SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-        Arc::new(SnowflakeFederationExpressionParser::new(
-            SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-        )),
-    ))
-}
-
 impl SnowflakeRecordDialect {
     pub fn handler(
         context: HandlerContext,
         config: DatabaseConnectionConfig,
         connection_factory: Arc<dyn JdbcConnectionFactory>,
-        query_builder: Arc<dyn JdbcSplitQueryBuilder>,
         export_reader: Arc<dyn ExportReader>,
     ) -> SnowflakeRecordHandler {
         JdbcRecordHandler::new(
@@ -130,7 +118,7 @@ impl SnowflakeRecordDialect {
                 factory: connection_factory,
             },
             SnowflakeRecordDialect {
-                query_builder,
+                query_builder: query_string_builder(),
                 export_reader,
             },
         )
@@ -151,7 +139,6 @@ impl SnowflakeRecordDialect {
             context,
             config,
             factory,
-            default_query_builder(),
             export_reader,
         ))
     }
@@ -367,17 +354,7 @@ impl RecordDialect for SnowflakeRecordDialect {
                     .build_query_passthrough_sql(connection, query.constraints)
                     .await?
             } else {
-                self.query_builder
-                    .build_sql(
-                        connection,
-                        "",
-                        query.table_name.schema_name(),
-                        query.table_name.table_name(),
-                        query.schema,
-                        query.constraints,
-                        query.split,
-                    )
-                    .await?
+                self.query_builder.build_sql(connection, query).await?
             };
             prepared_statement.set_fetch_size(FETCH_SIZE)?;
             Ok(prepared_statement)

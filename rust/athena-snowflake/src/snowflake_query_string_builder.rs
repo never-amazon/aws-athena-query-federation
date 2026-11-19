@@ -1,125 +1,104 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 use athena_federation_sdk::data::{MinorType, Value};
-use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
+use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{
-    default_build_sql_string_literal, FederationExpressionParser, JdbcSplitQueryBuilder,
-    JdbcSplitQueryBuilderBase, TypeAndValue,
-};
+use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
 use crate::snowflake_constants::SnowflakeConstants;
 use crate::snowflake_dialect::SnowflakeDialect;
 
-pub struct SnowflakeQueryStringBuilder {
-    base: JdbcSplitQueryBuilderBase,
+pub struct SnowflakeSplitDialect;
+
+pub type SnowflakeQueryStringBuilder = SplitQueryBuilder<SnowflakeSplitDialect>;
+
+pub fn query_string_builder() -> SnowflakeQueryStringBuilder {
+    SplitQueryBuilder::new(SnowflakeConstants::DOUBLE_QUOTE_CHAR, SnowflakeSplitDialect)
 }
 
-impl SnowflakeQueryStringBuilder {
-    pub fn new(
-        quote_characters: impl Into<String>,
-        federation_expression_parser: Arc<dyn FederationExpressionParser>,
-    ) -> SnowflakeQueryStringBuilder {
-        SnowflakeQueryStringBuilder {
-            base: JdbcSplitQueryBuilderBase::new_with_federation_expression_parser(
-                quote_characters,
-                federation_expression_parser,
-            ),
-        }
+pub fn base_export_sql(
+    builder: &SnowflakeQueryStringBuilder,
+    table: &TableName,
+    table_schema: &Schema,
+    constraints: &Constraints,
+) -> Result<Option<String>> {
+    let mut column_names = table_schema
+        .fields()
+        .iter()
+        .map(|field| field.name())
+        .filter(|name| !name.eq_ignore_ascii_case(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME))
+        .map(|name| builder.quote(name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if column_names.is_empty() {
+        column_names = "*".to_string();
     }
+    let mut accumulator = Vec::new();
+    let split = Split::new(None, None, HashMap::new());
+    let query = SplitQuery {
+        catalog_name: "",
+        table_name: table,
+        schema: table_schema,
+        constraints,
+        split: &split,
+    };
+    let sql_base_string =
+        builder.build_sql_string_literal(&query, &column_names, &mut accumulator)?;
+    let expanded = expand_sql(&sql_base_string, &accumulator)?;
+    tracing::info!(
+        "Expanded Generated SQL : {}",
+        expanded.as_deref().unwrap_or("null")
+    );
+    Ok(expanded)
+}
 
-    pub fn get_base_export_sql_string(
-        &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
-    ) -> Result<Option<String>> {
-        let mut column_names = table_schema
-            .fields()
-            .iter()
-            .map(|field| field.name())
-            .filter(|name| {
-                !name.eq_ignore_ascii_case(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME)
-            })
-            .map(|name| self.quote(name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        if column_names.is_empty() {
-            column_names = "*".to_string();
-        }
-        let mut accumulator = Vec::new();
-        let split = Split::new(None, None, HashMap::new());
-        let sql_base_string = self.build_sql_string_literal(
-            catalog,
-            schema,
-            table,
-            table_schema,
-            constraints,
-            &split,
-            &column_names,
-            &mut accumulator,
-        )?;
-        let expanded = self.expand_sql(&sql_base_string, &accumulator)?;
-        tracing::info!(
-            "Expanded Generated SQL : {}",
-            expanded.as_deref().unwrap_or("null")
-        );
-        Ok(expanded)
+pub fn expand_sql(sql: &str, accumulator: &[TypeAndValue]) -> Result<Option<String>> {
+    if sql.is_empty() {
+        return Ok(None);
     }
+    let literals = accumulator
+        .iter()
+        .map(sql_literal)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(replace_placeholders(sql, &literals)))
+}
 
-    pub fn expand_sql(&self, sql: &str, accumulator: &[TypeAndValue]) -> Result<Option<String>> {
-        if sql.is_empty() {
-            return Ok(None);
-        }
-        let literals = accumulator
-            .iter()
-            .map(sql_literal)
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Some(replace_placeholders(sql, &literals)))
-    }
-
-    pub fn single_quote(&self, name: &str) -> String {
-        single_quote(name)
-    }
-
-    pub fn append_order_by_limit_offset(
-        &self,
-        split: Option<&Split>,
-        constraints: &Constraints,
-    ) -> String {
-        let order_by_clause = self.extract_order_by_clause(constraints);
-        let Some(page) = split.and_then(split_page) else {
-            let order_by = if order_by_clause.is_empty() {
-                String::new()
-            } else {
-                format!(" {order_by_clause}")
-            };
-            if constraints.limit() > 0 {
-                return format!("{order_by} LIMIT {}", constraints.limit());
-            }
-            return order_by;
-        };
+pub fn append_order_by_limit_offset(
+    builder: &SnowflakeQueryStringBuilder,
+    split: Option<&Split>,
+    constraints: &Constraints,
+) -> String {
+    let order_by_clause = builder.extract_order_by_clause(constraints);
+    let Some(page) = split.and_then(split_page) else {
         let order_by = if order_by_clause.is_empty() {
-            " ORDER BY ".to_string()
+            String::new()
         } else {
-            format!(" {order_by_clause}, ")
+            format!(" {order_by_clause}")
         };
-        format!(
-            "{order_by}{}{}",
-            page.primary_key,
-            self.append_limit_offset_with_value(
-                &page.limit_within(constraints.limit()),
-                Some(page.offset)
-            )
-        )
-    }
+        if constraints.limit() > 0 {
+            return format!("{order_by} LIMIT {}", constraints.limit());
+        }
+        return order_by;
+    };
+    let order_by = if order_by_clause.is_empty() {
+        " ORDER BY ".to_string()
+    } else {
+        format!(" {order_by_clause}, ")
+    };
+    format!(
+        "{order_by}{}{}",
+        page.primary_key,
+        limit_offset(&page.limit_within(constraints.limit()), page.offset)
+    )
+}
+
+fn limit_offset(limit: &str, offset: &str) -> String {
+    format!(" LIMIT {limit} OFFSET {offset}")
 }
 
 struct SplitPage<'a> {
@@ -240,7 +219,7 @@ fn sql_timestamp_text(timestamp: &NaiveDateTime) -> String {
     format!("{}.{fraction}", timestamp.format("%Y-%m-%d %H:%M:%S"))
 }
 
-fn single_quote(text: &str) -> String {
+pub fn single_quote(text: &str) -> String {
     let quote = SnowflakeConstants::SINGLE_QUOTE_CHAR;
     format!(
         "{quote}{}{quote}",
@@ -281,89 +260,49 @@ fn replace_placeholders(sql: &str, literals: &[String]) -> String {
     expanded
 }
 
-impl JdbcSplitQueryBuilder for SnowflakeQueryStringBuilder {
-    fn query_builder_base(&self) -> &JdbcSplitQueryBuilderBase {
-        &self.base
-    }
-
-    fn get_from_clause_with_split(
+impl SplitDialect for SnowflakeSplitDialect {
+    fn table_clause(
         &self,
-        _catalog: &str,
-        schema: &str,
-        table: &str,
+        builder: &SnowflakeQueryStringBuilder,
+        table: &TableName,
         _split: &Split,
     ) -> String {
         let mut table_name = String::new();
-        if !schema.is_empty() {
-            table_name.push_str(&self.quote(schema));
+        if !table.schema_name().is_empty() {
+            table_name.push_str(&builder.quote(table.schema_name()));
             table_name.push('.');
         }
-        table_name.push_str(&self.quote(table));
+        table_name.push_str(&builder.quote(table.table_name()));
         format!(" FROM {table_name}")
     }
 
-    fn get_partition_where_clauses(&self, _split: &Split) -> Vec<String> {
-        Vec::new()
-    }
-
-    fn get_split_paging_clause(&self, split: &Split) -> String {
+    fn split_paging_clause(&self, _builder: &SnowflakeQueryStringBuilder, split: &Split) -> String {
         split_page(split).map_or_else(String::new, |page| {
             format!(
                 " ORDER BY {}{}",
                 page.primary_key,
-                self.append_limit_offset_with_value(page.limit, Some(page.offset))
+                limit_offset(page.limit, page.offset)
             )
         })
     }
 
-    fn quote(&self, name: &str) -> String {
-        let quote = SnowflakeConstants::DOUBLE_QUOTE_CHAR;
-        format!("{quote}{}{quote}", name.replace(quote, "\"\""))
-    }
-
-    fn build_sql_string_literal(
+    fn append_order_by_and_limit(
         &self,
-        catalog: &str,
-        schema: &str,
-        table: &str,
-        table_schema: &Schema,
-        constraints: &Constraints,
+        builder: &SnowflakeQueryStringBuilder,
+        sql: &mut String,
         split: &Split,
-        column_names: &str,
-        accumulator: &mut Vec<TypeAndValue>,
-    ) -> Result<String> {
-        let filter_constraints = Constraints::new(
-            constraints.summary().clone(),
-            constraints.expression().to_vec(),
-            Vec::new(),
-            DEFAULT_NO_LIMIT,
-            constraints.query_passthrough_arguments().clone(),
-            constraints.query_plan().cloned(),
-        );
-        let mut sql = default_build_sql_string_literal(
-            self,
-            catalog,
-            schema,
-            table,
-            table_schema,
-            &filter_constraints,
-            split,
-            column_names,
-            accumulator,
-        )?;
-        sql.push_str(&self.append_order_by_limit_offset(Some(split), constraints));
+        constraints: &Constraints,
+    ) {
+        tracing::info!("Generated SQL : {}", sql);
+        sql.push_str(&append_order_by_limit_offset(
+            builder,
+            Some(split),
+            constraints,
+        ));
         tracing::info!("Generated Snowflake SQL : {}", sql);
-        Ok(sql)
     }
 
-    fn get_sql_dialect(&self) -> SqlDialect {
-        SnowflakeDialect::new(false).into_sql_dialect()
-    }
-
-    fn get_sql_dialect_with_catalog_casing_filter(
-        &self,
-        catalog_casing_filter: bool,
-    ) -> SqlDialect {
-        SnowflakeDialect::new(catalog_casing_filter).into_sql_dialect()
+    fn sql_dialect(&self, uppercase_only: Option<bool>) -> SqlDialect {
+        SnowflakeDialect::new(uppercase_only.unwrap_or(false)).into_sql_dialect()
     }
 }

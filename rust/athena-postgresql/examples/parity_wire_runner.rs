@@ -19,9 +19,9 @@ use athena_jdbc::connection::{
 use athena_jdbc::manager::JdbcUtil;
 use athena_jdbc::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
 use athena_postgresql::{
-    default_query_builder, PostGreSqlConstants, PostGreSqlMetadataDialect,
-    PostGreSqlMetadataHandler, PostGreSqlMuxMetadataHandler, PostGreSqlMuxRecordHandler,
-    PostGreSqlRecordDialect, PostGreSqlRecordHandler,
+    PostGreSqlConstants, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
+    PostGreSqlMuxMetadataHandler, PostGreSqlMuxRecordHandler, PostGreSqlRecordDialect,
+    PostGreSqlRecordHandler,
 };
 use aws_credential_types::Credentials;
 use aws_sdk_kms::types::DataKeySpec;
@@ -275,7 +275,6 @@ fn record_handler(
         context,
         db_config.clone(),
         factory,
-        default_query_builder(),
     ))
 }
 
