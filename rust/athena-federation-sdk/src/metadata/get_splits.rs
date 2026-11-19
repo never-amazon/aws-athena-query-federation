@@ -4,8 +4,7 @@ use arrow::datatypes::SchemaRef;
 
 use crate::data::Block;
 use crate::domain::predicate::Constraints;
-use crate::domain::split::Split;
-use crate::domain::table_name::TableName;
+use crate::domain::{Split, TableName};
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     collections_equals, impl_metadata_request, impl_metadata_response, opt_str, MetadataRequestType,

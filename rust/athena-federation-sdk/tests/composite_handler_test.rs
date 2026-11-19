@@ -1,6 +1,5 @@
 mod handler_support;
 
-use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -8,12 +7,10 @@ use std::sync::{Arc, Mutex};
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, SchemaBuilder, SimpleBlockWriter,
+    block_utils, BlockAllocator, BlockAllocatorImpl, BlockSpiller, SchemaBuilder, SimpleBlockWriter,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::spill::S3SpillLocation;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{
     CompositeHandler, HandlerContext, MetadataContext, MetadataHandler, RecordHandler,

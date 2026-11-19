@@ -1,13 +1,12 @@
-use athena_federation_sdk::data::block_utils;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, GetObjectRequest, PutObjectRequest,
+    block_utils, Block, BlockAllocator, BlockAllocatorImpl, GetObjectRequest, PutObjectRequest,
     S3BlockSpillReader, S3Client, SchemaBuilder, Value,
 };
-use athena_federation_sdk::domain::spill::S3SpillLocation;
+use athena_federation_sdk::domain::S3SpillLocation;
 use athena_federation_sdk::security::{
     AwsService, AwsServiceError, BlockCrypto, EncryptionKey, KeySource,
 };

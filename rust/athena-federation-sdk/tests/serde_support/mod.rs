@@ -11,17 +11,12 @@ use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::data::{
     block_utils, Block, BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value,
 };
-use athena_federation_sdk::domain::predicate::expression::{
-    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
-};
-use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::predicate::{
-    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, OrderByField, QueryPlan, Range,
-    SortedRangeSet, ValueSet, DEFAULT_NO_LIMIT,
+    AllOrNoneValueSet, ConstantExpression, Constraints, Direction, EquatableValueSet,
+    FederationExpression, FunctionCallExpression, OrderByField, QueryPlan, Range, SortedRangeSet,
+    StandardFunctions, ValueSet, VariableExpression, DEFAULT_NO_LIMIT,
 };
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse};
 use athena_federation_sdk::security::{EncryptionKey, FederatedIdentity};

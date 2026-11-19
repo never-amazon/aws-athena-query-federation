@@ -18,7 +18,7 @@ use athena_federation_sdk::data::{
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
 };
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::handlers::{read_records, HandlerContext, RecordHandler};
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
 use athena_federation_sdk::request::FederationResponse;

@@ -4,7 +4,7 @@ use std::fmt;
 use arrow::datatypes::Schema;
 use indexmap::IndexSet;
 
-use crate::domain::table_name::TableName;
+use crate::domain::TableName;
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     impl_metadata_request, impl_metadata_response, opt_str, MetadataRequestType,

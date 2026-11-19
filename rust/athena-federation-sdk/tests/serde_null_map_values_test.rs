@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::SchemaBuilder;
 use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::Split;
 use athena_federation_sdk::metadata::{GetTableRequest, QueryPassthroughSignature};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationRequest;

@@ -1,4 +1,4 @@
-use crate::domain::predicate::expression::VariableExpression;
+use crate::domain::predicate::VariableExpression;
 use crate::exceptions::Result;
 use crate::serde::base::{assert_field_name, get_next_string_field, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use super::block::Block;
 use crate::domain::predicate::ConstraintEvaluator;
-use crate::domain::spill::SpillLocation;
+use crate::domain::SpillLocation;
 use crate::exceptions::Result;
 
 pub type RowWriter<'a> = dyn FnMut(&mut Block, usize) -> Result<usize> + Send + 'a;

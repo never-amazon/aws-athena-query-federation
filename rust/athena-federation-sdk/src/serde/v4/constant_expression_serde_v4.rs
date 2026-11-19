@@ -1,4 +1,4 @@
-use crate::domain::predicate::expression::ConstantExpression;
+use crate::domain::predicate::ConstantExpression;
 use crate::exceptions::Result;
 use crate::serde::base::{assert_field_name, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};

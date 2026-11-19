@@ -1,6 +1,5 @@
 mod handler_support;
 
-use athena_federation_sdk::data::block_utils;
 use athena_federation_sdk::exceptions::JavaThrowable;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,12 +7,11 @@ use std::sync::Arc;
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpillReader, S3Client, SchemaBuilder,
+    block_utils, BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpillReader, S3Client,
+    SchemaBuilder,
 };
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
-use athena_federation_sdk::domain::spill::S3SpillLocation;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};
 use athena_federation_sdk::handlers::{HandlerContext, RecordHandler, RecordStreamHandler};
 use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::{GetDataSourceCapabilitiesRequest, ListSchemasRequest};

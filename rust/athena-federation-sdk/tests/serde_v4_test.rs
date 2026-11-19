@@ -2,7 +2,7 @@ mod serde_support;
 
 use std::collections::HashMap;
 
-use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
+use athena_federation_sdk::domain::predicate::StandardFunctions;
 use athena_federation_sdk::metadata::{
     Capability, ComplexExpressionPushdownSubType, GetDataSourceCapabilitiesResponse,
 };

@@ -1,4 +1,4 @@
-use crate::domain::spill::SpillLocation;
+use crate::domain::SpillLocation;
 use crate::exceptions::Result;
 use crate::serde::base::{
     deserialize_nullable, get_type, no_serde_configured, serialize_nullable, write_type,

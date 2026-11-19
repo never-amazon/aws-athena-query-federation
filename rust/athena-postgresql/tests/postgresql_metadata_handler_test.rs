@@ -9,8 +9,7 @@ use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{block_utils, BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     ComplexExpressionPushdownSubType, DataSourceOptimizations, FilterPushdownSubType,

@@ -1,4 +1,4 @@
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::util::{
     calculate_next_token, manual_pagination, validate_and_parse_pagination_arguments,
 };

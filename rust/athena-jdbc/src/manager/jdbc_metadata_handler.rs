@@ -9,7 +9,7 @@ use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     minor_type_of, ArrowType, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{HandlerContext, MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{

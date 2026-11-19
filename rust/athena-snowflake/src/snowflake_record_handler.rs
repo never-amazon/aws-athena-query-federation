@@ -10,7 +10,7 @@ use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockSpiller, FieldVector, S3BlockSpiller,
 };
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
-use athena_federation_sdk::domain::spill::SpillLocation;
+use athena_federation_sdk::domain::SpillLocation;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::records::ReadRecordsRequest;
@@ -24,12 +24,11 @@ use athena_jdbc::manager::{
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
 use crate::s3_export::{construct_s3_uri, BlockingBatches, ExportReader, S3ParquetExportReader};
-use crate::snowflake_constants;
 use crate::snowflake_metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
 use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
-use crate::utils;
+use crate::{snowflake_constants, utils};
 use athena_jdbc::java_null::OrJavaNull;
 
 const FETCH_SIZE: u32 = 1000;

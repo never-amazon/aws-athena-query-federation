@@ -1,4 +1,4 @@
-use crate::domain::predicate::expression::FunctionCallExpression;
+use crate::domain::predicate::FunctionCallExpression;
 use crate::exceptions::{FederationError, Result};
 use crate::serde::base::{
     assert_field_name, require_non_null, validate_array_start, validate_object_end,

@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use crate::domain::spill::SpillLocation;
+use crate::domain::SpillLocation;
 use crate::security::EncryptionKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

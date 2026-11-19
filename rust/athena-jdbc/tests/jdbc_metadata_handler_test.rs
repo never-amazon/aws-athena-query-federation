@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{FieldBuilder, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest,

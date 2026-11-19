@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::domain::split::Split;
+use crate::domain::Split;
 use crate::exceptions::{FederationError, Result};
 use crate::serde::base::{
     assert_field_name, deserialize_nullable, serialize_nullable, validate_object_start_token,

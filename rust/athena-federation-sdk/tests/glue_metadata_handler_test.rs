@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use athena_federation_sdk::data::{minor_type_of, MinorType, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::handlers::{
     get_source_table_name, populate_source_table_name_if_available, GlueMetadataHandler,
     MetadataContext, MetadataHandler, COLUMN_NAME_MAPPING_PROPERTY,

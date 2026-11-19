@@ -196,7 +196,7 @@ mod constraint_serialization_test {
             )),
             Some("queryId".to_string()),
             "default",
-            athena_federation_sdk::domain::table_name::TableName::new("schema1", "table1"),
+            athena_federation_sdk::domain::TableName::new("schema1", "table1"),
             Constraints::new(
                 constraints_map,
                 Vec::new(),

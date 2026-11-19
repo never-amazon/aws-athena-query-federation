@@ -1,4 +1,3 @@
-use athena_federation_sdk::data::block_utils;
 use athena_federation_sdk::exceptions::JavaThrowable;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -8,11 +7,11 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::spill_config::SpillConfig;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, GetObjectRequest, PutObjectRequest,
-    S3BlockSpiller, S3Client, SchemaBuilder, Value,
+    block_utils, Block, BlockAllocator, BlockAllocatorImpl, BlockSpiller, GetObjectRequest,
+    PutObjectRequest, S3BlockSpiller, S3Client, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::security::{AwsServiceError, KeySource};
 use athena_federation_sdk::FederationError;
 use aws_credential_types::Credentials;

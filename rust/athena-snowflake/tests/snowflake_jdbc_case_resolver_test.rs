@@ -3,7 +3,7 @@ mod snowflake_support;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::resolver::{FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY};
 use athena_federation_sdk::FederationError;
 use athena_jdbc::sql::SqlValue;

@@ -9,7 +9,7 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value};
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::handlers::{
     HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
@@ -424,7 +424,7 @@ async fn read_splits(
     lambda: &Lambda,
     table_name: &TableName,
     read_schema: &Schema,
-    splits: &[athena_federation_sdk::domain::split::Split],
+    splits: &[athena_federation_sdk::domain::Split],
     constraints: &Constraints,
 ) -> (usize, Vec<Vec<Value>>) {
     let mut rows = 0;

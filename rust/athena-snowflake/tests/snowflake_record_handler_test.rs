@@ -13,9 +13,7 @@ use athena_federation_sdk::data::{
     BlockAllocator, BlockAllocatorImpl, FieldVector, S3BlockSpillReader, SchemaBuilder,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::spill::S3SpillLocation;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
@@ -29,10 +27,11 @@ use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
 use athena_jdbc::qpt::QUERY;
 use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError};
 use athena_snowflake::{
-    construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, snowflake_constants,
-    ExportReader, S3ParquetExportReader, SnowflakeCredentialsProvider, SnowflakeRecordHandler,
+    construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast,
+    create_snowflake_credentials_provider, snowflake_constants, ExportReader,
+    S3ParquetExportReader, SnowflakeCredentialsProvider, SnowflakeRecordDialect,
+    SnowflakeRecordHandler,
 };
-use athena_snowflake::{create_snowflake_credentials_provider, SnowflakeRecordDialect};
 use bigdecimal::BigDecimal;
 use indexmap::IndexMap;
 use parquet::arrow::ArrowWriter;

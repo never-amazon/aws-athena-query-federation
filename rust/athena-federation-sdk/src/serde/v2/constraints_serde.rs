@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use crate::domain::predicate::expression::FederationExpression;
-use crate::domain::predicate::{Constraints, OrderByField, QueryPlan, ValueSet};
+use crate::domain::predicate::{
+    Constraints, FederationExpression, OrderByField, QueryPlan, ValueSet,
+};
 use crate::exceptions::{FederationError, Result};
 use crate::serde::base::{
     assert_field_name, deserialize_nullable, get_next_long_field, nullable_map,

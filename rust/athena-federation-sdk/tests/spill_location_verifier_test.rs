@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use athena_federation_sdk::domain::spill::{BucketState, HeadBucketClient, SpillLocationVerifier};
+use athena_federation_sdk::domain::{BucketState, HeadBucketClient, SpillLocationVerifier};
 use athena_federation_sdk::security::{AwsService, AwsServiceError};
 use athena_federation_sdk::{exceptions::FederationSourceErrorCode, FederationError};
 

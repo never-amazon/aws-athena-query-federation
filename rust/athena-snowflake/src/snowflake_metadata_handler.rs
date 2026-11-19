@@ -9,8 +9,7 @@ use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     minor_type_of, ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaThrowable};
 use athena_federation_sdk::handlers::{
     AwsClients, HandlerContext, MetadataContext, MetadataHandler,

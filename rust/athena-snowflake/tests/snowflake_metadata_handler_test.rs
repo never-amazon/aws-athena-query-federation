@@ -10,7 +10,7 @@ use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, FieldBuilder, SchemaBuilder, Value,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaThrowable};
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{

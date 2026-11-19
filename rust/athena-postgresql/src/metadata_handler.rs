@@ -5,8 +5,7 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{ArrowType, Block, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::handlers::{AwsClients, MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     Capability, GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse,

@@ -11,9 +11,7 @@ use athena_federation_sdk::data::{
     BlockAllocator, BlockAllocatorImpl, BlockSpiller, S3BlockSpiller,
 };
 use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints};
-use athena_federation_sdk::domain::spill::S3SpillLocation;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, Split, TableName};
 use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;

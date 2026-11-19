@@ -8,17 +8,12 @@ use indexmap::{IndexMap, IndexSet};
 use serde_json::Value as Json;
 
 use crate::data::{ArrowType, Block};
-use crate::domain::predicate::expression::{
-    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
-};
-use crate::domain::predicate::functions::FunctionName;
 use crate::domain::predicate::{
-    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, Marker, OrderByField, QueryPlan,
-    Range, SortedRangeSet, ValueSet,
+    AllOrNoneValueSet, ConstantExpression, Constraints, Direction, EquatableValueSet,
+    FederationExpression, FunctionCallExpression, FunctionName, Marker, OrderByField, QueryPlan,
+    Range, SortedRangeSet, ValueSet, VariableExpression,
 };
-use crate::domain::spill::{S3SpillLocation, SpillLocation};
-use crate::domain::split::Split;
-use crate::domain::table_name::TableName;
+use crate::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::double_to_long;
 use crate::metadata::{

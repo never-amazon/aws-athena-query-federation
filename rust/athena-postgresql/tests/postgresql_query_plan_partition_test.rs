@@ -9,9 +9,7 @@ use rusqlite::types::Value as SqliteValue;
 use rusqlite::Connection;
 
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::SqlValue;
 use athena_postgresql::{

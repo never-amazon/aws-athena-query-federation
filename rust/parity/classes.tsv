@@ -80,30 +80,30 @@ com.amazonaws.athena.connector.lambda.domain.Split	athena-federation-sdk/src/dom
 com.amazonaws.athena.connector.lambda.domain.TableName	athena-federation-sdk/src/domain/table_name.rs::TableName	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.AllOrNoneValueSet	athena-federation-sdk/src/domain/predicate/all_or_none_value_set.rs::AllOrNoneValueSet	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintEvaluator	athena-federation-sdk/src/domain/predicate/constraint_evaluator.rs::ConstraintEvaluator	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector	athena-federation-sdk/src/domain/predicate/constraint_projector.rs::ConstraintProjector	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector	athena-federation-sdk/src/domain/predicate/constraint_evaluator.rs::ConstraintProjector	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Constraints	athena-federation-sdk/src/domain/predicate/constraints.rs::Constraints	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.EquatableValueSet	athena-federation-sdk/src/domain/predicate/equatable_value_set.rs::EquatableValueSet	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.LiteralValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::literal builds an EXACTLY marker around a plain value
 com.amazonaws.athena.connector.lambda.domain.predicate.Marker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.MarkerFactory	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::nullable replaces MarkerFactory.createNullable, the only factory method in use
-com.amazonaws.athena.connector.lambda.domain.predicate.OrderByField	athena-federation-sdk/src/domain/predicate/order_by_field.rs::OrderByField	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan	athena-federation-sdk/src/domain/predicate/query_plan.rs::QueryPlan	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.OrderByField	athena-federation-sdk/src/domain/predicate/constraints.rs::OrderByField	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.QueryPlan	athena-federation-sdk/src/domain/predicate/constraints.rs::QueryPlan	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Range	athena-federation-sdk/src/domain/predicate/range.rs::Range	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.Ranges	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	merged	SortedRangeSet is the only implementor; its inherent methods cover the interface
 com.amazonaws.athena.connector.lambda.domain.predicate.SortedRangeSet	athena-federation-sdk/src/domain/predicate/sorted_range_set.rs::SortedRangeSet	ported	
 com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarker	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker is the only marker type, so the interface is gone
 com.amazonaws.athena.connector.lambda.domain.predicate.ValueMarkerComparator	athena-federation-sdk/src/domain/predicate/marker.rs::Marker	merged	Marker::try_cmp returns an Ordering with the same null and unbounded rules
 com.amazonaws.athena.connector.lambda.domain.predicate.ValueSet	athena-federation-sdk/src/domain/predicate/value_set.rs::ValueSet	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.expression.ConstantExpression	athena-federation-sdk/src/domain/predicate/expression/constant_expression.rs::ConstantExpression	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression	athena-federation-sdk/src/domain/predicate/expression/federation_expression.rs::FederationExpression	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.expression.FunctionCallExpression	athena-federation-sdk/src/domain/predicate/expression/function_call_expression.rs::FunctionCallExpression	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.expression.VariableExpression	athena-federation-sdk/src/domain/predicate/expression/variable_expression.rs::VariableExpression	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.functions.FunctionName	athena-federation-sdk/src/domain/predicate/functions/function_name.rs::FunctionName	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.functions.OperatorType	athena-federation-sdk/src/domain/predicate/functions/operator_type.rs::OperatorType	ported	
-com.amazonaws.athena.connector.lambda.domain.predicate.functions.StandardFunctions	athena-federation-sdk/src/domain/predicate/functions/standard_functions.rs::StandardFunctions	ported	
-com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation	athena-federation-sdk/src/domain/spill/s3_spill_location.rs::S3SpillLocation	ported	
-com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation	athena-federation-sdk/src/domain/spill/spill_location.rs::SpillLocation	ported	
-com.amazonaws.athena.connector.lambda.domain.spill.SpillLocationVerifier	athena-federation-sdk/src/domain/spill/spill_location_verifier.rs::SpillLocationVerifier	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.ConstantExpression	athena-federation-sdk/src/domain/predicate/expression.rs::ConstantExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.FederationExpression	athena-federation-sdk/src/domain/predicate/expression.rs::FederationExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.FunctionCallExpression	athena-federation-sdk/src/domain/predicate/expression.rs::FunctionCallExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.expression.VariableExpression	athena-federation-sdk/src/domain/predicate/expression.rs::VariableExpression	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.FunctionName	athena-federation-sdk/src/domain/predicate/functions.rs::FunctionName	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.OperatorType	athena-federation-sdk/src/domain/predicate/functions.rs::OperatorType	ported	
+com.amazonaws.athena.connector.lambda.domain.predicate.functions.StandardFunctions	athena-federation-sdk/src/domain/predicate/functions.rs::StandardFunctions	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation	athena-federation-sdk/src/domain/spill.rs::S3SpillLocation	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation	athena-federation-sdk/src/domain/spill.rs::SpillLocation	ported	
+com.amazonaws.athena.connector.lambda.domain.spill.SpillLocationVerifier	athena-federation-sdk/src/domain/spill.rs::SpillLocationVerifier	ported	
 com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException	athena-federation-sdk/src/exceptions/athena_connector_exception.rs::AthenaConnectorException	ported	
 com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException	athena-federation-sdk/src/exceptions/federation_throttle_exception.rs::FederationThrottleException	ported	
 com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::is_athena_throttle	merged	the single-method filter class becomes a predicate function

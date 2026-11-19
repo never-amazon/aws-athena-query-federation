@@ -2,7 +2,7 @@ mod jdbc_support;
 
 use std::collections::HashMap;
 
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::resolver::{CaseLookup, JdbcCaseResolver};

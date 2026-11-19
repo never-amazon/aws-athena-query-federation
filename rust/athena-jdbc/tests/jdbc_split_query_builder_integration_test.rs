@@ -6,8 +6,7 @@ use indexmap::IndexMap;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlError, SqlValue};

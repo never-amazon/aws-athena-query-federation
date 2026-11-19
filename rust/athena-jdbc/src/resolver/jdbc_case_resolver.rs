@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
 use athena_federation_sdk::{FederationError, Result};
 

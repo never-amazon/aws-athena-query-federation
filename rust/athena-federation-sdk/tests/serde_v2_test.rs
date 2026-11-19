@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::{Block, SchemaBuilder};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse,
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,

@@ -1,4 +1,4 @@
-use crate::domain::table_name::TableName;
+use crate::domain::TableName;
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::len_to_long;
 use crate::metadata::UNLIMITED_PAGE_SIZE_VALUE;

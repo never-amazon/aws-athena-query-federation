@@ -10,12 +10,11 @@ use tokio::task::JoinHandle;
 
 use super::block::Block;
 use super::block_allocator::BlockAllocator;
-use super::block_spiller::BlockSpiller;
-use super::block_spiller::RowWriter;
+use super::block_spiller::{BlockSpiller, RowWriter};
 use super::s3_client::{GetObjectRequest, PutObjectRequest, S3Client};
 use super::spill_config::SpillConfig;
 use crate::domain::predicate::ConstraintEvaluator;
-use crate::domain::spill::{S3SpillLocation, SpillLocation};
+use crate::domain::{S3SpillLocation, SpillLocation};
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::len_to_long;
 use crate::security::{run_blocking, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey};

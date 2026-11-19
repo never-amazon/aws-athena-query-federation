@@ -9,14 +9,13 @@ use tokio::sync::Mutex;
 use super::aws_clients::AwsClients;
 use super::handler_context::{ConfigOptions, HandlerContext};
 use crate::connection::environment_constants;
-use crate::data::block_utils;
 use crate::data::types::java_field_to_string;
 use crate::data::{
-    assert_supported, BlockAllocator, S3HeadBucketClient, SchemaBuilder, SimpleBlockWriter,
+    assert_supported, block_utils, BlockAllocator, S3HeadBucketClient, SchemaBuilder,
+    SimpleBlockWriter,
 };
 use crate::domain::predicate::ConstraintEvaluator;
-use crate::domain::spill::{S3SpillLocation, SpillLocation, SpillLocationVerifier};
-use crate::domain::split::{Split, SplitBuilder};
+use crate::domain::{S3SpillLocation, SpillLocation, SpillLocationVerifier, Split, SplitBuilder};
 use crate::exceptions::{FederationError, Result};
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,

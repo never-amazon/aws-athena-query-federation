@@ -5,7 +5,7 @@ use indexmap::IndexSet;
 
 use crate::data::Block;
 use crate::domain::predicate::Constraints;
-use crate::domain::table_name::TableName;
+use crate::domain::TableName;
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     impl_metadata_request, impl_metadata_response, opt_str, MetadataRequestType,

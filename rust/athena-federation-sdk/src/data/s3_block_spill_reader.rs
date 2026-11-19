@@ -5,7 +5,7 @@ use arrow::datatypes::SchemaRef;
 use super::block::Block;
 use super::block_allocator::BlockAllocator;
 use super::s3_client::{GetObjectRequest, S3Client};
-use crate::domain::spill::S3SpillLocation;
+use crate::domain::S3SpillLocation;
 use crate::exceptions::Result;
 use crate::security::{run_blocking, BlockCrypto, EncryptionKey};
 

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::domain::table_name::TableName;
+use crate::domain::TableName;
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     collections_equals, impl_metadata_request, impl_metadata_response, opt_str, MetadataRequestType,

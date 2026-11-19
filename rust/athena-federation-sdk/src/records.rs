@@ -4,9 +4,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 
 use crate::data::Block;
 use crate::domain::predicate::Constraints;
-use crate::domain::spill::SpillLocation;
-use crate::domain::split::Split;
-use crate::domain::table_name::TableName;
+use crate::domain::{SpillLocation, Split, TableName};
 use crate::named_enum::named_enum;
 use crate::security::{EncryptionKey, FederatedIdentity};
 
