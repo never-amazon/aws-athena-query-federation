@@ -16,7 +16,7 @@ use athena_federation_sdk::{AthenaClient, FederationError};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use athena_jdbc::manager::JdbcUtil;
+use athena_jdbc::manager::jdbc_util;
 use athena_jdbc::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
 use athena_postgresql::{
     PostGreSqlConstants, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
@@ -283,7 +283,7 @@ fn single_handler(
     config: &HashMap<String, String>,
 ) -> athena_federation_sdk::Result<CompositeHandler> {
     let db_config =
-        JdbcUtil::get_single_database_config_from_env(PostGreSqlConstants::POSTGRES_NAME, config)?;
+        jdbc_util::single_database_config_from_env(PostGreSqlConstants::POSTGRES_NAME, config)?;
     let metadata = metadata_handler(clients, &db_config, config)?;
     let record = record_handler(clients, &db_config, config)?;
     Ok(CompositeHandler::new(

@@ -9,8 +9,8 @@ use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
-    get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
-    JdbcUtil, RecordDialect, SplitQuery,
+    get_arrow_type_from_jdbc_type, jdbc_to_arrow_type, jdbc_util, ConnectionSource,
+    JdbcRecordHandler, RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
@@ -61,7 +61,7 @@ impl PostGreSqlRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlRecordHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
+        let config = jdbc_util::single_database_config_from_env(
             PostGreSqlConstants::POSTGRES_NAME,
             &config_options,
         )?;
@@ -79,8 +79,7 @@ fn export_arrow_type(
     let scale = metadata.scale(column)?;
     if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
         return Ok(
-            JdbcArrowTypeConverter::to_arrow_type(Types::NUMERIC, 0, 0, config_options)?
-                .unwrap_or(DataType::Utf8),
+            jdbc_to_arrow_type(Types::NUMERIC, 0, 0, config_options)?.unwrap_or(DataType::Utf8)
         );
     }
     match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {

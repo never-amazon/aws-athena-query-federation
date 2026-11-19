@@ -34,8 +34,8 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
 };
 use athena_jdbc::manager::{
-    columns, complex_expression_capability, filter_capability, ConnectionSource,
-    JdbcMetadataHandler, JdbcUtil, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
+    columns, complex_expression_capability, filter_capability, jdbc_util, ConnectionSource,
+    JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
@@ -52,7 +52,7 @@ use crate::snowflake_query_string_builder::{
     base_export_sql, query_string_builder, single_quote, SnowflakeQueryStringBuilder,
 };
 use crate::sql::SNOWFLAKE_SQL_EXCEPTION;
-use crate::utils::SnowflakeArrowTypeConverter;
+use crate::utils;
 
 const MAX_SPLITS_PER_REQUEST: usize = 1_000_000;
 const COLUMN_NAME: &str = "COLUMN_NAME";
@@ -217,7 +217,7 @@ impl SnowflakeMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeMetadataHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
+        let config = jdbc_util::single_database_config_from_env(
             SnowflakeConstants::SNOWFLAKE_NAME,
             &config_options,
         )?;
@@ -243,7 +243,7 @@ impl SnowflakeMetadataDialect {
         statement.set_string(1, database_name)?;
         statement.set_int(2, limit)?;
         statement.set_int(3, offset)?;
-        JdbcUtil::get_table_metadata(connection, &statement, TABLES_AND_VIEWS).await
+        jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
     }
 
     pub async fn get_list_exported_objects(
@@ -1044,7 +1044,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
     ) -> Result<Option<ArrowType>> {
         let scale = metadata.scale(column_index)?;
         let column_type = metadata.column_type(column_index)?;
-        SnowflakeArrowTypeConverter::to_arrow_type(column_type, precision, scale, config_options)
+        utils::to_arrow_type(column_type, precision, scale, config_options)
     }
 
     async fn get_schema(
@@ -1104,7 +1104,7 @@ impl SnowflakeMetadataDialect {
         let mut found = false;
         while result_set.next().await? {
             found = true;
-            let column_type = SnowflakeArrowTypeConverter::to_arrow_type(
+            let column_type = utils::to_arrow_type(
                 result_set.get_int("DATA_TYPE")?.unwrap_or(0),
                 result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
                 result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),

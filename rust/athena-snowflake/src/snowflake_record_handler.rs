@@ -19,7 +19,7 @@ use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
-    jdbc_to_arrow_schema, ConnectionSource, JdbcRecordHandler, JdbcUtil, RecordDialect, SplitQuery,
+    jdbc_to_arrow_schema, jdbc_util, ConnectionSource, JdbcRecordHandler, RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
@@ -29,7 +29,7 @@ use crate::snowflake_metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
 use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
-use crate::utils::SnowflakeArrowTypeConverter;
+use crate::utils;
 
 const FETCH_SIZE: i32 = 1000;
 const UTC: &str = "UTC";
@@ -147,7 +147,7 @@ impl SnowflakeRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeRecordHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
+        let config = jdbc_util::single_database_config_from_env(
             SnowflakeConstants::SNOWFLAKE_NAME,
             &config_options,
         )?;
@@ -378,7 +378,7 @@ impl RecordDialect for SnowflakeRecordDialect {
             );
             if is_arrow_integer && metadata.scale(column)? == 0 {
                 let precision = metadata.precision(column)?;
-                if (1..=SnowflakeArrowTypeConverter::DEFAULT_PRECISION).contains(&precision) {
+                if (1..=utils::DEFAULT_PRECISION).contains(&precision) {
                     let precision = u8::try_from(precision).unwrap_or(u8::MAX);
                     fields.push(Arc::new(
                         Field::new(

@@ -277,13 +277,13 @@ com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory	ath
 com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory	athena-jdbc/src/connection/jdbc_connection_factory.rs::JdbcConnectionFactory	ported	
 com.amazonaws.athena.connectors.jdbc.manager.DefaultJdbcFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	the parser is one concrete type; the throwing default has no caller
 com.amazonaws.athena.connectors.jdbc.manager.FederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	merged	the abstract walker and the JDBC syntax are one concrete type
-com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil	athena-jdbc/src/manager/jdbc_util.rs::JdbcUtil	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter	athena-jdbc/src/manager/jdbc_arrow_type_converter.rs::JdbcArrowTypeConverter	ported	
+com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil	athena-jdbc/src/manager/mod.rs::jdbc_util	ported	a module of functions
+com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter	athena-jdbc/src/manager/jdbc_arrow_type_converter.rs::jdbc_to_arrow_type	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcFederationExpressionParser	athena-jdbc/src/manager/expression_parser.rs::ExpressionParser	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandler	athena-jdbc/src/manager/jdbc_metadata_handler.rs::JdbcMetadataHandler	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
+com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to jdbc_util::handler_map
 com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler	athena-jdbc/src/manager/jdbc_record_handler.rs::JdbcRecordHandler	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
+com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to jdbc_util::handler_map
 com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder	athena-jdbc/src/manager/jdbc_split_query_builder.rs::SplitQueryBuilder	ported	generic over a SplitDialect that supplies the per-connector clauses
 com.amazonaws.athena.connectors.jdbc.manager.PreparedStatementBuilder	athena-jdbc/src/manager/prepared_statement_builder.rs::PreparedStatementBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.TypeAndValue	athena-jdbc/src/manager/type_and_value.rs::TypeAndValue	ported	
@@ -294,7 +294,7 @@ com.amazonaws.athena.connectors.jdbc.splits.IntegerSplitter	athena-jdbc/src/spli
 com.amazonaws.athena.connectors.jdbc.splits.SplitInfo	athena-jdbc/src/splits/split_info.rs::SplitInfo	ported	
 com.amazonaws.athena.connectors.jdbc.splits.SplitRange	athena-jdbc/src/splits/split_range.rs::SplitRange	ported	
 com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/splitter.rs::Splitter	ported	
-com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::SplitterFactory	ported	
+com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::splitter	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/constants.rs::PostGreSqlConstants	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::connection_properties_to_environment	merged	a const ConnectionStringFormat and one conversion function
@@ -322,6 +322,6 @@ com.amazonaws.athena.connectors.snowflake.SnowflakeRecordHandler	athena-snowflak
 com.amazonaws.athena.connectors.snowflake.SnowflakeUtils	-	not_ported	installCaCertificate and setupNativeEnvironmentVariables write the JDK cacerts store and env vars for the Arrow JDBC native path; the Rust client uses rustls with the operating system certificate store
 com.amazonaws.athena.connectors.snowflake.connection.SnowflakeConnectionFactory	athena-snowflake/src/connection/snowflake_connection_factory.rs::SnowflakeConnectionFactory	ported	
 com.amazonaws.athena.connectors.snowflake.resolver.SnowflakeJDBCCaseResolver	athena-snowflake/src/resolver/snowflake_jdbc_case_resolver.rs::SnowflakeJdbcCaseResolver	ported	
-com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter	athena-snowflake/src/utils/snowflake_arrow_type_converter.rs::SnowflakeArrowTypeConverter	ported	
+com.amazonaws.athena.connectors.snowflake.utils.SnowflakeArrowTypeConverter	athena-snowflake/src/utils/snowflake_arrow_type_converter.rs::to_arrow_type	ported	
 com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthType	athena-snowflake/src/utils/snowflake_auth_type.rs::SnowflakeAuthType	ported	
 com.amazonaws.athena.connectors.snowflake.utils.SnowflakeAuthUtils	athena-snowflake/src/utils/snowflake_auth_utils.rs::SnowflakeAuthUtils	ported	

@@ -8,4 +8,4 @@ pub use integer_splitter::IntegerSplitter;
 pub use split_info::SplitInfo;
 pub use split_range::SplitRange;
 pub use splitter::Splitter;
-pub use splitter_factory::SplitterFactory;
+pub use splitter_factory::splitter;

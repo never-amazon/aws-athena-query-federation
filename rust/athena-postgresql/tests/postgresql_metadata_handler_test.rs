@@ -1135,14 +1135,9 @@ async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_t
     let f = setup();
     let h = &f.handler;
     assert_eq!(
-        athena_jdbc::manager::JdbcArrowTypeConverter::to_arrow_type(
-            Types::TIMESTAMP,
-            0,
-            0,
-            &HashMap::new()
-        )
-        .unwrap()
-        .unwrap(),
+        athena_jdbc::manager::jdbc_to_arrow_type(Types::TIMESTAMP, 0, 0, &HashMap::new())
+            .unwrap()
+            .unwrap(),
         h.dialect().array_element_type(Some("_timestamptz"), 0, 0)
     );
     assert_eq!(

@@ -1,4 +1,4 @@
-use athena_jdbc::splits::SplitterFactory;
+use athena_jdbc::splits::splitter;
 use athena_jdbc::sql::{ColumnMetadata, ResultSet, ResultSetMetaData, SqlValue, Types};
 
 const TEST_COLUMN_NAME: &str = "testColumn";
@@ -16,8 +16,7 @@ async fn result_set_of_type(column_type: i32) -> ResultSet {
 
 async fn splitter_present(column_type: i32) -> bool {
     let result_set = result_set_of_type(column_type).await;
-    SplitterFactory::new()
-        .get_splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
+    splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
         .unwrap()
         .is_some()
 }
@@ -25,8 +24,7 @@ async fn splitter_present(column_type: i32) -> bool {
 #[tokio::test]
 async fn get_integer_splitter() {
     let result_set = result_set_of_type(Types::INTEGER).await;
-    let mut splitter = SplitterFactory::new()
-        .get_splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
+    let mut splitter = splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
         .unwrap()
         .unwrap();
     assert!(splitter.has_next());

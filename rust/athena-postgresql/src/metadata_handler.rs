@@ -22,10 +22,10 @@ use athena_jdbc::connection::{
     JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::manager::{
-    complex_expression_capability, filter_capability, ConnectionSource, JdbcMetadataHandler,
-    JdbcUtil, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
+    complex_expression_capability, filter_capability, jdbc_util, ConnectionSource,
+    JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
-use athena_jdbc::splits::SplitterFactory;
+use athena_jdbc::splits::splitter;
 use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
 use indexmap::IndexMap;
 
@@ -153,7 +153,7 @@ impl PostGreSqlMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlMetadataHandler> {
-        let config = JdbcUtil::get_single_database_config_from_env(
+        let config = jdbc_util::single_database_config_from_env(
             PostGreSqlConstants::POSTGRES_NAME,
             &config_options,
         )?;
@@ -207,7 +207,7 @@ async fn get_materialized_views(
         database_name,
         statement.sql()
     );
-    JdbcUtil::get_table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
+    jdbc_util::table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
 }
 
 async fn get_paginated_results(
@@ -229,7 +229,7 @@ async fn get_paginated_results(
         database_name,
         statement.sql()
     );
-    JdbcUtil::get_table_metadata(connection, &statement, TABLES_AND_VIEWS).await
+    jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
 }
 
 async fn is_uuid_column(
@@ -318,11 +318,7 @@ async fn split_clauses_from(
     min_max.next().await?;
     let min = min_max.get_long(1usize)?.unwrap_or(0);
     let max = min_max.get_long(2usize)?.unwrap_or(0);
-    let splitter = SplitterFactory::new().get_splitter(
-        &quoted_primary_key_column,
-        &min_max,
-        DEFAULT_NUM_SPLITS,
-    )?;
+    let splitter = splitter(&quoted_primary_key_column, &min_max, DEFAULT_NUM_SPLITS)?;
     if let Some(mut splitter) = splitter {
         if max - min < i64::from(DEFAULT_NUM_SPLITS) {
             tracing::info!(
@@ -599,7 +595,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
         connection: &dyn JdbcConnection,
         database_name: &str,
     ) -> Result<Vec<TableName>> {
-        let mut list = JdbcUtil::get_tables(connection, database_name).await?;
+        let mut list = jdbc_util::tables(connection, database_name).await?;
         list.extend(get_materialized_views(connection, database_name).await?);
         Ok(list)
     }
