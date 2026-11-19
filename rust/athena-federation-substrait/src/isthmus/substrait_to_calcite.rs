@@ -35,6 +35,7 @@ pub(crate) struct SubstraitToCalcite {
     pub(super) rex_builder: RexBuilder,
     rel_builder: RelBuilder,
     pub(super) functions: HashMap<u32, Rc<str>>,
+    pub(super) type_names: HashMap<u32, Rc<str>>,
     outer: Vec<OuterFrame>,
     used_correl: Vec<usize>,
     next_correl: usize,
@@ -111,9 +112,16 @@ impl SubstraitToCalcite {
         let system = dialect.type_system();
         let rex_builder = RexBuilder::new(system);
         let mut functions = HashMap::new();
+        let mut type_names = HashMap::new();
         for ext in &plan.extensions {
-            if let Some(MappingType::ExtensionFunction(f)) = &ext.mapping_type {
-                functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
+            match &ext.mapping_type {
+                Some(MappingType::ExtensionFunction(f)) => {
+                    functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
+                }
+                Some(MappingType::ExtensionType(t)) => {
+                    type_names.insert(t.type_anchor, Rc::from(t.name.as_str()));
+                }
+                _ => {}
             }
         }
         SubstraitToCalcite {
@@ -121,6 +129,7 @@ impl SubstraitToCalcite {
             rex_builder,
             rel_builder: RelBuilder::new(RexBuilder::new(RelDataTypeSystem::Default)),
             functions,
+            type_names,
             outer: Vec::new(),
             used_correl: Vec::new(),
             next_correl: 0,

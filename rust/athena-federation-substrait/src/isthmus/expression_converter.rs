@@ -3,7 +3,8 @@ use std::rc::Rc;
 use bigdecimal::BigDecimal;
 
 use super::function_mappings::{aggregate_operator, scalar_operator, window_operator};
-use super::type_converter::{to_calcite, type_string};
+use super::type_converter::to_calcite;
+use super::type_text::{calcite_type_text, literal_type_text, proto_type_text, TypeText};
 use super::SubstraitToCalcite;
 use crate::calcite::operators::{self, SqlOperator};
 use crate::calcite::rel::RelNode;
@@ -22,6 +23,7 @@ use crate::literal::big_decimal_from_bytes;
 use crate::proto::expression::field_reference::{ReferenceType, RootType};
 use crate::proto::expression::literal::LiteralType;
 use crate::proto::expression::reference_segment;
+use crate::proto::expression::subquery::SubqueryType;
 use crate::proto::expression::window_function::bound;
 use crate::proto::expression::{
     window_function, FieldReference, Literal, RexType, ScalarFunction, WindowFunction,
@@ -32,6 +34,10 @@ use crate::proto::{Expression, FunctionArgument, SortField, Type};
 
 fn lit(value: LiteralValue, ty: RelDataType) -> RexNode {
     RexNode::Literal(RexLiteral { value, ty })
+}
+
+fn unconvertible_argument() -> SubstraitError {
+    SubstraitError::Unsupported("Unable to convert FunctionArgument .".into())
 }
 
 fn required<'b, T>(v: Option<&'b T>, what: &str) -> Result<&'b T> {
@@ -316,7 +322,6 @@ impl SubstraitToCalcite {
         input: &RelDataType,
     ) -> Result<RexNode> {
         use crate::proto::expression::subquery::set_predicate::PredicateOp;
-        use crate::proto::expression::subquery::SubqueryType;
         let rex_builder = self.rex_builder;
         let boolean = |nullable: bool| rex_builder.boolean_type(nullable);
         let node = match q
@@ -513,7 +518,7 @@ impl SubstraitToCalcite {
                         "FunctionArg {t:?} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                     )))
                 }
-                None => return Err(SubstraitError::IllegalArgument("Unknown type: ARGTYPE_NOT_SET".into())),
+                None => return Err(unconvertible_argument()),
             }
             index += 1;
         }
@@ -548,13 +553,13 @@ impl SubstraitToCalcite {
             .as_ref()
             .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
-        let op = scalar_operator(&decl, output.kind.as_ref()).ok_or_else(|| {
-            SubstraitError::IllegalArgument(format!(
+        let Some(op) = scalar_operator(&decl, output.kind.as_ref()) else {
+            return Err(SubstraitError::IllegalArgument(format!(
                 "Unable to convert scalar function {}({}).",
                 decl,
-                Self::describe_args(&f.arguments)
-            ))
-        })?;
+                self.describe_args(&f.arguments, input)?
+            )));
+        };
         let trim = match &*decl {
             "trim" => Some(TrimFlag::Both),
             "ltrim" => Some(TrimFlag::Leading),
@@ -565,26 +570,80 @@ impl SubstraitToCalcite {
         Ok(RexBuilder::make_call_typed(return_type, op, args))
     }
 
-    fn describe_args(args: &[FunctionArgument]) -> String {
-        args.iter()
-            .map(|a| match &a.arg_type {
-                Some(ArgType::Enum(v)) => v.clone(),
-                Some(ArgType::Type(t)) => type_string(t).to_string(),
-                Some(ArgType::Value(_)) | None => "expr".to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+    fn describe_args(&mut self, args: &[FunctionArgument], input: &RelDataType) -> Result<String> {
+        let mut described = Vec::with_capacity(args.len());
+        for a in args {
+            described.push(match &a.arg_type {
+                Some(ArgType::Enum(v)) => format!("Optional[{v}]"),
+                Some(ArgType::Type(t)) => proto_type_text(t, &self.type_names)?.to_string(),
+                Some(ArgType::Value(e)) => self.expression_type(e, input)?.to_string(),
+                None => return Err(unconvertible_argument()),
+            });
+        }
+        Ok(described.join(", "))
+    }
+
+    fn expression_type(&mut self, e: &Expression, input: &RelDataType) -> Result<TypeText> {
+        let declared = match &e.rex_type {
+            Some(RexType::Literal(l)) => literal_type_text(l, &self.type_names)?,
+            Some(
+                RexType::ScalarFunction(ScalarFunction { output_type, .. })
+                | RexType::WindowFunction(WindowFunction { output_type, .. }),
+            ) => output_type
+                .as_ref()
+                .map(|t| proto_type_text(t, &self.type_names))
+                .transpose()?,
+            Some(RexType::Cast(c)) => c
+                .r#type
+                .as_ref()
+                .map(|t| proto_type_text(t, &self.type_names))
+                .transpose()?,
+            Some(RexType::IfThen(it)) => match it.r#else.as_deref() {
+                Some(otherwise) => {
+                    let mut ty = self.expression_type(otherwise, input)?;
+                    for clause in &it.ifs {
+                        let then = required(clause.then.as_ref(), "THEN")?;
+                        if self.expression_type(then, input)?.nullable() {
+                            ty = ty.into_nullable();
+                            break;
+                        }
+                    }
+                    Some(ty)
+                }
+                None => None,
+            },
+            Some(RexType::SwitchExpression(sw)) => match sw.r#else.as_deref() {
+                Some(otherwise) => Some(self.expression_type(otherwise, input)?),
+                None => None,
+            },
+            Some(RexType::SingularOrList(_) | RexType::MultiOrList(_)) => {
+                Some(TypeText::boolean(true))
+            }
+            Some(RexType::Subquery(q))
+                if matches!(
+                    q.subquery_type,
+                    Some(SubqueryType::InPredicate(_) | SubqueryType::SetPredicate(_))
+                ) =>
+            {
+                Some(TypeText::boolean(false))
+            }
+            _ => None,
+        };
+        match declared {
+            Some(ty) => Ok(ty),
+            None => Ok(calcite_type_text(self.rex(e, input)?.ty())),
+        }
     }
 
     fn window_function(&mut self, w: &WindowFunction, input: &RelDataType) -> Result<RexNode> {
         let decl = self.function_decl(w.function_reference)?;
-        let op = window_operator(&decl).ok_or_else(|| {
-            SubstraitError::IllegalArgument(format!(
+        let Some(op) = window_operator(&decl) else {
+            return Err(SubstraitError::IllegalArgument(format!(
                 "Unable to convert window function {}({}).",
                 decl,
-                Self::describe_args(&w.arguments)
-            ))
-        })?;
+                self.describe_args(&w.arguments, input)?
+            )));
+        };
         let output_type = self.ty(w.output_type.as_ref())?;
         let args = self.arguments(&decl, &w.arguments, input, None)?;
         let mut partition_keys = Vec::with_capacity(w.partitions.len());

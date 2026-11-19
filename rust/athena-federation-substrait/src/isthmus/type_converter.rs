@@ -76,44 +76,6 @@ pub(crate) fn type_nullable(ty: &Type) -> bool {
     is_nullable(n)
 }
 
-pub(crate) fn type_string(ty: &Type) -> &'static str {
-    #[allow(
-        deprecated,
-        reason = "reads deprecated Substrait proto fields that the Java converter still reads"
-    )]
-    match &ty.kind {
-        Some(Kind::Bool(_)) => "bool",
-        Some(Kind::I8(_)) => "i8",
-        Some(Kind::I16(_)) => "i16",
-        Some(Kind::I32(_)) => "i32",
-        Some(Kind::I64(_)) => "i64",
-        Some(Kind::Fp32(_)) => "fp32",
-        Some(Kind::Fp64(_)) => "fp64",
-        Some(Kind::String(_)) => "str",
-        Some(Kind::Binary(_)) => "vbin",
-        Some(Kind::Timestamp(_)) => "ts",
-        Some(Kind::Date(_)) => "date",
-        Some(Kind::Time(_)) => "time",
-        Some(Kind::IntervalYear(_)) => "iyear",
-        Some(Kind::IntervalDay(_)) => "iday",
-        Some(Kind::IntervalCompound(_)) => "icompound",
-        Some(Kind::TimestampTz(_)) => "tstz",
-        Some(Kind::Uuid(_)) => "uuid",
-        Some(Kind::FixedChar(_)) => "fchar",
-        Some(Kind::Varchar(_)) => "vchar",
-        Some(Kind::FixedBinary(_)) => "fbin",
-        Some(Kind::Decimal(_)) => "dec",
-        Some(Kind::PrecisionTime(_)) => "pt",
-        Some(Kind::PrecisionTimestamp(_)) => "pts",
-        Some(Kind::PrecisionTimestampTz(_)) => "ptstz",
-        Some(Kind::Struct(_)) => "struct",
-        Some(Kind::List(_)) => "list",
-        Some(Kind::Map(_)) => "map",
-        Some(Kind::UserDefined(_)) => "u!",
-        _ => "",
-    }
-}
-
 fn checked_tp(
     system: RelDataTypeSystem,
     nullable: bool,

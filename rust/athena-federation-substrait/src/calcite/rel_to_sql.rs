@@ -1059,8 +1059,14 @@ fn create_over_call(
     SqlNode::call(&operators::OVER, vec![agg, window])
 }
 
-fn java_double_decimal(value: f64) -> BigDecimal {
-    java_double_to_string(value).parse().unwrap_or_default()
+fn java_double_decimal(value: f64) -> Result<BigDecimal> {
+    if value.is_finite() {
+        return Ok(java_double_to_string(value).parse().unwrap_or_default());
+    }
+    let first = if value.is_nan() { 'N' } else { 'I' };
+    Err(SubstraitError::NumberFormat(format!(
+        "Character {first} is neither a decimal digit number, decimal point, nor \"e\" notation exponential mark."
+    )))
 }
 
 fn ordinal_number(ordinal: usize) -> Result<u64> {
@@ -1084,16 +1090,16 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
             if tn.is_approx() {
                 SqlLiteral::approx(java_double_decimal(
                     d.to_string().parse::<f64>().unwrap_or(0.0),
-                ))
+                )?)
             } else {
                 SqlLiteral::exact(d.clone())
             }
         }
         LiteralValue::Approx(f) => {
             if tn.is_approx() || tn.family() != SqlTypeFamily::Numeric {
-                SqlLiteral::approx(java_double_decimal(*f))
+                SqlLiteral::approx(java_double_decimal(*f)?)
             } else {
-                SqlLiteral::exact(java_double_decimal(*f))
+                SqlLiteral::exact(java_double_decimal(*f)?)
             }
         }
         LiteralValue::Boolean(b) => SqlLiteral::boolean(*b),
