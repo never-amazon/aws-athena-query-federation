@@ -1,4 +1,4 @@
-use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem, PRECISION_NOT_SPECIFIED};
+use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem};
 use crate::calcite::sql_type_name::SqlTypeName;
 use crate::error::{Result, SubstraitError};
 use crate::proto::r#type::{Kind, Nullability};
@@ -22,13 +22,12 @@ fn check_precision(
     label: &str,
     precision: i32,
 ) -> Result<()> {
-    let max = system.max_precision(name);
-    if precision > max {
-        return Err(SubstraitError::Unsupported(format!(
+    match system.max_precision(name) {
+        Some(max) if precision > max => Err(SubstraitError::Unsupported(format!(
             "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
-        )));
+        ))),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 pub(crate) fn kind_of(ty: &Type) -> Result<&Kind> {
@@ -124,13 +123,9 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
             "precision_timestamp_tz",
             p.precision,
         )?,
-        Kind::IntervalYear(_) => {
-            RelDataType::interval(SqlTypeName::IntervalYearMonth, PRECISION_NOT_SPECIFIED)
-                .with_nullability(n)
-        }
+        Kind::IntervalYear(_) => RelDataType::interval_year_month().with_nullability(n),
         Kind::IntervalDay(d) => {
-            RelDataType::interval(SqlTypeName::IntervalDaySecond, d.precision.unwrap_or(6))
-                .with_nullability(n)
+            RelDataType::interval_day_second(d.precision.unwrap_or(6)).with_nullability(n)
         }
         Kind::FixedChar(c) => tp(system, n, SqlTypeName::Char, c.length),
         Kind::Varchar(c) => tp(system, n, SqlTypeName::Varchar, c.length),

@@ -1075,6 +1075,12 @@ fn ordinal_number(ordinal: usize) -> Result<u64> {
         .map_err(|_| SubstraitError::IndexOutOfBounds(format!("Index {ordinal} out of bounds")))
 }
 
+fn literal_precision(ty: &RelDataType) -> usize {
+    ty.precision()
+        .and_then(|p| usize::try_from(p).ok())
+        .unwrap_or(0)
+}
+
 pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
     let tn = literal.ty.sql_type_name();
     let lit = match &literal.value {
@@ -1108,10 +1114,10 @@ pub fn literal_to_sql(literal: &RexLiteral) -> Result<SqlNode> {
             value: SqlLiteralValue::Date(d.clone()),
         },
         LiteralValue::Time(t) => SqlLiteral {
-            value: SqlLiteralValue::Time(t.clone(), literal.ty.precision()),
+            value: SqlLiteralValue::Time(t.clone(), literal_precision(&literal.ty)),
         },
         LiteralValue::Timestamp(t) => SqlLiteral {
-            value: SqlLiteralValue::Timestamp(t.clone(), literal.ty.precision()),
+            value: SqlLiteralValue::Timestamp(t.clone(), literal_precision(&literal.ty)),
         },
         LiteralValue::Binary(b) => SqlLiteral {
             value: SqlLiteralValue::Binary(b.clone()),

@@ -3,7 +3,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use super::type_converter::type_nullable;
-use crate::calcite::rel_data_type::{RelDataType, PRECISION_NOT_SPECIFIED};
+use crate::calcite::rel_data_type::RelDataType;
 use crate::calcite::sql_type_name::SqlTypeName;
 use crate::error::{Result, SubstraitError};
 use crate::proto::expression::literal::LiteralType;
@@ -209,8 +209,12 @@ pub(crate) fn literal_type_text(
     Ok(Some(TypeText::new(body, literal.nullable)))
 }
 
+fn java_precision(ty: &RelDataType) -> i32 {
+    ty.precision().unwrap_or(-1)
+}
+
 fn with_precision(name: &str, ty: &RelDataType) -> String {
-    format!("{name}<{}>", ty.precision())
+    format!("{name}<{}>", java_precision(ty))
 }
 
 pub(crate) fn calcite_type_text(ty: &RelDataType) -> TypeText {
@@ -224,7 +228,7 @@ pub(crate) fn calcite_type_text(ty: &RelDataType) -> TypeText {
         SqlTypeName::Bigint => "i64".to_string(),
         SqlTypeName::Real => "fp32".to_string(),
         SqlTypeName::Float | SqlTypeName::Double => "fp64".to_string(),
-        SqlTypeName::Varchar if ty.precision() == PRECISION_NOT_SPECIFIED => "string".to_string(),
+        SqlTypeName::Varchar if ty.precision().is_none() => "string".to_string(),
         SqlTypeName::Varchar => with_precision("varchar", ty),
         SqlTypeName::Char => with_precision("char", ty),
         SqlTypeName::Varbinary => "binary".to_string(),
@@ -235,7 +239,11 @@ pub(crate) fn calcite_type_text(ty: &RelDataType) -> TypeText {
         SqlTypeName::TimestampWithLocalTimeZone => with_precision("precision_timestamp_tz", ty),
         SqlTypeName::IntervalYearMonth => "interval_year".to_string(),
         SqlTypeName::IntervalDaySecond => "interval_day".to_string(),
-        SqlTypeName::Decimal => format!("decimal<{},{}>", ty.precision(), ty.scale()),
+        SqlTypeName::Decimal => format!(
+            "decimal<{},{}>",
+            java_precision(ty),
+            ty.scale().unwrap_or(i32::MIN)
+        ),
         SqlTypeName::Row => {
             let fields: Vec<TypeText> = ty
                 .field_list()

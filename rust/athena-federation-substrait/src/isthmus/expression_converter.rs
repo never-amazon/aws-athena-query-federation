@@ -140,8 +140,7 @@ fn precision_timestamp_literal(
     value: i64,
     precision: i32,
 ) -> Result<RexNode> {
-    let max = s.max_precision(type_name);
-    if precision > max {
+    if let Some(max) = s.max_precision(type_name).filter(|max| precision > *max) {
         return Err(SubstraitError::Unsupported(format!(
             "unsupported {label} precision {precision}, max precision in Calcite type system is set to {max}"
         )));
@@ -180,7 +179,7 @@ fn interval_day_to_second_literal(
     let total = i64::from(id.days) * 86_400_000 + i64::from(id.seconds) * 1000 + millis;
     lit(
         LiteralValue::Interval(BigDecimal::from(total)),
-        RelDataType::interval(SqlTypeName::IntervalDaySecond, 3),
+        RelDataType::interval_day_second(3),
     )
 }
 
@@ -820,7 +819,7 @@ impl SubstraitToCalcite {
                 let months = i64::from(iy.years) * 12 + i64::from(iy.months);
                 lit(
                     LiteralValue::Interval(BigDecimal::from(months)),
-                    RelDataType::interval(SqlTypeName::IntervalYearMonth, crate::calcite::rel_data_type::PRECISION_NOT_SPECIFIED),
+                    RelDataType::interval_year_month(),
                 )
             }
             LiteralType::IntervalDayToSecond(id) => interval_day_to_second_literal(id),
@@ -858,9 +857,9 @@ impl SubstraitToCalcite {
 
     fn string_literal(&self, value: &str, ty: RelDataType, nullable: bool) -> RexNode {
         let len = char_length(value);
-        let precision = ty.precision();
+        let fits = ty.precision().is_none_or(|p| p < 0 || p >= len);
         let nullable_ty = nullable.then(|| ty.with_nullability(true));
-        let literal = if precision < 0 || precision >= len {
+        let literal = if fits {
             lit(LiteralValue::Char(value.to_string()), ty)
         } else {
             let char_ty = RelDataType::create_sql_type_with_precision(
@@ -912,7 +911,7 @@ pub(crate) fn least_restrictive(types: &[RelDataType]) -> RelDataType {
         return types
             .first()
             .cloned()
-            .unwrap_or_else(|| RelDataType::basic(SqlTypeName::Null, -1, i32::MIN, true))
+            .unwrap_or_else(|| RelDataType::basic(SqlTypeName::Null, None, None, true))
             .with_nullability(true);
     };
     let mut best: RelDataType = (*first).clone();
@@ -927,24 +926,25 @@ fn merge_types(a: &RelDataType, b: &RelDataType) -> RelDataType {
     let bn = b.sql_type_name();
     if an.is_character() && bn.is_character() {
         let varchar = an == SqlTypeName::Varchar || bn == SqlTypeName::Varchar;
-        let pa = a.precision();
-        let pb = b.precision();
-        let precision = if pa < 0 || pb < 0 { -1 } else { pa.max(pb) };
+        let precision = match (a.precision(), b.precision()) {
+            (Some(pa), Some(pb)) if pa >= 0 && pb >= 0 => Some(pa.max(pb)),
+            _ => None,
+        };
         let name = if varchar {
             SqlTypeName::Varchar
         } else {
             SqlTypeName::Char
         };
-        return RelDataType::basic(name, precision, i32::MIN, false);
+        return RelDataType::basic(name, precision, None, false);
     }
     if an == bn {
-        if a.precision() >= b.precision() {
-            return a.clone();
+        if b.precision_exceeds(a) {
+            return b.clone();
         }
-        return b.clone();
+        return a.clone();
     }
     if an.is_approx() || bn.is_approx() {
-        return RelDataType::basic(SqlTypeName::Double, -1, i32::MIN, false);
+        return RelDataType::basic(SqlTypeName::Double, None, None, false);
     }
     let rank = |n: SqlTypeName| match n {
         SqlTypeName::Tinyint => 1,

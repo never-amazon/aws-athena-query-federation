@@ -139,7 +139,7 @@ fn push_past_project(nodes: &[RexNode], project_exprs: &[RexNode]) -> Vec<RexNod
                 Some(e) => e.clone(),
                 None => RexNode::InputRef {
                     index: i,
-                    ty: RelDataType::basic(SqlTypeName::Any, -1, i32::MIN, true),
+                    ty: RelDataType::basic(SqlTypeName::Any, None, None, true),
                 },
             })
         })

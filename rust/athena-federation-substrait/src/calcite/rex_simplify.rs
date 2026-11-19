@@ -75,7 +75,7 @@ impl SargBuilder {
                 let mut best = first.clone();
                 for t in &self.types {
                     if t.sql_type_name() == best.sql_type_name() {
-                        if t.precision() > best.precision() {
+                        if t.precision_exceeds(&best) {
                             best = t.clone();
                         }
                     } else if t.sql_type_name() == SqlTypeName::Varchar {
@@ -1837,15 +1837,19 @@ fn truncate_or_pad(s: &str, precision: Option<usize>) -> String {
     text
 }
 
+fn char_precision(target: &RelDataType) -> Option<usize> {
+    target.precision().and_then(|p| usize::try_from(p).ok())
+}
+
 fn fold_literal_cast(lit: &RexLiteral, target: &RelDataType) -> Option<RexNode> {
     let tn = target.sql_type_name();
     let value = match (&lit.value, tn) {
         (LiteralValue::Null, _) => LiteralValue::Null,
         (LiteralValue::Char(s), SqlTypeName::Varchar) => {
-            LiteralValue::Char(truncate(s, usize::try_from(target.precision()).ok()))
+            LiteralValue::Char(truncate(s, char_precision(target)))
         }
         (LiteralValue::Char(s), SqlTypeName::Char) => {
-            LiteralValue::Char(truncate_or_pad(s, usize::try_from(target.precision()).ok()))
+            LiteralValue::Char(truncate_or_pad(s, char_precision(target)))
         }
         (
             LiteralValue::Exact(d),
