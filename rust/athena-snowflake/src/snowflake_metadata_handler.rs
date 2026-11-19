@@ -475,10 +475,13 @@ impl SnowflakeMetadataDialect {
         &self,
         handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
-        s3_uri: &mut Option<S3Uri>,
-    ) -> Result<()> {
+    ) -> (Option<S3Uri>, Result<()>) {
         let query_id = request.query_id().or_java_null();
-        let connection = handler.connect(request.identity()).await?;
+        let connection = match handler.connect(request.identity()).await {
+            Ok(connection) => connection,
+            Err(error) => return (None, Err(error)),
+        };
+        let mut s3_uri = None;
         let result = async {
             let sf_integration_name = storage_integration_name(handler.config_options())?;
             let sf_s3_export_path_prefix = self
@@ -504,7 +507,7 @@ impl SnowflakeMetadataDialect {
             if self.amazon_s3.is_none() {
                 return Err(FederationError::null_pointer(MISSING_S3_CLIENT));
             }
-            *s3_uri = Some(S3Uri::parse(&s3_path)?);
+            s3_uri = Some(S3Uri::parse(&s3_path)?);
             let statement = connection
                 .prepare_statement(&snowflake_export_query)
                 .await?;
@@ -512,7 +515,8 @@ impl SnowflakeMetadataDialect {
             Ok(())
         }
         .await;
-        close_after(connection.as_ref(), result).await
+        let result = close_after(connection.as_ref(), result).await;
+        (s3_uri, result)
     }
 
     async fn handle_s3_export_splits(
@@ -521,8 +525,8 @@ impl SnowflakeMetadataDialect {
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
         let query_id = request.query_id().or_java_null();
-        let mut s3_uri = None;
-        if let Err(error) = self.run_export(handler, request, &mut s3_uri).await {
+        let (s3_uri, exported) = self.run_export(handler, request).await;
+        if let Err(error) = exported {
             match snowflake_sql_exception(&error) {
                 Some(sql) if sql.message().contains(FILES_ALREADY_EXISTING) => {}
                 Some(sql) => {
