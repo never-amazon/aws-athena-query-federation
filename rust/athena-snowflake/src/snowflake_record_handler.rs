@@ -23,7 +23,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
-use crate::s3_export::{construct_s3_uri, ExportReader, S3ParquetExportReader};
+use crate::s3_export::{construct_s3_uri, BlockingBatches, ExportReader, S3ParquetExportReader};
 use crate::snowflake_constants;
 use crate::snowflake_metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
@@ -231,10 +231,11 @@ impl SnowflakeRecordDialect {
             s3_path
         );
         let derived_schema = self.export_reader.inspect_parquet_schema(s3_path).await?;
-        let reader = self
-            .export_reader
-            .construct_arrow_reader(s3_path, &derived_schema)
-            .await?;
+        let mut batches = BlockingBatches::new(
+            self.export_reader
+                .construct_arrow_reader(s3_path, &derived_schema)
+                .await?,
+        );
         let evaluator = Arc::new(ConstraintEvaluator::new(
             &derived_schema,
             request.constraints().clone(),
@@ -256,8 +257,7 @@ impl SnowflakeRecordDialect {
                     &derived_schema,
                 )
                 .await?;
-            for batch in reader {
-                let batch = batch?;
+            while let Some(batch) = batches.next().await? {
                 if !query_status_checker.is_query_running() {
                     break;
                 }
