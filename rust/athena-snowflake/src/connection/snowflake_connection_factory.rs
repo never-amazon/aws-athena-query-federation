@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::CredentialsProvider;
-use athena_federation_sdk::exceptions::{AthenaConnectorException, FederationSourceErrorCode};
+use athena_federation_sdk::exceptions::{
+    AthenaConnectorException, FederationSourceErrorCode, JavaCause, JavaThrowable,
+};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
@@ -29,6 +31,45 @@ enum KeyPairError {
     DriverNotFound(String),
     #[error("{}", .0.message())]
     Connect(#[source] SqlError),
+}
+
+impl JavaThrowable for KeyPairError {
+    fn java_class_name(&self) -> String {
+        match self {
+            KeyPairError::Key(e) => e.java_class_name(),
+            KeyPairError::Url(_) => "java.lang.IllegalArgumentException".to_string(),
+            KeyPairError::MissingUser => "java.lang.NullPointerException".to_string(),
+            KeyPairError::DriverNotFound(_) => "java.lang.ClassNotFoundException".to_string(),
+            KeyPairError::Connect(e) => e.java_class_name(),
+        }
+    }
+
+    fn java_message(&self) -> Option<String> {
+        match self {
+            KeyPairError::Key(e) => e.java_message(),
+            KeyPairError::MissingUser => None,
+            KeyPairError::Connect(e) => e.java_message(),
+            other => Some(other.to_string()),
+        }
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        match self {
+            KeyPairError::Key(e) => e.java_cause(),
+            KeyPairError::Connect(e) => e.java_cause(),
+            KeyPairError::Url(_) | KeyPairError::MissingUser | KeyPairError::DriverNotFound(_) => {
+                None
+            }
+        }
+    }
+
+    fn is_runtime_exception(&self) -> bool {
+        match self {
+            KeyPairError::Key(e) => e.is_runtime_exception(),
+            KeyPairError::Url(_) | KeyPairError::MissingUser => true,
+            KeyPairError::DriverNotFound(_) | KeyPairError::Connect(_) => false,
+        }
+    }
 }
 
 pub struct SnowflakeConnectionFactory {
@@ -101,7 +142,10 @@ impl SnowflakeConnectionFactory {
             .await
             .map_err(|error| {
                 tracing::error!("{KEY_PAIR_FAILURE}: {error}");
-                FederationError::from(SqlError::new(format!("{KEY_PAIR_FAILURE}: {error}")))
+                FederationError::from(SqlError::with_java_cause(
+                    format!("{KEY_PAIR_FAILURE}: {error}"),
+                    error,
+                ))
             })
     }
 

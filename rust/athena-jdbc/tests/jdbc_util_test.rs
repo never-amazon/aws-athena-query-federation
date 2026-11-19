@@ -303,6 +303,7 @@ async fn test_get_table_metadata_with_no_warehouse_selected_propagates() {
             message: "No active warehouse selected in the current session.  Select an active warehouse with the 'use warehouse' command.".to_string(),
             sql_state: Some("57P03".to_string()),
             code: Some(606),
+            cause: None,
         })
     });
     let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables and Views")
