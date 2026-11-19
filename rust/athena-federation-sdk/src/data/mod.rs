@@ -4,6 +4,7 @@ pub(crate) mod block;
 pub(crate) mod block_allocator;
 pub(crate) mod block_spiller;
 pub mod block_utils;
+mod column;
 pub mod date_time_formatter_util;
 pub(crate) mod field_builder;
 pub(crate) mod field_resolver;

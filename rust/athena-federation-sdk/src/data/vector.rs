@@ -2,22 +2,14 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use arrow::array::{
-    new_null_array, Array, ArrayAccessor, ArrayRef, BinaryArray, BooleanArray, Date32Array,
-    Date64Array, Decimal128Array, Decimal256Array, FixedSizeBinaryArray, Float32Array,
-    Float64Array, Int16Array, Int32Array, Int64Array, Int8Array, LargeBinaryArray,
-    LargeStringArray, ListArray, MapArray, NullArray, StringArray, StringViewArray, StructArray,
-    Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray, Time64NanosecondArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
-};
+use arrow::array::{Array, ArrayRef, ListArray, MapArray, StructArray, UInt32Array};
 use arrow::buffer::{NullBuffer, OffsetBuffer};
-use arrow::datatypes::{i256, DataType, FieldRef, Fields, TimeUnit};
+use arrow::datatypes::{DataType, FieldRef, Fields};
 use bigdecimal::BigDecimal;
 use chrono::NaiveDateTime;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 
+use super::column::Column;
 use super::date_time_formatter_util::TzEncoding;
 use super::java_time::{local_date_time_of_epoch_micro_utc, local_date_time_of_epoch_milli_utc};
 use super::types::{minor_type_of, MinorType};
@@ -30,7 +22,7 @@ use crate::java_cast::{
 
 #[derive(Debug, Clone)]
 enum VectorData {
-    Scalar(Vec<Value>),
+    Scalar(Column),
     Struct {
         validity: Vec<bool>,
         children: Vec<FieldVector>,
@@ -94,7 +86,7 @@ impl FieldVector {
                     child: Box::new(FieldVector::new(child.clone())),
                 }
             }
-            _ => VectorData::Scalar(Vec::new()),
+            _ => VectorData::Scalar(Column::for_minor(minor_type)),
         };
         FieldVector {
             field,
@@ -199,7 +191,7 @@ impl FieldVector {
 
     pub fn is_set(&self, index: usize) -> bool {
         match &self.data {
-            VectorData::Scalar(values) => values.get(index).is_some_and(|v| !v.is_null()),
+            VectorData::Scalar(column) => column.is_set(index),
             VectorData::Struct { validity, .. } => validity.get(index).copied().unwrap_or(false),
             VectorData::List { slots, .. } => {
                 slots.get(index).is_some_and(std::option::Option::is_some)
@@ -220,18 +212,16 @@ impl FieldVector {
 
     pub fn get_raw(&self, index: usize) -> Value {
         match &self.data {
-            VectorData::Scalar(values) => values.get(index).cloned().unwrap_or(Value::Null),
+            VectorData::Scalar(column) => column.get(index),
             _ => self.get_object(index),
         }
     }
 
     pub fn get_object(&self, index: usize) -> Value {
         match &self.data {
-            VectorData::Scalar(values) => {
-                let Some(raw) = values.get(index) else {
-                    return Value::Null;
-                };
-                match (self.minor_type, raw) {
+            VectorData::Scalar(column) => {
+                let raw = column.get(index);
+                match (self.minor_type, &raw) {
                     (MinorType::DATEMILLI | MinorType::TIMESTAMPMILLI, Value::Long(ms)) => {
                         Value::LocalDateTime(local_date_time_of_epoch_milli_utc(*ms))
                     }
@@ -276,29 +266,9 @@ impl FieldVector {
         }
     }
 
-    fn scalar_slot(&mut self, index: usize) -> Result<&mut Value> {
-        match &mut self.data {
-            VectorData::Scalar(values) => {
-                if values.len() <= index {
-                    values.resize(index + 1, Value::Null);
-                }
-                Ok(&mut values[index])
-            }
-            _ => Err(FederationError::UnsupportedOperation(format!(
-                "vector {} is not a scalar vector",
-                self.field.name()
-            ))),
-        }
-    }
-
     pub fn set_null(&mut self, index: usize) {
         match &mut self.data {
-            VectorData::Scalar(values) => {
-                if values.len() <= index {
-                    values.resize(index + 1, Value::Null);
-                }
-                values[index] = Value::Null;
-            }
+            VectorData::Scalar(column) => column.set_null(index),
             VectorData::Struct { validity, children } => {
                 if validity.len() <= index {
                     validity.resize(index + 1, false);
@@ -340,7 +310,7 @@ impl FieldVector {
 
     pub(crate) fn stored_len(&self) -> usize {
         match &self.data {
-            VectorData::Scalar(values) => values.len(),
+            VectorData::Scalar(column) => column.len(),
             VectorData::Struct { validity, children } => children
                 .iter()
                 .map(FieldVector::stored_len)
@@ -439,8 +409,13 @@ impl FieldVector {
                 )))
             }
         };
-        *self.scalar_slot(index)? = canonical;
-        Ok(())
+        match &mut self.data {
+            VectorData::Scalar(column) => column.put(index, canonical),
+            _ => Err(FederationError::UnsupportedOperation(format!(
+                "vector {} is not a scalar vector",
+                self.field.name()
+            ))),
+        }
     }
 
     pub fn set_complex_object(&mut self, index: usize, value: &Value) -> Result<()> {
@@ -558,7 +533,7 @@ impl FieldVector {
         }
         let validity = n.div_ceil(8);
         match &self.data {
-            VectorData::Scalar(values) => {
+            VectorData::Scalar(column) => {
                 let width = match self.minor_type {
                     MinorType::BIT => 0,
                     MinorType::TINYINT | MinorType::UINT1 => 1,
@@ -573,15 +548,7 @@ impl FieldVector {
                     MinorType::DECIMAL256 => 32,
                     _ => 8,
                 };
-                let var: usize = values
-                    .iter()
-                    .take(n)
-                    .map(|v| match v {
-                        Value::String(s) => s.len(),
-                        Value::Bytes(b) => b.len(),
-                        _ => 0,
-                    })
-                    .sum();
+                let var = column.variable_width_bytes(n);
                 let bits = if self.minor_type == MinorType::BIT {
                     validity
                 } else {
@@ -612,9 +579,7 @@ impl FieldVector {
 
     pub fn to_array_len(&self, len: usize) -> Result<ArrayRef> {
         match &self.data {
-            VectorData::Scalar(values) => {
-                scalar_to_array(&self.field, self.minor_type, values, len)
-            }
+            VectorData::Scalar(column) => column.to_array(&self.field, self.minor_type, len),
             VectorData::Struct { validity, children } => {
                 let fields = match self.field.data_type() {
                     DataType::Struct(f) => f.clone(),
@@ -715,8 +680,8 @@ impl FieldVector {
     pub fn load_array(&mut self, array: &dyn Array) -> Result<()> {
         let len = array.len();
         match &mut self.data {
-            VectorData::Scalar(values) => {
-                *values = array_to_values(self.minor_type, array)?;
+            VectorData::Scalar(column) => {
+                *column = Column::from_array(self.minor_type, array)?;
             }
             VectorData::Struct { validity, children } => {
                 let sa = array
@@ -808,265 +773,6 @@ fn checked_decimal(data_type: &DataType, d: &BigDecimal) -> Result<BigDecimal> {
         )));
     }
     Ok(d.clone())
-}
-
-fn opt_of<T>(values: &[Value], len: usize, f: impl Fn(&Value) -> Option<T>) -> Vec<Option<T>> {
-    (0..len).map(|i| values.get(i).and_then(&f)).collect()
-}
-
-fn int_or_long(v: &Value) -> Option<i64> {
-    match v {
-        Value::Long(v) => Some(*v),
-        Value::Int(v) => Some(i64::from(*v)),
-        _ => None,
-    }
-}
-
-fn opt_i64(values: &[Value], len: usize) -> Vec<Option<i64>> {
-    opt_of(values, len, int_or_long)
-}
-
-fn opt_i32(values: &[Value], len: usize) -> Vec<Option<i32>> {
-    opt_of(values, len, Value::as_i32)
-}
-
-fn timestamp_array(data_type: &DataType, v: Vec<Option<i64>>) -> ArrayRef {
-    let (unit, tz) = match data_type {
-        DataType::Timestamp(u, tz) => (*u, tz.clone()),
-        _ => (TimeUnit::Millisecond, None),
-    };
-    match unit {
-        TimeUnit::Second => Arc::new(TimestampSecondArray::from(v).with_timezone_opt(tz)),
-        TimeUnit::Millisecond => Arc::new(TimestampMillisecondArray::from(v).with_timezone_opt(tz)),
-        TimeUnit::Microsecond => Arc::new(TimestampMicrosecondArray::from(v).with_timezone_opt(tz)),
-        TimeUnit::Nanosecond => Arc::new(TimestampNanosecondArray::from(v).with_timezone_opt(tz)),
-    }
-}
-
-fn decimal128_array(data_type: &DataType, values: &[Value], len: usize) -> Result<ArrayRef> {
-    let (p, s) = super::types::decimal_precision_scale(data_type).unwrap_or((38, 0));
-    let v = opt_of(values, len, |v| match v {
-        Value::Decimal(d) => big_decimal_to_unscaled(d, s).to_i128(),
-        _ => None,
-    });
-    Ok(Arc::new(
-        Decimal128Array::from(v).with_precision_and_scale(p, s)?,
-    ))
-}
-
-fn decimal256_array(data_type: &DataType, values: &[Value], len: usize) -> Result<ArrayRef> {
-    let (p, s) = super::types::decimal_precision_scale(data_type).unwrap_or((76, 0));
-    let v = opt_of(values, len, |v| match v {
-        Value::Decimal(d) => {
-            let bytes = big_decimal_to_unscaled(d, s).to_signed_bytes_le();
-            let mut buf = if bytes.last().is_some_and(|b| b & 0x80 != 0) {
-                [0xffu8; 32]
-            } else {
-                [0u8; 32]
-            };
-            let n = bytes.len().min(32);
-            buf[..n].copy_from_slice(&bytes[..n]);
-            Some(i256::from_le_bytes(buf))
-        }
-        _ => None,
-    });
-    Ok(Arc::new(
-        Decimal256Array::from(v).with_precision_and_scale(p, s)?,
-    ))
-}
-
-fn scalar_to_array(
-    field: &FieldRef,
-    minor: MinorType,
-    values: &[Value],
-    len: usize,
-) -> Result<ArrayRef> {
-    let get = |i: usize| values.get(i).unwrap_or(&Value::Null);
-    let arr: ArrayRef = match minor {
-        MinorType::NULL => Arc::new(NullArray::new(len)),
-        MinorType::BIT => Arc::new(BooleanArray::from(
-            (0..len).map(|i| get(i).as_bool()).collect::<Vec<_>>(),
-        )),
-        MinorType::TINYINT => Arc::new(Int8Array::from(opt_of(values, len, Value::as_i8))),
-        MinorType::UINT1 => Arc::new(UInt8Array::from(opt_of(values, len, |v| {
-            v.as_i8().map(i8::cast_unsigned)
-        }))),
-        MinorType::SMALLINT => Arc::new(Int16Array::from(opt_of(values, len, Value::as_i16))),
-        MinorType::UINT2 => Arc::new(UInt16Array::from(opt_of(values, len, Value::as_u16))),
-        MinorType::INT => Arc::new(Int32Array::from(opt_i32(values, len))),
-        MinorType::UINT4 => Arc::new(UInt32Array::from(opt_of(values, len, |v| {
-            v.as_i32().map(i32::cast_unsigned)
-        }))),
-        MinorType::BIGINT => Arc::new(Int64Array::from(opt_i64(values, len))),
-        MinorType::UINT8 => Arc::new(UInt64Array::from(opt_of(values, len, |v| {
-            int_or_long(v).map(i64::cast_unsigned)
-        }))),
-        MinorType::FLOAT4 => Arc::new(Float32Array::from(opt_of(values, len, Value::as_f32))),
-        MinorType::FLOAT8 => Arc::new(Float64Array::from(opt_of(values, len, |v| match v {
-            Value::Double(d) => Some(*d),
-            _ => None,
-        }))),
-        MinorType::DATEDAY => Arc::new(Date32Array::from(opt_i32(values, len))),
-        MinorType::DATEMILLI => Arc::new(Date64Array::from(opt_i64(values, len))),
-        MinorType::TIMESEC => Arc::new(Time32SecondArray::from(opt_i32(values, len))),
-        MinorType::TIMEMILLI => Arc::new(Time32MillisecondArray::from(opt_i32(values, len))),
-        MinorType::TIMEMICRO => Arc::new(Time64MicrosecondArray::from(opt_i64(values, len))),
-        MinorType::TIMENANO => Arc::new(Time64NanosecondArray::from(opt_i64(values, len))),
-        MinorType::TIMESTAMPSEC
-        | MinorType::TIMESTAMPMILLI
-        | MinorType::TIMESTAMPMICRO
-        | MinorType::TIMESTAMPNANO
-        | MinorType::TIMESTAMPSECTZ
-        | MinorType::TIMESTAMPMILLITZ
-        | MinorType::TIMESTAMPMICROTZ
-        | MinorType::TIMESTAMPNANOTZ => timestamp_array(field.data_type(), opt_i64(values, len)),
-        MinorType::DECIMAL => decimal128_array(field.data_type(), values, len)?,
-        MinorType::DECIMAL256 => decimal256_array(field.data_type(), values, len)?,
-        MinorType::VARCHAR => Arc::new(StringArray::from(
-            (0..len)
-                .map(|i| get(i).as_str().map(std::string::ToString::to_string))
-                .collect::<Vec<_>>(),
-        )),
-        MinorType::LARGEVARCHAR => Arc::new(LargeStringArray::from(
-            (0..len)
-                .map(|i| get(i).as_str().map(std::string::ToString::to_string))
-                .collect::<Vec<_>>(),
-        )),
-        MinorType::VARBINARY => Arc::new(BinaryArray::from(
-            (0..len).map(|i| get(i).as_bytes()).collect::<Vec<_>>(),
-        )),
-        MinorType::LARGEVARBINARY => Arc::new(LargeBinaryArray::from(
-            (0..len).map(|i| get(i).as_bytes()).collect::<Vec<_>>(),
-        )),
-        MinorType::FIXEDSIZEBINARY => {
-            let size = match field.data_type() {
-                DataType::FixedSizeBinary(n) => *n,
-                _ => 0,
-            };
-            if len == 0 || (0..len).all(|i| get(i).is_null()) {
-                new_null_array(field.data_type(), len)
-            } else {
-                Arc::new(FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-                    (0..len).map(|i| get(i).as_bytes().map(<[u8]>::to_vec)),
-                    size,
-                )?)
-            }
-        }
-        other => {
-            return Err(FederationError::not_supported(format!(
-                "Unsupported type {} for field {}",
-                other,
-                field.name()
-            )))
-        }
-    };
-    Ok(arr)
-}
-
-fn downcast<'a, T: 'static>(array: &'a dyn Array, message: Option<&str>) -> Result<&'a T> {
-    array.as_any().downcast_ref::<T>().ok_or_else(|| {
-        FederationError::invalid_input(message.map_or_else(
-            || format!("unexpected array type {:?}", array.data_type()),
-            str::to_string,
-        ))
-    })
-}
-
-fn collect_values<A: ArrayAccessor + Copy>(a: A, f: impl Fn(A::Item) -> Value) -> Vec<Value> {
-    (0..a.len())
-        .map(|i| {
-            if a.is_valid(i) {
-                f(a.value(i))
-            } else {
-                Value::Null
-            }
-        })
-        .collect()
-}
-
-macro_rules! collect_prim {
-    ($array:expr, $t:ty, $f:expr) => {
-        collect_values(downcast::<$t>($array, None)?, $f)
-    };
-}
-
-fn array_to_values(minor: MinorType, array: &dyn Array) -> Result<Vec<Value>> {
-    Ok(match minor {
-        MinorType::NULL => vec![Value::Null; array.len()],
-        MinorType::BIT => collect_prim!(array, BooleanArray, Value::Boolean),
-        MinorType::TINYINT => collect_prim!(array, Int8Array, Value::Byte),
-        MinorType::UINT1 => collect_prim!(array, UInt8Array, |v: u8| Value::Byte(v.cast_signed())),
-        MinorType::SMALLINT => collect_prim!(array, Int16Array, Value::Short),
-        MinorType::UINT2 => collect_prim!(array, UInt16Array, Value::Char),
-        MinorType::INT => collect_prim!(array, Int32Array, Value::Int),
-        MinorType::UINT4 => collect_prim!(array, UInt32Array, |v: u32| Value::Int(v.cast_signed())),
-        MinorType::BIGINT => collect_prim!(array, Int64Array, Value::Long),
-        MinorType::UINT8 => {
-            collect_prim!(array, UInt64Array, |v: u64| Value::Long(v.cast_signed()))
-        }
-        MinorType::FLOAT4 => collect_prim!(array, Float32Array, Value::Float),
-        MinorType::FLOAT8 => collect_prim!(array, Float64Array, Value::Double),
-        MinorType::DATEDAY => collect_prim!(array, Date32Array, Value::Int),
-        MinorType::DATEMILLI => collect_prim!(array, Date64Array, Value::Long),
-        MinorType::TIMESEC => collect_prim!(array, Time32SecondArray, Value::Int),
-        MinorType::TIMEMILLI => collect_prim!(array, Time32MillisecondArray, Value::Int),
-        MinorType::TIMEMICRO => collect_prim!(array, Time64MicrosecondArray, Value::Long),
-        MinorType::TIMENANO => collect_prim!(array, Time64NanosecondArray, Value::Long),
-        MinorType::TIMESTAMPSEC | MinorType::TIMESTAMPSECTZ => {
-            collect_prim!(array, TimestampSecondArray, Value::Long)
-        }
-        MinorType::TIMESTAMPMILLI | MinorType::TIMESTAMPMILLITZ => {
-            collect_prim!(array, TimestampMillisecondArray, Value::Long)
-        }
-        MinorType::TIMESTAMPMICRO | MinorType::TIMESTAMPMICROTZ => {
-            collect_prim!(array, TimestampMicrosecondArray, Value::Long)
-        }
-        MinorType::TIMESTAMPNANO | MinorType::TIMESTAMPNANOTZ => {
-            collect_prim!(array, TimestampNanosecondArray, Value::Long)
-        }
-        MinorType::DECIMAL => {
-            let a = downcast::<Decimal128Array>(array, Some("expected decimal128 array"))?;
-            let scale = i64::from(a.scale());
-            collect_values(a, |v| {
-                Value::Decimal(BigDecimal::new(BigInt::from(v), scale))
-            })
-        }
-        MinorType::DECIMAL256 => {
-            let a = downcast::<Decimal256Array>(array, Some("expected decimal256 array"))?;
-            let scale = i64::from(a.scale());
-            collect_values(a, |v| {
-                let unscaled = BigInt::from_signed_bytes_le(&v.to_le_bytes());
-                Value::Decimal(BigDecimal::new(unscaled, scale))
-            })
-        }
-        MinorType::VARCHAR => {
-            collect_prim!(array, StringArray, |v: &str| Value::String(v.to_string()))
-        }
-        MinorType::LARGEVARCHAR => collect_prim!(array, LargeStringArray, |v: &str| Value::String(
-            v.to_string()
-        )),
-        MinorType::VIEWVARCHAR => {
-            collect_prim!(array, StringViewArray, |v: &str| Value::String(
-                v.to_string()
-            ))
-        }
-        MinorType::VARBINARY => {
-            collect_prim!(array, BinaryArray, |v: &[u8]| Value::Bytes(v.to_vec()))
-        }
-        MinorType::LARGEVARBINARY => {
-            collect_prim!(array, LargeBinaryArray, |v: &[u8]| Value::Bytes(v.to_vec()))
-        }
-        MinorType::FIXEDSIZEBINARY => {
-            collect_prim!(array, FixedSizeBinaryArray, |v: &[u8]| Value::Bytes(
-                v.to_vec()
-            ))
-        }
-        other => {
-            return Err(FederationError::not_supported(format!(
-                "Unsupported type {other}"
-            )));
-        }
-    })
 }
 
 #[derive(Debug, Clone, Copy, Default)]
