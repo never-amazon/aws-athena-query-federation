@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use tokio::sync::Mutex;
 
-use super::aws_clients::AwsClients;
 use super::handler_context::{ConfigOptions, HandlerContext};
+use super::AwsClients;
 use crate::connection::environment_constants;
 use crate::data::types::java_field_to_string;
 use crate::data::{

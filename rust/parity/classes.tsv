@@ -106,9 +106,9 @@ com.amazonaws.athena.connector.lambda.domain.spill.SpillLocation	athena-federati
 com.amazonaws.athena.connector.lambda.domain.spill.SpillLocationVerifier	athena-federation-sdk/src/domain/spill.rs::SpillLocationVerifier	ported	
 com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException	athena-federation-sdk/src/exceptions/federation_error.rs::AthenaConnectorException	ported	
 com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException	athena-federation-sdk/src/exceptions/federation_error.rs::FederationThrottleException	ported	
-com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::is_athena_throttle	merged	the single-method filter class becomes a predicate function
+com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/handler_context.rs::is_athena_throttle	merged	the single-method filter class becomes a predicate function
 com.amazonaws.athena.connector.lambda.handlers.CompositeHandler	athena-federation-sdk/src/handlers/composite_handler.rs::CompositeHandler	ported	
-com.amazonaws.athena.connector.lambda.handlers.FederationCapabilities	athena-federation-sdk/src/handlers/federation_capabilities.rs::CAPABILITIES	merged	constant holder class; its one constant is CAPABILITIES
+com.amazonaws.athena.connector.lambda.handlers.FederationCapabilities	athena-federation-sdk/src/handlers/serve.rs::CAPABILITIES	merged	constant holder class; its one constant is CAPABILITIES
 com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-federation-sdk/src/handlers/handler_context.rs::HandlerContext	merged	the shared request helpers live on the HandlerContext struct that every handler holds
 com.amazonaws.athena.connector.lambda.handlers.GlueMetadataHandler	athena-federation-sdk/src/handlers/glue_metadata_handler.rs::GlueMetadataHandler	ported	abstract class becomes a trait over MetadataHandler
 com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation-sdk/src/handlers/metadata_handler.rs::MetadataHandler	ported	abstract class becomes a hook trait; its fields live in MetadataContext and request dispatch lives in serve.rs
