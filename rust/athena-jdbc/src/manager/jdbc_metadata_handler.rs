@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
@@ -16,12 +16,11 @@ use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
     ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
+    UNLIMITED_PAGE_SIZE_VALUE,
 };
-use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
-use athena_federation_sdk::util::{manual_pagination, UNLIMITED_PAGE_SIZE_VALUE};
+use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, FederatedIdentity};
+use athena_federation_sdk::util::manual_pagination;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
-use indexmap::IndexMap;
 
 use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};

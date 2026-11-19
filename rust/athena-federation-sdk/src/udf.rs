@@ -2,9 +2,9 @@ use std::fmt;
 
 use arrow::datatypes::Schema;
 
-use super::UserDefinedFunctionType;
 use crate::data::Block;
-use crate::request::FederatedIdentity;
+use crate::named_enum::named_enum;
+use crate::security::FederatedIdentity;
 
 #[derive(Debug, Clone)]
 pub struct UserDefinedFunctionRequest {
@@ -69,5 +69,50 @@ impl fmt::Display for UserDefinedFunctionRequest {
             "UserDefinedFunctionRequest{{inputRecords={}, outputSchema={}, methodName={}, functionType={}}}",
             self.input_records, self.output_schema, self.method_name, self.function_type
         )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UserDefinedFunctionResponse {
+    records: Block,
+    method_name: String,
+}
+
+impl UserDefinedFunctionResponse {
+    pub fn new(records: Block, method_name: impl Into<String>) -> UserDefinedFunctionResponse {
+        UserDefinedFunctionResponse {
+            records,
+            method_name: method_name.into(),
+        }
+    }
+
+    pub fn records(&self) -> &Block {
+        &self.records
+    }
+
+    pub fn method_name(&self) -> &str {
+        &self.method_name
+    }
+}
+
+impl PartialEq for UserDefinedFunctionResponse {
+    fn eq(&self, other: &Self) -> bool {
+        self.records == other.records && self.method_name == other.method_name
+    }
+}
+
+impl fmt::Display for UserDefinedFunctionResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "UserDefinedFunctionResponse{{records={}, methodName={}}}",
+            self.records, self.method_name
+        )
+    }
+}
+
+named_enum! {
+    pub enum UserDefinedFunctionType {
+        Scalar => "SCALAR",
     }
 }

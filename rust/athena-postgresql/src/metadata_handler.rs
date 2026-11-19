@@ -14,7 +14,7 @@ use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, ListTablesRequest, ListTablesResponse,
 };
-use athena_federation_sdk::request::FederatedIdentity;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::close_after;
 use athena_jdbc::connection::{

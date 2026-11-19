@@ -1,4 +1,3 @@
-use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::num::NonZeroUsize;
@@ -13,8 +12,8 @@ use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
-    minor_type_of, Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector,
-    MinorType, PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
+    block_utils, minor_type_of, Block, BlockAllocator, BlockSpiller, DefaultFieldResolver,
+    FieldVector, MinorType, PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -22,9 +21,9 @@ use athena_federation_sdk::domain::predicate::{
 use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::handlers::{read_records, HandlerContext, RecordHandler};
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
-use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
+use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey,
+    AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey, FederatedIdentity,
 };
 use athena_federation_sdk::serde::{schema_to_bytes, IpcFormat};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};

@@ -29,10 +29,8 @@ use crate::metadata::{
     ListTablesResponse, MetadataHeader,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
-use crate::request::{
-    FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
-};
-use crate::security::EncryptionKey;
+use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
+use crate::security::{EncryptionKey, FederatedIdentity};
 use crate::serde::base::{write_type, StringMapValue};
 use crate::serde::java_hash::java_hash_map_order;
 use crate::serde::json::{decode_base64, JsonGenerator, JsonParser};

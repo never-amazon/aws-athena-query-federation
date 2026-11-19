@@ -144,17 +144,17 @@ com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.SubTypePro
 com.amazonaws.athena.connector.lambda.metadata.optimizations.pushdown.TopNPushdownSubType	athena-federation-sdk/src/metadata/optimizations/pushdown/top_n_pushdown_sub_type.rs::TopNPushdownSubType	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthrough	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough.rs::QueryPassthrough	ported	
 com.amazonaws.athena.connector.lambda.metadata.optimizations.querypassthrough.QueryPassthroughSignature	athena-federation-sdk/src/metadata/optimizations/querypassthrough/query_passthrough_signature.rs::QueryPassthroughSignature	ported	
-com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest	athena-federation-sdk/src/records/read_records_request.rs::ReadRecordsRequest	ported	
-com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse	athena-federation-sdk/src/records/read_records_response.rs::ReadRecordsResponse	ported	
-com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records/read_records_request.rs::ReadRecordsRequest	merged	the abstract base class has one subclass, ReadRecordsRequest, which carries its accessors
-com.amazonaws.athena.connector.lambda.records.RecordRequestType	athena-federation-sdk/src/records/record_request_type.rs::RecordRequestType	ported	
-com.amazonaws.athena.connector.lambda.records.RecordResponse	athena-federation-sdk/src/request/federation_response.rs::FederationResponse	merged	the abstract base class becomes the ReadRecords and RemoteReadRecords variants of FederationResponse
-com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse	athena-federation-sdk/src/records/remote_read_records_response.rs::RemoteReadRecordsResponse	ported	
-com.amazonaws.athena.connector.lambda.request.FederationRequest	athena-federation-sdk/src/request/federation_request.rs::FederationRequest	ported	
-com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federation-sdk/src/request/federation_response.rs::FederationResponse	ported	
-com.amazonaws.athena.connector.lambda.request.PingRequest	athena-federation-sdk/src/request/ping_request.rs::PingRequest	ported	
-com.amazonaws.athena.connector.lambda.request.PingResponse	athena-federation-sdk/src/request/ping_response.rs::PingResponse	ported	
-com.amazonaws.athena.connector.lambda.resolver.CaseResolver	athena-federation-sdk/src/resolver/case_resolver.rs::CaseResolver	ported	
+com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest	athena-federation-sdk/src/records.rs::ReadRecordsRequest	ported	
+com.amazonaws.athena.connector.lambda.records.ReadRecordsResponse	athena-federation-sdk/src/records.rs::ReadRecordsResponse	ported	
+com.amazonaws.athena.connector.lambda.records.RecordRequest	athena-federation-sdk/src/records.rs::ReadRecordsRequest	merged	the abstract base class has one subclass, ReadRecordsRequest, which carries its accessors
+com.amazonaws.athena.connector.lambda.records.RecordRequestType	athena-federation-sdk/src/records.rs::RecordRequestType	ported	
+com.amazonaws.athena.connector.lambda.records.RecordResponse	athena-federation-sdk/src/request.rs::FederationResponse	merged	the abstract base class becomes the ReadRecords and RemoteReadRecords variants of FederationResponse
+com.amazonaws.athena.connector.lambda.records.RemoteReadRecordsResponse	athena-federation-sdk/src/records.rs::RemoteReadRecordsResponse	ported	
+com.amazonaws.athena.connector.lambda.request.FederationRequest	athena-federation-sdk/src/request.rs::FederationRequest	ported	
+com.amazonaws.athena.connector.lambda.request.FederationResponse	athena-federation-sdk/src/request.rs::FederationResponse	ported	
+com.amazonaws.athena.connector.lambda.request.PingRequest	athena-federation-sdk/src/request.rs::PingRequest	ported	
+com.amazonaws.athena.connector.lambda.request.PingResponse	athena-federation-sdk/src/request.rs::PingResponse	ported	
+com.amazonaws.athena.connector.lambda.resolver.CaseResolver	athena-federation-sdk/src/resolver.rs::CaseResolver	ported	
 com.amazonaws.athena.connector.lambda.security.AesGcmBlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	merged	the BlockCrypto::AesGcm variant, which holds the key it encrypts with
 com.amazonaws.athena.connector.lambda.security.BlockCrypto	athena-federation-sdk/src/security/block_crypto.rs::BlockCrypto	ported	
 com.amazonaws.athena.connector.lambda.security.CachableSecretsManager	athena-federation-sdk/src/security/cachable_secrets_manager.rs::CachableSecretsManager	ported	
@@ -247,9 +247,9 @@ com.amazonaws.athena.connector.lambda.serde.v6.ConstraintsSerDeV6	athena-federat
 com.amazonaws.athena.connector.lambda.serde.v6.FederationRequestSerDeV6	athena-federation-sdk/src/serde/v2/mod.rs::federation_request_serde	merged	the V6 subclass differs only by SerdeVersion, which federation_request_serde takes as a parameter
 com.amazonaws.athena.connector.lambda.serde.v6.ObjectMapperFactoryV6	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	the factory becomes ObjectMapper::new with SerdeVersion::V6
 com.amazonaws.athena.connector.lambda.serde.v6.QueryPlanSerDe	athena-federation-sdk/src/serde/v6/mod.rs::query_plan_serde	ported	Jackson serde class becomes a module of functions
-com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-federation-sdk/src/udf/user_defined_function_request.rs::UserDefinedFunctionRequest	ported	
-com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf/user_defined_function_response.rs::UserDefinedFunctionResponse	ported	
-com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType	athena-federation-sdk/src/udf/user_defined_function_type.rs::UserDefinedFunctionType	ported	
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionRequest	athena-federation-sdk/src/udf.rs::UserDefinedFunctionRequest	ported	
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionResponse	athena-federation-sdk/src/udf.rs::UserDefinedFunctionResponse	ported	
+com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType	athena-federation-sdk/src/udf.rs::UserDefinedFunctionType	ported	
 com.amazonaws.athena.connector.substrait.SubstraitAccumulatorVisitor	athena-federation-substrait/src/params.rs::parameterize	merged	the SqlShuttle subclass becomes parameterize, which rewrites the tree in place and returns the bound values
 com.amazonaws.athena.connector.substrait.SubstraitFunctionParser	athena-federation-substrait/src/lib.rs::predicate	ported	
 com.amazonaws.athena.connector.substrait.SubstraitLiteralConverter	athena-federation-substrait/src/lib.rs::literal	ported	
@@ -264,8 +264,8 @@ com.amazonaws.athena.connector.substrait.model.SubstraitFunctionNames	athena-fed
 com.amazonaws.athena.connector.substrait.model.SubstraitOperator	athena-federation-substrait/src/predicate.rs::SubstraitOperator	ported	
 com.amazonaws.athena.connector.substrait.model.SubstraitRelModel	-	not_ported	the only reader, plan::table_columns, takes the ReadRel directly
 com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no Rust connector reads the limit or sort from the plan through this helper
-com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
-com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::manual_pagination	merged	the static-method class becomes free functions in the pagination_helper module
+com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util.rs::PaginatedRequestIterator	ported	
+com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util.rs::manual_pagination	merged	the static-method class becomes free functions in the pagination_helper module
 com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::ConnectionStringFormat	ported	the abstract getters are const fields of a format struct
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcCompositeHandler	athena-jdbc/src/multiplexing_jdbc_composite_handler.rs::multiplexing_composite_handler	merged	the constructor is a function that picks the multiplexing or single handlers and returns a CompositeHandler
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcMetadataHandler	athena-jdbc/src/multiplexing_jdbc_metadata_handler.rs::MultiplexingJdbcMetadataHandler	ported	

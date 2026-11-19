@@ -3,7 +3,7 @@ use std::fmt;
 use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
 use crate::lambda::LambdaContext;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 
 pub const UNLIMITED_PAGE_SIZE_VALUE: i32 = -1;
 

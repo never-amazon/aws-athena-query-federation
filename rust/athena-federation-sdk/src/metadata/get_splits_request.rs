@@ -8,7 +8,7 @@ use crate::data::Block;
 use crate::domain::predicate::Constraints;
 use crate::domain::table_name::TableName;
 use crate::lambda::LambdaContext;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 
 #[derive(Debug, Clone)]
 pub struct GetSplitsRequest {

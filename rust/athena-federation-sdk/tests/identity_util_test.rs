@@ -1,6 +1,6 @@
 mod identity_util;
 
-use athena_federation_sdk::request::FederatedIdentity as RequestFederatedIdentity;
+use athena_federation_sdk::security::FederatedIdentity as RequestFederatedIdentity;
 
 #[test]
 fn fake_identity_has_arn_account_and_empty_collections() {

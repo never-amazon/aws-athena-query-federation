@@ -15,7 +15,8 @@ use athena_federation_sdk::handlers::{
 };
 use athena_federation_sdk::metadata::{GetSplitsRequest, GetTableLayoutRequest, GetTableRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
+use athena_federation_sdk::request::FederationResponse;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::{DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcProperties};
 use athena_jdbc::sql::{JdbcConnection, RowSource, SqlError, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;

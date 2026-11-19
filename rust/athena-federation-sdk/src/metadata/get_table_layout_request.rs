@@ -8,7 +8,7 @@ use super::{opt_str, MetadataRequestType};
 use crate::domain::predicate::Constraints;
 use crate::domain::table_name::TableName;
 use crate::lambda::LambdaContext;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 use crate::serde::java_hash::java_hash_set_copy_order;
 
 #[derive(Debug, Clone)]

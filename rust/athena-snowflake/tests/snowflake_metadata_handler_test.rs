@@ -1,6 +1,6 @@
 mod snowflake_support;
 
-use athena_federation_sdk::resolver::FederationSdkCasingMode;
+use athena_federation_sdk::resolver::{FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -11,16 +11,13 @@ use athena_federation_sdk::data::{
 };
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::exceptions::JavaThrowable;
+use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaThrowable};
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
     ListSchemasRequest, ListTablesRequest,
 };
-use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::resolver::CASING_MODE_CONFIGURATION_KEY;
-use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
+use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, FederatedIdentity};
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
 use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;

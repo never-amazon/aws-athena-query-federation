@@ -14,10 +14,9 @@ use athena_federation_sdk::metadata::optimizations::querypassthrough::{
 };
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest,
-    ListSchemasRequest, ListTablesRequest,
+    ListSchemasRequest, ListTablesRequest, UNLIMITED_PAGE_SIZE_VALUE,
 };
-use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::util::UNLIMITED_PAGE_SIZE_VALUE;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};

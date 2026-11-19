@@ -7,7 +7,7 @@ use super::metadata_request::impl_metadata_request;
 use super::{opt_str, MetadataRequestType};
 use crate::domain::table_name::TableName;
 use crate::lambda::LambdaContext;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 
 #[derive(Debug, Clone)]
 pub struct GetTableRequest {

@@ -1,6 +1,6 @@
 use super::MetadataRequestType;
 use crate::lambda::LambdaContext;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 
 #[derive(Debug, Clone, Copy)]
 pub struct MetadataHeader<'a> {
@@ -24,7 +24,7 @@ macro_rules! impl_metadata_request {
                 }
             }
 
-            pub fn identity(&self) -> Option<&$crate::request::FederatedIdentity> {
+            pub fn identity(&self) -> Option<&$crate::security::FederatedIdentity> {
                 self.identity.as_ref()
             }
 
