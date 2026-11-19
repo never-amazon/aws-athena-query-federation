@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use bigdecimal::BigDecimal;
@@ -706,7 +707,7 @@ impl Context {
         })))
     }
 
-    fn strip_cast_from_string(&self, call: &RexCall) -> RexCall {
+    fn strip_cast_from_string<'c>(&self, call: &'c RexCall) -> Cow<'c, RexCall> {
         match call.op.kind {
             SqlKind::Equals
             | SqlKind::IsNotDistinctFrom
@@ -733,29 +734,29 @@ impl Context {
                 };
                 if is_cast(o0) && !is_cast(o1) {
                     if !coercion(o0) {
-                        return call.clone();
+                        return Cow::Borrowed(call);
                     }
                     let inner = o0.operands()[0].clone();
-                    return RexCall {
+                    return Cow::Owned(RexCall {
                         op: call.op,
                         operands: vec![inner, o1.clone()],
                         ty: call.ty.clone(),
-                    };
+                    });
                 }
                 if is_cast(o1) && !is_cast(o0) {
                     if !coercion(o1) {
-                        return call.clone();
+                        return Cow::Borrowed(call);
                     }
                     let inner = o1.operands()[0].clone();
-                    return RexCall {
+                    return Cow::Owned(RexCall {
                         op: call.op,
                         operands: vec![o0.clone(), inner],
                         ty: call.ty.clone(),
-                    };
+                    });
                 }
-                call.clone()
+                Cow::Borrowed(call)
             }
-            _ => call.clone(),
+            _ => Cow::Borrowed(call),
         }
     }
 

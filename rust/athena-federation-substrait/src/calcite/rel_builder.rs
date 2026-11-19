@@ -230,7 +230,7 @@ impl RelBuilder {
         left: RelNode,
         right: RelNode,
         join_type: JoinType,
-        condition: &RexNode,
+        condition: RexNode,
     ) -> RelNode {
         let condition = self.simplifier.simplify_unknown_as_false(condition);
         let row_type = derive_join_row_type(left.row_type(), right.row_type(), join_type);
@@ -283,14 +283,14 @@ impl RelBuilder {
         })
     }
 
-    pub fn project(&self, input: RelNode, nodes: &[RexNode]) -> RelNode {
+    pub fn project(&self, input: RelNode, nodes: Vec<RexNode>) -> RelNode {
         self.project_(input, nodes, Vec::new(), false)
     }
 
     pub fn project_named(
         &self,
         input: RelNode,
-        nodes: &[RexNode],
+        nodes: Vec<RexNode>,
         names: Vec<Option<String>>,
         force: bool,
     ) -> RelNode {
@@ -313,22 +313,23 @@ impl RelBuilder {
     fn project_(
         &self,
         input: RelNode,
-        nodes: &[RexNode],
+        nodes: Vec<RexNode>,
         field_names: Vec<Option<String>>,
         force: bool,
     ) -> RelNode {
         let input_row_type = input.row_type().clone();
-        if !force && field_names.is_empty() && is_identity(nodes, &input_row_type) {
+        if !force && field_names.is_empty() && is_identity(&nodes, &input_row_type) {
             return input;
         }
         let mut names = field_names;
         while names.len() < nodes.len() {
             names.push(None);
         }
+        let mut merged_nodes = None;
         if let RelNode::Project {
-            input: bottom_input,
             exprs: bottom_exprs,
             row_type: bottom_row_type,
+            ..
         } = &input
         {
             for (i, name) in names.iter_mut().enumerate() {
@@ -344,16 +345,20 @@ impl RelBuilder {
             let over_conflict = nodes.iter().any(RexNode::contains_over)
                 && bottom_exprs.iter().any(RexNode::contains_over);
             if !over_conflict {
-                let merged = push_past_project(nodes, bottom_exprs);
-                if node_count(&merged) <= node_count(bottom_exprs) + node_count(nodes) + self.bloat
+                let merged = push_past_project(&nodes, bottom_exprs);
+                if node_count(&merged) <= node_count(bottom_exprs) + node_count(&nodes) + self.bloat
                 {
-                    let bottom = (**bottom_input).clone();
-                    return self.project_(bottom, &merged, names, force);
+                    merged_nodes = Some(merged);
                 }
             }
         }
+        if let Some(merged) = merged_nodes {
+            if let RelNode::Project { input: bottom, .. } = input {
+                return self.project_(*bottom, merged, names, force);
+            }
+        }
         let nodes: Vec<RexNode> = nodes
-            .iter()
+            .into_iter()
             .map(|e| self.simplifier.simplify_preserving_type(e))
             .collect();
         for (i, name) in names.iter_mut().enumerate() {
@@ -442,7 +447,7 @@ impl RelBuilder {
         group_set.sort_unstable();
         group_set.dedup();
         let mut group_sets = resolve_group_sets(&extra, &group_set, group_expr_lists)?;
-        let r = self.project(input, &extra);
+        let r = self.project(input, extra);
         let mut calls = agg_calls;
         let (r, group_after) = prune_project(r, &group_set, &mut group_sets, &mut calls);
         let mut distinct_calls: Vec<AggregateCall> = Vec::new();
@@ -487,7 +492,7 @@ impl RelBuilder {
             nodes.push(agg_fields[group_count + i].clone());
             names.push(name);
         }
-        Ok(self.project_(agg, &nodes, names, false))
+        Ok(self.project_(agg, nodes, names, false))
     }
 
     pub fn sort_limit(
@@ -576,7 +581,7 @@ impl RelBuilder {
             }
         }
         let base = if added > 0 {
-            self.project(input, &extra)
+            self.project(input, extra)
         } else {
             input
         };
@@ -587,7 +592,7 @@ impl RelBuilder {
             fetch: fetch_node,
         };
         if added > 0 {
-            self.project(sort, &original)
+            self.project(sort, original)
         } else {
             sort
         }

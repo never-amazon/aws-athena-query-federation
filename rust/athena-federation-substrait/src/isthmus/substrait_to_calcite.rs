@@ -213,7 +213,7 @@ impl SubstraitToCalcite {
                 let condition = self.rex_builder.make_bool_literal(true);
                 let node = self
                     .rel_builder
-                    .join(left, right, JoinType::Inner, &condition);
+                    .join(left, right, JoinType::Inner, condition);
                 self.apply_remap(node, remap_of(c.common.as_ref()))
             }
             Some(RelType::Set(s)) => self.set(s),
@@ -263,7 +263,7 @@ impl SubstraitToCalcite {
             })?;
             exprs.push(RexBuilder::make_input_ref(index, f.ty().clone()));
         }
-        Ok(self.rel_builder.project(node, &exprs))
+        Ok(self.rel_builder.project(node, exprs))
     }
 
     #[allow(
@@ -364,7 +364,7 @@ impl SubstraitToCalcite {
             Some(e) => self.rex(e, &input_type)?,
             None => self.rex_builder.make_bool_literal(true),
         };
-        let mut node = self.rel_builder.join(left, right, join_type, &condition);
+        let mut node = self.rel_builder.join(left, right, join_type, condition);
         if let Some(post) = j.post_join_filter.as_deref() {
             let row_type = node.row_type().clone();
             let rex = self.rex(post, &row_type)?;
@@ -412,7 +412,7 @@ impl SubstraitToCalcite {
         }
         let node = self
             .rel_builder
-            .project_named(child, &exprs, Vec::new(), false);
+            .project_named(child, exprs, Vec::new(), false);
         self.apply_remap(node, remap_of(p.common.as_ref()))
     }
 
@@ -660,7 +660,7 @@ impl SubstraitToCalcite {
         exprs.extend(new_expressions);
         let projected = self
             .rel_builder
-            .project_named(child, &exprs, Vec::new(), false);
+            .project_named(child, exprs, Vec::new(), false);
         Ok((projected, new_groupings))
     }
 
