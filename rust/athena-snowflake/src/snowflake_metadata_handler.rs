@@ -8,7 +8,6 @@ use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter, SupportedTypes,
 };
-use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
@@ -16,8 +15,7 @@ use athena_federation_sdk::handlers::{
     AwsClients, HandlerContext, MetadataContext, MetadataHandler,
 };
 use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType, LimitPushdownSubType,
-    TopNPushdownSubType,
+    LimitPushdownSubType, TopNPushdownSubType,
 };
 use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
@@ -36,8 +34,8 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
 };
 use athena_jdbc::manager::{
-    columns, ConnectionSource, JdbcMetadataHandler, JdbcUtil, MetadataDialect,
-    PreparedStatementBuilder, TABLES_AND_VIEWS,
+    columns, complex_expression_capability, filter_capability, ConnectionSource,
+    JdbcMetadataHandler, JdbcUtil, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
@@ -826,25 +824,12 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = Capability::Filter(vec![
-        FilterPushdownSubType::SortedRangeSet,
-        FilterPushdownSubType::NullableComparison,
-    ])
-    .into_entry();
+    let (name, sub_types) = filter_capability().into_entry();
     capabilities.insert(name, sub_types);
     let (name, sub_types) =
         Capability::Limit(vec![LimitPushdownSubType::IntegerConstant]).into_entry();
     capabilities.insert(name, sub_types);
-    let function_names: Vec<String> = StandardFunctions::values()
-        .iter()
-        .map(|f| f.function_name().function_name().to_string())
-        .collect();
-    let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = Capability::ComplexExpression(vec![
-        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-            .with_sub_type_properties(&function_names)?,
-    ])
-    .into_entry();
+    let (name, sub_types) = complex_expression_capability()?.into_entry();
     capabilities.insert(name, sub_types);
     let (name, sub_types) =
         Capability::TopN(vec![TopNPushdownSubType::SupportsOrderBy]).into_entry();

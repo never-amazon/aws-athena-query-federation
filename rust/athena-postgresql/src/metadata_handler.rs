@@ -5,13 +5,10 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{ArrowType, Block, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{AwsClients, MetadataContext, MetadataHandler};
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype,
-};
+use athena_federation_sdk::metadata::optimizations::pushdown::HintsSubtype;
 use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
@@ -25,8 +22,8 @@ use athena_jdbc::connection::{
     JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::manager::{
-    ConnectionSource, JdbcMetadataHandler, JdbcUtil, MetadataDialect, PreparedStatementBuilder,
-    TABLES_AND_VIEWS,
+    complex_expression_capability, filter_capability, ConnectionSource, JdbcMetadataHandler,
+    JdbcUtil, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::splits::SplitterFactory;
 use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
@@ -385,22 +382,9 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = Capability::Filter(vec![
-        FilterPushdownSubType::SortedRangeSet,
-        FilterPushdownSubType::NullableComparison,
-    ])
-    .into_entry();
+    let (name, sub_types) = filter_capability().into_entry();
     capabilities.insert(name, sub_types);
-    let function_names: Vec<String> = StandardFunctions::values()
-        .iter()
-        .map(|f| f.function_name().function_name().to_string())
-        .collect();
-    let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = Capability::ComplexExpression(vec![
-        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-            .with_sub_type_properties(&function_names)?,
-    ])
-    .into_entry();
+    let (name, sub_types) = complex_expression_capability()?.into_entry();
     capabilities.insert(name, sub_types);
     athena_jdbc::qpt::JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);

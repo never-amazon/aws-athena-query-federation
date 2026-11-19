@@ -244,7 +244,7 @@ fn parse_f64(text: &str) -> Option<f64> {
     }
 }
 
-fn hex_digit(b: u8) -> Option<u8> {
+pub(super) fn hex_digit(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
         b'a'..=b'f' => Some(b - b'a' + 10),

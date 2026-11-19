@@ -8,7 +8,7 @@ mod jdbc_util;
 mod prepared_statement_builder;
 mod type_and_value;
 
-pub use expression_parser::ExpressionParser;
+pub use expression_parser::{complex_expression_capability, filter_capability, ExpressionParser};
 pub use jdbc_arrow_type_converter::{JdbcArrowTypeConverter, DEFAULT_PRECISION};
 pub use jdbc_metadata_handler::{
     columns, escape_name_pattern, list_database_names, JdbcMetadataHandler, MetadataDelegate,

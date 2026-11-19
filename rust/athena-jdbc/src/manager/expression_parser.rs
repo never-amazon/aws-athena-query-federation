@@ -7,6 +7,10 @@ use athena_federation_sdk::domain::predicate::functions::{
     FunctionName, OperatorType, StandardFunctions,
 };
 use athena_federation_sdk::domain::predicate::Constraints;
+use athena_federation_sdk::metadata::optimizations::pushdown::{
+    ComplexExpressionPushdownSubType, FilterPushdownSubType,
+};
+use athena_federation_sdk::metadata::optimizations::Capability;
 use athena_federation_sdk::{FederationError, Result};
 
 use super::type_and_value::TypeAndValue;
@@ -22,6 +26,25 @@ fn class_cast(simple_name: &str) -> FederationError {
     FederationError::ClassCast(format!(
         "class {EXPRESSION_PACKAGE}.{simple_name} cannot be cast to class {FUNCTION_CALL_EXPRESSION_CLASS}"
     ))
+}
+
+pub fn filter_capability() -> Capability {
+    Capability::Filter(vec![
+        FilterPushdownSubType::SortedRangeSet,
+        FilterPushdownSubType::NullableComparison,
+    ])
+}
+
+pub fn complex_expression_capability() -> Result<Capability> {
+    let function_names: Vec<String> = StandardFunctions::values()
+        .iter()
+        .map(|f| f.function_name().function_name().to_string())
+        .collect();
+    let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
+    Ok(Capability::ComplexExpression(vec![
+        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
+            .with_sub_type_properties(&function_names)?,
+    ]))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
