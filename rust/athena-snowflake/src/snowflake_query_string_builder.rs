@@ -10,7 +10,7 @@ use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
-use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_constants;
 use crate::snowflake_dialect::SnowflakeDialect;
 
 pub struct SnowflakeSplitDialect;
@@ -18,7 +18,10 @@ pub struct SnowflakeSplitDialect;
 pub type SnowflakeQueryStringBuilder = SplitQueryBuilder<SnowflakeSplitDialect>;
 
 pub fn query_string_builder() -> SnowflakeQueryStringBuilder {
-    SplitQueryBuilder::new(SnowflakeConstants::DOUBLE_QUOTE_CHAR, SnowflakeSplitDialect)
+    SplitQueryBuilder::new(
+        snowflake_constants::DOUBLE_QUOTE_CHAR,
+        SnowflakeSplitDialect,
+    )
 }
 
 pub fn base_export_sql(
@@ -31,7 +34,7 @@ pub fn base_export_sql(
         .fields()
         .iter()
         .map(|field| field.name())
-        .filter(|name| !name.eq_ignore_ascii_case(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME))
+        .filter(|name| !name.eq_ignore_ascii_case(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME))
         .map(|name| builder.quote(name))
         .collect::<Vec<_>>()
         .join(", ");
@@ -120,10 +123,10 @@ impl SplitPage<'_> {
 }
 
 fn split_page(split: &Split) -> Option<SplitPage<'_>> {
-    let partition_val = split.get_property(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME)?;
-    let primary_marker = SnowflakeConstants::PARTITION_PRIMARY_MARKER;
-    let limit_marker_text = SnowflakeConstants::PARTITION_LIMIT_MARKER;
-    let offset_marker_text = SnowflakeConstants::PARTITION_OFFSET_MARKER;
+    let partition_val = split.get_property(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)?;
+    let primary_marker = snowflake_constants::PARTITION_PRIMARY_MARKER;
+    let limit_marker_text = snowflake_constants::PARTITION_LIMIT_MARKER;
+    let offset_marker_text = snowflake_constants::PARTITION_OFFSET_MARKER;
     let (Some(primary_index), Some(limit_marker), Some(offset_marker)) = (
         partition_val.find(primary_marker),
         partition_val.rfind(limit_marker_text),
@@ -220,7 +223,7 @@ fn sql_timestamp_text(timestamp: &NaiveDateTime) -> String {
 }
 
 pub fn single_quote(text: &str) -> String {
-    let quote = SnowflakeConstants::SINGLE_QUOTE_CHAR;
+    let quote = snowflake_constants::SINGLE_QUOTE_CHAR;
     format!(
         "{quote}{}{quote}",
         text.replace('\\', "\\\\").replace(quote, "''")

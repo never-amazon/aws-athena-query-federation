@@ -13,7 +13,7 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::SqlValue;
-use athena_snowflake::{query_string_builder, SnowflakeConstants, SnowflakeQueryStringBuilder};
+use athena_snowflake::{query_string_builder, snowflake_constants, SnowflakeQueryStringBuilder};
 
 use snowflake_support::FakeConnection;
 
@@ -84,7 +84,7 @@ fn unpaged_split() -> Split {
 fn paged_split(page_size: usize, offset: usize) -> Split {
     Split::new_builder(Some(spill_location()), None)
         .add(
-            SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME,
+            snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
             format!("partition-primary-\"id\"-limit-{page_size}-offset-{offset}"),
         )
         .build()

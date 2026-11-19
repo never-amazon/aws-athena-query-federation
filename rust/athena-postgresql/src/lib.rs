@@ -1,5 +1,5 @@
 mod composite_handler;
-mod constants;
+pub mod constants;
 mod driver;
 mod environment_properties;
 mod metadata_handler;
@@ -12,7 +12,6 @@ mod resolver;
 mod sql_dialect;
 
 pub use composite_handler::composite_handler_from_environment;
-pub use constants::PostGreSqlConstants;
 pub use driver::{PgConnection, PgDatabaseMetaData, PgDriver, POSTGRESQL_DRIVER_CLASS};
 pub use environment_properties::{
     connection_properties_to_environment, POSTGRESQL_CONNECTION_STRING,

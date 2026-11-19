@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use athena_snowflake::snowflake_constants;
 use athena_snowflake::sql::parse_connection_settings;
 use athena_snowflake::utils::SnowflakeAuthUtils;
-use athena_snowflake::SnowflakeConstants;
 use snowflake_connector_rs::Client;
 
 const UNENCRYPTED_PRIVATE_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----\n\
@@ -38,13 +38,13 @@ RlR+O9r/fhM4ThYnZOGaBVpwbg==\n\
 
 #[test]
 fn test_install_ca_certificate() {
-    assert_eq!("SSL_CERT_FILE", SnowflakeConstants::SSL_CERT_FILE_LOCATION);
+    assert_eq!("SSL_CERT_FILE", snowflake_constants::SSL_CERT_FILE_LOCATION);
     assert_eq!(
         "/tmp/cacert.pem",
-        SnowflakeConstants::SSL_CERT_FILE_LOCATION_VALUE
+        snowflake_constants::SSL_CERT_FILE_LOCATION_VALUE
     );
 
-    let certificate_file = Path::new(SnowflakeConstants::SSL_CERT_FILE_LOCATION_VALUE);
+    let certificate_file = Path::new(snowflake_constants::SSL_CERT_FILE_LOCATION_VALUE);
     let existed_before = certificate_file.exists();
 
     let private_key =

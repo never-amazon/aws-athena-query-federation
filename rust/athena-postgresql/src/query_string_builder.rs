@@ -5,7 +5,7 @@ use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
-use crate::constants::PostGreSqlConstants;
+use crate::constants;
 use crate::driver::check_parameters;
 use crate::metadata_handler::{
     get_char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME,
@@ -18,10 +18,7 @@ pub struct PostGreSqlSplitDialect;
 pub type PostGreSqlQueryStringBuilder = SplitQueryBuilder<PostGreSqlSplitDialect>;
 
 pub fn query_string_builder() -> PostGreSqlQueryStringBuilder {
-    SplitQueryBuilder::new(
-        PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-        PostGreSqlSplitDialect,
-    )
+    SplitQueryBuilder::new(constants::POSTGRES_QUOTE_CHARACTER, PostGreSqlSplitDialect)
 }
 
 pub async fn build_sql(

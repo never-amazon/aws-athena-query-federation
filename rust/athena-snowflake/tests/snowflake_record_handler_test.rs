@@ -29,9 +29,8 @@ use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
 use athena_jdbc::qpt::QUERY;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, Types};
 use athena_snowflake::{
-    construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, ExportReader,
-    S3ParquetExportReader, SnowflakeConstants, SnowflakeCredentialsProvider,
-    SnowflakeRecordHandler,
+    construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, snowflake_constants,
+    ExportReader, S3ParquetExportReader, SnowflakeCredentialsProvider, SnowflakeRecordHandler,
 };
 use athena_snowflake::{create_snowflake_credentials_provider, SnowflakeRecordDialect};
 use bigdecimal::BigDecimal;
@@ -59,7 +58,7 @@ fn options(export: bool) -> HashMap<String, String> {
         HashMap::from([("disable_spill_encryption".to_string(), "false".to_string())]);
     if export {
         options.insert(
-            SnowflakeConstants::SNOWFLAKE_ENABLE_S3_EXPORT.to_string(),
+            snowflake_constants::SNOWFLAKE_ENABLE_S3_EXPORT.to_string(),
             "true".to_string(),
         );
     }
@@ -96,7 +95,7 @@ fn fixture_with(
 fn config() -> DatabaseConnectionConfig {
     DatabaseConnectionConfig::new(
         "testCatalog",
-        SnowflakeConstants::SNOWFLAKE_NAME,
+        snowflake_constants::SNOWFLAKE_NAME,
         CONNECTION_STRING,
     )
     .unwrap()
@@ -137,12 +136,12 @@ async fn key() -> EncryptionKey {
 
 async fn export_split(bucket: Option<&str>, object_key: Option<&str>) -> Split {
     let mut builder = Split::new_builder(Some(spill_location().into()), Some(key().await))
-        .add(SnowflakeConstants::SNOWFLAKE_SPLIT_QUERY_ID, QUERY_ID);
+        .add(snowflake_constants::SNOWFLAKE_SPLIT_QUERY_ID, QUERY_ID);
     if let Some(bucket) = bucket {
-        builder = builder.add(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket);
+        builder = builder.add(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket);
     }
     if let Some(object_key) = object_key {
-        builder = builder.add(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY, object_key);
+        builder = builder.add(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY, object_key);
     }
     builder.build()
 }
@@ -422,7 +421,7 @@ async fn test_build_split_sql() {
 async fn test_get_credential_provider() {
     let config = DatabaseConnectionConfig::new_with_secret(
         "testCatalog",
-        SnowflakeConstants::SNOWFLAKE_NAME,
+        snowflake_constants::SNOWFLAKE_NAME,
         "snowflake://jdbc:snowflake://hostname/",
         "testSecret",
     )
@@ -507,7 +506,7 @@ async fn test_handle_s3_export_read_empty_key() {
 async fn test_get_credential_provider_without_secret() {
     let config = DatabaseConnectionConfig::new(
         "testCatalog",
-        SnowflakeConstants::SNOWFLAKE_NAME,
+        snowflake_constants::SNOWFLAKE_NAME,
         "snowflake://jdbc:snowflake://hostname/",
     )
     .unwrap();

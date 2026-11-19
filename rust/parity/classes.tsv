@@ -296,7 +296,7 @@ com.amazonaws.athena.connectors.jdbc.splits.SplitRange	athena-jdbc/src/splits/sp
 com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/splitter.rs::Splitter	ported	
 com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::splitter	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
-com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/constants.rs::PostGreSqlConstants	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/lib.rs::constants	ported	the constant holder class becomes a module of constants
 com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::connection_properties_to_environment	merged	a const ConnectionStringFormat and one conversion function
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMetadataHandler	athena-postgresql/src/metadata_handler.rs::PostGreSqlMetadataHandler	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxCompositeHandler	athena-postgresql/src/mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
@@ -308,7 +308,7 @@ com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	
 com.amazonaws.athena.connectors.postgresql.PostgresqlSqlDialect	athena-postgresql/src/sql_dialect.rs::PostgresqlSqlDialect	ported	
 com.amazonaws.athena.connectors.postgresql.resolver.PostGreSqlJDBCCaseResolver	athena-postgresql/src/resolver/postgresql_jdbc_case_resolver.rs::PostGreSqlJdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
-com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/src/snowflake_constants.rs::SnowflakeConstants	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/src/lib.rs::snowflake_constants	ported	the constant holder class becomes a module of constants
 com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::connection_properties_to_environment	merged	module functions; getSnowFlakeParameter is snowflake_parameters

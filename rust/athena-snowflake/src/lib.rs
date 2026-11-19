@@ -1,11 +1,11 @@
 pub mod connection;
 pub mod resolver;
+pub mod snowflake_constants;
 pub mod sql;
 pub mod utils;
 
 mod s3_export;
 mod snowflake_composite_handler;
-mod snowflake_constants;
 mod snowflake_credentials_provider;
 mod snowflake_dialect;
 mod snowflake_environment_properties;
@@ -21,7 +21,6 @@ pub use s3_export::{
     S3ParquetExportReader, S3Uri, EXPORT_READ_BATCH_SIZE,
 };
 pub use snowflake_composite_handler::composite_handler_from_environment;
-pub use snowflake_constants::SnowflakeConstants;
 pub use snowflake_credentials_provider::SnowflakeCredentialsProvider;
 pub use snowflake_dialect::SnowflakeDialect;
 pub use snowflake_environment_properties::{

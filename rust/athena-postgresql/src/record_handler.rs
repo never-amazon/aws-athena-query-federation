@@ -14,7 +14,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
-use crate::constants::PostGreSqlConstants;
+use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
 use crate::query_string_builder::{self, query_string_builder, PostGreSqlQueryStringBuilder};
 
@@ -61,10 +61,8 @@ impl PostGreSqlRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlRecordHandler> {
-        let config = jdbc_util::single_database_config_from_env(
-            PostGreSqlConstants::POSTGRES_NAME,
-            &config_options,
-        )?;
+        let config =
+            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlRecordDialect::from_config(clients, config, config_options)
     }
 }

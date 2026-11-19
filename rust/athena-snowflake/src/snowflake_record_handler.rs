@@ -24,7 +24,7 @@ use athena_jdbc::manager::{
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
 use crate::s3_export::{construct_s3_uri, ExportReader, S3ParquetExportReader};
-use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_constants;
 use crate::snowflake_metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
@@ -148,7 +148,7 @@ impl SnowflakeRecordDialect {
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeRecordHandler> {
         let config = jdbc_util::single_database_config_from_env(
-            SnowflakeConstants::SNOWFLAKE_NAME,
+            snowflake_constants::SNOWFLAKE_NAME,
             &config_options,
         )?;
         SnowflakeRecordDialect::from_config(clients, config, config_options)
@@ -167,10 +167,10 @@ impl SnowflakeRecordDialect {
         );
         let split = records_request.split();
         let export_bucket = split
-            .get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
+            .get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
             .unwrap_or("null");
         let s3_object_key = split
-            .get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY)
+            .get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY)
             .ok_or_else(|| {
                 FederationError::null_pointer(
                     "Cannot invoke \"String.isEmpty()\" because \"s3ObjectKey\" is null",
@@ -298,7 +298,7 @@ impl RecordDialect for SnowflakeRecordDialect {
         request: &ReadRecordsRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        if SnowflakeConstants::is_s3_export_enabled(handler.config_options()) {
+        if snowflake_constants::is_s3_export_enabled(handler.config_options()) {
             self.handle_s3_export_read(spiller, request, query_status_checker)
                 .await
         } else {
@@ -317,11 +317,11 @@ impl RecordDialect for SnowflakeRecordDialect {
         query_status_checker: &QueryStatusChecker,
     ) -> Result<Schema> {
         let split = request.split();
-        let export_bucket = split.get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET);
-        let s3_object_key = split.get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY);
+        let export_bucket = split.get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET);
+        let s3_object_key = split.get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY);
         match s3_object_key {
             Some(key)
-                if SnowflakeConstants::is_s3_export_enabled(handler.config_options())
+                if snowflake_constants::is_s3_export_enabled(handler.config_options())
                     && !key.is_empty() =>
             {
                 self.respill_exported_parquet(

@@ -20,7 +20,7 @@ use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
-use athena_postgresql::{PostGreSqlConstants, PostGreSqlRecordDialect, PostGreSqlRecordHandler};
+use athena_postgresql::{constants, PostGreSqlRecordDialect, PostGreSqlRecordHandler};
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use indexmap::IndexMap;
@@ -59,7 +59,7 @@ fn setup() -> Fixture {
         Arc::new(FakeConnectionFactory::new(connection.clone()));
     let config = DatabaseConnectionConfig::new(
         "testCatalog",
-        PostGreSqlConstants::POSTGRES_NAME,
+        constants::POSTGRES_NAME,
         "postgres://jdbc:postgresql://hostname/user=A&password=B",
     )
     .unwrap();

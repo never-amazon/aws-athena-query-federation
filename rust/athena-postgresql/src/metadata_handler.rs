@@ -29,7 +29,7 @@ use athena_jdbc::splits::splitter;
 use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
 use indexmap::IndexMap;
 
-use crate::constants::PostGreSqlConstants;
+use crate::constants;
 use crate::driver::PgDriver;
 use crate::resolver::PostGreSqlJdbcCaseResolver;
 
@@ -106,8 +106,8 @@ impl PostGreSqlMetadataDialect {
             config.clone(),
             Some(jdbc_properties()),
             DatabaseConnectionInfo::new(
-                PostGreSqlConstants::POSTGRESQL_DRIVER_CLASS,
-                PostGreSqlConstants::POSTGRESQL_DEFAULT_PORT,
+                constants::POSTGRESQL_DRIVER_CLASS,
+                constants::POSTGRESQL_DEFAULT_PORT,
             )?,
             Some(config_options),
             Arc::new(PgDriver),
@@ -127,9 +127,7 @@ impl PostGreSqlMetadataDialect {
                 config,
                 factory: connection_factory,
             },
-            Arc::new(PostGreSqlJdbcCaseResolver::new(
-                PostGreSqlConstants::POSTGRES_NAME,
-            )),
+            Arc::new(PostGreSqlJdbcCaseResolver::new(constants::POSTGRES_NAME)),
             PostGreSqlMetadataDialect,
         )
     }
@@ -153,10 +151,8 @@ impl PostGreSqlMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlMetadataHandler> {
-        let config = jdbc_util::single_database_config_from_env(
-            PostGreSqlConstants::POSTGRES_NAME,
-            &config_options,
-        )?;
+        let config =
+            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlMetadataDialect::from_config(clients, config, config_options)
     }
 }

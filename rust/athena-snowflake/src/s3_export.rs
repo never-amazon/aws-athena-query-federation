@@ -10,7 +10,7 @@ use bytes::Bytes;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::ProjectionMask;
 
-use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_constants;
 
 pub const EXPORT_READ_BATCH_SIZE: usize = 32768;
 
@@ -153,7 +153,7 @@ impl ExportReader for S3ParquetExportReader {
             .filter(|(_, field)| {
                 !field
                     .name()
-                    .eq_ignore_ascii_case(SnowflakeConstants::BLOCK_PARTITION_COLUMN_NAME)
+                    .eq_ignore_ascii_case(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)
                     && schema.field_with_name(field.name()).is_ok()
             })
             .map(|(index, _)| index)
