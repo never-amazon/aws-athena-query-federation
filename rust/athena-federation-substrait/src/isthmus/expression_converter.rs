@@ -12,8 +12,8 @@ use crate::calcite::rel::RelNode;
 use crate::calcite::rel_data_type::{RelDataType, RelDataTypeSystem};
 use crate::calcite::rex::{
     compose_disjunction, Direction, LiteralValue, NullDirection, RexBuilder, RexFieldCollation,
-    RexLiteral, RexNode, RexOver, RexSubQuery, RexWindow, RexWindowBound, SubQueryKind, Symbol,
-    TimeUnit, TrimFlag,
+    RexLiteral, RexNode, RexOver, RexSubQuery, RexWindowBound, SubQueryKind, Symbol, TimeUnit,
+    TrimFlag,
 };
 use crate::calcite::sarg::{Range, RangeSet, RexUnknownAs, Sarg};
 use crate::calcite::sql_type_name::{SqlTypeFamily, SqlTypeName};
@@ -720,13 +720,13 @@ impl SubstraitToCalcite {
             op,
             operands: args,
             ty: output_type,
-            window: RexWindow {
+            window: RexBuilder::make_window(
                 partition_keys,
                 order_keys,
                 lower_bound,
                 upper_bound,
                 is_rows,
-            },
+            ),
             distinct,
             ignore_nulls: false,
         })))

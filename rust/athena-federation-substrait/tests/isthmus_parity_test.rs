@@ -5,9 +5,10 @@ use athena_federation_substrait::proto::expression::field_reference::{
 use athena_federation_substrait::proto::expression::if_then::IfClause;
 use athena_federation_substrait::proto::expression::literal::{self, LiteralType};
 use athena_federation_substrait::proto::expression::reference_segment::{self, StructField};
+use athena_federation_substrait::proto::expression::window_function::{bound, Bound, BoundsType};
 use athena_federation_substrait::proto::expression::{
     Cast, FieldReference, IfThen, Literal, ReferenceSegment, RexType, ScalarFunction,
-    SingularOrList,
+    SingularOrList, WindowFunction,
 };
 use athena_federation_substrait::proto::extensions::simple_extension_declaration::{
     ExtensionFunction, MappingType,
@@ -20,9 +21,10 @@ use athena_federation_substrait::proto::plan_rel;
 use athena_federation_substrait::proto::r#type::{self, Kind, Nullability};
 use athena_federation_substrait::proto::read_rel::{NamedTable, ReadType};
 use athena_federation_substrait::proto::rel::RelType;
+use athena_federation_substrait::proto::sort_field::{SortDirection, SortKind};
 use athena_federation_substrait::proto::{
     Expression, FilterRel, FunctionArgument, JoinRel, NamedStruct, Plan, PlanRel, ProjectRel,
-    ReadRel, Rel, RelRoot, Type,
+    ReadRel, Rel, RelRoot, SortField, Type,
 };
 use athena_federation_substrait::{SqlDialect, SubstraitError};
 use base64::Engine;
@@ -1472,4 +1474,138 @@ fn base_schema_errors_match_java_list_messages() {
             project_rel(single_column_read(uuid), vec![field(0)])
         ))
     );
+}
+
+fn window_bound(kind: &str) -> Option<Bound> {
+    let kind = match kind {
+        "none" => return None,
+        "empty" => return Some(Bound { kind: None }),
+        "unbounded" => bound::Kind::Unbounded(bound::Unbounded {}),
+        "current" => bound::Kind::CurrentRow(bound::CurrentRow {}),
+        "preceding" => bound::Kind::Preceding(bound::Preceding { offset: 2 }),
+        _ => bound::Kind::Following(bound::Following { offset: 3 }),
+    };
+    Some(Bound { kind: Some(kind) })
+}
+
+fn window_sql(bounds_type: BoundsType, ordered: bool, lower: &str, upper: &str) -> String {
+    let sorts = if ordered {
+        vec![SortField {
+            expr: Some(field(column("i"))),
+            sort_kind: Some(SortKind::Direction(SortDirection::AscNullsFirst as i32)),
+        }]
+    } else {
+        vec![]
+    };
+    let window = WindowFunction {
+        function_reference: 1,
+        arguments: vec![value(field(column("i")))],
+        output_type: Some(i64_type(NULLABLE)),
+        phase: 3,
+        invocation: 1,
+        bounds_type: bounds_type as i32,
+        lower_bound: window_bound(lower),
+        upper_bound: window_bound(upper),
+        sorts,
+        ..Default::default()
+    };
+    let plan_string = encode(
+        &[("/functions_arithmetic.yaml", "sum:i64")],
+        project_rel(
+            read(),
+            vec![Expression {
+                rex_type: Some(RexType::WindowFunction(window)),
+            }],
+        ),
+    );
+    let text = sql(&plan_string);
+    let start = text.find("OVER (").expect("over clause");
+    let end = text[start..].find(") AS").expect("over end") + start + 1;
+    text[start..end].to_string()
+}
+
+#[test]
+fn window_frames_follow_calcite_make_window() {
+    let whole = "OVER (RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)";
+    let ordered = "OVER (ORDER BY `i` NULLS FIRST";
+    let cases = [
+        (BoundsType::Rows, false, "none", "none", whole.to_string()),
+        (
+            BoundsType::Rows,
+            false,
+            "empty",
+            "unbounded",
+            whole.to_string(),
+        ),
+        (
+            BoundsType::Rows,
+            true,
+            "unbounded",
+            "unbounded",
+            format!("{ordered} RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"),
+        ),
+        (
+            BoundsType::Rows,
+            true,
+            "none",
+            "current",
+            format!("{ordered} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)"),
+        ),
+        (
+            BoundsType::Rows,
+            true,
+            "current",
+            "none",
+            format!("{ordered} ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)"),
+        ),
+        (
+            BoundsType::Rows,
+            false,
+            "preceding",
+            "following",
+            "OVER (ROWS BETWEEN 2 PRECEDING AND 3 FOLLOWING)".to_string(),
+        ),
+        (
+            BoundsType::Range,
+            false,
+            "preceding",
+            "current",
+            whole.to_string(),
+        ),
+        (
+            BoundsType::Range,
+            false,
+            "current",
+            "current",
+            whole.to_string(),
+        ),
+        (
+            BoundsType::Range,
+            true,
+            "unbounded",
+            "none",
+            format!("{ordered} RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"),
+        ),
+        (
+            BoundsType::Range,
+            true,
+            "preceding",
+            "following",
+            format!("{ordered} RANGE BETWEEN 2 PRECEDING AND 3 FOLLOWING)"),
+        ),
+        (
+            BoundsType::Range,
+            true,
+            "current",
+            "unbounded",
+            format!("{ordered} RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)"),
+        ),
+    ];
+    for (bounds_type, is_ordered, lower, upper, expected) in cases {
+        assert_eq!(
+            expected,
+            window_sql(bounds_type, is_ordered, lower, upper),
+            "{bounds_type:?} ordered={is_ordered} {lower} {upper}"
+        );
+    }
 }
