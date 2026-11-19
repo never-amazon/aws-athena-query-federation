@@ -16,8 +16,8 @@ use athena_federation_sdk::{FederationError, Result};
 use base64::Engine;
 use serde_json::{Map, Value};
 
-use crate::snowflake_constants::{self, is_blank};
-use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils};
+use crate::auth::{SnowflakeAuthType, SnowflakeAuthUtils};
+use crate::constants::{self, is_blank};
 use athena_jdbc::java_null::JAVA_NULL;
 
 pub struct SnowflakeCredentialsProvider {
@@ -108,10 +108,10 @@ impl SnowflakeCredentialsProvider {
         let username = SnowflakeAuthUtils::username(oauth_config)?;
         tracing::debug!("Using OAuth authentication for user: {username}");
         Ok(HashMap::from([
-            (snowflake_constants::USER.to_string(), username),
-            (snowflake_constants::PASSWORD.to_string(), access_token),
+            (constants::USER.to_string(), username),
+            (constants::PASSWORD.to_string(), access_token),
             (
-                snowflake_constants::AUTHENTICATOR.to_string(),
+                constants::AUTHENTICATOR.to_string(),
                 SnowflakeAuthType::Oauth.as_str().to_string(),
             ),
         ]))
@@ -122,11 +122,11 @@ impl SnowflakeCredentialsProvider {
         oauth_config: &HashMap<String, String>,
         secret_json: &mut Map<String, Value>,
     ) -> Result<String> {
-        let client_id = require_non_blank(oauth_config, snowflake_constants::CLIENT_ID)?;
-        let token_endpoint = require_non_blank(oauth_config, snowflake_constants::TOKEN_URL)?;
-        let redirect_uri = require_non_blank(oauth_config, snowflake_constants::REDIRECT_URI)?;
-        let client_secret = require_non_blank(oauth_config, snowflake_constants::CLIENT_SECRET)?;
-        let auth_code = require_non_blank(oauth_config, snowflake_constants::AUTH_CODE)?;
+        let client_id = require_non_blank(oauth_config, constants::CLIENT_ID)?;
+        let token_endpoint = require_non_blank(oauth_config, constants::TOKEN_URL)?;
+        let redirect_uri = require_non_blank(oauth_config, constants::REDIRECT_URI)?;
+        let client_secret = require_non_blank(oauth_config, constants::CLIENT_SECRET)?;
+        let auth_code = require_non_blank(oauth_config, constants::AUTH_CODE)?;
         let Some(access_token) = oauth_config.get(Self::ACCESS_TOKEN) else {
             tracing::debug!("First time auth. Using authorization_code...");
             let body = format!(
@@ -377,11 +377,10 @@ fn handle_key_pair_authentication(
     oauth_config: &HashMap<String, String>,
 ) -> Result<HashMap<String, String>> {
     let username = SnowflakeAuthUtils::username(oauth_config)?;
-    let mut credential_map =
-        HashMap::from([(snowflake_constants::USER.to_string(), username.clone())]);
+    let mut credential_map = HashMap::from([(constants::USER.to_string(), username.clone())]);
     for key in [
-        snowflake_constants::PEM_PRIVATE_KEY,
-        snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE,
+        constants::PEM_PRIVATE_KEY,
+        constants::PEM_PRIVATE_KEY_PASSPHRASE,
     ] {
         if let Some(value) = oauth_config.get(key) {
             credential_map.insert(key.to_string(), value.clone());
@@ -398,8 +397,8 @@ fn handle_password_authentication(
     let password = SnowflakeAuthUtils::password(oauth_config)?;
     tracing::debug!("Using password authentication for user: {username}");
     Ok(HashMap::from([
-        (snowflake_constants::USER.to_string(), username),
-        (snowflake_constants::PASSWORD.to_string(), password),
+        (constants::USER.to_string(), username),
+        (constants::PASSWORD.to_string(), password),
     ]))
 }
 
@@ -417,12 +416,8 @@ impl CredentialsProvider for SnowflakeCredentialsProvider {
     async fn get_credential(&self) -> Result<Credentials> {
         let credential_map = self.get_credential_map().await?;
         let credentials = DefaultCredentials::new_nullable(
-            credential_map
-                .get(snowflake_constants::USER)
-                .map(String::as_str),
-            credential_map
-                .get(snowflake_constants::PASSWORD)
-                .map(String::as_str),
+            credential_map.get(constants::USER).map(String::as_str),
+            credential_map.get(constants::PASSWORD).map(String::as_str),
         )?;
         Ok(credentials.into())
     }

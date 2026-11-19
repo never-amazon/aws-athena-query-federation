@@ -24,12 +24,12 @@ use athena_jdbc::internal_service_error;
 use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData};
 
-use crate::s3_export::{construct_s3_uri, BlockingBatches, ExportReader, S3ParquetExportReader};
-use crate::snowflake_metadata_handler::{
+use crate::metadata_handler::{
     create_snowflake_credentials_provider, java_text, SnowflakeMetadataDialect,
 };
-use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
-use crate::{snowflake_constants, utils};
+use crate::query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
+use crate::s3_export::{construct_s3_uri, BlockingBatches, ExportReader, S3ParquetExportReader};
+use crate::{arrow_type, constants};
 use athena_jdbc::java_null::OrJavaNull;
 
 const FETCH_SIZE: u32 = 1000;
@@ -148,8 +148,7 @@ impl SnowflakeRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeRecordHandler> {
-        let config =
-            single_database_config_from_env(snowflake_constants::SNOWFLAKE_NAME, &config_options)?;
+        let config = single_database_config_from_env(constants::SNOWFLAKE_NAME, &config_options)?;
         SnowflakeRecordDialect::from_config(clients, config, config_options)
     }
 
@@ -166,10 +165,10 @@ impl SnowflakeRecordDialect {
         );
         let split = records_request.split();
         let export_bucket = split
-            .get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
+            .get_property(constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
             .or_java_null();
         let s3_object_key = split
-            .get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY)
+            .get_property(constants::SNOWFLAKE_SPLIT_OBJECT_KEY)
             .ok_or_else(|| {
                 FederationError::null_pointer(
                     "Cannot invoke \"String.isEmpty()\" because \"s3ObjectKey\" is null",
@@ -297,7 +296,7 @@ impl RecordDialect for SnowflakeRecordDialect {
         request: &ReadRecordsRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        if snowflake_constants::is_s3_export_enabled(handler.config_options()) {
+        if constants::is_s3_export_enabled(handler.config_options()) {
             self.handle_s3_export_read(spiller, request, query_status_checker)
                 .await
         } else {
@@ -316,12 +315,11 @@ impl RecordDialect for SnowflakeRecordDialect {
         query_status_checker: &QueryStatusChecker,
     ) -> Result<Schema> {
         let split = request.split();
-        let export_bucket = split.get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET);
-        let s3_object_key = split.get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY);
+        let export_bucket = split.get_property(constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET);
+        let s3_object_key = split.get_property(constants::SNOWFLAKE_SPLIT_OBJECT_KEY);
         match s3_object_key {
             Some(key)
-                if snowflake_constants::is_s3_export_enabled(handler.config_options())
-                    && !key.is_empty() =>
+                if constants::is_s3_export_enabled(handler.config_options()) && !key.is_empty() =>
             {
                 self.respill_exported_parquet(
                     handler,
@@ -376,7 +374,7 @@ impl RecordDialect for SnowflakeRecordDialect {
             );
             if is_arrow_integer && column.scale() == 0 {
                 let precision = column.precision();
-                if (1..=utils::DEFAULT_PRECISION).contains(&precision) {
+                if (1..=arrow_type::DEFAULT_PRECISION).contains(&precision) {
                     let precision = u8::try_from(precision).unwrap_or(u8::MAX);
                     fields.push(Arc::new(
                         Field::new(

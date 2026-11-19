@@ -2,11 +2,11 @@ use std::fmt;
 
 use athena_federation_sdk::domain::Split;
 
-use crate::snowflake_constants;
+use crate::constants;
 
-const PRIMARY_MARKER: &str = snowflake_constants::PARTITION_PRIMARY_MARKER;
-const LIMIT_MARKER: &str = snowflake_constants::PARTITION_LIMIT_MARKER;
-const OFFSET_MARKER: &str = snowflake_constants::PARTITION_OFFSET_MARKER;
+const PRIMARY_MARKER: &str = constants::PARTITION_PRIMARY_MARKER;
+const LIMIT_MARKER: &str = constants::PARTITION_LIMIT_MARKER;
+const OFFSET_MARKER: &str = constants::PARTITION_OFFSET_MARKER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PartitionPage<'a> {
@@ -17,7 +17,7 @@ pub(crate) struct PartitionPage<'a> {
 
 impl<'a> PartitionPage<'a> {
     pub(crate) fn from_split(split: &'a Split) -> Option<PartitionPage<'a>> {
-        PartitionPage::parse(split.get_property(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)?)
+        PartitionPage::parse(split.get_property(constants::BLOCK_PARTITION_COLUMN_NAME)?)
     }
 
     fn parse(partition_val: &'a str) -> Option<PartitionPage<'a>> {
@@ -70,7 +70,7 @@ impl fmt::Display for PartitionPage<'_> {
         write!(
             f,
             "{}{PRIMARY_MARKER}{}{LIMIT_MARKER}{}{OFFSET_MARKER}{}",
-            snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
+            constants::BLOCK_PARTITION_COLUMN_NAME,
             self.primary_key,
             self.limit,
             self.offset

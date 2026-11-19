@@ -9,9 +9,9 @@ use athena_federation_substrait::SqlDialect;
 use athena_jdbc::query::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
+use crate::constants;
 use crate::partition_page::PartitionPage;
-use crate::snowflake_constants;
-use crate::snowflake_dialect::SnowflakeDialect;
+use crate::sql_dialect::SnowflakeDialect;
 use athena_jdbc::java_null::OrJavaNull;
 
 pub struct SnowflakeSplitDialect;
@@ -19,10 +19,7 @@ pub struct SnowflakeSplitDialect;
 pub type SnowflakeQueryStringBuilder = SplitQueryBuilder<SnowflakeSplitDialect>;
 
 pub fn query_string_builder() -> SnowflakeQueryStringBuilder {
-    SplitQueryBuilder::new(
-        snowflake_constants::DOUBLE_QUOTE_CHAR,
-        SnowflakeSplitDialect,
-    )
+    SplitQueryBuilder::new(constants::DOUBLE_QUOTE_CHAR, SnowflakeSplitDialect)
 }
 
 pub fn base_export_sql(
@@ -35,7 +32,7 @@ pub fn base_export_sql(
         .fields()
         .iter()
         .map(|field| field.name())
-        .filter(|name| !name.eq_ignore_ascii_case(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME))
+        .filter(|name| !name.eq_ignore_ascii_case(constants::BLOCK_PARTITION_COLUMN_NAME))
         .map(|name| builder.quote(name))
         .collect::<Vec<_>>()
         .join(", ");
@@ -166,7 +163,7 @@ fn sql_timestamp_text(timestamp: &NaiveDateTime) -> String {
 }
 
 pub fn single_quote(text: &str) -> String {
-    let quote = snowflake_constants::SINGLE_QUOTE_CHAR;
+    let quote = constants::SINGLE_QUOTE_CHAR;
     format!(
         "{quote}{}{quote}",
         text.replace('\\', "\\\\").replace(quote, "''")

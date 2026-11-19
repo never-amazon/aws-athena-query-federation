@@ -41,17 +41,17 @@ use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{ColumnMetadata, JdbcConnection, SqlError};
 use indexmap::IndexMap;
 
+use crate::arrow_type;
 use crate::connection::SnowflakeConnectionFactory;
+use crate::constants::{self, is_blank};
+use crate::credentials_provider::SnowflakeCredentialsProvider;
+use crate::environment_properties::snowflake_parameters;
 use crate::partition_page::PartitionPage;
-use crate::resolver::snowflake_case_resolver;
-use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
-use crate::snowflake_constants::{self, is_blank};
-use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
-use crate::snowflake_environment_properties::snowflake_parameters;
-use crate::snowflake_query_string_builder::{
+use crate::query_string_builder::{
     base_export_sql, query_string_builder, single_quote, SnowflakeQueryStringBuilder,
 };
-use crate::utils;
+use crate::resolver::snowflake_case_resolver;
+use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
 use athena_jdbc::java_null::OrJavaNull;
 
 const MAX_SPLITS_PER_REQUEST: usize = 1_000_000;
@@ -99,12 +99,12 @@ impl SnowflakeMetadataDialect {
         SnowflakeConnectionFactory::new_with_config_options(
             config.clone(),
             Some(snowflake_parameters(
-                &snowflake_constants::jdbc_properties(),
+                &constants::jdbc_properties(),
                 config_options,
             )),
             DatabaseConnectionInfo::new(
-                snowflake_constants::SNOWFLAKE_DRIVER_CLASS,
-                i32::from(snowflake_constants::SNOWFLAKE_DEFAULT_PORT),
+                constants::SNOWFLAKE_DRIVER_CLASS,
+                i32::from(constants::SNOWFLAKE_DEFAULT_PORT),
             )?,
             Some(config_options),
         )
@@ -116,7 +116,7 @@ impl SnowflakeMetadataDialect {
         config_options: &HashMap<String, String>,
     ) -> Option<&str> {
         config_options
-            .get(snowflake_constants::STORAGE_INTEGRATION_CONFIG_KEY)
+            .get(constants::STORAGE_INTEGRATION_CONFIG_KEY)
             .map(String::as_str)
     }
 }
@@ -204,10 +204,7 @@ impl SnowflakeMetadataDialect {
             context,
             config,
             factory,
-            snowflake_case_resolver(
-                snowflake_constants::SNOWFLAKE_NAME,
-                FederationSdkCasingMode::None,
-            ),
+            snowflake_case_resolver(constants::SNOWFLAKE_NAME, FederationSdkCasingMode::None),
             amazon_s3,
         ))
     }
@@ -216,8 +213,7 @@ impl SnowflakeMetadataDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<SnowflakeMetadataHandler> {
-        let config =
-            single_database_config_from_env(snowflake_constants::SNOWFLAKE_NAME, &config_options)?;
+        let config = single_database_config_from_env(constants::SNOWFLAKE_NAME, &config_options)?;
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         SnowflakeMetadataDialect::from_config(
             clients,
@@ -235,7 +231,7 @@ impl SnowflakeMetadataDialect {
         limit: i32,
     ) -> std::result::Result<Vec<TableName>, SqlError> {
         let mut statement = connection
-            .prepare_statement(snowflake_constants::LIST_PAGINATED_TABLES_QUERY)
+            .prepare_statement(constants::LIST_PAGINATED_TABLES_QUERY)
             .await?;
         statement.bind(database_name);
         statement.bind(limit);
@@ -269,7 +265,7 @@ impl SnowflakeMetadataDialect {
         connection: &dyn JdbcConnection,
         integration_name: &str,
     ) -> Result<Option<HashMap<String, String>>> {
-        let check_integration_query = snowflake_constants::describe_storage_integration_query(
+        let check_integration_query = constants::describe_storage_integration_query(
             &self
                 .snowflake_query_string_builder
                 .quote(&integration_name.to_uppercase()),
@@ -281,10 +277,10 @@ impl SnowflakeMetadataDialect {
             let mut storage_integration_row = HashMap::new();
             while let Some(row) = result_set.next_row().await? {
                 storage_integration_row.insert(
-                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
+                    row.by_label(constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
                         .to_java_string()
                         .or_java_null(),
-                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
+                    row.by_label(constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
                         .to_java_string()
                         .or_java_null(),
                 );
@@ -312,8 +308,8 @@ impl SnowflakeMetadataDialect {
     pub fn validate_sf_storage_integration_exist_and_valid(
         storage_integration_map: &HashMap<String, String>,
     ) -> Result<()> {
-        let bucket_key = snowflake_constants::STORAGE_INTEGRATION_BUCKET_KEY;
-        let provider_key = snowflake_constants::STORAGE_INTEGRATION_STORAGE_PROVIDER_KEY;
+        let bucket_key = constants::STORAGE_INTEGRATION_BUCKET_KEY;
+        let provider_key = constants::STORAGE_INTEGRATION_STORAGE_PROVIDER_KEY;
         let s3_export_path = storage_integration_map.get(bucket_key).ok_or_else(|| {
             FederationError::illegal_argument(format!(
                 "Snowflake Storage Integration, field:{bucket_key} cannot be null"
@@ -357,7 +353,7 @@ impl SnowflakeMetadataDialect {
         };
         SnowflakeMetadataDialect::validate_sf_storage_integration_exist_and_valid(&properties)?;
         let mut bucket_path = properties
-            .get(snowflake_constants::STORAGE_INTEGRATION_BUCKET_KEY)
+            .get(constants::STORAGE_INTEGRATION_BUCKET_KEY)
             .cloned()
             .unwrap_or_default();
         if bucket_path.ends_with('/') {
@@ -379,7 +375,7 @@ impl SnowflakeMetadataDialect {
         }
         let reader = request
             .partitions()
-            .get_field_reader(snowflake_constants::S3_ENHANCED_PARTITION_COLUMN_NAME)
+            .get_field_reader(constants::S3_ENHANCED_PARTITION_COLUMN_NAME)
             .ok_or_else(|| {
                 FederationError::null_pointer(
                     "Cannot invoke \"org.apache.arrow.vector.complex.reader.FieldReader.readByteArray()\" because \"fieldReaderPreparedStmt\" is null",
@@ -429,7 +425,7 @@ impl SnowflakeMetadataDialect {
         for cur_partition in partition_contd..partitions.row_count() {
             let partition = {
                 let location_reader = partitions
-                    .get_field_reader(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)
+                    .get_field_reader(constants::BLOCK_PARTITION_COLUMN_NAME)
                     .ok_or_else(missing_field_reader)?;
                 let location_reader = location_reader.at(cur_partition);
                 location_reader.read_text()
@@ -441,7 +437,7 @@ impl SnowflakeMetadataDialect {
                 partition
             );
             builder = builder.add(
-                snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
+                constants::BLOCK_PARTITION_COLUMN_NAME,
                 partition.or_java_null(),
             );
             if let Some(filter) = identity_option(
@@ -487,7 +483,7 @@ impl SnowflakeMetadataDialect {
                 "{sf_s3_export_path_prefix}/{query_id}/{}/",
                 uuid::Uuid::new_v4()
             );
-            let snowflake_export_query = snowflake_constants::copy_into_query(
+            let snowflake_export_query = constants::copy_into_query(
                 &single_quote(&s3_path),
                 &snowflake_export_sql,
                 &self
@@ -578,7 +574,7 @@ impl SnowflakeMetadataDialect {
     ) -> Result<bool> {
         let statement = PreparedStatementBuilder::new()
             .with_connection(connection)
-            .with_query(snowflake_constants::VIEW_CHECK_QUERY)?
+            .with_query(constants::VIEW_CHECK_QUERY)?
             .with_parameters(vec![
                 table_name.schema_name().to_string(),
                 table_name.table_name().to_string(),
@@ -599,7 +595,7 @@ impl SnowflakeMetadataDialect {
         tracing::debug!("getPrimaryKey tableName: {}", table_name);
         let sql = format!(
             "{}{}",
-            snowflake_constants::SHOW_PRIMARY_KEYS_QUERY,
+            constants::SHOW_PRIMARY_KEYS_QUERY,
             self.quoted_table_name(table_name)
         );
         let statement = connection.prepare_statement(&sql).await?;
@@ -645,7 +641,7 @@ impl SnowflakeMetadataDialect {
         );
         let checked: std::result::Result<bool, SqlError> = async {
             let mut statement = connection.prepare_statement(&sql).await?;
-            statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT);
+            statement.set_query_timeout(constants::UNIQUENESS_CHECK_TIMEOUT);
             let mut result_set = connection.execute_query(&statement).await?;
             Ok(match result_set.next_row().await? {
                 Some(row) => row.by_label(COUNTS_COLUMN_NAME)?.to_int()?.unwrap_or(0) == 1,
@@ -680,24 +676,21 @@ impl SnowflakeMetadataDialect {
         table_name: &TableName,
         connection: &dyn JdbcConnection,
     ) -> Result<()> {
-        tracing::info!(
-            " Total Partition Limit{}",
-            snowflake_constants::MAX_PARTITION_COUNT
-        );
+        tracing::info!(" Total Partition Limit{}", constants::MAX_PARTITION_COUNT);
         if self.check_for_view(table_name, connection).await? {
             return block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                 block.set_value(
-                    snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
+                    constants::BLOCK_PARTITION_COLUMN_NAME,
                     row_num,
                     ALL_PARTITIONS,
                 )?;
                 Ok(1)
             });
         }
-        tracing::info!("{}", snowflake_constants::COUNT_RECORDS_QUERY);
+        tracing::info!("{}", constants::COUNT_RECORDS_QUERY);
         let statement = PreparedStatementBuilder::new()
             .with_connection(connection)
-            .with_query(snowflake_constants::COUNT_RECORDS_QUERY)?
+            .with_query(constants::COUNT_RECORDS_QUERY)?
             .with_parameters(vec![
                 table_name.schema_name().to_string(),
                 table_name.table_name().to_string(),
@@ -713,12 +706,12 @@ impl SnowflakeMetadataDialect {
             tracing::info!("No Records Found for table {}", table_name);
             return Ok(());
         }
-        let primary_key = if total_record_count > snowflake_constants::LARGE_TABLE_THRESHOLD {
+        let primary_key = if total_record_count > constants::LARGE_TABLE_THRESHOLD {
             tracing::info!(
                 "Table {} has {} rows (exceeds threshold {}). Skipping primary key uniqueness check.",
                 table_name.table_name(),
                 total_record_count,
-                snowflake_constants::LARGE_TABLE_THRESHOLD
+                constants::LARGE_TABLE_THRESHOLD
             );
             None
         } else {
@@ -728,7 +721,7 @@ impl SnowflakeMetadataDialect {
             tracing::info!("partitionVal {} ", partition_val);
             block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                 block.set_value(
-                    snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
+                    constants::BLOCK_PARTITION_COLUMN_NAME,
                     row_num,
                     partition_val.as_str(),
                 )?;
@@ -750,11 +743,11 @@ async fn export_split(
         .split_builder(request)
         .await?
         .add(
-            snowflake_constants::SNOWFLAKE_SPLIT_QUERY_ID,
+            constants::SNOWFLAKE_SPLIT_QUERY_ID,
             request.query_id().or_java_null(),
         )
-        .add(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket)
-        .add(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY, key)
+        .add(constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket)
+        .add(constants::SNOWFLAKE_SPLIT_OBJECT_KEY, key)
         .build())
 }
 
@@ -765,10 +758,9 @@ async fn export_split(
 )]
 pub fn partition_values(total_record_count: i64, primary_key: Option<&str>) -> Vec<String> {
     let total = total_record_count as f64;
-    let records_in_partition =
-        (total / f64::from(snowflake_constants::MAX_PARTITION_COUNT)).ceil() as i64;
+    let records_in_partition = (total / f64::from(constants::MAX_PARTITION_COUNT)).ceil() as i64;
     let partition_record_count = if total_record_count
-        <= i64::from(snowflake_constants::SINGLE_SPLIT_LIMIT_COUNT)
+        <= i64::from(constants::SINGLE_SPLIT_LIMIT_COUNT)
         || primary_key.is_none()
     {
         total_record_count
@@ -831,12 +823,12 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         partition_schema_builder: &mut SchemaBuilder,
         request: &GetTableLayoutRequest,
     ) {
-        let s3_export_enabled = snowflake_constants::is_s3_export_enabled(handler.config_options());
+        let s3_export_enabled = constants::is_s3_export_enabled(handler.config_options());
         if request.constraints().is_query_pass_through() && !s3_export_enabled {
             return;
         }
         if partition_schema_builder
-            .get_field(snowflake_constants::S3_ENHANCED_PARTITION_COLUMN_NAME)
+            .get_field(constants::S3_ENHANCED_PARTITION_COLUMN_NAME)
             .is_none()
             && s3_export_enabled
         {
@@ -847,17 +839,15 @@ impl MetadataDialect for SnowflakeMetadataDialect {
                 request.table_name()
             );
             partition_schema_builder.add_field_with_type(
-                snowflake_constants::S3_ENHANCED_PARTITION_COLUMN_NAME,
+                constants::S3_ENHANCED_PARTITION_COLUMN_NAME,
                 DataType::Binary,
             );
         } else if partition_schema_builder
-            .get_field(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)
+            .get_field(constants::BLOCK_PARTITION_COLUMN_NAME)
             .is_none()
         {
-            partition_schema_builder.add_field_with_type(
-                snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
-                DataType::Utf8,
-            );
+            partition_schema_builder
+                .add_field_with_type(constants::BLOCK_PARTITION_COLUMN_NAME, DataType::Utf8);
         }
     }
 
@@ -886,11 +876,11 @@ impl MetadataDialect for SnowflakeMetadataDialect {
             table_name.schema_name(),
             table_name.table_name()
         );
-        if snowflake_constants::is_s3_export_enabled(handler.config_options()) {
+        if constants::is_s3_export_enabled(handler.config_options()) {
             let serialized = schema_to_bytes(request.schema(), IpcFormat::ArrowDefault)?;
             return block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                 block.set_value(
-                    snowflake_constants::S3_ENHANCED_PARTITION_COLUMN_NAME,
+                    constants::S3_ENHANCED_PARTITION_COLUMN_NAME,
                     row_num,
                     serialized.clone(),
                 )?;
@@ -909,7 +899,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
-        if snowflake_constants::is_s3_export_enabled(handler.config_options()) {
+        if constants::is_s3_export_enabled(handler.config_options()) {
             self.handle_s3_export_splits(handler, request).await
         } else {
             self.handle_direct_query_splits(handler, request).await
@@ -1024,7 +1014,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         column: &ColumnMetadata,
         config_options: &HashMap<String, String>,
     ) -> Result<Option<ArrowType>> {
-        utils::to_arrow_type(
+        arrow_type::to_arrow_type(
             column.jdbc_type(),
             column.precision(),
             column.scale(),
@@ -1061,15 +1051,12 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         catalog_name: &str,
     ) -> Result<Schema> {
         let mut schema_builder = SchemaBuilder::new_builder();
-        if snowflake_constants::is_s3_export_enabled(handler.config_options()) {
+        if constants::is_s3_export_enabled(handler.config_options()) {
             tracing::debug!("Skipping partition, s3 export enable: {}", catalog_name);
             return Ok(schema_builder.build());
         }
         tracing::debug!("getPartitionSchema: {}", catalog_name);
-        schema_builder.add_field_with_type(
-            snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
-            DataType::Utf8,
-        );
+        schema_builder.add_field_with_type(constants::BLOCK_PARTITION_COLUMN_NAME, DataType::Utf8);
         Ok(schema_builder.build())
     }
 }
@@ -1087,7 +1074,7 @@ impl SnowflakeMetadataDialect {
         let columns = columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
         let found = !columns.is_empty();
         for column in columns {
-            let column_type = utils::to_arrow_type(
+            let column_type = arrow_type::to_arrow_type(
                 column.data_type,
                 column.column_size.unwrap_or(0),
                 column.decimal_digits.unwrap_or(0),

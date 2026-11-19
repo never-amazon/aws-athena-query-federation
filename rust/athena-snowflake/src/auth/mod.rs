@@ -1,7 +1,14 @@
+mod ber;
+mod credentials;
+mod pbe;
+mod pbes2;
+
 use std::fmt;
 use std::str::FromStr;
 
 use athena_federation_sdk::FederationError;
+
+pub use credentials::{SnowflakeAuthUtils, SnowflakePrivateKey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SnowflakeAuthType {

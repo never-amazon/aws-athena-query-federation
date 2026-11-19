@@ -14,11 +14,11 @@ use athena_jdbc::connection::{
 use athena_jdbc::java_null::JAVA_NULL;
 use athena_jdbc::sql::{JdbcConnection, SqlError};
 
-use crate::snowflake_constants;
+use crate::auth::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
+use crate::constants;
 use crate::sql::{
     url_decode, PooledSnowflakeDriver, SnowflakeAuth, SnowflakeDriver, SnowflakeJdbcDriver,
 };
-use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
 
 const KEY_PAIR_FAILURE: &str = "Failed to create Snowflake connection with key-pair authentication";
 
@@ -95,9 +95,9 @@ impl SnowflakeCredentials {
         }
         let get = |key: &str| credential_map.get(key).cloned();
         Ok(SnowflakeCredentials::KeyPair(KeyPairCredentials {
-            user: get(snowflake_constants::USER),
-            private_key_pem: get(snowflake_constants::PEM_PRIVATE_KEY).unwrap_or_default(),
-            passphrase: get(snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE),
+            user: get(constants::USER),
+            private_key_pem: get(constants::PEM_PRIVATE_KEY).unwrap_or_default(),
+            passphrase: get(constants::PEM_PRIVATE_KEY_PASSPHRASE),
         }))
     }
 }
@@ -208,9 +208,9 @@ impl SnowflakeConnectionFactory {
         tracing::debug!(
             "Creating Snowflake connection with key-pair authentication for user: {username}"
         );
-        properties.insert(snowflake_constants::USER.to_string(), username);
+        properties.insert(constants::USER.to_string(), username);
         properties.insert(
-            snowflake_constants::AUTHENTICATOR.to_string(),
+            constants::AUTHENTICATOR.to_string(),
             SnowflakeAuthType::SnowflakeJwt.as_str().to_string(),
         );
         let driver_class_name = self.generic.database_connection_info().driver_class_name();
@@ -288,7 +288,7 @@ mod tests {
     use super::*;
 
     const SCRYPT_KEY: &str =
-        include_str!("../../tests/fixtures/pbes2/pbes2_scrypt_aes256_n_1024_r_8_p_1.p8");
+        include_str!("../tests/fixtures/pbes2/pbes2_scrypt_aes256_n_1024_r_8_p_1.p8");
 
     #[tokio::test]
     async fn private_key_derivation_runs_off_the_async_thread() {

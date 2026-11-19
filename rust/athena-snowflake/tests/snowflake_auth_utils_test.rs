@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::FederationError;
-use athena_snowflake::snowflake_constants;
-use athena_snowflake::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
+use athena_snowflake::auth::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
+use athena_snowflake::constants;
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use rsa::RsaPrivateKey;
@@ -135,8 +135,8 @@ fn assert_same_key(actual: &SnowflakePrivateKey) {
 #[test]
 fn test_determine_auth_type_with_key_pair_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::SF_USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     assert_eq!(
         SnowflakeAuthType::SnowflakeJwt,
@@ -147,8 +147,8 @@ fn test_determine_auth_type_with_key_pair_auth() {
 #[test]
 fn test_determine_auth_type_with_o_auth_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::AUTH_CODE, "test-auth-code"),
+        (constants::USERNAME, TESTUSER),
+        (constants::AUTH_CODE, "test-auth-code"),
     ]);
     assert_eq!(
         SnowflakeAuthType::Oauth,
@@ -159,8 +159,8 @@ fn test_determine_auth_type_with_o_auth_auth() {
 #[test]
 fn test_determine_auth_type_with_password_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     assert_eq!(
         SnowflakeAuthType::Snowflake,
@@ -183,9 +183,9 @@ fn test_determine_auth_type_with_empty_credentials() {
 #[test]
 fn test_determine_auth_type_with_empty_private_key() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PRIVATE_KEY, ""),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PRIVATE_KEY, ""),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     assert_eq!(
         SnowflakeAuthType::Snowflake,
@@ -203,8 +203,8 @@ fn test_create_private_key_with_passphrase() {
 #[test]
 fn test_validate_credentials_with_key_pair_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::SF_USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
         .unwrap();
@@ -213,8 +213,8 @@ fn test_validate_credentials_with_key_pair_auth() {
 #[test]
 fn test_validate_credentials_with_o_auth_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::AUTH_CODE, "test-auth-code"),
+        (constants::USERNAME, TESTUSER),
+        (constants::AUTH_CODE, "test-auth-code"),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Oauth).unwrap();
 }
@@ -222,8 +222,8 @@ fn test_validate_credentials_with_o_auth_auth() {
 #[test]
 fn test_validate_credentials_with_password_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Snowflake).unwrap();
 }
@@ -238,7 +238,7 @@ fn test_validate_credentials_with_null_credentials() {
 
 #[test]
 fn test_validate_credentials_with_key_pair_auth_missing_username() {
-    let credentials = credentials(&[(snowflake_constants::PRIVATE_KEY, VALID_PRIVATE_KEY_PEM)]);
+    let credentials = credentials(&[(constants::PRIVATE_KEY, VALID_PRIVATE_KEY_PEM)]);
     let error =
         SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
             .unwrap_err();
@@ -248,8 +248,8 @@ fn test_validate_credentials_with_key_pair_auth_missing_username() {
 #[test]
 fn test_validate_credentials_with_key_pair_auth_empty_username() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, ""),
-        (snowflake_constants::PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USERNAME, ""),
+        (constants::PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     let error =
         SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
@@ -259,7 +259,7 @@ fn test_validate_credentials_with_key_pair_auth_empty_username() {
 
 #[test]
 fn test_validate_credentials_with_key_pair_auth_missing_private_key() {
-    let credentials = credentials(&[(snowflake_constants::USERNAME, TESTUSER)]);
+    let credentials = credentials(&[(constants::USERNAME, TESTUSER)]);
     let error =
         SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
             .unwrap_err();
@@ -272,8 +272,8 @@ fn test_validate_credentials_with_key_pair_auth_missing_private_key() {
 #[test]
 fn test_validate_credentials_with_key_pair_auth_empty_private_key() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PRIVATE_KEY, ""),
+        (constants::USERNAME, TESTUSER),
+        (constants::PRIVATE_KEY, ""),
     ]);
     let error =
         SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
@@ -286,7 +286,7 @@ fn test_validate_credentials_with_key_pair_auth_empty_private_key() {
 
 #[test]
 fn test_validate_credentials_with_o_auth_auth_missing_username() {
-    let credentials = credentials(&[(snowflake_constants::AUTH_CODE, "test-auth-code")]);
+    let credentials = credentials(&[(constants::AUTH_CODE, "test-auth-code")]);
     let error = SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Oauth)
         .unwrap_err();
     assert_illegal_argument(&error, "Missing required parameter: username/sfUser");
@@ -356,12 +356,9 @@ fn test_create_private_key_with_invalid_encrypted_key() {
 #[test]
 fn test_determine_auth_type_with_encrypted_key_pair_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, TESTUSER),
-        (
-            snowflake_constants::PEM_PRIVATE_KEY,
-            ENCRYPTED_PRIVATE_KEY_PEM,
-        ),
-        (snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
+        (constants::SF_USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, ENCRYPTED_PRIVATE_KEY_PEM),
+        (constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
     ]);
     assert_eq!(
         SnowflakeAuthType::SnowflakeJwt,
@@ -372,11 +369,8 @@ fn test_determine_auth_type_with_encrypted_key_pair_auth() {
 #[test]
 fn test_determine_auth_type_with_encrypted_key_pair_auth_missing_passphrase() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, TESTUSER),
-        (
-            snowflake_constants::PEM_PRIVATE_KEY,
-            ENCRYPTED_PRIVATE_KEY_PEM,
-        ),
+        (constants::SF_USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, ENCRYPTED_PRIVATE_KEY_PEM),
     ]);
     assert_eq!(
         SnowflakeAuthType::SnowflakeJwt,
@@ -387,12 +381,9 @@ fn test_determine_auth_type_with_encrypted_key_pair_auth_missing_passphrase() {
 #[test]
 fn test_validate_credentials_with_encrypted_key_pair_auth() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, TESTUSER),
-        (
-            snowflake_constants::PEM_PRIVATE_KEY,
-            ENCRYPTED_PRIVATE_KEY_PEM,
-        ),
-        (snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
+        (constants::SF_USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, ENCRYPTED_PRIVATE_KEY_PEM),
+        (constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::SnowflakeJwt)
         .unwrap();
@@ -401,8 +392,8 @@ fn test_validate_credentials_with_encrypted_key_pair_auth() {
 #[test]
 fn test_get_username_with_uppercase_key() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME_UPPERCASE, TESTUSER),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME_UPPERCASE, TESTUSER),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     assert_eq!(
         TESTUSER,
@@ -413,9 +404,9 @@ fn test_get_username_with_uppercase_key() {
 #[test]
 fn test_get_username_fallback_order() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, "sfuser"),
-        (snowflake_constants::USERNAME, "username"),
-        (snowflake_constants::USERNAME_UPPERCASE, "USERNAME"),
+        (constants::SF_USER, "sfuser"),
+        (constants::USERNAME, "username"),
+        (constants::USERNAME_UPPERCASE, "USERNAME"),
     ]);
     assert_eq!(
         "sfuser",
@@ -426,9 +417,9 @@ fn test_get_username_fallback_order() {
 #[test]
 fn test_get_username_fallback_to_uppercase() {
     let credentials = credentials(&[
-        (snowflake_constants::SF_USER, ""),
-        (snowflake_constants::USERNAME, ""),
-        (snowflake_constants::USERNAME_UPPERCASE, TESTUSER),
+        (constants::SF_USER, ""),
+        (constants::USERNAME, ""),
+        (constants::USERNAME_UPPERCASE, TESTUSER),
     ]);
     assert_eq!(
         TESTUSER,
@@ -439,15 +430,15 @@ fn test_get_username_fallback_to_uppercase() {
 #[test]
 fn test_validate_credentials_with_password_uppercase() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PASSWORD_UPPERCASE, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PASSWORD_UPPERCASE, TESTPASSWORD),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Snowflake).unwrap();
 }
 
 #[test]
 fn test_validate_credentials_with_password_missing_both_cases() {
-    let credentials = credentials(&[(snowflake_constants::USERNAME, TESTUSER)]);
+    let credentials = credentials(&[(constants::USERNAME, TESTUSER)]);
     let error =
         SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Snowflake)
             .unwrap_err();
@@ -457,9 +448,9 @@ fn test_validate_credentials_with_password_missing_both_cases() {
 #[test]
 fn test_get_password_falls_back_to_uppercase_when_lowercase_is_blank() {
     let credentials = credentials(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PASSWORD, ""),
-        (snowflake_constants::PASSWORD_UPPERCASE, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PASSWORD, ""),
+        (constants::PASSWORD_UPPERCASE, TESTPASSWORD),
     ]);
     SnowflakeAuthUtils::validate_credentials(&credentials, SnowflakeAuthType::Snowflake).unwrap();
     assert_eq!(
@@ -471,8 +462,8 @@ fn test_get_password_falls_back_to_uppercase_when_lowercase_is_blank() {
 #[test]
 fn test_get_password_prefers_lowercase_key() {
     let credentials = credentials(&[
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
-        (snowflake_constants::PASSWORD_UPPERCASE, "other-password"),
+        (constants::PASSWORD, TESTPASSWORD),
+        (constants::PASSWORD_UPPERCASE, "other-password"),
     ]);
     assert_eq!(
         TESTPASSWORD,

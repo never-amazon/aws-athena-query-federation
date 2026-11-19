@@ -1,3 +1,0 @@
-mod snowflake_connection_factory;
-
-pub use snowflake_connection_factory::SnowflakeConnectionFactory;
