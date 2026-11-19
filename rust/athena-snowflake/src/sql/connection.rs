@@ -131,9 +131,14 @@ fn column_info(
     })
 }
 
+struct SessionContext {
+    catalog: Option<String>,
+    schema: Option<String>,
+}
+
 pub struct SnowflakeConnection {
     executor: Arc<dyn SnowflakeExecutor>,
-    session_context: OnceCell<(Option<String>, Option<String>)>,
+    session_context: OnceCell<SessionContext>,
     auto_commit: AtomicBool,
     closed: AtomicBool,
     query_timeout: Option<Duration>,
@@ -198,14 +203,17 @@ impl SnowflakeConnection {
         }
     }
 
-    async fn session_context(&self) -> Result<&(Option<String>, Option<String>), SqlError> {
+    async fn session_context(&self) -> Result<&SessionContext, SqlError> {
         self.session_context
             .get_or_try_init(|| async {
                 let rows = self
                     .collect_rows("select current_database(), current_schema()")
                     .await?;
                 let row = rows.into_iter().next().unwrap_or_default();
-                Ok((text(row.first()), text(row.get(1))))
+                Ok(SessionContext {
+                    catalog: text(row.first()),
+                    schema: text(row.get(1)),
+                })
             })
             .await
     }
@@ -435,12 +443,12 @@ impl JdbcConnection for SnowflakeConnection {
 
     async fn get_catalog(&self) -> Result<Option<String>, SqlError> {
         self.check_open()?;
-        Ok(self.session_context().await?.0.clone())
+        Ok(self.session_context().await?.catalog.clone())
     }
 
     async fn get_schema(&self) -> Result<Option<String>, SqlError> {
         self.check_open()?;
-        Ok(self.session_context().await?.1.clone())
+        Ok(self.session_context().await?.schema.clone())
     }
 
     async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlError> {
