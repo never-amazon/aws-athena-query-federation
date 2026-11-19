@@ -5,7 +5,7 @@ use arrow::error::ArrowError;
 use thiserror::Error;
 
 use super::athena_connector_exception::AthenaConnectorException;
-use super::error_details::{ErrorDetails, FederationSourceErrorCode};
+use super::error_details::FederationSourceErrorCode;
 use super::federation_throttle_exception::FederationThrottleException;
 use super::java_throwable::JavaThrowable;
 
@@ -72,10 +72,7 @@ impl FederationError {
         code: FederationSourceErrorCode,
         message: impl Into<String>,
     ) -> FederationError {
-        FederationError::AthenaConnector(AthenaConnectorException::new(
-            message,
-            ErrorDetails::of(code),
-        ))
+        FederationError::AthenaConnector(AthenaConnectorException::new(code, message))
     }
 
     pub fn connector_with_details(
@@ -83,10 +80,9 @@ impl FederationError {
         message: impl Into<String>,
         details_message: impl Into<String>,
     ) -> FederationError {
-        FederationError::AthenaConnector(AthenaConnectorException::new(
-            message,
-            ErrorDetails::of_with_message(code, details_message),
-        ))
+        FederationError::AthenaConnector(
+            AthenaConnectorException::new(code, message).with_details_message(details_message),
+        )
     }
 
     pub fn invalid_input(message: impl Into<String>) -> FederationError {
@@ -156,8 +152,7 @@ impl FederationError {
     }
 
     pub fn error_code(&self) -> Option<FederationSourceErrorCode> {
-        self.as_connector_exception()
-            .and_then(super::athena_connector_exception::AthenaConnectorException::error_code)
+        self.as_connector_exception().map(|e| e.code)
     }
 
     #[must_use]

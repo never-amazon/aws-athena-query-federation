@@ -230,10 +230,7 @@ async fn checked_exception_becomes_connector_exception_with_response_and_no_caus
     );
     let exception = err.as_connector_exception().unwrap();
     assert!(std::error::Error::source(exception).is_none());
-    let response = exception
-        .response()
-        .and_then(|r| r.downcast_ref::<FederationError>())
-        .unwrap();
+    let response = exception.response.as_deref().unwrap();
     assert_eq!("java.io.IOException", response.java_class_name());
 }
 

@@ -363,7 +363,7 @@ async fn build_split_sql_rejects_timestamps_outside_the_postgre_sql_range() {
         .unwrap_err();
     assert_eq!(
         "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999",
-        error.as_connector_exception().unwrap().message()
+        error.as_connector_exception().unwrap().message
     );
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException),
@@ -390,7 +390,7 @@ async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static st
         .await
         .unwrap_err();
     let connector = error.as_connector_exception().unwrap();
-    assert_eq!(message, connector.message());
+    assert_eq!(message, connector.message);
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException),
         error.error_code()

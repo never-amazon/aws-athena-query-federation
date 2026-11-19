@@ -19,8 +19,8 @@ use super::metadata_handler::{require_identity, MetadataHandler};
 use crate::data::SchemaBuilder;
 use crate::domain::table_name::TableName;
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, JavaCause,
-    JavaThrowable, Result,
+    AthenaConnectorException, FederationError, FederationSourceErrorCode, JavaCause, JavaThrowable,
+    Result,
 };
 use crate::metadata::glue::{self, GlueClient};
 use crate::metadata::{
@@ -283,14 +283,16 @@ pub trait GlueMetadataHandler: MetadataHandler {
         };
         lexed.map_err(|ex| {
             if ex.is_runtime_exception() {
-                FederationError::AthenaConnector(AthenaConnectorException::with_response(
-                    Arc::new(ex),
-                    format!(
-                        "Error converting field[{name}] with type[{}]",
-                        glue_type.unwrap_or("null")
-                    ),
-                    ErrorDetails::of(FederationSourceErrorCode::OperationNotSupportedException),
-                ))
+                FederationError::AthenaConnector(
+                    AthenaConnectorException::new(
+                        FederationSourceErrorCode::OperationNotSupportedException,
+                        format!(
+                            "Error converting field[{name}] with type[{}]",
+                            glue_type.unwrap_or("null")
+                        ),
+                    )
+                    .with_response(ex),
+                )
             } else {
                 ex
             }

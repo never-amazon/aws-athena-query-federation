@@ -789,10 +789,10 @@ async fn test_make_extractor_with_unsupported_type() {
         panic!("Expected AthenaConnectorException for unsupported type LIST");
     };
     let connector = e.as_connector_exception().unwrap();
-    assert_eq!("Unhandled type LIST", connector.message());
+    assert_eq!("Unhandled type LIST", connector.message);
     assert_eq!(
-        Some(FederationSourceErrorCode::OperationNotSupportedException.as_str()),
-        connector.error_details().error_code()
+        FederationSourceErrorCode::OperationNotSupportedException,
+        connector.code
     );
 }
 

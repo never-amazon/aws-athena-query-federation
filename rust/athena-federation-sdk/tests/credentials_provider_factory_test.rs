@@ -153,8 +153,8 @@ async fn test_create_credential_provider_when_invalid_json_throws_exception() {
         .as_connector_exception()
         .expect("Expected AthenaConnectorException");
     assert_eq!(
-        Some(FederationSourceErrorCode::InternalServiceException.as_str()),
-        connector.error_details().error_code()
+        FederationSourceErrorCode::InternalServiceException,
+        connector.code
     );
     assert!(e
         .to_string()
@@ -177,8 +177,8 @@ async fn test_create_credential_provider_when_invalid_oauth_class_throws_excepti
         .as_connector_exception()
         .expect("Expected AthenaConnectorException");
     assert_eq!(
-        Some(FederationSourceErrorCode::InternalServiceException.as_str()),
-        connector.error_details().error_code()
+        FederationSourceErrorCode::InternalServiceException,
+        connector.code
     );
     assert!(e.to_string().contains("Failed to create OAuth provider"));
 }

@@ -191,10 +191,10 @@ fn assert_connector_error(
     let connector = e
         .as_connector_exception()
         .expect("Expected AthenaConnectorException");
-    assert_eq!(Some(code.as_str()), connector.error_details().error_code());
+    assert_eq!(code, connector.code);
     match message {
-        Some(m) => assert_eq!(Some(m), connector.error_details().error_message()),
-        None => assert!(connector.error_details().error_message().is_some()),
+        Some(m) => assert_eq!(Some(m), connector.details_message.as_deref()),
+        None => assert!(connector.details_message.as_deref().is_some()),
     }
 }
 

@@ -3,9 +3,8 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::aes::Aes192;
 use aes_gcm::{Aes128Gcm, Aes256Gcm, AesGcm, Nonce};
 
-use super::crypto_support::{internal_error, invalid_input};
 use super::encryption_key::EncryptionKey;
-use crate::exceptions::Result;
+use crate::exceptions::{FederationError, Result};
 
 pub const GCM_TAG_LENGTH_BITS: usize = 16 * 8;
 pub const NONCE_BYTES: usize = 12;
@@ -43,7 +42,7 @@ impl Cipher {
 
 fn make_cipher(key: &EncryptionKey) -> Result<(Cipher, Nonce<U12>)> {
     if key.nonce().len() != NONCE_BYTES {
-        return Err(invalid_input(format!(
+        return Err(FederationError::invalid_input(format!(
             "Expected {} nonce bytes but found {}",
             NONCE_BYTES,
             key.nonce().len()
@@ -51,9 +50,9 @@ fn make_cipher(key: &EncryptionKey) -> Result<(Cipher, Nonce<U12>)> {
     }
     tracing::debug!("Cipher key bytes length: {}", key.key().len());
     if key.key().is_empty() {
-        return Err(invalid_input("Invalid key"));
+        return Err(FederationError::invalid_input("Invalid key"));
     }
-    let bad_key = |_| internal_error("Key length not 128/192/256 bits.");
+    let bad_key = |_| FederationError::internal("Key length not 128/192/256 bits.");
     let cipher = match key.key().len() {
         16 => Cipher::Aes128(Box::new(
             Aes128Gcm::new_from_slice(key.key()).map_err(bad_key)?,
@@ -64,10 +63,15 @@ fn make_cipher(key: &EncryptionKey) -> Result<(Cipher, Nonce<U12>)> {
         32 => Cipher::Aes256(Box::new(
             Aes256Gcm::new_from_slice(key.key()).map_err(bad_key)?,
         )),
-        _ => return Err(internal_error("Key length not 128/192/256 bits.")),
+        _ => {
+            return Err(FederationError::internal(
+                "Key length not 128/192/256 bits.",
+            ))
+        }
     };
-    let nonce = Nonce::<U12>::try_from(key.nonce())
-        .map_err(|_| invalid_input(format!("Expected {NONCE_BYTES} nonce bytes")))?;
+    let nonce = Nonce::<U12>::try_from(key.nonce()).map_err(|_| {
+        FederationError::invalid_input(format!("Expected {NONCE_BYTES} nonce bytes"))
+    })?;
     Ok((cipher, nonce))
 }
 
@@ -75,15 +79,15 @@ pub(crate) fn gcm_encrypt(key: &EncryptionKey, input: &[u8]) -> Result<Vec<u8>> 
     let (cipher, nonce) = make_cipher(key)?;
     cipher
         .encrypt(&nonce, input)
-        .map_err(|_| internal_error("GCM encryption failed"))
+        .map_err(|_| FederationError::internal("GCM encryption failed"))
 }
 
 pub(crate) fn gcm_decrypt(key: &EncryptionKey, input: &[u8]) -> Result<Vec<u8>> {
     let (cipher, nonce) = make_cipher(key)?;
     if input.len() < TAG_BYTES {
-        return Err(internal_error("data too short"));
+        return Err(FederationError::internal("data too short"));
     }
     cipher
         .decrypt(&nonce, input)
-        .map_err(|_| internal_error("mac check in GCM failed"))
+        .map_err(|_| FederationError::internal("mac check in GCM failed"))
 }

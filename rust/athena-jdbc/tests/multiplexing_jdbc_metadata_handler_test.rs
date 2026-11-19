@@ -318,7 +318,7 @@ async fn get_partition_schema_for_unsupported_catalog() {
         .unwrap_err();
     assert!(error.is_runtime_exception());
     assert_eq!(
-        error.as_connector_exception().unwrap().message(),
+        error.as_connector_exception().unwrap().message,
         "Catalog is not supported in multiplexer. After registering the catalog in Athena, must set 'unsupportedCatalog_connection_string' environment variable in Lambda. See JDBC connector README for further details."
     );
     assert!(fixture.delegate.calls().is_empty());
@@ -378,11 +378,7 @@ async fn test_constructor_with_too_many_handlers_should_throw_exception() {
     let Err(error) = mux(&fixture.factory, map) else {
         panic!("expected an error");
     };
-    let message = error
-        .as_connector_exception()
-        .unwrap()
-        .message()
-        .to_string();
+    let message = error.as_connector_exception().unwrap().message.clone();
     assert!(message.contains(&format!(
         "Max {MAX_CATALOGS} catalogs supported in multiplexer"
     )));

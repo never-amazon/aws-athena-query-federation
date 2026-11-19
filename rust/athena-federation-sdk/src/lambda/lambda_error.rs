@@ -31,7 +31,7 @@ impl LambdaError {
     pub fn new(error: &FederationError) -> LambdaError {
         let error_code = error
             .as_connector_exception()
-            .map(|e| e.error_details().error_code().unwrap_or("null").to_string());
+            .map(|e| e.code.as_str().to_string());
         let mut causes = Vec::new();
         let mut next = error.java_cause();
         while let Some(cause) = next {

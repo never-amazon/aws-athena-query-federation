@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use arrow::error::ArrowError;
 use athena_federation_sdk::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode, JavaCause, JavaThrowable,
+    AthenaConnectorException, FederationSourceErrorCode, JavaCause, JavaThrowable,
 };
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::FederationError;
@@ -86,11 +84,10 @@ fn io_error_wrapped_in_runtime_exception_reports_one_cause() {
 
 #[test]
 fn connector_exception_with_io_cause_reports_one_cause() {
-    let error = FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-        "outer",
-        Arc::new(FederationError::from(std::io::Error::other("inner"))),
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ));
+    let error = FederationError::AthenaConnector(
+        AthenaConnectorException::new(FederationSourceErrorCode::InternalServiceException, "outer")
+            .with_cause(FederationError::from(std::io::Error::other("inner"))),
+    );
     assert_eq!(
         "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
          errorMessage: outer\n\
@@ -102,11 +99,10 @@ fn connector_exception_with_io_cause_reports_one_cause() {
 
 #[test]
 fn arrow_error_cause_reports_one_cause() {
-    let error = FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-        "outer",
-        Arc::new(FederationError::from(ArrowError::IpcError("bad".into()))),
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ));
+    let error = FederationError::AthenaConnector(
+        AthenaConnectorException::new(FederationSourceErrorCode::InternalServiceException, "outer")
+            .with_cause(FederationError::from(ArrowError::IpcError("bad".into()))),
+    );
     assert_eq!(1, LambdaError::new(&error).causes().len());
 }
 

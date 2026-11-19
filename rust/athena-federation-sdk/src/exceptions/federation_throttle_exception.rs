@@ -1,45 +1,26 @@
-use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
 
+use super::java_throwable::JavaThrowable;
+
 #[derive(Clone, Default)]
 pub struct FederationThrottleException {
-    message: Option<String>,
-    cause: Option<Arc<dyn StdError + Send + Sync>>,
+    pub message: Option<String>,
+    pub cause: Option<Arc<dyn JavaThrowable>>,
 }
 
 impl FederationThrottleException {
-    pub fn new() -> Self {
-        FederationThrottleException::default()
-    }
-
-    pub fn with_message(message: impl Into<String>) -> Self {
+    pub fn new(message: impl Into<String>) -> Self {
         FederationThrottleException {
             message: Some(message.into()),
             cause: None,
         }
     }
 
-    pub fn with_message_and_cause(
-        message: impl Into<String>,
-        cause: Arc<dyn StdError + Send + Sync>,
-    ) -> Self {
-        FederationThrottleException {
-            message: Some(message.into()),
-            cause: Some(cause),
-        }
-    }
-
-    pub fn message(&self) -> Option<&str> {
-        self.message.as_deref()
-    }
-
-    pub fn cause(&self) -> Option<&Arc<dyn StdError + Send + Sync>> {
-        self.cause.as_ref()
-    }
-
-    pub fn suppressed(&self) -> &[Arc<dyn StdError + Send + Sync>] {
-        &[]
+    #[must_use]
+    pub fn with_cause(mut self, cause: impl JavaThrowable) -> Self {
+        self.cause = Some(Arc::new(cause));
+        self
     }
 }
 
@@ -65,10 +46,10 @@ impl fmt::Display for FederationThrottleException {
     }
 }
 
-impl StdError for FederationThrottleException {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+impl std::error::Error for FederationThrottleException {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.cause
-            .as_ref()
-            .map(|c| c.as_ref() as &(dyn StdError + 'static))
+            .as_deref()
+            .map(|cause| cause as &(dyn std::error::Error + 'static))
     }
 }

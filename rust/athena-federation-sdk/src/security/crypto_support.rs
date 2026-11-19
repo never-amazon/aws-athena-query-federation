@@ -1,33 +1,16 @@
-use std::sync::Arc;
-
 use arrow::datatypes::SchemaRef;
 
 use crate::data::{Block, BlockAllocator, RecordBatchSerDe};
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+    AthenaConnectorException, FederationError, FederationSourceErrorCode, Result,
 };
-
-pub(crate) fn internal_error(message: impl Into<String>) -> FederationError {
-    FederationError::AthenaConnector(AthenaConnectorException::new(
-        message,
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ))
-}
-
-pub(crate) fn invalid_input(message: impl Into<String>) -> FederationError {
-    FederationError::AthenaConnector(AthenaConnectorException::new(
-        message,
-        ErrorDetails::of(FederationSourceErrorCode::InvalidInputException),
-    ))
-}
 
 fn connector_with_response(response: FederationError) -> FederationError {
     let message = response.to_string();
-    FederationError::AthenaConnector(AthenaConnectorException::with_response(
-        Arc::new(response),
-        message,
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ))
+    FederationError::AthenaConnector(
+        AthenaConnectorException::new(FederationSourceErrorCode::InternalServiceException, message)
+            .with_response(response),
+    )
 }
 
 fn wrap_io(err: FederationError) -> FederationError {
@@ -77,14 +60,11 @@ mod tests {
         let exception = err.as_connector_exception().unwrap();
         assert_eq!(
             Some(FederationSourceErrorCode::InternalServiceException),
-            exception.error_code()
+            Some(exception.code)
         );
-        assert_eq!("Ipc error: bad ipc", exception.message());
+        assert_eq!("Ipc error: bad ipc", exception.message);
         assert!(exception.source().is_none());
-        let response = exception
-            .response()
-            .and_then(|r| r.downcast_ref::<FederationError>())
-            .unwrap();
+        let response = exception.response.as_deref().unwrap();
         assert_eq!("java.io.IOException", response.java_class_name());
     }
 }

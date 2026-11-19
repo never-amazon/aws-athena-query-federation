@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::CredentialsProvider;
-use athena_federation_sdk::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode,
-};
+use athena_federation_sdk::exceptions::{AthenaConnectorException, FederationSourceErrorCode};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
@@ -169,11 +167,13 @@ async fn create_private_key_off_the_async_thread(
     })
     .await
     .map_err(|e| {
-        FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-            e.to_string(),
-            Arc::new(e),
-            ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-        ))
+        FederationError::AthenaConnector(
+            AthenaConnectorException::new(
+                FederationSourceErrorCode::InternalServiceException,
+                e.to_string(),
+            )
+            .with_cause(FederationError::other(e)),
+        )
     })?
 }
 

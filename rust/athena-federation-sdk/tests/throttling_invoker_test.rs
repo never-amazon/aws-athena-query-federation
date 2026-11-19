@@ -106,7 +106,7 @@ async fn invoke_with_throttle() {
                     async move {
                         if count.fetch_add(1, Ordering::SeqCst) + 1 < 4 {
                             return Err(FederationError::Throttle(
-                                FederationThrottleException::new(),
+                                FederationThrottleException::default(),
                             ));
                         }
                         Ok(val)
@@ -175,11 +175,11 @@ async fn invoke_with_throttle_no_spill() {
         .as_connector_exception()
         .expect("AthenaConnectorException");
     assert_eq!(
-        Some(FederationSourceErrorCode::ThrottlingException),
-        connector.error_code()
+        FederationSourceErrorCode::ThrottlingException,
+        connector.code
     );
     assert!(connector
-        .message()
+        .message
         .starts_with("ThrottlingInvoker requesting slow down due to"));
 }
 

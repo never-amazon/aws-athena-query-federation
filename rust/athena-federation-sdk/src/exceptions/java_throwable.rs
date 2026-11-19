@@ -1,7 +1,5 @@
 use std::error::Error as StdError;
-use std::sync::Arc;
 
-use super::athena_connector_exception::AthenaConnectorException;
 use super::federation_error::FederationError;
 use crate::security::AwsServiceError;
 
@@ -35,31 +33,14 @@ pub enum JavaCause<'a> {
 
 impl<'a> JavaCause<'a> {
     pub fn foreign(error: &'a (dyn StdError + 'static)) -> JavaCause<'a> {
-        let federation = error.downcast_ref::<FederationError>().or_else(|| {
-            error
-                .downcast_ref::<Arc<FederationError>>()
-                .map(AsRef::as_ref)
-        });
-        match federation {
-            Some(federation) => JavaCause::Throwable(federation),
-            None => JavaCause::Foreign(error),
-        }
+        JavaCause::Foreign(error)
     }
 
     pub fn java_class_name(self) -> String {
         match self {
             JavaCause::Throwable(throwable) => throwable.java_class_name(),
-            JavaCause::Foreign(error) => {
-                if error.is::<AthenaConnectorException>() {
-                    ATHENA_CONNECTOR_EXCEPTION.to_string()
-                } else if let Some(aws) = error.downcast_ref::<AwsServiceError>() {
-                    aws_class_name(aws)
-                } else if error.is::<std::io::Error>() {
-                    IO_EXCEPTION.to_string()
-                } else {
-                    RUNTIME_EXCEPTION.to_string()
-                }
-            }
+            JavaCause::Foreign(error) if error.is::<std::io::Error>() => IO_EXCEPTION.to_string(),
+            JavaCause::Foreign(_) => RUNTIME_EXCEPTION.to_string(),
         }
     }
 
@@ -126,8 +107,8 @@ impl JavaThrowable for FederationError {
             FederationError::Other(e) => foreign_source(e.as_ref()),
             FederationError::IoError(e) => foreign_source(e.as_ref()),
             FederationError::Arrow(e) => foreign_source(e.as_ref()),
-            FederationError::AthenaConnector(e) => foreign_source(e),
-            FederationError::Throttle(e) => foreign_source(e),
+            FederationError::AthenaConnector(e) => e.cause.as_deref().map(JavaCause::Throwable),
+            FederationError::Throttle(e) => e.cause.as_deref().map(JavaCause::Throwable),
             _ => None,
         }
     }
@@ -145,4 +126,14 @@ fn aws_class_name(error: &AwsServiceError) -> String {
     error
         .java_class_name()
         .unwrap_or_else(|| AWS_SERVICE_EXCEPTION.to_string())
+}
+
+impl JavaThrowable for AwsServiceError {
+    fn java_class_name(&self) -> String {
+        aws_class_name(self)
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        None
+    }
 }

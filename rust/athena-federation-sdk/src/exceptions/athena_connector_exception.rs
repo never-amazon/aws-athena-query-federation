@@ -1,95 +1,48 @@
-use std::any::Any;
-use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
 
-use super::error_details::{ErrorDetails, FederationSourceErrorCode};
+use super::error_details::FederationSourceErrorCode;
+use super::federation_error::FederationError;
+use super::java_throwable::JavaThrowable;
 
-pub type Response = Arc<dyn Any + Send + Sync>;
-pub type Cause = Arc<dyn StdError + Send + Sync>;
-
-#[derive(Clone)]
+#[derive(Clone, thiserror::Error)]
+#[error("{message}")]
 pub struct AthenaConnectorException {
-    message: String,
-    response: Option<Response>,
-    cause: Option<Cause>,
-    error_details: ErrorDetails,
+    pub message: String,
+    pub code: FederationSourceErrorCode,
+    pub details_message: Option<String>,
+    #[source]
+    pub cause: Option<Arc<dyn JavaThrowable>>,
+    pub response: Option<Arc<FederationError>>,
 }
 
 impl AthenaConnectorException {
-    pub fn new(message: impl Into<String>, error_details: ErrorDetails) -> Self {
+    pub fn new(code: FederationSourceErrorCode, message: impl Into<String>) -> Self {
         AthenaConnectorException {
             message: message.into(),
-            response: None,
+            code,
+            details_message: None,
             cause: None,
-            error_details,
-        }
-    }
-
-    pub fn with_response(
-        response: Response,
-        message: impl Into<String>,
-        error_details: ErrorDetails,
-    ) -> Self {
-        AthenaConnectorException {
-            message: message.into(),
-            response: Some(response),
-            cause: None,
-            error_details,
-        }
-    }
-
-    pub fn with_cause(
-        message: impl Into<String>,
-        cause: Cause,
-        error_details: ErrorDetails,
-    ) -> Self {
-        AthenaConnectorException {
-            message: message.into(),
             response: None,
-            cause: Some(cause),
-            error_details,
         }
     }
 
-    pub fn with_response_and_cause(
-        response: Response,
-        message: impl Into<String>,
-        cause: Cause,
-        error_details: ErrorDetails,
-    ) -> Self {
-        AthenaConnectorException {
-            message: message.into(),
-            response: Some(response),
-            cause: Some(cause),
-            error_details,
-        }
+    #[must_use]
+    pub fn with_details_message(mut self, details_message: impl Into<String>) -> Self {
+        self.details_message = Some(details_message.into());
+        self
     }
 
-    pub fn of(code: FederationSourceErrorCode, message: impl Into<String>) -> Self {
-        AthenaConnectorException::new(message, ErrorDetails::of(code))
+    #[must_use]
+    pub fn with_cause(mut self, cause: impl JavaThrowable) -> Self {
+        self.cause = Some(Arc::new(cause));
+        self
     }
 
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    pub fn response(&self) -> Option<&Response> {
-        self.response.as_ref()
-    }
-
-    pub fn cause(&self) -> Option<&Cause> {
-        self.cause.as_ref()
-    }
-
-    pub fn error_details(&self) -> &ErrorDetails {
-        &self.error_details
-    }
-
-    pub fn error_code(&self) -> Option<FederationSourceErrorCode> {
-        self.error_details
-            .error_code()
-            .map(FederationSourceErrorCode::from_value)
+    #[must_use]
+    pub fn with_response(mut self, response: FederationError) -> Self {
+        self.response = Some(Arc::new(response));
+        self
     }
 }
 
@@ -97,26 +50,13 @@ impl fmt::Debug for AthenaConnectorException {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AthenaConnectorException")
             .field("message", &self.message)
-            .field("has_response", &self.response.is_some())
+            .field("code", &self.code)
+            .field("details_message", &self.details_message)
             .field(
                 "cause",
                 &self.cause.as_ref().map(std::string::ToString::to_string),
             )
-            .field("error_details", &self.error_details)
+            .field("has_response", &self.response.is_some())
             .finish()
-    }
-}
-
-impl fmt::Display for AthenaConnectorException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl StdError for AthenaConnectorException {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.cause
-            .as_ref()
-            .map(|c| c.as_ref() as &(dyn StdError + 'static))
     }
 }

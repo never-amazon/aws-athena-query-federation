@@ -235,7 +235,7 @@ async fn read_with_constraint_with_unsupported_catalog() {
     assert!(e.is_runtime_exception());
     assert_eq!(
         "Catalog is not supported in multiplexer. After registering the catalog in Athena, must set 'unsupportedCatalog_connection_string' environment variable in Lambda. See JDBC connector README for further details.",
-        e.as_connector_exception().unwrap().message()
+        e.as_connector_exception().unwrap().message
     );
     assert!(s.calls.read_with_constraint.lock().unwrap().is_empty());
 }

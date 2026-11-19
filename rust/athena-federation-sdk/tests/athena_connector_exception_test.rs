@@ -1,112 +1,78 @@
-use std::sync::Arc;
-
-use athena_federation_sdk::exceptions::{AthenaConnectorException, ErrorDetails};
+use athena_federation_sdk::exceptions::{AthenaConnectorException, FederationSourceErrorCode};
+use athena_federation_sdk::FederationError;
 
 const ERROR_MESSAGE: &str = "Test Message";
-const ERROR_CODE: &str = "TestErrorCode";
+const ERROR_CODE: FederationSourceErrorCode = FederationSourceErrorCode::InternalServiceException;
 const TEST_RESPONSE: &str = "Test Response";
 
-#[derive(Debug)]
-struct TestCause(String);
-
-impl std::fmt::Display for TestCause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
+fn set_up() -> AthenaConnectorException {
+    AthenaConnectorException::new(ERROR_CODE, ERROR_MESSAGE).with_details_message(ERROR_MESSAGE)
 }
 
-impl std::error::Error for TestCause {}
-
-fn set_up() -> ErrorDetails {
-    ErrorDetails::builder()
-        .error_code(ERROR_CODE)
-        .error_message(ERROR_MESSAGE)
-        .build()
+fn assert_details(exception: &AthenaConnectorException) {
+    assert_eq!(ERROR_CODE, exception.code, "Error code should match");
+    assert_eq!(
+        Some(ERROR_MESSAGE),
+        exception.details_message.as_deref(),
+        "Error details message should match"
+    );
 }
 
 #[test]
 fn constructor_with_response_message_and_error_details_should_set_fields_correctly() {
-    let error_details = set_up();
-    let exception = AthenaConnectorException::with_response(
-        Arc::new(TEST_RESPONSE),
-        ERROR_MESSAGE,
-        error_details.clone(),
-    );
+    let exception = set_up().with_response(FederationError::Runtime(TEST_RESPONSE.to_string()));
     assert_eq!(
-        ERROR_MESSAGE,
-        exception.message(),
+        ERROR_MESSAGE, exception.message,
         "Error message should match"
     );
     assert_eq!(
-        Some(&TEST_RESPONSE),
-        exception.response().and_then(|r| r.downcast_ref::<&str>()),
+        Some(TEST_RESPONSE.to_string()),
+        exception.response.as_ref().map(ToString::to_string),
         "Response should match"
     );
-    assert_eq!(
-        &error_details,
-        exception.error_details(),
-        "Error details should match"
-    );
+    assert_details(&exception);
     assert!(
-        exception.cause().is_none(),
+        exception.cause.is_none(),
         "Expected no cause for (message, details) constructor"
     );
 }
 
 #[test]
 fn constructor_with_message_and_error_details_should_set_fields_correctly() {
-    let error_details = set_up();
-    let exception = AthenaConnectorException::new(ERROR_MESSAGE, error_details.clone());
+    let exception = set_up();
     assert_eq!(
-        ERROR_MESSAGE,
-        exception.message(),
+        ERROR_MESSAGE, exception.message,
         "Error message should match"
     );
     assert!(
-        exception.response().is_none(),
+        exception.response.is_none(),
         "Response should be null when not provided"
     );
-    assert_eq!(
-        &error_details,
-        exception.error_details(),
-        "Error details should match"
-    );
+    assert_details(&exception);
     assert!(
-        exception.cause().is_none(),
+        exception.cause.is_none(),
         "Expected no cause for (message, details) constructor"
     );
 }
 
 #[test]
 fn constructor_with_response_message_cause_and_error_details_should_set_fields_correctly() {
-    let error_details = set_up();
-    let test_cause: Arc<dyn std::error::Error + Send + Sync> =
-        Arc::new(TestCause("Test Cause".to_string()));
-    let exception = AthenaConnectorException::with_response_and_cause(
-        Arc::new(TEST_RESPONSE),
-        ERROR_MESSAGE,
-        test_cause.clone(),
-        error_details.clone(),
-    );
+    let exception = set_up()
+        .with_response(FederationError::Runtime(TEST_RESPONSE.to_string()))
+        .with_cause(FederationError::Runtime("Test Cause".to_string()));
     assert_eq!(
-        ERROR_MESSAGE,
-        exception.message(),
+        ERROR_MESSAGE, exception.message,
         "Error message should match"
     );
-    assert!(
-        exception
-            .cause()
-            .is_some_and(|c| Arc::ptr_eq(c, &test_cause)),
+    assert_eq!(
+        Some("Test Cause".to_string()),
+        exception.cause.as_ref().map(ToString::to_string),
         "Cause should match"
     );
     assert_eq!(
-        Some(&TEST_RESPONSE),
-        exception.response().and_then(|r| r.downcast_ref::<&str>()),
+        Some(TEST_RESPONSE.to_string()),
+        exception.response.as_ref().map(ToString::to_string),
         "Response should match"
     );
-    assert_eq!(
-        &error_details,
-        exception.error_details(),
-        "Error details should match"
-    );
+    assert_details(&exception);
 }
