@@ -17,11 +17,10 @@ pub use environment_properties::{
     connection_properties_to_environment, POSTGRESQL_CONNECTION_STRING,
 };
 pub use metadata_handler::{
-    escape_identifier, get_char_columns, get_split_clauses, is_valid_split_column, jdbc_properties,
+    escape_identifier, get_char_columns, get_split_clauses, is_valid_split_column,
     wrap_name_with_escaped_character, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
     ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
-    DEFAULT_NUM_SPLITS, GET_PARTITIONS_QUERY, JDBC_PROPERTIES, LIST_PAGINATED_TABLES_QUERY,
-    NON_DEFAULT_COLLATE, SQL_SPLITS_STRING,
+    DEFAULT_NUM_SPLITS, GET_PARTITIONS_QUERY, LIST_PAGINATED_TABLES_QUERY, NON_DEFAULT_COLLATE,
 };
 pub use mux_composite_handler::mux_composite_handler_from_environment;
 pub use mux_metadata_handler::PostGreSqlMuxMetadataHandler;

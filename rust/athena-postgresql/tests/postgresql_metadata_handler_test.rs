@@ -1243,12 +1243,11 @@ async fn get_split_clauses_malicious_primary_key_column_name_is_quoted_and_escap
 
 #[tokio::test]
 async fn is_valid_split_column_rejects_null_empty_and_control_chars_accepts_normal() {
-    assert!(is_valid_split_column(Some("order_id")));
-    assert!(is_valid_split_column(Some("my order id")));
-    assert!(!is_valid_split_column(None));
-    assert!(!is_valid_split_column(Some("")));
-    assert!(!is_valid_split_column(Some("id\nGRANT")));
-    assert!(!is_valid_split_column(Some("id\u{0}GRANT")));
+    assert!(is_valid_split_column("order_id"));
+    assert!(is_valid_split_column("my order id"));
+    assert!(!is_valid_split_column(""));
+    assert!(!is_valid_split_column("id\nGRANT"));
+    assert!(!is_valid_split_column("id\u{0}GRANT"));
 }
 
 #[tokio::test]

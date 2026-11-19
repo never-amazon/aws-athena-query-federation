@@ -43,14 +43,12 @@ const MATERIALIZED_VIEWS_QUERY: &str = "select matviewname as \"TABLE_NAME\", sc
 const CHAR_COLUMNS_QUERY: &str = "SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND data_type = 'character'";
 const NUL_IDENTIFIER_MESSAGE: &str = "Zero bytes may not occur in identifiers.";
 
-pub const JDBC_PROPERTIES: [(&str, &str); 1] = [("databaseTerm", "SCHEMA")];
 pub const GET_PARTITIONS_QUERY: &str = "SELECT nmsp_child.nspname AS child_schema, child.relname AS child FROM pg_inherits JOIN pg_class parent ON pg_inherits.inhparent = parent.oid JOIN pg_class child ON pg_inherits.inhrelid = child.oid JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace JOIN pg_namespace nmsp_child ON nmsp_child.oid = child.relnamespace where nmsp_parent.nspname = ? AND parent.relname = ?";
 pub const BLOCK_PARTITION_COLUMN_NAME: &str = "partition_name";
 pub const BLOCK_PARTITION_SCHEMA_COLUMN_NAME: &str = "partition_schema_name";
 pub const ALL_PARTITIONS: &str = "*";
 pub const LIST_PAGINATED_TABLES_QUERY: &str = "SELECT a.\"TABLE_NAME\", a.\"TABLE_SCHEM\" FROM ((SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?) UNION (SELECT matviewname as \"TABLE_NAME\", schemaname as \"TABLE_SCHEM\" from pg_catalog.pg_matviews mv where has_table_privilege(format('%I.%I', mv.schemaname, mv.matviewname), 'select') and schemaname = ?)) AS a ORDER BY a.\"TABLE_NAME\" LIMIT ? OFFSET ?";
 pub const NON_DEFAULT_COLLATE: &str = "non_default_collate";
-pub const SQL_SPLITS_STRING: &str = "select min(%s), max(%s) from %s.%s";
 pub const DEFAULT_NUM_SPLITS: i32 = 20;
 
 fn number_format(text: &str) -> FederationError {
@@ -87,11 +85,8 @@ pub struct PostGreSqlMetadataDialect;
 
 pub type PostGreSqlMetadataHandler = JdbcMetadataHandler<PostGreSqlMetadataDialect>;
 
-pub fn jdbc_properties() -> JdbcProperties {
-    JDBC_PROPERTIES
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-        .collect()
+fn jdbc_properties() -> JdbcProperties {
+    JdbcProperties::from([("databaseTerm".to_string(), "SCHEMA".to_string())])
 }
 
 impl PostGreSqlMetadataDialect {
@@ -179,8 +174,8 @@ pub fn escape_identifier(input: &str) -> Result<String> {
     Ok(format!("\"{}\"", input.replace('"', "\"\"")))
 }
 
-pub fn is_valid_split_column(column_name: Option<&str>) -> bool {
-    column_name.is_some_and(|name| !name.is_empty() && !name.chars().any(char::is_control))
+pub fn is_valid_split_column(column_name: &str) -> bool {
+    !column_name.is_empty() && !column_name.chars().any(char::is_control)
 }
 
 pub fn wrap_name_with_escaped_character(input: &str) -> String {
@@ -281,7 +276,7 @@ async fn split_clauses_from(
     let Some(primary_key_column) = primary_key_column else {
         return Ok(split_clauses);
     };
-    if !is_valid_split_column(Some(&primary_key_column)) {
+    if !is_valid_split_column(&primary_key_column) {
         tracing::warn!(
             "Primary key column name is not a valid split identifier for table {}.{}. Skipping split generation.",
             table_name.schema_name(),
