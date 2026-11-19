@@ -1,6 +1,7 @@
 use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
@@ -448,7 +449,7 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
     pub fn build_export_spill_config(&self, request: &ReadRecordsRequest) -> Result<SpillConfig> {
         Ok(SpillConfig {
             max_inline_block_bytes: 0,
-            num_spill_threads: 2,
+            spill_threads: NonZeroUsize::new(2),
             ..self.context.spill_config(request)?
         })
     }

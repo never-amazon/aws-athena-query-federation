@@ -14,7 +14,7 @@ type SeenCall = (
     String,
     DataKeySpec,
     Option<AwsRequestOverrideConfiguration>,
-    i32,
+    usize,
 );
 
 #[derive(Default)]
@@ -44,7 +44,7 @@ impl KmsClient for MockKmsClient {
         self.data_key.clone().unwrap_or_else(|| Ok(Vec::new()))
     }
 
-    async fn generate_random(&self, number_of_bytes: i32) -> Result<Vec<u8>, AwsServiceError> {
+    async fn generate_random(&self, number_of_bytes: usize) -> Result<Vec<u8>, AwsServiceError> {
         self.generate_random_calls.fetch_add(1, Ordering::SeqCst);
         if let Some(last) = self.seen.lock().unwrap().last_mut() {
             last.3 = number_of_bytes;

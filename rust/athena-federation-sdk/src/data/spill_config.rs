@@ -1,7 +1,7 @@
+use std::num::NonZeroUsize;
+
 use crate::domain::spill::SpillLocation;
 use crate::security::EncryptionKey;
-
-const DEFAULT_SPILL_THREADS: i32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpillConfig {
@@ -10,7 +10,7 @@ pub struct SpillConfig {
     pub encryption_key: Option<EncryptionKey>,
     pub max_block_bytes: i64,
     pub max_inline_block_bytes: i64,
-    pub num_spill_threads: i32,
+    pub spill_threads: Option<NonZeroUsize>,
 }
 
 impl SpillConfig {
@@ -21,7 +21,7 @@ impl SpillConfig {
             encryption_key: None,
             max_block_bytes: 0,
             max_inline_block_bytes: 0,
-            num_spill_threads: DEFAULT_SPILL_THREADS,
+            spill_threads: Some(NonZeroUsize::MIN),
         }
     }
 }

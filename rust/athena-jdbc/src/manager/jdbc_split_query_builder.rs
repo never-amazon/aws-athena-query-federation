@@ -88,9 +88,9 @@ pub trait SplitDialect: Send + Sync + Sized {
             sql.push(' ');
             sql.push_str(&order_by_clause);
         }
-        if constraints.limit() > 0 {
+        if let Some(limit) = constraints.limit() {
             sql.push_str(" LIMIT ");
-            sql.push_str(&constraints.limit().to_string());
+            sql.push_str(&limit.to_string());
         }
         tracing::info!("Generated SQL : {}", sql);
     }

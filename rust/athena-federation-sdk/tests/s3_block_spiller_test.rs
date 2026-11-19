@@ -1,5 +1,6 @@
 use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Schema};
@@ -181,12 +182,12 @@ async fn setup() -> Setup {
     }
 }
 
-async fn async_spill_config(max_block_bytes: i64, num_spill_threads: i32) -> SpillConfig {
+async fn async_spill_config(max_block_bytes: i64, spill_threads: usize) -> SpillConfig {
     SpillConfig {
         encryption_key: Some(KeySource::Local.create(None).await.unwrap()),
         max_block_bytes,
         max_inline_block_bytes: 0,
-        num_spill_threads,
+        spill_threads: NonZeroUsize::new(spill_threads),
         ..SpillConfig::new(spill_location(), REQUEST_ID)
     }
 }
@@ -376,7 +377,7 @@ async fn get_spill_locations_rethrows_sync_final_spill_error() {
         encryption_key: Some(KeySource::Local.create(None).await.unwrap()),
         max_block_bytes: 1_000_000,
         max_inline_block_bytes: 0,
-        num_spill_threads: 0,
+        spill_threads: None,
         ..SpillConfig::new(spill_location(), REQUEST_ID)
     };
     let sync_spiller = S3BlockSpiller::new(

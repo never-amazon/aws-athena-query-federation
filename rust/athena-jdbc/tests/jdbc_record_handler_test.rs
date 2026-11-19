@@ -220,7 +220,7 @@ async fn read_with_constraint() {
     let spill_config = SpillConfig {
         max_block_bytes: 1,
         max_inline_block_bytes: 0,
-        num_spill_threads: 0,
+        spill_threads: None,
         ..SpillConfig::new(spill_location.into(), TEST_QUERY_ID)
     };
     let spiller = S3BlockSpiller::new(

@@ -82,8 +82,6 @@ async fn kms_key(
                 FederationError::from(e)
             }
         })?;
-    let nonce_bytes =
-        i32::try_from(NONCE_BYTES).map_err(|e| FederationError::internal(e.to_string()))?;
-    let nonce = kms_client.generate_random(nonce_bytes).await?;
+    let nonce = kms_client.generate_random(NONCE_BYTES).await?;
     Ok(EncryptionKey::new(key, nonce))
 }

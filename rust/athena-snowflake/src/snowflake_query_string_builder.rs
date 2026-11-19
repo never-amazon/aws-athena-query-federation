@@ -83,8 +83,8 @@ pub fn append_order_by_limit_offset(
         } else {
             format!(" {order_by_clause}")
         };
-        if constraints.limit() > 0 {
-            return format!("{order_by} LIMIT {}", constraints.limit());
+        if let Some(limit) = constraints.limit() {
+            return format!("{order_by} LIMIT {limit}");
         }
         return order_by;
     };
@@ -111,14 +111,16 @@ struct SplitPage<'a> {
 }
 
 impl SplitPage<'_> {
-    fn limit_within(&self, constraint_limit: i64) -> String {
-        if constraint_limit <= 0 {
+    fn limit_within(&self, constraint_limit: Option<u64>) -> String {
+        let Some(constraint_limit) = constraint_limit else {
             return self.limit.to_string();
+        };
+        match self.limit.parse::<i64>() {
+            Ok(limit) if !u64::try_from(limit).is_ok_and(|l| l >= constraint_limit) => {
+                limit.to_string()
+            }
+            _ => constraint_limit.to_string(),
         }
-        self.limit
-            .parse::<i64>()
-            .map_or(constraint_limit, |limit| limit.min(constraint_limit))
-            .to_string()
     }
 }
 

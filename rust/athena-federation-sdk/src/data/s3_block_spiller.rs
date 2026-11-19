@@ -21,7 +21,7 @@ use crate::java_cast::len_to_long;
 use crate::security::{run_blocking, AwsRequestOverrideConfiguration, BlockCrypto, EncryptionKey};
 
 const ASYNC_SHUTDOWN_MILLIS: u64 = 10_000;
-const MAX_ROWS_PER_CALL: i32 = 100;
+const MAX_ROWS_PER_CALL: usize = 100;
 const SPILL_QUEUE_CAPACITY: &str = "SPILL_QUEUE_CAPACITY";
 const SPILL_PUT_REQUEST_HEADERS_ENV: &str = "spill_put_request_headers";
 
@@ -181,7 +181,7 @@ pub struct S3BlockSpiller {
     writer: Arc<SpillWriter>,
     allocator: Arc<dyn BlockAllocator>,
     schema: SchemaRef,
-    max_rows_per_call: i64,
+    max_rows_per_call: usize,
     in_progress_block: Mutex<Block>,
     async_spill_pool: Option<SpillPool>,
     spill_lock: Arc<RwLock<()>>,
@@ -199,11 +199,10 @@ impl S3BlockSpiller {
         config_options: HashMap<String, String>,
     ) -> Result<S3BlockSpiller> {
         let block_crypto = BlockCrypto::for_key(spill_config.encryption_key.clone());
-        let async_spill_pool = if spill_config.num_spill_threads <= 0 {
-            None
-        } else {
-            Some(Self::make_async_spill_pool(&spill_config, &config_options)?)
-        };
+        let async_spill_pool = spill_config
+            .spill_threads
+            .map(|threads| Self::make_async_spill_pool(threads.get(), &config_options))
+            .transpose()?;
         let mut in_progress_block = allocator.create_block(schema.clone());
         in_progress_block.constrain(Some(constraint_evaluator.clone()));
         Ok(S3BlockSpiller {
@@ -219,7 +218,7 @@ impl S3BlockSpiller {
             }),
             allocator,
             schema,
-            max_rows_per_call: i64::from(MAX_ROWS_PER_CALL),
+            max_rows_per_call: MAX_ROWS_PER_CALL,
             in_progress_block: Mutex::new(in_progress_block),
             async_spill_pool,
             spill_lock: Arc::new(RwLock::new(())),
@@ -228,15 +227,14 @@ impl S3BlockSpiller {
         })
     }
 
-    pub fn max_rows_per_call(&self) -> i64 {
+    pub fn max_rows_per_call(&self) -> usize {
         self.max_rows_per_call
     }
 
     fn make_async_spill_pool(
-        config: &SpillConfig,
+        threads: usize,
         config_options: &HashMap<String, String>,
     ) -> Result<SpillPool> {
-        let threads = usize::try_from(config.num_spill_threads).unwrap_or_default();
         let mut spill_queue_capacity = threads;
         let capacity = config_options
             .get(SPILL_QUEUE_CAPACITY)

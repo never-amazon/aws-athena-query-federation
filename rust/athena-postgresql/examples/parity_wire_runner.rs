@@ -156,7 +156,7 @@ impl KmsClient for Stub {
         Err(stub_call_error("KMS", "generateDataKey"))
     }
 
-    async fn generate_random(&self, _number_of_bytes: i32) -> Result<Vec<u8>, AwsServiceError> {
+    async fn generate_random(&self, _number_of_bytes: usize) -> Result<Vec<u8>, AwsServiceError> {
         self.state.record("kms.generateRandom");
         Err(stub_call_error("KMS", "generateRandom"))
     }
