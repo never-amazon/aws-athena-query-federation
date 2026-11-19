@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{arrow_type_to_string, ArrowType, MinorType, Value};
 use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
 use athena_federation_sdk::domain::split::Split;
@@ -142,12 +142,12 @@ pub trait JdbcSplitQueryBuilder: Send + Sync {
         column_names: &str,
     ) -> Result<PreparedStatement> {
         if constraints.query_plan().is_some() {
-            let sql_dialect = match split.get_property(EnvironmentConstants::CATALOG_CASING_FILTER)
+            let sql_dialect = match split.get_property(environment_constants::CATALOG_CASING_FILTER)
             {
                 Some(filter) => {
                     tracing::debug!("Found catalogCasingFilter for getSqlDialect: {}", filter);
                     self.get_sql_dialect_with_catalog_casing_filter(
-                        filter == EnvironmentConstants::UPPERCASE_ONLY,
+                        filter == environment_constants::UPPERCASE_ONLY,
                     )
                 }
                 None => self.get_sql_dialect(),

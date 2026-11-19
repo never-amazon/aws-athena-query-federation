@@ -12,7 +12,7 @@ use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::lambda::{LambdaContext, RequestStreamHandler};
 use crate::request::FederationRequest;
 use crate::security::AwsService;
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory};
+use crate::serde::ObjectMapper;
 
 #[derive(Clone)]
 pub struct CompositeHandler {
@@ -66,9 +66,7 @@ impl CompositeHandler {
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
             let (object_mapper, mut raw_req) =
-                VersionedObjectMapperFactory::read_request_with_version_fallback(
-                    &allocator, input,
-                )?;
+                ObjectMapper::read_request_with_version_fallback(&allocator, input)?;
             if raw_req.is_metadata_request() {
                 raw_req.set_context(context.cloned());
             }
@@ -102,7 +100,9 @@ impl CompositeHandler {
     ) -> Result<Vec<u8>> {
         if let FederationRequest::Ping(ping) = raw_req {
             let response = self.metadata.do_ping(ping).await;
-            return object_mapper.write_value_as_bytes(&response);
+            return object_mapper
+                .write_response(&response.into())
+                .map(String::into_bytes);
         }
         match (raw_req, &self.udf) {
             (request, _) if request.is_metadata_request() => {

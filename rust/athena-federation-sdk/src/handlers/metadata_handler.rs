@@ -7,11 +7,11 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use tokio::sync::Mutex;
 
-use super::athena_exception_filter::ATHENA_EXCEPTION_FILTER;
+use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::{ConfigOptions, FederationRequestHandler};
-use crate::connection::EnvironmentConstants;
+use crate::connection::environment_constants;
 use crate::data::types::java_field_to_string;
 use crate::data::{
     BlockAllocator, BlockAllocatorImpl, S3Client, S3HeadBucketClient, SchemaBuilder,
@@ -34,8 +34,8 @@ use crate::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, EncryptionKey,
     FederatedIdentity, KeySource, KmsEncryptionProvider,
 };
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
-use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
+use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
+use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 
 pub const PARTITION_ID_COL: &str = "partitionId";
 const DISABLE_ENCRYPTION: &str = "true";
@@ -123,11 +123,11 @@ impl MetadataHandlerBaseBuilder {
         let encryption_key_factory = self
             .encryption_key_factory
             .unwrap_or_else(|| default_encryption_key_factory(&config_options, &self.clients));
-        let athena_invoker = ThrottlingInvoker::new_default_builder(
-            Arc::new(ATHENA_EXCEPTION_FILTER),
-            &config_options,
-        )?
-        .build()?;
+        let athena_invoker = ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&config_options)?,
+            is_athena_throttle,
+            None,
+        )?;
         Ok(MetadataHandlerBase {
             secrets_manager: CachableSecretsManager::new(self.clients.secrets_manager),
             athena: self.clients.athena,
@@ -417,7 +417,7 @@ pub trait MetadataHandler: FederationRequestHandler {
         let result = self
             .get_partitions(&mut block_writer, request, &query_status_checker)
             .await;
-        query_status_checker.close();
+        drop(query_status_checker);
         result?;
         Ok(GetTableLayoutResponse::new(
             request.catalog_name(),
@@ -505,11 +505,13 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
         let block_allocator = Arc::new(BlockAllocatorImpl::new());
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
-            let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
             let mut raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = self.do_ping(ping).await;
-                return object_mapper.write_value_as_bytes(&response);
+                return object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes);
             }
             if !raw_req.is_metadata_request() {
                 return Err(FederationError::invalid_input(format!(
@@ -549,12 +551,16 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
             FederationRequest::ListSchemas(req) => {
                 let response = self.do_list_schema_names(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::ListTables(req) => {
                 let response = self.do_list_tables(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetTable(req) => {
                 tracing::info!(
@@ -568,19 +574,23 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                 };
                 tracing::info!("doHandleRequest: response[{}]", response);
                 assert_types(response.schema())?;
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetTableLayout(req) => {
                 let response = self.do_get_table_layout(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetSplits(req) => {
                 let base = self.metadata_base();
                 let identity = require_identity(req.identity())?;
                 let options: &ConfigOptions = identity.config_options();
                 if options
-                    .get(EnvironmentConstants::FAS_TOKEN)
+                    .get(environment_constants::FAS_TOKEN)
                     .is_some_and(Option::is_some)
                 {
                     let override_config = self
@@ -597,12 +607,16 @@ impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
                     .await?;
                 let response = self.do_get_splits(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             FederationRequest::GetDataSourceCapabilities(req) => {
                 let response = self.do_get_data_source_capabilities(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes)
             }
             other => Err(FederationError::invalid_input(format!(
                 "Unknown request type {}",

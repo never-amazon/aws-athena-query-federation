@@ -7,7 +7,7 @@ use crate::serde::base::{
     require_non_null, write_string_array,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const CATALOG_NAME_FIELD: &str = "catalogName";
 const TABLE_NAME_FIELD: &str = "tableName";
@@ -17,7 +17,7 @@ const PARTITION_COLUMNS_FIELD: &str = "partitionColumns";
 pub fn do_typed_serialize(
     response: &GetTableResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(TABLE_NAME_FIELD)?;

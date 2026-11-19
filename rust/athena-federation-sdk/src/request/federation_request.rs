@@ -4,9 +4,9 @@ use super::{FederatedIdentity, PingRequest};
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
-    ListSchemasRequest, ListTablesRequest, MetadataRequest,
+    ListSchemasRequest, ListTablesRequest,
 };
-use crate::records::{ReadRecordsRequest, RecordRequest};
+use crate::records::ReadRecordsRequest;
 use crate::udf::UserDefinedFunctionRequest;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,18 +51,6 @@ impl FederationRequest {
         }
     }
 
-    pub fn as_metadata_request(&self) -> Option<&dyn MetadataRequest> {
-        match self {
-            FederationRequest::ListSchemas(r) => Some(r),
-            FederationRequest::ListTables(r) => Some(r),
-            FederationRequest::GetTable(r) => Some(r),
-            FederationRequest::GetTableLayout(r) => Some(r),
-            FederationRequest::GetSplits(r) => Some(r),
-            FederationRequest::GetDataSourceCapabilities(r) => Some(r),
-            _ => None,
-        }
-    }
-
     pub fn set_context(&mut self, context: Option<LambdaContext>) {
         match self {
             FederationRequest::ListSchemas(r) => r.set_context(context),
@@ -77,19 +65,20 @@ impl FederationRequest {
         }
     }
 
-    pub fn as_record_request(&self) -> Option<&dyn RecordRequest> {
-        match self {
-            FederationRequest::ReadRecords(r) => Some(r),
-            _ => None,
-        }
-    }
-
     pub fn is_metadata_request(&self) -> bool {
-        self.as_metadata_request().is_some()
+        matches!(
+            self,
+            FederationRequest::ListSchemas(_)
+                | FederationRequest::ListTables(_)
+                | FederationRequest::GetTable(_)
+                | FederationRequest::GetTableLayout(_)
+                | FederationRequest::GetSplits(_)
+                | FederationRequest::GetDataSourceCapabilities(_)
+        )
     }
 
     pub fn is_record_request(&self) -> bool {
-        self.as_record_request().is_some()
+        matches!(self, FederationRequest::ReadRecords(_))
     }
 }
 

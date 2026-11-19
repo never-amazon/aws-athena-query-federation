@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{
     ArrowType, Block, BlockAllocator, SchemaBuilder, SimpleBlockWriter,
 };
@@ -14,12 +14,9 @@ use athena_federation_sdk::handlers::{
     AwsClients, FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
 };
 use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype, PushdownSubTypes,
+    ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype,
 };
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
-use athena_federation_sdk::metadata::optimizations::{
-    DataSourceOptimizations, OptimizationSubType,
-};
+use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
@@ -88,7 +85,7 @@ fn java_string(value: Option<String>) -> String {
 fn catalog_casing_filter(identity: Option<&FederatedIdentity>) -> Option<String> {
     let value = identity?
         .config_options()
-        .get(EnvironmentConstants::CATALOG_CASING_FILTER)?;
+        .get(environment_constants::CATALOG_CASING_FILTER)?;
     tracing::info!("Catalog Casing Filter found: {:?}", value);
     Some(java_string(value.clone()))
 }
@@ -444,7 +441,7 @@ impl PostGreSqlMetadataHandler {
                 partition,
             );
         if let Some(filter) = catalog_casing_filter(request.identity()) {
-            builder = builder.add(EnvironmentConstants::CATALOG_CASING_FILTER, filter);
+            builder = builder.add(environment_constants::CATALOG_CASING_FILTER, filter);
         }
         Ok(builder.build())
     }
@@ -468,31 +465,31 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = DataSourceOptimizations::SupportsFilterPushdown
-        .with_supported_sub_types(&[
-            PushdownSubTypes::from(FilterPushdownSubType::SortedRangeSet),
-            PushdownSubTypes::from(FilterPushdownSubType::NullableComparison),
-        ])?;
+    let (name, sub_types) = Capability::Filter(vec![
+        FilterPushdownSubType::SortedRangeSet,
+        FilterPushdownSubType::NullableComparison,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
     let function_names: Vec<String> = StandardFunctions::values()
         .iter()
         .map(|f| f.function_name().function_name().to_string())
         .collect();
     let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-                .with_sub_type_properties(&function_names)?,
-        )])?;
+    let (name, sub_types) = Capability::ComplexExpression(vec![
+        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
+            .with_sub_type_properties(&function_names)?,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
-    athena_jdbc::qpt::JdbcQueryPassthrough
+    athena_jdbc::qpt::JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
     let non_default_collate = config_options
         .get(PostGreSqlMetadataHandler::NON_DEFAULT_COLLATE)
         .is_some_and(|v| v.eq_ignore_ascii_case("true"));
     if non_default_collate {
-        let (name, sub_types) = DataSourceOptimizations::DataSourceHints
-            .with_supported_sub_types(&[PushdownSubTypes::from(HintsSubtype::NonDefaultCollate)])?;
+        let (name, sub_types) =
+            Capability::Hints(vec![HintsSubtype::NonDefaultCollate]).into_entry();
         capabilities.insert(name, sub_types);
     }
     Ok(capabilities)

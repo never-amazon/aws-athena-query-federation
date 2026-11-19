@@ -2,7 +2,7 @@ use std::fmt;
 
 use arrow::datatypes::SchemaRef;
 
-use super::{RecordRequestType, RecordResponse};
+use super::RecordRequestType;
 use crate::data::Block;
 
 #[derive(Debug, Clone)]
@@ -37,16 +37,6 @@ impl ReadRecordsResponse {
 
     pub fn record_count(&self) -> usize {
         self.records.row_count()
-    }
-}
-
-impl RecordResponse for ReadRecordsResponse {
-    fn request_type(&self) -> RecordRequestType {
-        RecordRequestType::ReadRecords
-    }
-
-    fn catalog_name(&self) -> &str {
-        &self.catalog_name
     }
 }
 

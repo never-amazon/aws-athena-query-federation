@@ -4,19 +4,23 @@ use crate::serde::base::{
     deserialize_nullable, get_type, no_serde_configured, serialize_nullable, write_type,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 pub const SERDE_SUB_TYPES: &[&str] = &["EquatableValueSet", "SortedRangeSet", "AllOrNoneValueSet"];
 
 pub fn serialize(
     value_set: Option<&ValueSet>,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     serialize_nullable(jgen, value_set, |v, j| do_serialize(v, j, version))
 }
 
-pub fn do_serialize(value_set: &ValueSet, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn do_serialize(
+    value_set: &ValueSet,
+    jgen: &mut JsonGenerator,
+    version: SerdeVersion,
+) -> Result<()> {
     match value_set {
         ValueSet::EquatableValueSet(v) => {
             write_type(jgen, "EquatableValueSet")?;

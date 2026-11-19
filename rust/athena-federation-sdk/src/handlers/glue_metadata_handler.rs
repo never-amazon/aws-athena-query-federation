@@ -20,7 +20,7 @@ use crate::domain::table_name::TableName;
 use crate::exceptions::{
     AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
 };
-use crate::metadata::glue::{GlueClient, GlueFieldLexer};
+use crate::metadata::glue::{self, GlueClient};
 use crate::metadata::{
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse, MetadataRequest, UNLIMITED_PAGE_SIZE_VALUE,
@@ -51,32 +51,6 @@ static FUNCTION_ARN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^arn:aws[a-zA-Z-]*?:lambda:[a-zA-Z0-9-]+:([0-9]{12}):function:[a-zA-Z0-9_-]+$")
         .expect("valid function arn pattern")
 });
-
-pub trait TableFilter: Send + Sync {
-    fn filter(&self, table: &Table) -> bool;
-}
-
-impl<F> TableFilter for F
-where
-    F: Fn(&Table) -> bool + Send + Sync,
-{
-    fn filter(&self, table: &Table) -> bool {
-        self(table)
-    }
-}
-
-pub trait DatabaseFilter: Send + Sync {
-    fn filter(&self, database: &Database) -> bool;
-}
-
-impl<F> DatabaseFilter for F
-where
-    F: Fn(&Database) -> bool + Send + Sync,
-{
-    fn filter(&self, database: &Database) -> bool {
-        self(database)
-    }
-}
 
 pub fn is_glue_disabled<S: BuildHasher>(config_options: &HashMap<String, String, S>) -> bool {
     config_options
@@ -146,7 +120,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         &self,
         _allocator: &Arc<dyn BlockAllocator>,
         request: &ListSchemasRequest,
-        filter: Option<&dyn DatabaseFilter>,
+        filter: Option<&(dyn for<'d> Fn(&'d Database) -> bool + Sync)>,
     ) -> Result<ListSchemasResponse> {
         let identity = require_identity(request.identity())?;
         let override_config = self
@@ -169,7 +143,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
                 .await
                 .map_err(FederationError::AwsService)?;
             for database in response.database_list() {
-                if filter.is_none_or(|f| f.filter(database)) {
+                if filter.is_none_or(|f| f(database)) {
                     schemas.push(database.name().to_string());
                 }
             }
@@ -188,7 +162,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         &self,
         _allocator: &Arc<dyn BlockAllocator>,
         request: &ListTablesRequest,
-        filter: Option<&dyn TableFilter>,
+        filter: Option<&(dyn for<'t> Fn(&'t Table) -> bool + Sync)>,
     ) -> Result<ListTablesResponse> {
         let mut tables: IndexSet<TableName> = IndexSet::new();
         let mut next_token = request.next_token().map(str::to_string);
@@ -224,7 +198,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
                 .await
                 .map_err(FederationError::AwsService)?;
             for next in response.table_list() {
-                if filter.is_none_or(|f| f.filter(next)) {
+                if filter.is_none_or(|f| f(next)) {
                     tables.insert(TableName::new(schema_name, next.name()));
                 }
             }
@@ -249,7 +223,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         &self,
         _allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableRequest,
-        filter: Option<&dyn TableFilter>,
+        filter: Option<&(dyn for<'t> Fn(&'t Table) -> bool + Sync)>,
     ) -> Result<GetTableResponse> {
         let table_name = request.table_name();
         let identity = require_identity(request.identity())?;
@@ -272,7 +246,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
         let table = response.table().ok_or_else(|| {
             FederationError::null_pointer("Cannot invoke \"software.amazon.awssdk.services.glue.model.Table.parameters()\" because \"table\" is null")
         })?;
-        if filter.is_some_and(|f| !f.filter(table)) {
+        if filter.is_some_and(|f| !f(table)) {
             return Err(FederationError::connector(
                 FederationSourceErrorCode::EntityNotFoundException,
                 format!("No matching table found {table_name}"),
@@ -283,7 +257,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     fn convert_field(&self, name: &str, glue_type: Option<&str>) -> Result<Option<Field>> {
         let lexed = match glue_type {
-            Some(glue_type) => GlueFieldLexer::lex(name, glue_type),
+            Some(glue_type) => glue::lex(name, glue_type),
             None => Err(FederationError::null_pointer(
                 "Cannot invoke \"String.length()\" because \"this.input\" is null",
             )),

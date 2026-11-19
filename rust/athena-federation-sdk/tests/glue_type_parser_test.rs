@@ -4,7 +4,7 @@ fn assert_tokens(input: &str, expected_tokens: &[Token]) {
     let mut parser = GlueTypeParser::new(input);
     let mut pos = 0;
     while parser.has_next() {
-        let next = parser.next();
+        let next = parser.next_token();
         assert_eq!(expected_tokens[pos], next);
         pos += 1;
     }

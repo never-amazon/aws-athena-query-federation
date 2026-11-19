@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
 
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{BlockAllocatorImpl, Value};
 use athena_federation_sdk::domain::predicate::expression::{
     ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
@@ -388,8 +388,8 @@ fn test_append_limit_offset_with_composite_primary_key() {
 fn test_append_limit_offset_with_casing_filter_before_partition() {
     let properties = HashMap::from([
         (
-            EnvironmentConstants::CATALOG_CASING_FILTER.to_string(),
-            EnvironmentConstants::UPPERCASE_ONLY.to_string(),
+            environment_constants::CATALOG_CASING_FILTER.to_string(),
+            environment_constants::UPPERCASE_ONLY.to_string(),
         ),
         (
             "partition".to_string(),

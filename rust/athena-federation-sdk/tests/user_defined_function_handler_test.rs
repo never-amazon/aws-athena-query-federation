@@ -14,7 +14,7 @@ use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::ListSchemasRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
 use athena_federation_sdk::security::FederatedIdentity;
-use athena_federation_sdk::serde::VersionedObjectMapperFactory;
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::udf::{UserDefinedFunctionRequest, UserDefinedFunctionType};
 use athena_federation_sdk::{FederationError, Result};
 use bigdecimal::{BigDecimal, RoundingMode};
@@ -453,7 +453,7 @@ fn create_udf_request(
         block,
         output_schema,
         method_name,
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     )
 }
 
@@ -668,7 +668,7 @@ fn first_row_write_failure_wins_over_later_invoke_failure() {
         block,
         schema,
         "decbad",
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     );
     let err = s
         .handler
@@ -751,9 +751,10 @@ async fn test_request_type_validation() {
     let s = set_up();
     let federation_request: FederationRequest =
         ListSchemasRequest::new(None, Some("dummy_catalog".into()), "dummy_qid").into();
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&s.allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&s.allocator));
     let input_data = object_mapper
-        .write_value_as_bytes(&federation_request)
+        .write_request(&federation_request)
+        .map(String::into_bytes)
         .unwrap();
     let err = s
         .handler
@@ -774,8 +775,11 @@ async fn ping_handle_request() {
         FederatedIdentity::new("arn", "account", HashMap::new(), Vec::new(), HashMap::new());
     let ping_request: FederationRequest =
         PingRequest::new(Some(identity), "catalog", "queryId").into();
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&s.allocator));
-    let input = object_mapper.write_value_as_bytes(&ping_request).unwrap();
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&s.allocator));
+    let input = object_mapper
+        .write_request(&ping_request)
+        .map(String::into_bytes)
+        .unwrap();
     let output = s.handler.handle_request(&input, None).await.unwrap();
     let response = object_mapper.read_response(&output).unwrap();
     assert!(matches!(response, FederationResponse::Ping(_)));
@@ -786,9 +790,12 @@ async fn udf_handle_request() {
     let s = set_up();
     let udf_request =
         create_udf_request(&s, 5, ArgType::Long, "test_big_int", true, &[ArgType::Long]);
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&s.allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&s.allocator));
     let request: FederationRequest = udf_request.into();
-    let input = object_mapper.write_value_as_bytes(&request).unwrap();
+    let input = object_mapper
+        .write_request(&request)
+        .map(String::into_bytes)
+        .unwrap();
     let output = s.handler.handle_request(&input, None).await.unwrap();
     let base_response = object_mapper.read_response(&output).unwrap();
     assert!(matches!(
@@ -803,9 +810,12 @@ async fn zero_argument_udf_handle_request() {
     let row_count = 3;
     let udf_request =
         create_udf_request(&s, row_count, ArgType::Integer, "test_zero_args", true, &[]);
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&s.allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&s.allocator));
     let request: FederationRequest = udf_request.into();
-    let input = object_mapper.write_value_as_bytes(&request).unwrap();
+    let input = object_mapper
+        .write_request(&request)
+        .map(String::into_bytes)
+        .unwrap();
     let output = s.handler.handle_request(&input, None).await.unwrap();
     let FederationResponse::UserDefinedFunction(response) =
         object_mapper.read_response(&output).unwrap()
@@ -842,10 +852,13 @@ fn test_method_not_found() {
 async fn udf_handler_runs_as_request_stream_handler() {
     let Setup { handler, allocator } = set_up();
     let stream_handler = UserDefinedFunctionStreamHandler::new(handler);
-    let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+    let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
     let wrong: FederationRequest =
         ListSchemasRequest::new(None, Some("dummy_catalog".into()), "dummy_qid").into();
-    let input = object_mapper.write_value_as_bytes(&wrong).unwrap();
+    let input = object_mapper
+        .write_request(&wrong)
+        .map(String::into_bytes)
+        .unwrap();
     let err = RequestStreamHandler::handle_request(&stream_handler, &input, None)
         .await
         .unwrap_err();

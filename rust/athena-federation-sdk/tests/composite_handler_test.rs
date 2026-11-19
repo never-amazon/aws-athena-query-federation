@@ -31,7 +31,7 @@ use athena_federation_sdk::request::{
 use athena_federation_sdk::security::{
     AwsService, AwsServiceError, CachableSecretsManager, FederatedIdentity, KmsEncryptionProvider,
 };
-use athena_federation_sdk::serde::{object_mapper_factory, ObjectMapper};
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::udf::{UserDefinedFunctionRequest, UserDefinedFunctionType};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::Fakes;
@@ -225,7 +225,7 @@ fn set_up() -> Setup {
     Setup {
         calls,
         composite_handler: CompositeHandler::new(Arc::new(metadata), Arc::new(record)),
-        object_mapper: object_mapper_factory::create(allocator.clone()),
+        object_mapper: ObjectMapper::new(SerdeVersion::V1, allocator.clone()),
         allocator,
     }
 }
@@ -423,7 +423,7 @@ async fn handle_request_with_unknown_request_throws_invalid_input_exception() {
         block,
         SchemaBuilder::new_builder().add_int_field("out").build(),
         "method",
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     );
     let err = handle(&s, unknown_request.into()).await.unwrap_err();
     assert!(err.to_string().contains("Unknown request class"));

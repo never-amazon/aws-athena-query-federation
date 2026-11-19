@@ -11,7 +11,7 @@ use crate::serde::base::{
     validate_object_end, validate_object_start, validate_object_start_token, write_string_map,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const SUMMARY_FIELD: &str = "summary";
 const EXPRESSION_FIELD: &str = "expression";
@@ -21,29 +21,10 @@ const QUERY_PASSTHROUGH_ARGUMENTS: &str = "queryPassthroughArguments";
 const QUERY_PLAN: &str = "queryPlan";
 const NO_LIMIT_VALUE: i64 = -1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ConstraintsSerDeVersion {
-    V2,
-    V4,
-    V5,
-    V6,
-}
-
-impl ConstraintsSerDeVersion {
-    pub fn for_ser_de_version(version: i32) -> ConstraintsSerDeVersion {
-        match version {
-            v if v <= 3 => ConstraintsSerDeVersion::V2,
-            4 => ConstraintsSerDeVersion::V4,
-            5 => ConstraintsSerDeVersion::V5,
-            _ => ConstraintsSerDeVersion::V6,
-        }
-    }
-}
-
 pub fn serialize(
     constraints: Option<&Constraints>,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     serialize_nullable(jgen, constraints, |c, j| do_serialize(c, j, version))
 }
@@ -51,16 +32,15 @@ pub fn serialize(
 pub fn do_serialize(
     constraints: &Constraints,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
-    let flavor = ConstraintsSerDeVersion::for_ser_de_version(version);
     jgen.write_object_field_start(SUMMARY_FIELD)?;
     for (column, value_set) in constraints.summary() {
         jgen.write_field_name(column)?;
         super::value_set_serde::serialize(Some(value_set), jgen, version)?;
     }
     jgen.write_end_object()?;
-    if flavor == ConstraintsSerDeVersion::V2 {
+    if version <= SerdeVersion::V3 {
         return Ok(());
     }
     jgen.write_array_field_start(EXPRESSION_FIELD)?;
@@ -78,14 +58,14 @@ pub fn do_serialize(
     }
     jgen.write_end_array()?;
     jgen.write_number_field_i64(LIMIT_FIELD, constraints.limit())?;
-    if flavor >= ConstraintsSerDeVersion::V5 {
+    if version >= SerdeVersion::V5 {
         write_string_map(
             jgen,
             QUERY_PASSTHROUGH_ARGUMENTS,
             constraints.query_passthrough_arguments(),
         )?;
     }
-    if flavor >= ConstraintsSerDeVersion::V6 {
+    if version >= SerdeVersion::V6 {
         match constraints.query_plan() {
             Some(plan) => {
                 jgen.write_field_name(QUERY_PLAN)?;
@@ -128,7 +108,6 @@ fn read_object_array<T>(
 }
 
 pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Result<Constraints> {
-    let flavor = ConstraintsSerDeVersion::for_ser_de_version(ctx.version);
     assert_field_name(jparser, Some(SUMMARY_FIELD))?;
     validate_object_start_token(jparser.next_token()?)?;
     let mut summary: IndexMap<String, ValueSet> = IndexMap::new();
@@ -153,7 +132,7 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
             }
         }
     }
-    if flavor == ConstraintsSerDeVersion::V2 {
+    if ctx.version <= SerdeVersion::V3 {
         return Ok(Constraints::new(
             summary,
             Vec::new(),
@@ -178,7 +157,7 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
     )?;
 
     let limit = get_next_long_field(jparser, LIMIT_FIELD)?;
-    if flavor == ConstraintsSerDeVersion::V4 {
+    if ctx.version == SerdeVersion::V4 {
         return Ok(Constraints::new(
             summary,
             expressions,
@@ -192,7 +171,7 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
     assert_field_name(jparser, Some(QUERY_PASSTHROUGH_ARGUMENTS))?;
     validate_object_start(jparser)?;
     let query_passthrough_arguments = nullable_map(read_string_map_entries(jparser)?);
-    if flavor == ConstraintsSerDeVersion::V5 {
+    if ctx.version == SerdeVersion::V5 {
         return Ok(Constraints::new(
             summary,
             expressions,

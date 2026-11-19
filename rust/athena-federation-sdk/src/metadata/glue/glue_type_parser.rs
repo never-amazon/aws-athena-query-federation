@@ -78,11 +78,7 @@ impl GlueTypeParser {
         self.pos < self.input.len()
     }
 
-    #[allow(
-        clippy::should_implement_trait,
-        reason = "mirrors GlueTypeParser.next, which keeps returning tokens past the end"
-    )]
-    pub fn next(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         let mut value = String::new();
         let mut read_pos = self.pos;
         let mut last_escape_char: Option<usize> = None;

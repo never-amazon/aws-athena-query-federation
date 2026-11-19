@@ -4,24 +4,28 @@ use arrow::datatypes::Schema;
 
 use crate::data::Block;
 use crate::exceptions::Result;
-use crate::serde::arrow_ipc::{block_batch_bytes, record_batch_from_bytes, IpcFormat};
+use crate::serde::arrow_ipc::{block_batch_bytes, record_batch_from_bytes};
 use crate::serde::base::{
     assert_field_name, deserialize_nullable, get_next_binary_field, get_next_string_field,
     serialize_nullable,
 };
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const ALLOCATOR_ID_FIELD_NAME: &str = "aId";
 const SCHEMA_FIELD_NAME: &str = "schema";
 const BATCH_FIELD_NAME: &str = "records";
 
-pub fn serialize(block: Option<&Block>, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
+pub fn serialize(
+    block: Option<&Block>,
+    jgen: &mut JsonGenerator,
+    version: SerdeVersion,
+) -> Result<()> {
     serialize_nullable(jgen, block, |b, j| do_serialize(b, j, version))
 }
 
-pub fn do_serialize(block: &Block, jgen: &mut JsonGenerator, version: i32) -> Result<()> {
-    let format = crate::serde::ipc_format_for(version);
+pub fn do_serialize(block: &Block, jgen: &mut JsonGenerator, version: SerdeVersion) -> Result<()> {
+    let format = version.ipc_format();
     jgen.write_string_field(ALLOCATOR_ID_FIELD_NAME, Some(block.allocator_id()))?;
     jgen.write_field_name(SCHEMA_FIELD_NAME)?;
     super::schema_serde::serialize_with_format(block.schema(), jgen, format)?;
@@ -39,9 +43,9 @@ pub fn deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> Resu
 
 pub fn deserialize_schema_for_version(
     jparser: &mut JsonParser<'_>,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<Schema> {
-    if version <= 2 {
+    if version <= SerdeVersion::V2 {
         super::schema_serde::deserialize(jparser)
     } else {
         crate::serde::v3::schema_serde_v3::deserialize(jparser)
@@ -59,8 +63,4 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>, ctx: &SerDeContext<'_>) -> R
         block.load_arrow_record_batch(&batch)?;
     }
     Ok(block)
-}
-
-pub fn ipc_format(version: i32) -> IpcFormat {
-    crate::serde::ipc_format_for(version)
 }

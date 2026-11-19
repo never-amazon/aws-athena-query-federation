@@ -436,7 +436,7 @@ fn write_metadata_header(request: &dyn MetadataRequest, jgen: &mut JsonGenerator
 }
 
 fn write_metadata_trailer(request: &dyn MetadataRequest, jgen: &mut JsonGenerator) -> Result<()> {
-    jgen.write_string_field("requestType", Some(request.request_type().name()))?;
+    jgen.write_string_field("requestType", Some(request.request_type().as_str()))?;
     jgen.write_null_field("context")
 }
 
@@ -511,7 +511,7 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             serialize_constraints(r.constraints(), jgen)?;
             jgen.write_number_field_i64("maxBlockSize", r.max_block_size())?;
             jgen.write_number_field_i64("maxInlineBlockSize", r.max_inline_block_size())?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationRequest::UserDefinedFunction(r) => {
             jgen.write_field_name("identity")?;
@@ -521,7 +521,7 @@ pub fn serialize_request(request: &FederationRequest, jgen: &mut JsonGenerator) 
             jgen.write_field_name("outputSchema")?;
             serialize_schema(r.output_schema(), jgen)?;
             jgen.write_string_field("methodName", Some(r.method_name()))?;
-            jgen.write_string_field("functionType", Some(r.function_type().name()))?;
+            jgen.write_string_field("functionType", Some(r.function_type().as_str()))?;
         }
         FederationRequest::GetDataSourceCapabilities(r) => {
             write_metadata_header(r, jgen)?;
@@ -545,7 +545,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
         FederationResponse::ListSchemas(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             write_strings(jgen, "schemas", r.schemas())?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::ListTables(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
@@ -555,7 +555,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
             }
             jgen.write_end_array()?;
             jgen.write_string_field("nextToken", r.next_token())?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::GetTable(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
@@ -564,7 +564,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
             jgen.write_field_name("schema")?;
             serialize_schema(r.schema(), jgen)?;
             write_strings(jgen, "partitionColumns", r.partition_columns())?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::GetTableLayout(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
@@ -572,7 +572,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
             serialize_table_name(r.table_name(), jgen)?;
             jgen.write_field_name("partitions")?;
             serialize_block(Some(r.partitions()), jgen)?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::GetSplits(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
@@ -582,13 +582,13 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
             }
             jgen.write_end_array()?;
             jgen.write_string_field("continuationToken", r.continuation_token())?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::ReadRecords(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
             jgen.write_field_name("records")?;
             serialize_block(Some(r.records()), jgen)?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::RemoteReadRecords(r) => {
             jgen.write_string_field("catalogName", Some(r.catalog_name()))?;
@@ -601,7 +601,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
             jgen.write_end_array()?;
             jgen.write_field_name("encryptionKey")?;
             serialize_encryption_key(r.encryption_key(), jgen)?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
         FederationResponse::UserDefinedFunction(r) => {
             jgen.write_field_name("records")?;
@@ -622,7 +622,7 @@ pub fn serialize_response(response: &FederationResponse, jgen: &mut JsonGenerato
                 jgen.write_end_array()?;
             }
             jgen.write_end_object()?;
-            jgen.write_string_field("requestType", Some(r.request_type().name()))?;
+            jgen.write_string_field("requestType", Some(r.request_type().as_str()))?;
         }
     }
     jgen.write_end_object()
@@ -1223,7 +1223,7 @@ fn udf_request_from(
 
 fn function_type_from(node: &Json) -> Result<UserDefinedFunctionType> {
     let v = prop(node, "functionType").ok_or_else(|| io("functionType is null"))?;
-    UserDefinedFunctionType::value_of(enum_text(v, "UserDefinedFunctionType")?)
+    UserDefinedFunctionType::from_name(enum_text(v, "UserDefinedFunctionType")?)
         .ok_or_else(|| io("Cannot deserialize value of type `UserDefinedFunctionType`"))
 }
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::connection::{
-    EnvironmentConstants, EnvironmentProperties, GlueConnectionClient,
+    environment_constants, EnvironmentProperties, GlueConnectionClient,
 };
 use athena_federation_sdk::security::AwsServiceError;
 use aws_sdk_glue::types::{AuthenticationConfiguration, Connection, ConnectionPropertyKey};
@@ -31,7 +31,7 @@ impl GlueConnectionClient for FakeGlue {
 async fn test_create_environment_with_overridden_env() {
     let fake_env = HashMap::from([
         (
-            EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
+            environment_constants::DEFAULT_GLUE_CONNECTION.to_string(),
             GLUE_CONN_NAME.to_string(),
         ),
         ("OVERRIDE_VAR".to_string(), LAMBDA_VALUE.to_string()),
@@ -43,7 +43,7 @@ async fn test_create_environment_with_overridden_env() {
         .name(GLUE_CONN_NAME)
         .connection_properties(ConnectionPropertyKey::Database, TEST_VALUE)
         .authentication_configuration(auth_config)
-        .athena_properties(EnvironmentConstants::SPILL_KMS_KEY_ID, KMS_KEY_ID)
+        .athena_properties(environment_constants::SPILL_KMS_KEY_ID, KMS_KEY_ID)
         .build();
     let spy_props = EnvironmentProperties::new()
         .with_env_map(fake_env)
@@ -56,25 +56,25 @@ async fn test_create_environment_with_overridden_env() {
     assert_eq!(
         Some(GLUE_CONN_NAME),
         result
-            .get(EnvironmentConstants::DEFAULT_GLUE_CONNECTION)
+            .get(environment_constants::DEFAULT_GLUE_CONNECTION)
             .map(String::as_str)
     );
     assert_eq!(
         Some(TEST_VALUE),
         result
-            .get(EnvironmentConstants::DATABASE)
+            .get(environment_constants::DATABASE)
             .map(String::as_str)
     );
     assert_eq!(
         Some(EXPECTED_SECRET_NAME),
         result
-            .get(EnvironmentConstants::SECRET_NAME)
+            .get(environment_constants::SECRET_NAME)
             .map(String::as_str)
     );
     assert_eq!(
         Some(KMS_KEY_ID),
         result
-            .get(EnvironmentConstants::KMS_KEY_ID)
+            .get(environment_constants::KMS_KEY_ID)
             .map(String::as_str)
     );
     assert_eq!(
@@ -87,7 +87,7 @@ async fn test_create_environment_with_overridden_env() {
 async fn test_create_environment_with_overridden_env_glue_connection_fails_throws_runtime_exception(
 ) {
     let fake_env = HashMap::from([(
-        EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
+        environment_constants::DEFAULT_GLUE_CONNECTION.to_string(),
         GLUE_CONN_NAME.to_string(),
     )]);
     let spy_props = EnvironmentProperties::new()

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_federation_sdk::security::AwsServiceError;
-use athena_federation_sdk::{AthenaClient, ExceptionFilter, QueryStatusChecker, ThrottlingInvoker};
+use athena_federation_sdk::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 use aws_credential_types::Credentials;
 
 type Response = Result<Option<String>, AwsServiceError>;
@@ -49,13 +49,13 @@ impl AthenaClient for MockAthena {
 }
 
 fn athena_invoker() -> Arc<ThrottlingInvoker<AwsServiceError>> {
-    let athena_exception_filter: Arc<dyn ExceptionFilter<AwsServiceError>> =
-        Arc::new(|ex: &AwsServiceError| ex.is_error_code("TooManyRequestsException"));
     Arc::new(
-        ThrottlingInvoker::new_default_builder(athena_exception_filter, &HashMap::new())
-            .unwrap()
-            .build()
-            .unwrap(),
+        ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&HashMap::new()).unwrap(),
+            |ex: &AwsServiceError| ex.is_error_code("TooManyRequestsException"),
+            None,
+        )
+        .unwrap(),
     )
 }
 
@@ -71,7 +71,7 @@ async fn test_fast_termination() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -91,7 +91,7 @@ async fn test_slow_termination() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(!query_status_checker.is_query_running());
     assert_eq!(3, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -108,7 +108,7 @@ async fn test_not_found() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(1, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }
 
 #[tokio::test(start_paused = true)]
@@ -119,5 +119,5 @@ async fn test_other_error() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(query_status_checker.is_query_running());
     assert_eq!(2, athena.calls());
-    query_status_checker.close();
+    drop(query_status_checker);
 }

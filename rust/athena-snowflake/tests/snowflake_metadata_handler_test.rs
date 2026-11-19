@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Field, Schema};
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, FieldBuilder, SchemaBuilder, Value,
 };
@@ -1280,8 +1280,8 @@ async fn assert_view_check_binds_table_name(
 async fn test_get_partitions_with_uppercase_casing_filter() {
     assert_view_check_binds_table_name(
         HashMap::from([(
-            EnvironmentConstants::CATALOG_CASING_FILTER.to_string(),
-            Some(EnvironmentConstants::UPPERCASE_ONLY.to_string()),
+            environment_constants::CATALOG_CASING_FILTER.to_string(),
+            Some(environment_constants::UPPERCASE_ONLY.to_string()),
         )]),
         "TESTSCHEMA",
         "TESTTABLE",
@@ -1299,8 +1299,8 @@ async fn test_get_splits_with_catalog_casing_filter() {
     let f = fixture();
     let request = splits_request(
         identity_with(HashMap::from([(
-            EnvironmentConstants::CATALOG_CASING_FILTER.to_string(),
-            Some(EnvironmentConstants::UPPERCASE_ONLY.to_string()),
+            environment_constants::CATALOG_CASING_FILTER.to_string(),
+            Some(environment_constants::UPPERCASE_ONLY.to_string()),
         )])),
         text_partitions(&["partition-primary-\"id\"-limit-100-offset-0"]),
         Vec::new(),
@@ -1314,8 +1314,8 @@ async fn test_get_splits_with_catalog_casing_filter() {
     assert_eq!(1, response.splits().len());
     let split = &response.splits()[0];
     assert_eq!(
-        Some(EnvironmentConstants::UPPERCASE_ONLY),
-        split.get_property(EnvironmentConstants::CATALOG_CASING_FILTER)
+        Some(environment_constants::UPPERCASE_ONLY),
+        split.get_property(environment_constants::CATALOG_CASING_FILTER)
     );
     assert_eq!(
         Some("partition-primary-\"id\"-limit-100-offset-0"),
@@ -1341,7 +1341,7 @@ async fn test_get_splits_without_catalog_casing_filter() {
     assert_eq!(1, response.splits().len());
     assert_eq!(
         None,
-        response.splits()[0].get_property(EnvironmentConstants::CATALOG_CASING_FILTER)
+        response.splits()[0].get_property(environment_constants::CATALOG_CASING_FILTER)
     );
 }
 

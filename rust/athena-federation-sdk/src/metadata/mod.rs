@@ -30,7 +30,6 @@ pub use list_tables_request::{ListTablesRequest, UNLIMITED_PAGE_SIZE_VALUE};
 pub use list_tables_response::ListTablesResponse;
 pub use metadata_request::MetadataRequest;
 pub use metadata_request_type::MetadataRequestType;
-pub use metadata_response::MetadataResponse;
 
 pub(crate) fn collections_equals<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && rhs.iter().all(|r| lhs.contains(r))

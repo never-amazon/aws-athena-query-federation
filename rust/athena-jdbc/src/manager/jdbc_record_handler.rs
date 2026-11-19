@@ -21,7 +21,6 @@ use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{default_do_read_records, RecordHandler, RecordHandlerBase};
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::records::{ReadRecordsRequest, RemoteReadRecordsResponse};
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
 use athena_federation_sdk::security::{BlockCrypto, EncryptionKey};
@@ -31,7 +30,7 @@ use athena_federation_substrait::{plan, SqlDialect};
 
 use super::jdbc_to_arrow_utils::jdbc_to_arrow_schema;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use crate::qpt::{JdbcQueryPassthrough, QUERY};
+use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Row, SqlValue, Types};
 use crate::validate::{close_after, null_pointer};
 
@@ -43,7 +42,6 @@ pub struct JdbcRecordHandlerBase {
     record_base: RecordHandlerBase,
     jdbc_connection_factory: Option<Arc<dyn JdbcConnectionFactory>>,
     database_connection_config: Option<DatabaseConnectionConfig>,
-    query_passthrough: JdbcQueryPassthrough,
 }
 
 impl JdbcRecordHandlerBase {
@@ -56,7 +54,6 @@ impl JdbcRecordHandlerBase {
             record_base,
             jdbc_connection_factory: Some(jdbc_connection_factory),
             database_connection_config: Some(database_connection_config),
-            query_passthrough: JdbcQueryPassthrough,
         }
     }
 
@@ -65,7 +62,6 @@ impl JdbcRecordHandlerBase {
             record_base,
             jdbc_connection_factory: None,
             database_connection_config: None,
-            query_passthrough: JdbcQueryPassthrough,
         }
     }
 
@@ -79,10 +75,6 @@ impl JdbcRecordHandlerBase {
 
     pub fn database_connection_config(&self) -> Option<&DatabaseConnectionConfig> {
         self.database_connection_config.as_ref()
-    }
-
-    pub fn query_passthrough(&self) -> &JdbcQueryPassthrough {
-        &self.query_passthrough
     }
 
     pub fn config_options(&self) -> &HashMap<String, String> {
@@ -324,9 +316,7 @@ pub trait JdbcRecordHandler: RecordHandler {
         jdbc_connection: &dyn JdbcConnection,
         constraints: &Constraints,
     ) -> Result<PreparedStatement> {
-        let base = self.jdbc_record_base();
-        base.query_passthrough()
-            .verify(constraints.query_passthrough_arguments())?;
+        JDBC_QUERY_PASSTHROUGH.verify(constraints.query_passthrough_arguments())?;
         let client_pass_query = constraints
             .query_passthrough_arguments()
             .get(QUERY)
@@ -686,7 +676,7 @@ impl<T: JdbcRecordHandler + ?Sized> JdbcRecordHandlerExt for T {
                 &query_status_checker,
             )
             .await;
-        query_status_checker.close();
+        drop(query_status_checker);
         Ok(FederationResponse::from(RemoteReadRecordsResponse::new(
             request.catalog_name(),
             derived_schema?,

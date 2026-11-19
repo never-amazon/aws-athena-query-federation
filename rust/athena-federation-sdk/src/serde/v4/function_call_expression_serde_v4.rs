@@ -5,7 +5,7 @@ use crate::serde::base::{
     validate_object_start_token,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const FUNCTION_NAME_FIELD: &str = "functionName";
 const TYPE_FIELD: &str = "type";
@@ -14,7 +14,7 @@ const ARGUMENTS_FIELD: &str = "arguments";
 pub fn do_typed_serialize(
     expression: &FunctionCallExpression,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(TYPE_FIELD)?;
     crate::serde::v2::arrow_type_serde::serialize(Some(expression.get_type()), jgen)?;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::athena_exception_filter::ATHENA_EXCEPTION_FILTER;
+use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
 use super::federation_capabilities::CAPABILITIES;
 use super::federation_request_handler::FederationRequestHandler;
@@ -16,8 +16,8 @@ use crate::lambda::LambdaContext;
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
 use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
 use crate::security::{AwsServiceError, CachableSecretsManager, KmsEncryptionProvider};
-use crate::serde::{ObjectMapper, VersionedObjectMapperFactory, SERDE_VERSION};
-use crate::{AthenaClient, QueryStatusChecker, ThrottlingInvoker};
+use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
+use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 
 const MAX_BLOCK_SIZE_BYTES: &str = "MAX_BLOCK_SIZE_BYTES";
 const NUM_SPILL_THREADS: i32 = 2;
@@ -38,11 +38,11 @@ impl RecordHandlerBase {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<RecordHandlerBase> {
-        let athena_invoker = ThrottlingInvoker::new_default_builder(
-            Arc::new(ATHENA_EXCEPTION_FILTER),
-            &config_options,
-        )?
-        .build()?;
+        let athena_invoker = ThrottlingInvoker::new(
+            ThrottleConfig::from_config_options(&config_options)?,
+            is_athena_throttle,
+            None,
+        )?;
         Ok(RecordHandlerBase {
             config_options,
             amazon_s3: clients.s3,
@@ -200,7 +200,7 @@ pub async fn default_do_read_records<H: RecordHandler + ?Sized>(
     }
     .await;
     spiller.close().await;
-    query_status_checker.close();
+    drop(query_status_checker);
     result
 }
 
@@ -247,11 +247,13 @@ impl<T: RecordHandler + ?Sized> RecordHandlerExt for T {
         let block_allocator = Arc::new(BlockAllocatorImpl::new());
         let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
         let result = async {
-            let object_mapper = VersionedObjectMapperFactory::create(Arc::clone(&allocator));
+            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
             let raw_req = object_mapper.read_request(input)?;
             if let FederationRequest::Ping(ping) = &raw_req {
                 let response = do_ping(self, ping).await;
-                return object_mapper.write_value_as_bytes(&response);
+                return object_mapper
+                    .write_response(&response.into())
+                    .map(String::into_bytes);
             }
             if !raw_req.is_record_request() {
                 return Err(FederationError::invalid_input(format!(
@@ -281,7 +283,9 @@ impl<T: RecordHandler + ?Sized> RecordHandlerExt for T {
             FederationRequest::ReadRecords(req) => {
                 let response = self.do_read_records(allocator, req).await?;
                 tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper.write_value_as_bytes(&response)
+                object_mapper
+                    .write_response(&response)
+                    .map(String::into_bytes)
             }
             other => Err(FederationError::invalid_input(format!(
                 "Unknown request type {}",

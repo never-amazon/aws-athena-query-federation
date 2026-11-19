@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     ArrowType, Block, BlockAllocator, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
@@ -18,12 +18,9 @@ use athena_federation_sdk::handlers::{
 };
 use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, LimitPushdownSubType,
-    PushdownSubTypes, TopNPushdownSubType,
+    TopNPushdownSubType,
 };
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
-use athena_federation_sdk::metadata::optimizations::{
-    DataSourceOptimizations, OptimizationSubType,
-};
+use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
@@ -34,7 +31,9 @@ use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, CachableSecretsManager, KmsEncryptionProvider,
 };
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
-use athena_federation_sdk::util::{PaginationHelper, UNLIMITED_PAGE_SIZE_VALUE};
+use athena_federation_sdk::util::{
+    calculate_next_token, validate_and_parse_pagination_arguments, UNLIMITED_PAGE_SIZE_VALUE,
+};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
@@ -43,7 +42,7 @@ use athena_jdbc::manager::{
     JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt, JdbcSplitQueryBuilder,
     JdbcUtil, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
-use athena_jdbc::qpt::{JdbcQueryPassthrough, QUERY};
+use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::{DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt};
 use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlException};
 use indexmap::IndexMap;
@@ -397,9 +396,7 @@ impl SnowflakeMetadataHandler {
     fn get_snow_flake_copy_into_base_sql(&self, request: &GetSplitsRequest) -> Result<String> {
         let constraints = request.constraints();
         if constraints.is_query_pass_through() {
-            self.base
-                .jdbc_query_passthrough()
-                .verify(constraints.query_passthrough_arguments())?;
+            JDBC_QUERY_PASSTHROUGH.verify(constraints.query_passthrough_arguments())?;
             return Ok(constraints
                 .query_passthrough_arguments()
                 .get(QUERY)
@@ -491,11 +488,11 @@ impl SnowflakeMetadataHandler {
             );
             if let Some(filter) = identity_option(
                 request.identity(),
-                EnvironmentConstants::CATALOG_CASING_FILTER,
+                environment_constants::CATALOG_CASING_FILTER,
             ) {
                 tracing::info!("Catalog Casing Filter found: {:?}", filter);
                 builder = builder.add(
-                    EnvironmentConstants::CATALOG_CASING_FILTER,
+                    environment_constants::CATALOG_CASING_FILTER,
                     filter.clone().unwrap_or_else(|| "null".to_string()),
                 );
             }
@@ -864,34 +861,30 @@ fn capabilities(
     config_options: &HashMap<String, String>,
 ) -> Result<IndexMap<String, Vec<OptimizationSubType>>> {
     let mut capabilities = IndexMap::new();
-    let (name, sub_types) = DataSourceOptimizations::SupportsFilterPushdown
-        .with_supported_sub_types(&[
-            PushdownSubTypes::from(FilterPushdownSubType::SortedRangeSet),
-            PushdownSubTypes::from(FilterPushdownSubType::NullableComparison),
-        ])?;
+    let (name, sub_types) = Capability::Filter(vec![
+        FilterPushdownSubType::SortedRangeSet,
+        FilterPushdownSubType::NullableComparison,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
-    let (name, sub_types) = DataSourceOptimizations::SupportsLimitPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            LimitPushdownSubType::IntegerConstant,
-        )])?;
+    let (name, sub_types) =
+        Capability::Limit(vec![LimitPushdownSubType::IntegerConstant]).into_entry();
     capabilities.insert(name, sub_types);
     let function_names: Vec<String> = StandardFunctions::values()
         .iter()
         .map(|f| f.function_name().function_name().to_string())
         .collect();
     let function_names: Vec<&str> = function_names.iter().map(String::as_str).collect();
-    let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
-                .with_sub_type_properties(&function_names)?,
-        )])?;
+    let (name, sub_types) = Capability::ComplexExpression(vec![
+        ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
+            .with_sub_type_properties(&function_names)?,
+    ])
+    .into_entry();
     capabilities.insert(name, sub_types);
-    let (name, sub_types) = DataSourceOptimizations::SupportsTopNPushdown
-        .with_supported_sub_types(&[PushdownSubTypes::from(
-            TopNPushdownSubType::SupportsOrderBy,
-        )])?;
+    let (name, sub_types) =
+        Capability::TopN(vec![TopNPushdownSubType::SupportsOrderBy]).into_entry();
     capabilities.insert(name, sub_types);
-    JdbcQueryPassthrough
+    JDBC_QUERY_PASSTHROUGH
         .add_query_passthrough_capability_if_enabled(&mut capabilities, config_options);
     Ok(capabilities)
 }
@@ -1021,9 +1014,9 @@ impl MetadataHandler for SnowflakeMetadataHandler {
         let mut table_name = request.table_name().clone();
         let uppercase_only = identity_option(
             request.identity(),
-            EnvironmentConstants::CATALOG_CASING_FILTER,
+            environment_constants::CATALOG_CASING_FILTER,
         )
-        .is_some_and(|value| value.as_deref() == Some(EnvironmentConstants::UPPERCASE_ONLY));
+        .is_some_and(|value| value.as_deref() == Some(environment_constants::UPPERCASE_ONLY));
         if uppercase_only {
             table_name = TableName::new(
                 table_name.schema_name().to_uppercase(),
@@ -1128,10 +1121,8 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
     ) -> Result<ListTablesResponse> {
         tracing::debug!("Starting listPaginatedTables for Snowflake.");
         let mut page_size = list_tables_request.page_size();
-        let token = PaginationHelper::validate_and_parse_pagination_arguments(
-            list_tables_request.next_token(),
-            page_size,
-        )?;
+        let token =
+            validate_and_parse_pagination_arguments(list_tables_request.next_token(), page_size)?;
         if page_size == UNLIMITED_PAGE_SIZE_VALUE {
             page_size = i32::MAX;
         }
@@ -1152,8 +1143,7 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
         let paginated_tables = self
             .get_paginated_tables(connection, &adjusted_schema_name, token, page_size)
             .await?;
-        let next_token =
-            PaginationHelper::calculate_next_token(token, page_size, &paginated_tables);
+        let next_token = calculate_next_token(token, page_size, &paginated_tables);
         tracing::info!(
             "{} tables returned. Next token is {:?}",
             paginated_tables.len(),

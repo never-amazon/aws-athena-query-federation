@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::{FederationError, Result};
 use indexmap::IndexMap;
 use regex::Regex;
@@ -85,7 +85,7 @@ impl DatabaseConnectionConfigBuilder {
         let mut number_of_catalogs = 0usize;
         let glue_connection_blank = is_blank(
             properties
-                .get(EnvironmentConstants::DEFAULT_GLUE_CONNECTION)
+                .get(environment_constants::DEFAULT_GLUE_CONNECTION)
                 .map(String::as_str),
         );
         for (key, value) in properties {

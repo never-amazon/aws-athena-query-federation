@@ -13,28 +13,22 @@ use athena_federation_sdk::metadata::GetTableLayoutRequest;
 use athena_federation_sdk::request::{
     FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
 };
-use athena_federation_sdk::serde::{
-    object_mapper_factory, VersionedObjectMapperFactory, SERDE_VERSION_TWO,
-};
+use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use serde_support::*;
 
 fn assert_serialization_request(object: &FederationRequest) {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let ser_de = VersionedObjectMapperFactory::create_with_version(allocator, SERDE_VERSION_TWO)
-        .expect("mapper");
-    let mut out: Vec<u8> = Vec::new();
-    ser_de.write_value(&mut out, object).expect("serialize");
-    let actual: FederationRequest = ser_de.read_value(&out).expect("deserialize");
+    let ser_de = ObjectMapper::new(SerdeVersion::V2, allocator);
+    let out = ser_de.write_request(object).expect("serialize");
+    let actual: FederationRequest = ser_de.read_request(out.as_bytes()).expect("deserialize");
     assert_eq!(*object, actual);
 }
 
 fn assert_serialization_response(object: &FederationResponse) {
     let allocator = Arc::new(BlockAllocatorImpl::new());
-    let ser_de = VersionedObjectMapperFactory::create_with_version(allocator, SERDE_VERSION_TWO)
-        .expect("mapper");
-    let mut out: Vec<u8> = Vec::new();
-    ser_de.write_value(&mut out, object).expect("serialize");
-    let actual: FederationResponse = ser_de.read_value(&out).expect("deserialize");
+    let ser_de = ObjectMapper::new(SerdeVersion::V2, allocator);
+    let out = ser_de.write_response(object).expect("serialize");
+    let actual: FederationResponse = ser_de.read_response(out.as_bytes()).expect("deserialize");
     assert_eq!(*object, actual);
 }
 
@@ -47,12 +41,9 @@ mod block_serialization_test {
         let expected =
             block_utils::new_block(&other_allocator, "col1", &DataType::Int32, vec![21i32])
                 .expect("block");
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
-        let mut out: Vec<u8> = Vec::new();
-        serializer
-            .write_value(&mut out, &expected)
-            .expect("serialize");
-        let actual: Block = serializer.read_value(&out).expect("deserialize");
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
+        let out = serializer.write_block(&expected).expect("serialize");
+        let actual: Block = serializer.read_block(out.as_bytes()).expect("deserialize");
         assert_eq!(expected, actual);
     }
 }
@@ -63,16 +54,17 @@ mod marker_serialization_test {
     #[test]
     fn serialization_test() {
         let allocator = Arc::new(BlockAllocatorImpl::new());
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_value = 1024i32;
         let expected_marker =
             Marker::exactly(allocator.as_ref(), &DataType::Int32, expected_value).expect("marker");
-        let mut out: Vec<u8> = Vec::new();
-        serializer
-            .write_value(&mut out, &expected_marker)
+        let out = serializer
+            .write_marker(&expected_marker)
             .expect("serialize");
-        let deserializer = object_mapper_factory::create(allocator.clone());
-        let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
+        let deserializer = ObjectMapper::new(SerdeVersion::V1, allocator.clone());
+        let actual_marker: Marker = deserializer
+            .read_marker(out.as_bytes())
+            .expect("deserialize");
         assert_eq!(
             expected_marker.schema().metadata(),
             actual_marker.schema().metadata()
@@ -96,14 +88,15 @@ mod marker_serialization_test {
     #[test]
     fn nullable_serialization_test() {
         let allocator = Arc::new(BlockAllocatorImpl::new());
-        let serializer = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let serializer = ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_marker = Marker::null_marker(allocator.as_ref(), &DataType::Int32);
-        let mut out: Vec<u8> = Vec::new();
-        serializer
-            .write_value(&mut out, &expected_marker)
+        let out = serializer
+            .write_marker(&expected_marker)
             .expect("serialize");
-        let deserializer = object_mapper_factory::create(allocator.clone());
-        let actual_marker: Marker = deserializer.read_value(&out).expect("deserialize");
+        let deserializer = ObjectMapper::new(SerdeVersion::V1, allocator.clone());
+        let actual_marker: Marker = deserializer
+            .read_marker(out.as_bytes())
+            .expect("deserialize");
         assert_eq!(
             expected_marker.schema().metadata(),
             actual_marker.schema().metadata()
@@ -122,7 +115,8 @@ mod schema_serialization_test {
 
     #[test]
     fn serialization_test() {
-        let object_mapper = object_mapper_factory::create(Arc::new(BlockAllocatorImpl::new()));
+        let object_mapper =
+            ObjectMapper::new(SerdeVersion::V1, Arc::new(BlockAllocatorImpl::new()));
         let expected_schema: Schema = SchemaBuilder::new()
             .add_metadata("meta1", "meta-value-1")
             .add_metadata("meta2", "meta-value-2")
@@ -130,11 +124,12 @@ mod schema_serialization_test {
             .add_field_with_type("doublefield2", DataType::Float64)
             .add_field_with_type("varcharfield3", DataType::Utf8)
             .build();
-        let mut out: Vec<u8> = Vec::new();
-        object_mapper
-            .write_value(&mut out, &expected_schema)
+        let out = object_mapper
+            .write_schema(&expected_schema)
             .expect("serialize");
-        let actual_schema: Schema = object_mapper.read_value(&out).expect("deserialize");
+        let actual_schema: Schema = object_mapper
+            .read_schema(out.as_bytes())
+            .expect("deserialize");
         assert_eq!(expected_schema.fields(), actual_schema.fields());
         assert_eq!(expected_schema.metadata(), actual_schema.metadata());
     }
@@ -229,11 +224,7 @@ mod ping_request_ser_de_test {
     }
 
     fn read_ping(t: &TypedSerDe, text: &str) -> PingRequest {
-        match t
-            .mapper
-            .read_value::<FederationRequest>(text.as_bytes())
-            .expect("deserialize")
-        {
+        match t.mapper.read_request(text.as_bytes()).expect("deserialize") {
             FederationRequest::Ping(p) => p,
             other => panic!("expected PingRequest, got {}", other.type_name()),
         }
@@ -293,7 +284,7 @@ mod ping_response_ser_de_test {
     fn read_ping(t: &TypedSerDe, text: &str) -> PingResponse {
         match t
             .mapper
-            .read_value::<FederationResponse>(text.as_bytes())
+            .read_response(text.as_bytes())
             .expect("deserialize")
         {
             FederationResponse::Ping(p) => p,

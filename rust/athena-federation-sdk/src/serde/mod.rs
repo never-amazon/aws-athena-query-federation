@@ -6,7 +6,6 @@ pub mod federated_identity_serde;
 pub mod java_hash;
 pub(crate) mod json;
 pub(crate) mod object_mapper;
-pub mod object_mapper_factory;
 pub mod ping_request_serde;
 pub mod ping_response_serde;
 pub mod schema_deserializer;
@@ -17,7 +16,8 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
-pub(crate) mod versioned_object_mapper_factory;
+
+use std::fmt;
 
 use crate::data::BlockAllocator;
 
@@ -31,36 +31,64 @@ pub use json::{
 };
 pub use object_mapper::ObjectMapper;
 pub use v2::lambda_function_exception_serde::LambdaException;
-pub use versioned_object_mapper_factory::VersionedObjectMapperFactory;
 
-pub const SERDE_VERSION: i32 = 6;
-pub const SERDE_VERSION_ONE: i32 = 1;
-pub const SERDE_VERSION_TWO: i32 = 2;
-pub const SERDE_VERSION_THREE: i32 = 3;
-pub const SERDE_VERSION_FOUR: i32 = 4;
-pub const SERDE_VERSION_FIVE: i32 = 5;
-pub const SERDE_VERSION_SIX: i32 = 6;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SerdeVersion {
+    V1 = 1,
+    V2 = 2,
+    V3 = 3,
+    V4 = 4,
+    V5 = 5,
+    V6 = 6,
+}
+
+impl SerdeVersion {
+    pub const CURRENT: SerdeVersion = SerdeVersion::V6;
+
+    pub fn as_i32(self) -> i32 {
+        self as i32
+    }
+
+    pub fn lower(self) -> Option<SerdeVersion> {
+        match self {
+            SerdeVersion::V1 => None,
+            SerdeVersion::V2 => Some(SerdeVersion::V1),
+            SerdeVersion::V3 => Some(SerdeVersion::V2),
+            SerdeVersion::V4 => Some(SerdeVersion::V3),
+            SerdeVersion::V5 => Some(SerdeVersion::V4),
+            SerdeVersion::V6 => Some(SerdeVersion::V5),
+        }
+    }
+
+    pub fn is_strict(self) -> bool {
+        self > SerdeVersion::V1
+    }
+
+    pub fn ipc_format(self) -> IpcFormat {
+        if self <= SerdeVersion::V2 {
+            IpcFormat::AthenaFederationLegacy
+        } else {
+            IpcFormat::ArrowDefault
+        }
+    }
+}
+
+impl fmt::Display for SerdeVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_i32())
+    }
+}
+
+pub const SERDE_VERSION: i32 = SerdeVersion::CURRENT as i32;
 
 #[derive(Clone, Copy)]
 pub struct SerDeContext<'a> {
-    pub version: i32,
+    pub version: SerdeVersion,
     pub allocator: &'a dyn BlockAllocator,
 }
 
 impl<'a> SerDeContext<'a> {
-    pub fn new(version: i32, allocator: &'a dyn BlockAllocator) -> SerDeContext<'a> {
+    pub fn new(version: SerdeVersion, allocator: &'a dyn BlockAllocator) -> SerDeContext<'a> {
         SerDeContext { version, allocator }
-    }
-
-    pub fn ipc_format(&self) -> IpcFormat {
-        ipc_format_for(self.version)
-    }
-}
-
-pub fn ipc_format_for(version: i32) -> IpcFormat {
-    if version <= 2 {
-        IpcFormat::AthenaFederationLegacy
-    } else {
-        IpcFormat::ArrowDefault
     }
 }

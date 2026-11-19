@@ -3,9 +3,9 @@ use std::fmt;
 use super::PingResponse;
 use crate::metadata::{
     GetDataSourceCapabilitiesResponse, GetSplitsResponse, GetTableLayoutResponse, GetTableResponse,
-    ListSchemasResponse, ListTablesResponse, MetadataResponse,
+    ListSchemasResponse, ListTablesResponse,
 };
-use crate::records::{ReadRecordsResponse, RecordResponse, RemoteReadRecordsResponse};
+use crate::records::{ReadRecordsResponse, RemoteReadRecordsResponse};
 use crate::udf::UserDefinedFunctionResponse;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,26 +35,6 @@ impl FederationResponse {
             FederationResponse::RemoteReadRecords(_) => "RemoteReadRecordsResponse",
             FederationResponse::UserDefinedFunction(_) => "UserDefinedFunctionResponse",
             FederationResponse::GetDataSourceCapabilities(_) => "GetDataSourceCapabilitiesResponse",
-        }
-    }
-
-    pub fn as_metadata_response(&self) -> Option<&dyn MetadataResponse> {
-        match self {
-            FederationResponse::ListSchemas(r) => Some(r),
-            FederationResponse::ListTables(r) => Some(r),
-            FederationResponse::GetTable(r) => Some(r),
-            FederationResponse::GetTableLayout(r) => Some(r),
-            FederationResponse::GetSplits(r) => Some(r),
-            FederationResponse::GetDataSourceCapabilities(r) => Some(r),
-            _ => None,
-        }
-    }
-
-    pub fn as_record_response(&self) -> Option<&dyn RecordResponse> {
-        match self {
-            FederationResponse::ReadRecords(r) => Some(r),
-            FederationResponse::RemoteReadRecords(r) => Some(r),
-            _ => None,
         }
     }
 }

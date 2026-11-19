@@ -5,7 +5,7 @@ use crate::serde::base::{
     validate_object_end, validate_object_start_token,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const TYPE_FIELD: &str = "type";
 const RANGES_FIELD: &str = "ranges";
@@ -14,7 +14,7 @@ const NULL_ALLOWED_FIELD: &str = "nullAllowed";
 pub fn do_typed_serialize(
     value_set: &SortedRangeSet,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(TYPE_FIELD)?;
     super::arrow_type_serde::serialize(Some(value_set.get_type()), jgen)?;

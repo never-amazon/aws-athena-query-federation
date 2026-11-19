@@ -2,7 +2,7 @@ use std::fmt;
 
 use arrow::datatypes::Schema;
 
-use super::{RecordRequestType, RecordResponse};
+use super::RecordRequestType;
 use crate::domain::spill::SpillLocation;
 use crate::security::EncryptionKey;
 
@@ -51,16 +51,6 @@ impl RemoteReadRecordsResponse {
 
     pub fn encryption_key(&self) -> Option<&EncryptionKey> {
         self.encryption_key.as_ref()
-    }
-}
-
-impl RecordResponse for RemoteReadRecordsResponse {
-    fn request_type(&self) -> RecordRequestType {
-        RecordRequestType::ReadRecords
-    }
-
-    fn catalog_name(&self) -> &str {
-        &self.catalog_name
     }
 }
 

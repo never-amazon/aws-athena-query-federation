@@ -2,7 +2,7 @@ use crate::domain::predicate::EquatableValueSet;
 use crate::exceptions::Result;
 use crate::serde::base::{assert_field_name, get_next_bool_field, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const VALUE_BLOCK_FIELD: &str = "valueBlock";
 const ALLOW_LIST_FIELD: &str = "whiteList";
@@ -11,7 +11,7 @@ const NULL_ALLOWED_FIELD: &str = "nullAllowed";
 pub fn do_typed_serialize(
     value_set: &EquatableValueSet,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
     super::block_serde::serialize(Some(value_set.value_block()), jgen, version)?;

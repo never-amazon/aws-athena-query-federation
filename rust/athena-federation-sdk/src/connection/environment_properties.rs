@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use aws_sdk_glue::types::{AuthenticationConfiguration, Connection};
 
-use super::environment_constants::EnvironmentConstants;
+use super::environment_constants;
 use super::glue_connection_client::{default_glue_client, GlueConnectionClient};
 use crate::exceptions::{FederationError, Result};
 
@@ -62,11 +62,11 @@ impl EnvironmentProperties {
         let lambda_environment = self.get_env_map();
         let mut connection_environment = HashMap::new();
         if let Some(glue_connection_name) = lambda_environment
-            .get(EnvironmentConstants::DEFAULT_GLUE_CONNECTION)
+            .get(environment_constants::DEFAULT_GLUE_CONNECTION)
             .filter(|n| !n.trim().is_empty())
         {
             connection_environment.insert(
-                EnvironmentConstants::DEFAULT_GLUE_CONNECTION.to_string(),
+                environment_constants::DEFAULT_GLUE_CONNECTION.to_string(),
                 glue_connection_name.clone(),
             );
             let connection = self.get_glue_connection(glue_connection_name).await?;
@@ -130,7 +130,7 @@ impl EnvironmentProperties {
             let last = split_arn.last().copied().unwrap_or_default();
             let parts = java_split(last, '-');
             let secret_name = parts[..parts.len().saturating_sub(1)].join("-");
-            auth_map.insert(EnvironmentConstants::SECRET_NAME.to_string(), secret_name);
+            auth_map.insert(environment_constants::SECRET_NAME.to_string(), secret_name);
         }
         auth_map
     }
@@ -140,8 +140,8 @@ impl EnvironmentProperties {
         athena_properties: &HashMap<String, String>,
     ) -> HashMap<String, String> {
         let mut modified = athena_properties.clone();
-        if let Some(kms_key_id) = modified.remove(EnvironmentConstants::SPILL_KMS_KEY_ID) {
-            modified.insert(EnvironmentConstants::KMS_KEY_ID.to_string(), kms_key_id);
+        if let Some(kms_key_id) = modified.remove(environment_constants::SPILL_KMS_KEY_ID) {
+            modified.insert(environment_constants::KMS_KEY_ID.to_string(), kms_key_id);
         }
         modified
     }

@@ -12,20 +12,19 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{MetadataHandler, MetadataHandlerBase};
-use athena_federation_sdk::metadata::optimizations::querypassthrough::QueryPassthroughSignature;
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableRequest, GetTableResponse, ListSchemasRequest,
     ListSchemasResponse, ListTablesRequest, ListTablesResponse,
 };
 use athena_federation_sdk::request::FederatedIdentity;
 use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
-use athena_federation_sdk::util::{PaginationHelper, UNLIMITED_PAGE_SIZE_VALUE};
+use athena_federation_sdk::util::{manual_pagination, UNLIMITED_PAGE_SIZE_VALUE};
 use athena_federation_sdk::{FederationError, Result};
 
 use super::jdbc_arrow_type_converter::JdbcArrowTypeConverter;
 use super::jdbc_util::JdbcUtil;
 use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use crate::qpt::{JdbcQueryPassthrough, QUERY};
+use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::{DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt};
 use crate::sql::{DatabaseMetaData, JdbcConnection, ResultSet, ResultSetMetaData};
 use crate::validate::{close_after, null_pointer};
@@ -38,7 +37,6 @@ pub struct JdbcMetadataHandlerBase {
     jdbc_connection_factory: Option<Arc<dyn JdbcConnectionFactory>>,
     database_connection_config: Option<DatabaseConnectionConfig>,
     case_resolver: Arc<dyn JdbcCaseResolver>,
-    jdbc_query_passthrough: JdbcQueryPassthrough,
 }
 
 impl JdbcMetadataHandlerBase {
@@ -69,7 +67,6 @@ impl JdbcMetadataHandlerBase {
             jdbc_connection_factory: Some(jdbc_connection_factory),
             database_connection_config: Some(database_connection_config),
             case_resolver,
-            jdbc_query_passthrough: JdbcQueryPassthrough,
         }
     }
 
@@ -90,7 +87,6 @@ impl JdbcMetadataHandlerBase {
             jdbc_connection_factory: None,
             database_connection_config: None,
             case_resolver,
-            jdbc_query_passthrough: JdbcQueryPassthrough,
         }
     }
 
@@ -108,10 +104,6 @@ impl JdbcMetadataHandlerBase {
 
     pub fn case_resolver(&self) -> &Arc<dyn JdbcCaseResolver> {
         &self.case_resolver
-    }
-
-    pub fn jdbc_query_passthrough(&self) -> &JdbcQueryPassthrough {
-        &self.jdbc_query_passthrough
     }
 
     pub fn config_options(&self) -> &HashMap<String, String> {
@@ -163,7 +155,7 @@ pub trait JdbcMetadataHandler: MetadataHandler {
         let page_size = list_tables_request.page_size();
         let start_token = list_tables_request.next_token();
         let all_tables = self.list_tables(connection, &adjusted_schema_name).await?;
-        let (catalog_name, tables, next_token) = PaginationHelper::manual_pagination(
+        let (catalog_name, tables, next_token) = manual_pagination(
             &all_tables,
             start_token,
             page_size,
@@ -575,8 +567,7 @@ impl<T: JdbcMetadataHandler + ?Sized> JdbcMetadataHandlerExt for T {
             )));
         }
         let base = self.jdbc_metadata_base();
-        base.jdbc_query_passthrough()
-            .verify(request.query_passthrough_arguments())?;
+        JDBC_QUERY_PASSTHROUGH.verify(request.query_passthrough_arguments())?;
         let customer_passed_query = request
             .query_passthrough_arguments()
             .get(QUERY)

@@ -3,6 +3,7 @@ use arrow::datatypes::Schema;
 use crate::exceptions::{FederationError, Result};
 use crate::serde::arrow_ipc::{schema_from_bytes, IpcFormat};
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
+use crate::serde::SerdeVersion;
 
 pub fn serialize(schema: &Schema, jgen: &mut JsonGenerator) -> Result<()> {
     crate::serde::v2::schema_serde::serialize_with_format(schema, jgen, IpcFormat::ArrowDefault)
@@ -11,9 +12,9 @@ pub fn serialize(schema: &Schema, jgen: &mut JsonGenerator) -> Result<()> {
 pub fn serialize_for_version(
     schema: &Schema,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
-    if version <= 2 {
+    if version <= SerdeVersion::V2 {
         crate::serde::v2::schema_serde::serialize(schema, jgen)
     } else {
         serialize(schema, jgen)

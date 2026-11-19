@@ -3,10 +3,8 @@ mod serde_support;
 use std::collections::HashMap;
 
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, PushdownSubTypes,
-};
-use athena_federation_sdk::metadata::optimizations::DataSourceOptimizations;
+use athena_federation_sdk::metadata::optimizations::pushdown::ComplexExpressionPushdownSubType;
+use athena_federation_sdk::metadata::optimizations::Capability;
 use athena_federation_sdk::metadata::GetDataSourceCapabilitiesResponse;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse};
 use indexmap::IndexMap;
@@ -21,9 +19,7 @@ mod get_data_source_capabilities_response_ser_de_test {
         let properties = ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes
             .with_sub_type_properties(&[add.function_name(), subtract.function_name()])
             .expect("properties");
-        let (name, sub_types) = DataSourceOptimizations::SupportsComplexExpressionPushdown
-            .with_supported_sub_types(&[PushdownSubTypes::ComplexExpressionProperties(properties)])
-            .expect("capability");
+        let (name, sub_types) = Capability::ComplexExpression(vec![properties]).into_entry();
         let mut capabilities = IndexMap::new();
         capabilities.insert(name, sub_types);
         GetDataSourceCapabilitiesResponse::new("test-catalog", capabilities)
@@ -45,7 +41,7 @@ mod get_data_source_capabilities_response_ser_de_test {
         let text = fixture("serde/v4", "GetDataSourceCapabilitiesResponse.json");
         let actual: FederationResponse = t
             .mapper_v4
-            .read_value(text.as_bytes())
+            .read_response(text.as_bytes())
             .expect("deserialize");
         assert_eq!(FederationResponse::from(expected()), actual);
     }
@@ -83,7 +79,7 @@ mod read_records_request_ser_de_v4_test {
         let text = fixture("serde/v4", "ReadRecordsRequest.json");
         let actual: FederationRequest = t
             .mapper_v4
-            .read_value(text.as_bytes())
+            .read_request(text.as_bytes())
             .expect("deserialize");
         assert_eq!(FederationRequest::from(expected), actual);
     }
@@ -92,19 +88,15 @@ mod read_records_request_ser_de_v4_test {
 mod object_mapper_factory_v4_test {
     use std::sync::Arc;
 
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::Schema;
     use athena_federation_sdk::data::BlockAllocatorImpl;
-    use athena_federation_sdk::serde::{VersionedObjectMapperFactory, SERDE_VERSION_FOUR};
+    use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
     use athena_federation_sdk::FederationError;
 
     #[test]
     fn test_strict_serializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(
-            Arc::new(BlockAllocatorImpl::new()),
-            SERDE_VERSION_FOUR,
-        )
-        .unwrap();
-        let result = mapper.write_value_as_string(&DataType::Null);
+        let mapper = ObjectMapper::new(SerdeVersion::V4, Arc::new(BlockAllocatorImpl::new()));
+        let result = mapper.write_schema(&Schema::empty());
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"
@@ -113,14 +105,8 @@ mod object_mapper_factory_v4_test {
 
     #[test]
     fn test_strict_deserializer() {
-        let mapper = VersionedObjectMapperFactory::create_with_version(
-            Arc::new(BlockAllocatorImpl::new()),
-            SERDE_VERSION_FOUR,
-        )
-        .unwrap();
-        let result = mapper.read_value_from_str::<DataType>(
-            "{\"@type\" : \"FloatingPoint\", \"precision\" : \"DOUBLE\"}",
-        );
+        let mapper = ObjectMapper::new(SerdeVersion::V4, Arc::new(BlockAllocatorImpl::new()));
+        let result = mapper.read_schema(b"{\"fields\" : [ ]}");
         assert!(
             matches!(result, Err(FederationError::AthenaConnector(_))),
             "{result:?}"

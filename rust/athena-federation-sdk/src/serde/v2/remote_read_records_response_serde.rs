@@ -5,7 +5,7 @@ use crate::serde::base::{
     validate_object_end, validate_object_start_token,
 };
 use crate::serde::json::{JsonGenerator, JsonParser, JsonToken};
-use crate::serde::SerDeContext;
+use crate::serde::{SerDeContext, SerdeVersion};
 
 const CATALOG_NAME_FIELD: &str = "catalogName";
 const SCHEMA_FIELD: &str = "schema";
@@ -15,7 +15,7 @@ const ENCRYPTION_KEY_FIELD: &str = "encryptionKey";
 pub fn do_typed_serialize(
     response: &RemoteReadRecordsResponse,
     jgen: &mut JsonGenerator,
-    version: i32,
+    version: SerdeVersion,
 ) -> Result<()> {
     jgen.write_string_field(CATALOG_NAME_FIELD, Some(response.catalog_name()))?;
     jgen.write_field_name(SCHEMA_FIELD)?;

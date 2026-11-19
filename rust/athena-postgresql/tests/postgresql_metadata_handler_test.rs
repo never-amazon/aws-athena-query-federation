@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
-use athena_federation_sdk::connection::EnvironmentConstants;
+use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
@@ -642,8 +642,8 @@ async fn do_get_splits_with_catalog_casing_filter() {
     let f = setup();
     let layout = table_layout(&f, &f.handler, &[("s0", "p0")], Constraints::empty()).await;
     let identity = identity_with(HashMap::from([(
-        EnvironmentConstants::CATALOG_CASING_FILTER.to_string(),
-        Some(EnvironmentConstants::UPPERCASE_ONLY.to_string()),
+        environment_constants::CATALOG_CASING_FILTER.to_string(),
+        Some(environment_constants::UPPERCASE_ONLY.to_string()),
     )]));
     let request = splits_request(&f.handler, identity, &layout, Constraints::empty(), None);
     let response = f
@@ -653,8 +653,8 @@ async fn do_get_splits_with_catalog_casing_filter() {
         .unwrap();
     assert_eq!(1, response.splits().len());
     assert_eq!(
-        Some(EnvironmentConstants::UPPERCASE_ONLY),
-        response.splits()[0].get_property(EnvironmentConstants::CATALOG_CASING_FILTER)
+        Some(environment_constants::UPPERCASE_ONLY),
+        response.splits()[0].get_property(environment_constants::CATALOG_CASING_FILTER)
     );
 }
 

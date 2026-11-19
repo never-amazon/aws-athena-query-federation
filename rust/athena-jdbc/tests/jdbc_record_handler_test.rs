@@ -302,7 +302,7 @@ async fn read_with_constraint() {
         .await
         .unwrap();
     spiller.close().await;
-    checker.close();
+    drop(checker);
 
     let objects = s.fakes.s3.objects.lock().unwrap().clone();
     assert!(!objects.is_empty());

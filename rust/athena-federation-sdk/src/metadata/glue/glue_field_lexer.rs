@@ -38,23 +38,19 @@ impl BaseTypeMapper for DefaultTypeMapper {
     }
 }
 
-pub struct GlueFieldLexer;
+pub const MAP_DISABLED: bool = false;
 
-impl GlueFieldLexer {
-    pub const MAP_DISABLED: bool = false;
+pub fn lex(name: &str, input: &str) -> Result<Option<Field>> {
+    lex_with_mapper(name, input, &DefaultTypeMapper)
+}
 
-    pub fn lex(name: &str, input: &str) -> Result<Option<Field>> {
-        GlueFieldLexer::lex_with_mapper(name, input, &DefaultTypeMapper)
-    }
-
-    pub fn lex_with_mapper(
-        name: &str,
-        input: &str,
-        mapper: &dyn BaseTypeMapper,
-    ) -> Result<Option<Field>> {
-        let mut parser = GlueTypeParser::new(input);
-        lex_internal(name, &mut parser, mapper)
-    }
+pub fn lex_with_mapper(
+    name: &str,
+    input: &str,
+    mapper: &dyn BaseTypeMapper,
+) -> Result<Option<Field>> {
+    let mut parser = GlueTypeParser::new(input);
+    lex_internal(name, &mut parser, mapper)
 }
 
 fn lex_internal(
@@ -63,7 +59,7 @@ fn lex_internal(
     mapper: &dyn BaseTypeMapper,
 ) -> Result<Option<Field>> {
     tracing::debug!("lexInternal: enter - {}", name);
-    let type_token = parser.next();
+    let type_token = parser.next_token();
     let type_token_value_lower = type_token.value().to_lowercase();
     let result = if type_token_value_lower == STRUCT {
         parse_struct(name, &type_token, parser, mapper).map(Some)
@@ -94,7 +90,7 @@ fn parse_struct(
     expect_token_marker_is_field_start(type_token)?;
     let mut field_builder = FieldBuilder::new_builder(name, DataType::Struct(Fields::empty()));
     while parser.has_next() {
-        let child_name_token = parser.next();
+        let child_name_token = parser.next_token();
         if child_name_token.marker() != Some(GlueTypeParser::FIELD_DIV) {
             break;
         }
@@ -113,7 +109,7 @@ fn parse_list(
 ) -> Result<Field> {
     expect_token_marker_is_field_start(type_token)?;
     let child = lex_internal(name, parser, mapper)?;
-    let closing_token = parser.next();
+    let closing_token = parser.next_token();
     expect_token_marker_is_field_end(Some(&closing_token))?;
     let child = required_child(child)?;
     Ok(
@@ -129,7 +125,7 @@ fn parse_map(
     parser: &mut GlueTypeParser,
     mapper: &dyn BaseTypeMapper,
 ) -> Result<Field> {
-    if GlueFieldLexer::MAP_DISABLED {
+    if MAP_DISABLED {
         return Err(FederationError::not_supported(
             "Map type is currently unsupported",
         ));
@@ -137,7 +133,7 @@ fn parse_map(
     expect_token_marker_is_field_start(type_token)?;
     let key_type = lex_internal("key", parser, mapper)?;
     let value_type = lex_internal("value", parser, mapper)?;
-    let closing_token = parser.next();
+    let closing_token = parser.next_token();
     expect_token_marker_is_field_end(Some(&closing_token))?;
     let key_type = key_type.ok_or_else(|| {
         FederationError::null_pointer("Cannot invoke \"org.apache.arrow.vector.types.pojo.Field.getType()\" because \"keyType\" is null")

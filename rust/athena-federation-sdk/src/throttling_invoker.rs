@@ -15,11 +15,6 @@ pub const THROTTLE_MAX_DELAY_MS: &str = "throttle_max_delay_ms";
 pub const THROTTLE_DECREASE_FACTOR: &str = "throttle_decrease_factor";
 pub const THROTTLE_INCREASE_MS: &str = "throttle_increase_ms";
 
-const DEFAULT_INITIAL_DELAY_MS: i64 = 10;
-const DEFAULT_MAX_DELAY_MS: i64 = 1_000;
-const DEFAULT_DECREASE_FACTOR: f64 = 0.5;
-const DEFAULT_INCREASE_MS: i64 = 10;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum State {
     FastStart,
@@ -37,16 +32,76 @@ impl fmt::Display for State {
     }
 }
 
-pub trait ExceptionFilter<E>: Send + Sync {
-    fn is_match(&self, ex: &E) -> bool;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThrottleConfig {
+    pub initial_delay_ms: i64,
+    pub max_delay_ms: i64,
+    pub decrease: f64,
+    pub increase_ms: i64,
 }
 
-impl<E, F> ExceptionFilter<E> for F
-where
-    F: Fn(&E) -> bool + Send + Sync,
-{
-    fn is_match(&self, ex: &E) -> bool {
-        self(ex)
+impl Default for ThrottleConfig {
+    fn default() -> Self {
+        ThrottleConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 1_000,
+            decrease: 0.5,
+            increase_ms: 10,
+        }
+    }
+}
+
+fn parse_long(value: &str) -> Result<i64> {
+    value
+        .parse::<i64>()
+        .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{value}\"")))
+}
+
+impl ThrottleConfig {
+    pub fn from_config_options(config_options: &HashMap<String, String>) -> Result<Self> {
+        let defaults = ThrottleConfig::default();
+        let long_option = |key: &str, default: i64| {
+            config_options
+                .get(key)
+                .map_or(Ok(default), |v| parse_long(v))
+        };
+        let initial_delay_ms = long_option(THROTTLE_INITIAL_DELAY_MS, defaults.initial_delay_ms)?;
+        let max_delay_ms = long_option(THROTTLE_MAX_DELAY_MS, defaults.max_delay_ms)?;
+        let decrease = match config_options.get(THROTTLE_DECREASE_FACTOR) {
+            Some(v) => v
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{v}\"")))?,
+            None => defaults.decrease,
+        };
+        Ok(ThrottleConfig {
+            initial_delay_ms,
+            max_delay_ms,
+            decrease,
+            increase_ms: long_option(THROTTLE_INCREASE_MS, defaults.increase_ms)?,
+        })
+    }
+
+    fn validate(&self) -> Result<()> {
+        if !(0.001..=1.0).contains(&self.decrease) {
+            return Err(FederationError::invalid_input(format!(
+                "decrease was {} but should be between .001 and 1",
+                java_double(self.decrease)
+            )));
+        }
+        if self.max_delay_ms < 1 {
+            return Err(FederationError::invalid_input(format!(
+                "maxDelayMs was {} but must be >= 1",
+                self.max_delay_ms
+            )));
+        }
+        if self.increase_ms < 1 {
+            return Err(FederationError::invalid_input(format!(
+                "increase was {} but must be >= 1",
+                self.increase_ms
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -56,12 +111,9 @@ struct Throttle {
 }
 
 pub struct ThrottlingInvoker<E = FederationError> {
-    initial_delay_ms: i64,
-    max_delay_ms: i64,
-    decrease: f64,
-    increase: i64,
-    filter: Arc<dyn ExceptionFilter<E>>,
-    spiller: Mutex<Option<Arc<dyn BlockSpiller>>>,
+    config: ThrottleConfig,
+    filter: fn(&E) -> bool,
+    spiller: Option<Arc<dyn BlockSpiller>>,
     throttle: Mutex<Throttle>,
 }
 
@@ -73,82 +125,20 @@ fn java_double(value: f64) -> String {
     }
 }
 
-fn parse_long(value: &str) -> Result<i64> {
-    value
-        .parse::<i64>()
-        .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{value}\"")))
-}
-
 impl<E> ThrottlingInvoker<E>
 where
     E: From<FederationError> + fmt::Display + Send,
 {
-    pub fn builder() -> ThrottlingInvokerBuilder<E> {
-        ThrottlingInvokerBuilder::default()
-    }
-
-    pub fn new_default_builder(
-        filter: Arc<dyn ExceptionFilter<E>>,
-        config_options: &HashMap<String, String>,
-    ) -> Result<ThrottlingInvokerBuilder<E>> {
-        let initial_delay_ms = match config_options.get(THROTTLE_INITIAL_DELAY_MS) {
-            Some(v) => parse_long(v)?,
-            None => DEFAULT_INITIAL_DELAY_MS,
-        };
-        let max_delay_ms = match config_options.get(THROTTLE_MAX_DELAY_MS) {
-            Some(v) => parse_long(v)?,
-            None => DEFAULT_MAX_DELAY_MS,
-        };
-        let decrease_factor = match config_options.get(THROTTLE_DECREASE_FACTOR) {
-            Some(v) => v
-                .trim()
-                .parse::<f64>()
-                .map_err(|_| FederationError::NumberFormat(format!("For input string: \"{v}\"")))?,
-            None => DEFAULT_DECREASE_FACTOR,
-        };
-        let increase = match config_options.get(THROTTLE_INCREASE_MS) {
-            Some(v) => parse_long(v)?,
-            None => DEFAULT_INCREASE_MS,
-        };
-        Ok(ThrottlingInvoker::builder()
-            .with_initial_delay_ms(initial_delay_ms)
-            .with_max_delay_ms(max_delay_ms)
-            .with_decrease(decrease_factor)
-            .with_increase(increase)
-            .with_filter(filter))
-    }
-
     pub fn new(
-        initial_delay_ms: i64,
-        max_delay_ms: i64,
-        decrease: f64,
-        increase: i64,
-        filter: Arc<dyn ExceptionFilter<E>>,
+        config: ThrottleConfig,
+        filter: fn(&E) -> bool,
         spiller: Option<Arc<dyn BlockSpiller>>,
     ) -> Result<ThrottlingInvoker<E>> {
-        if !(0.001..=1.0).contains(&decrease) {
-            return Err(FederationError::invalid_input(format!(
-                "decrease was {} but should be between .001 and 1",
-                java_double(decrease)
-            )));
-        }
-        if max_delay_ms < 1 {
-            return Err(FederationError::invalid_input(format!(
-                "maxDelayMs was {max_delay_ms} but must be >= 1"
-            )));
-        }
-        if increase < 1 {
-            return Err(FederationError::invalid_input(format!(
-                "increase was {increase} but must be >= 1"
-            )));
-        }
+        config.validate()?;
         Ok(ThrottlingInvoker {
-            initial_delay_ms,
-            max_delay_ms,
-            decrease,
-            increase,
+            config,
             filter,
-            spiller: Mutex::new(spiller),
+            spiller,
             throttle: Mutex::new(Throttle {
                 delay: 0,
                 state: State::FastStart,
@@ -182,7 +172,7 @@ where
                     return Ok(result);
                 }
                 Err(ex) => {
-                    if !self.filter.is_match(&ex) {
+                    if !(self.filter)(&ex) {
                         return Err(ex);
                     }
                     self.handle_throttle(&ex).await?;
@@ -201,8 +191,8 @@ where
         )))
     }
 
-    pub fn set_block_spiller(&self, spiller: Option<Arc<dyn BlockSpiller>>) {
-        *self.lock_spiller() = spiller;
+    pub fn config(&self) -> &ThrottleConfig {
+        &self.config
     }
 
     pub fn state(&self) -> State {
@@ -213,30 +203,8 @@ where
         self.lock_throttle().delay
     }
 
-    pub fn decrease(&self) -> f64 {
-        self.decrease
-    }
-
-    pub fn default_initial_delay_ms(&self) -> i64 {
-        self.initial_delay_ms
-    }
-
-    pub fn max_delay_ms(&self) -> i64 {
-        self.max_delay_ms
-    }
-
-    pub fn increase(&self) -> i64 {
-        self.increase
-    }
-
     fn lock_throttle(&self) -> MutexGuard<'_, Throttle> {
         self.throttle
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn lock_spiller(&self) -> MutexGuard<'_, Option<Arc<dyn BlockSpiller>>> {
-        self.spiller
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -245,11 +213,11 @@ where
         {
             let mut throttle = self.lock_throttle();
             let mut new_delay =
-                double_to_long((long_to_double(throttle.delay) / self.decrease).ceil());
+                double_to_long((long_to_double(throttle.delay) / self.config.decrease).ceil());
             if new_delay == 0 {
-                new_delay = self.initial_delay_ms;
-            } else if new_delay > self.max_delay_ms {
-                new_delay = self.max_delay_ms;
+                new_delay = self.config.initial_delay_ms;
+            } else if new_delay > self.config.max_delay_ms {
+                new_delay = self.config.max_delay_ms;
             }
             tracing::info!(
                 "handleThrottle: Encountered a Throttling event[{}] adjusting delay to {} ms @ {} TPS",
@@ -260,8 +228,7 @@ where
             throttle.state = State::Congested;
             throttle.delay = new_delay;
         }
-        let spiller = self.lock_spiller().clone();
-        if let Some(spiller) = spiller {
+        if let Some(spiller) = &self.spiller {
             if !spiller.spilled().await.map_err(E::from)? {
                 return Err(E::from(FederationError::connector(
                     FederationSourceErrorCode::ThrottlingException,
@@ -274,7 +241,7 @@ where
 
     fn handle_avoidance(&self) {
         let mut throttle = self.lock_throttle();
-        let new_delay = (throttle.delay - self.increase).max(0);
+        let new_delay = (throttle.delay - self.config.increase_ms).max(0);
         if throttle.delay > 0 {
             throttle.state = State::Avoidance;
             if new_delay > 0 {
@@ -315,89 +282,12 @@ impl<E> fmt::Display for ThrottlingInvoker<E> {
         write!(
             f,
             "ThrottlingInvoker{{initialDelayMs={}, maxDelayMs={}, decrease={}, increase={}, delay={}, state={}}}",
-            self.initial_delay_ms,
-            self.max_delay_ms,
-            java_double(self.decrease),
-            self.increase,
+            self.config.initial_delay_ms,
+            self.config.max_delay_ms,
+            java_double(self.config.decrease),
+            self.config.increase_ms,
             throttle.delay,
             throttle.state
-        )
-    }
-}
-
-pub struct ThrottlingInvokerBuilder<E = FederationError> {
-    initial_delay_ms: i64,
-    max_delay_ms: i64,
-    decrease: f64,
-    increase: i64,
-    filter: Option<Arc<dyn ExceptionFilter<E>>>,
-    spiller: Option<Arc<dyn BlockSpiller>>,
-}
-
-impl<E> Default for ThrottlingInvokerBuilder<E> {
-    fn default() -> Self {
-        ThrottlingInvokerBuilder {
-            initial_delay_ms: 0,
-            max_delay_ms: 0,
-            decrease: 0.0,
-            increase: 0,
-            filter: None,
-            spiller: None,
-        }
-    }
-}
-
-impl<E> ThrottlingInvokerBuilder<E>
-where
-    E: From<FederationError> + fmt::Display + Send,
-{
-    #[must_use]
-    pub fn with_initial_delay_ms(mut self, initial_delay_ms: i64) -> Self {
-        self.initial_delay_ms = initial_delay_ms;
-        self
-    }
-
-    #[must_use]
-    pub fn with_max_delay_ms(mut self, max_delay_ms: i64) -> Self {
-        self.max_delay_ms = max_delay_ms;
-        self
-    }
-
-    #[must_use]
-    pub fn with_decrease(mut self, decrease: f64) -> Self {
-        self.decrease = decrease;
-        self
-    }
-
-    #[must_use]
-    pub fn with_increase(mut self, increase: i64) -> Self {
-        self.increase = increase;
-        self
-    }
-
-    #[must_use]
-    pub fn with_filter(mut self, filter: Arc<dyn ExceptionFilter<E>>) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-
-    #[must_use]
-    pub fn with_spiller(mut self, spiller: Arc<dyn BlockSpiller>) -> Self {
-        self.spiller = Some(spiller);
-        self
-    }
-
-    pub fn build(self) -> Result<ThrottlingInvoker<E>> {
-        let filter = self
-            .filter
-            .ok_or_else(|| FederationError::null_pointer("filter was null"))?;
-        ThrottlingInvoker::new(
-            self.initial_delay_ms,
-            self.max_delay_ms,
-            self.decrease,
-            self.increase,
-            filter,
-            self.spiller,
         )
     }
 }

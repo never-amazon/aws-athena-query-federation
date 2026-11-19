@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
 
-use crate::connection::EnvironmentConstants;
+use crate::connection::environment_constants;
 use crate::credentials::{CredentialsProvider, DefaultCredentialsProvider};
 use crate::data::S3Client;
 use crate::exceptions::{FederationError, Result};
@@ -100,8 +100,8 @@ pub trait FederationRequestHandler: Send + Sync {
             return Ok(None);
         };
         let (Some(token), Some(kms_key)) = (
-            options.get(EnvironmentConstants::FAS_TOKEN),
-            options.get(EnvironmentConstants::SERVICE_KMS),
+            options.get(environment_constants::FAS_TOKEN),
+            options.get(environment_constants::SERVICE_KMS),
         ) else {
             return Ok(None);
         };
@@ -188,7 +188,7 @@ pub trait FederationRequestHandler: Send + Sync {
 
 fn fas_token(config_options: Option<&ConfigOptions>) -> Option<&str> {
     config_options?
-        .get(EnvironmentConstants::FAS_TOKEN)?
+        .get(environment_constants::FAS_TOKEN)?
         .as_deref()
 }
 
