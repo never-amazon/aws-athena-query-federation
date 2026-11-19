@@ -166,7 +166,9 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
             )))
         }
         Kind::IntervalCompound(_) | Kind::Uuid(_) => {
-            return Err(SubstraitError::Runtime("Unknown expression type.".into()))
+            return Err(SubstraitError::Unsupported(
+                "Unknown expression type.".into(),
+            ))
         }
         Kind::UserDefinedTypeReference(_) => {
             return Err(SubstraitError::Unsupported(
@@ -182,6 +184,10 @@ pub(crate) fn to_calcite(system: RelDataTypeSystem, ty: &Type) -> Result<RelData
     Ok(out)
 }
 
+fn name_out_of_bounds(index: usize, names: &[String]) -> SubstraitError {
+    SubstraitError::IndexOutOfBounds(format!("Index: {index}, Size: {}", names.len()))
+}
+
 pub(crate) fn named_struct_to_calcite(
     system: RelDataTypeSystem,
     names: &[String],
@@ -191,12 +197,10 @@ pub(crate) fn named_struct_to_calcite(
     let mut position = 0usize;
     let mut fields = Vec::with_capacity(types.len());
     for ty in types {
-        let name = names.get(position).cloned().ok_or_else(|| {
-            SubstraitError::IndexOutOfBounds(format!(
-                "Index {position} out of bounds for length {}",
-                names.len()
-            ))
-        })?;
+        let name = names
+            .get(position)
+            .cloned()
+            .ok_or_else(|| name_out_of_bounds(position, names))?;
         position += 1;
         let (converted, next) = to_calcite_named(system, ty, names, position)?;
         position = next;
@@ -216,12 +220,10 @@ fn to_calcite_named(
             let mut pos = position;
             let mut fields = Vec::with_capacity(s.types.len());
             for f in &s.types {
-                let name = names.get(pos).cloned().ok_or_else(|| {
-                    SubstraitError::IndexOutOfBounds(format!(
-                        "Index {pos} out of bounds for length {}",
-                        names.len()
-                    ))
-                })?;
+                let name = names
+                    .get(pos)
+                    .cloned()
+                    .ok_or_else(|| name_out_of_bounds(pos, names))?;
                 pos += 1;
                 let (converted, next) = to_calcite_named(system, f, names, pos)?;
                 pos = next;

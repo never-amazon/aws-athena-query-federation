@@ -834,3 +834,642 @@ fn interval_casts_fail_in_convert_type_to_spec_like_calcite() {
     );
     assert_eq!(day_second, root_cause(&plan_string));
 }
+
+const NOT_HANDLED: &str = "of type io.substrait.expression.ImmutableFieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.";
+
+fn selection(segment: ReferenceSegment, root: RootType) -> Expression {
+    Expression {
+        rex_type: Some(RexType::Selection(Box::new(FieldReference {
+            reference_type: Some(ReferenceType::DirectReference(segment)),
+            root_type: Some(root),
+        }))),
+    }
+}
+
+fn struct_segment(field: i32, child: Option<ReferenceSegment>) -> ReferenceSegment {
+    ReferenceSegment {
+        reference_type: Some(reference_segment::ReferenceType::StructField(Box::new(
+            StructField {
+                field,
+                child: child.map(Box::new),
+            },
+        ))),
+    }
+}
+
+fn nested(path: &[i32], child: Option<ReferenceSegment>) -> Expression {
+    let segment = path
+        .iter()
+        .rev()
+        .fold(child, |child, field| Some(struct_segment(*field, child)))
+        .expect("path");
+    selection(segment, RootType::RootReference(RootReference {}))
+}
+
+fn project_rel(input: Rel, expressions: Vec<Expression>) -> Rel {
+    rel(RelType::Project(Box::new(ProjectRel {
+        input: Some(Box::new(input)),
+        expressions,
+        ..Default::default()
+    })))
+}
+
+fn filter_rel(input: Rel, condition: Expression) -> Rel {
+    rel(RelType::Filter(Box::new(FilterRel {
+        input: Some(Box::new(input)),
+        condition: Some(Box::new(condition)),
+        ..Default::default()
+    })))
+}
+
+fn boolean_type() -> Type {
+    ty(Kind::Bool(r#type::Boolean {
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    }))
+}
+
+fn single_column_read(column_type: Type) -> Rel {
+    rel(RelType::Read(Box::new(ReadRel {
+        base_schema: Some(NamedStruct {
+            names: vec!["c".into()],
+            r#struct: Some(r#type::Struct {
+                types: vec![column_type],
+                type_variation_reference: 0,
+                nullability: REQUIRED,
+            }),
+        }),
+        read_type: Some(ReadType::NamedTable(NamedTable {
+            names: vec!["w".into()],
+            advanced_extension: None,
+        })),
+        ..Default::default()
+    })))
+}
+
+fn user_defined(type_reference: u32) -> Type {
+    ty(Kind::UserDefined(r#type::UserDefined {
+        type_reference,
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+        type_parameters: Vec::new(),
+    }))
+}
+
+#[allow(
+    deprecated,
+    reason = "Isthmus 0.65 reads extension URIs from the deprecated field"
+)]
+fn declare_type(plan_string: &str, uri: &str, name: &str, anchor: u32) -> String {
+    use athena_federation_substrait::proto::extensions::simple_extension_declaration::ExtensionType;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(plan_string)
+        .expect("base64");
+    let mut plan = Plan::decode(bytes.as_slice()).expect("plan");
+    plan.extension_uris.push(SimpleExtensionUri {
+        extension_uri_anchor: 50,
+        uri: uri.into(),
+    });
+    plan.extensions.push(SimpleExtensionDeclaration {
+        mapping_type: Some(MappingType::ExtensionType(ExtensionType {
+            extension_uri_reference: 50,
+            type_anchor: anchor,
+            name: name.into(),
+        })),
+    });
+    base64::engine::general_purpose::STANDARD.encode(plan.encode_to_vec())
+}
+
+fn root_cause_error(plan_string: &str) -> (String, String) {
+    let error = plan::to_sql_node(plan_string, &SqlDialect::ansi()).expect_err("error");
+    let mut source: &SubstraitError = &error;
+    while let SubstraitError::Wrapped { cause, .. } = source {
+        source = cause;
+    }
+    (
+        source.java_kind().java_class_name().to_string(),
+        source.to_string(),
+    )
+}
+
+#[test]
+fn nested_field_references_fail_with_the_isthmus_field_reference_text() {
+    let st = column("st");
+    let list_element = ReferenceSegment {
+        reference_type: Some(reference_segment::ReferenceType::ListElement(Box::new(
+            reference_segment::ListElement {
+                offset: 2,
+                child: None,
+            },
+        ))),
+    };
+    let map_key = ReferenceSegment {
+        reference_type: Some(reference_segment::ReferenceType::MapKey(Box::new(
+            reference_segment::MapKey {
+                map_key: Some(literal_of(LiteralType::I64(1), false)),
+                child: None,
+            },
+        ))),
+    };
+    let cases = [
+        (
+            nested(&[st, 1], None),
+            "FieldReference{segments=[StructField{offset=1}, StructField{offset=6}], type=FP64{nullable=true}}",
+        ),
+        (
+            nested(&[st, 0], None),
+            "FieldReference{segments=[StructField{offset=0}, StructField{offset=6}], type=I64{nullable=false}}",
+        ),
+        (
+            nested(&[column("lst")], Some(list_element)),
+            "FieldReference{segments=[ListElement{offset=2}, StructField{offset=5}], type=I64{nullable=true}}",
+        ),
+        (
+            nested(&[column("mp")], Some(map_key)),
+            "FieldReference{segments=[MapKey{key=I64Literal{nullable=false, value=1}}, StructField{offset=15}], type=FP64{nullable=true}}",
+        ),
+    ];
+    for (expression, text) in cases {
+        assert_eq!(
+            format!("Expression {text} {NOT_HANDLED}"),
+            root_cause(&encode(&[], project_rel(read(), vec![expression])))
+        );
+    }
+    let after_project = project_rel(
+        project_rel(read(), vec![field(st)]),
+        vec![nested(&[18, 1], None)],
+    );
+    assert_eq!(
+        format!("Expression FieldReference{{segments=[StructField{{offset=1}}, StructField{{offset=18}}], type=FP64{{nullable=true}}}} {NOT_HANDLED}"),
+        root_cause(&encode(&[], after_project))
+    );
+    let condition = call(
+        1,
+        vec![
+            value(nested(&[st, 0], None)),
+            value(lit(LiteralType::I64(1))),
+        ],
+        boolean_type(),
+    );
+    assert_eq!(
+        format!("Expression FieldReference{{segments=[StructField{{offset=0}}, StructField{{offset=6}}], type=I64{{nullable=false}}}} {NOT_HANDLED}"),
+        root_cause(&encode(
+            &[("/functions_comparison.yaml", "equal:any_any")],
+            filter_rel(read(), condition)
+        ))
+    );
+}
+
+#[test]
+fn invalid_nested_field_references_fail_while_building_the_plan_like_isthmus() {
+    let empty = ReferenceSegment {
+        reference_type: None,
+    };
+    let cases = [
+        (
+            nested(&[column("i")], Some(empty)),
+            "Unhandled type: REFERENCETYPE_NOT_SET",
+        ),
+        (nested(&[column("st"), 5], None), "Undefined struct type."),
+        (
+            nested(&[column("i"), 0], None),
+            "This visitor only supports retrieving struct types. Was applied to a non-struct type.",
+        ),
+        (
+            field(100),
+            "Field reference offset (100) must be less than number of fields in struct (18)",
+        ),
+    ];
+    for (expression, message) in cases {
+        assert_eq!(
+            message,
+            root_cause(&encode(&[], project_rel(read(), vec![expression])))
+        );
+    }
+}
+
+#[test]
+fn outer_references_with_child_segments_stay_rejected() {
+    use athena_federation_substrait::proto::expression::field_reference::OuterReference;
+    use athena_federation_substrait::proto::expression::subquery::{
+        set_predicate, SetPredicate, SubqueryType,
+    };
+    use athena_federation_substrait::proto::expression::Subquery;
+    let outer = |child: Option<ReferenceSegment>| {
+        selection(
+            struct_segment(column("st"), child),
+            RootType::OuterReference(OuterReference { steps_out: 1 }),
+        )
+    };
+    let exists = |outer_field: Expression| Expression {
+        rex_type: Some(RexType::Subquery(Box::new(Subquery {
+            subquery_type: Some(SubqueryType::SetPredicate(Box::new(SetPredicate {
+                predicate_op: set_predicate::PredicateOp::Exists as i32,
+                tuples: Some(Box::new(filter_rel(
+                    small_read(),
+                    call(1, vec![value(field(0)), value(outer_field)], boolean_type()),
+                ))),
+            }))),
+        }))),
+    };
+    let equal = ("/functions_comparison.yaml", "equal:any_any");
+    assert!(
+        sql(&encode(&[equal], filter_rel(read(), exists(outer(None)))))
+            .ends_with("WHERE EXISTS (SELECT *\nFROM `u`\nWHERE `k` = `t`.`st`)")
+    );
+    let error = plan::to_sql_node(
+        &encode(
+            &[equal],
+            filter_rel(read(), exists(outer(Some(struct_segment(0, None))))),
+        ),
+        &SqlDialect::ansi(),
+    );
+    assert!(error.is_err());
+}
+
+#[test]
+fn function_type_arguments_print_the_isthmus_type_text() {
+    let interval_without_precision = ty(Kind::IntervalDay(r#type::IntervalDay {
+        precision: None,
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    }));
+    let cases = [
+        (i64_type(REQUIRED), "I64{nullable=false}"),
+        (
+            decimal(10, 2),
+            "Decimal{nullable=false, scale=2, precision=10}",
+        ),
+        (varchar(5), "VarChar{nullable=false, length=5}"),
+        (
+            ty(Kind::Struct(r#type::Struct {
+                types: vec![i64_type(NULLABLE), fp64_type(REQUIRED)],
+                type_variation_reference: 0,
+                nullability: NULLABLE,
+            })),
+            "Struct{nullable=true, fields=[I64{nullable=true}, FP64{nullable=false}]}",
+        ),
+        (
+            list_of(i64_type(NULLABLE)),
+            "ListType{nullable=true, elementType=I64{nullable=true}}",
+        ),
+        (
+            map_of(i64_type(REQUIRED), i64_type(NULLABLE)),
+            "Map{nullable=true, key=I64{nullable=false}, value=I64{nullable=true}}",
+        ),
+        (
+            interval_without_precision,
+            "IntervalDay{nullable=true, precision=6}",
+        ),
+    ];
+    for (t, text) in cases {
+        let type_arg = FunctionArgument {
+            arg_type: Some(ArgType::Type(t)),
+        };
+        let plan_string = project(
+            ("/functions_arithmetic.yaml", "add:i64_i64"),
+            read(),
+            vec![value(field(column("i"))), type_arg],
+        );
+        assert_eq!(
+            format!("FunctionArg {text} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."),
+            root_cause(&plan_string)
+        );
+    }
+}
+
+#[test]
+#[allow(
+    deprecated,
+    reason = "builds the deprecated Substrait types that Isthmus still prints"
+)]
+fn deprecated_datetime_columns_print_their_substrait_names() {
+    let cases = [
+        (
+            ty(Kind::Timestamp(r#type::Timestamp {
+                type_variation_reference: 0,
+                nullability: REQUIRED,
+            })),
+            "timestamp",
+        ),
+        (
+            ty(Kind::Time(r#type::Time {
+                type_variation_reference: 0,
+                nullability: REQUIRED,
+            })),
+            "time",
+        ),
+        (
+            ty(Kind::TimestampTz(r#type::TimestampTz {
+                type_variation_reference: 0,
+                nullability: NULLABLE,
+            })),
+            "timestamp_tz?",
+        ),
+    ];
+    for (t, text) in cases {
+        let plan_string = project(FACTORIAL, single_column_read(t), vec![value(field(0))]);
+        assert_eq!(factorial_of(text), root_cause(&plan_string));
+    }
+}
+
+#[test]
+fn user_defined_types_fail_at_the_extension_lookup_like_isthmus() {
+    let unknown = "Unknown type id. Make sure that the type id provided was shared in the extensions section of the plan.";
+    let type_arg = FunctionArgument {
+        arg_type: Some(ArgType::Type(user_defined(9))),
+    };
+    let plans = [
+        project(FACTORIAL, read(), vec![type_arg.clone()]),
+        project(FACTORIAL, read(), vec![value(null_of(user_defined(9)))]),
+        project(
+            FACTORIAL,
+            single_column_read(user_defined(9)),
+            vec![value(field(0))],
+        ),
+        encode(
+            &[],
+            project_rel(single_column_read(user_defined(9)), vec![field(0)]),
+        ),
+    ];
+    for plan_string in &plans {
+        assert_eq!(unknown, root_cause(plan_string));
+        assert_eq!(
+            "Received a reference for extension /functions_geometry.yaml but that extension is not currently loaded.",
+            root_cause(&declare_type(plan_string, "/functions_geometry.yaml", "geometry", 9))
+        );
+        assert_eq!(
+            "Unexpected type with name point. The namespace /functions_arithmetic.yaml is loaded but no type with this name found.",
+            root_cause(&declare_type(plan_string, "/functions_arithmetic.yaml", "point", 9))
+        );
+    }
+}
+
+#[test]
+fn plan_building_errors_come_before_calcite_errors_like_isthmus() {
+    let unmapped = call(1, vec![value(field(column("i")))], i64_type(NULLABLE));
+    let not_set = null_of(Type { kind: None });
+    let cases = [
+        (
+            vec![vec![unmapped.clone()], vec![field(100)]],
+            "Field reference offset (100) must be less than number of fields in struct (19)",
+        ),
+        (
+            vec![vec![unmapped.clone()], vec![not_set.clone()]],
+            "Type is not set: ",
+        ),
+        (
+            vec![vec![unmapped.clone()], vec![call(7, Vec::new(), i64_type(NULLABLE))]],
+            "Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.",
+        ),
+        (
+            vec![vec![unmapped.clone()], vec![nested(&[column("st"), 9], None)]],
+            "Undefined struct type.",
+        ),
+        (vec![vec![unmapped.clone(), not_set]], "Type is not set: "),
+        (
+            vec![vec![null_of(interval_day())], vec![unmapped]],
+            "Unable to convert scalar function factorial(i64).",
+        ),
+    ];
+    for (projects, message) in cases {
+        let root = projects.into_iter().fold(read(), project_rel);
+        assert_eq!(message, root_cause(&encode(&[FACTORIAL], root)));
+    }
+}
+
+#[test]
+fn function_declarations_must_match_the_default_extension_catalog() {
+    let equal = |declaration: (&str, &str)| {
+        encode(
+            &[declaration],
+            filter_rel(
+                read(),
+                call(
+                    1,
+                    vec![value(field(column("i"))), value(lit(LiteralType::I64(1)))],
+                    boolean_type(),
+                ),
+            ),
+        )
+    };
+    assert!(sql(&equal(("/functions_comparison.yaml", "equal:any_any"))).ends_with("WHERE `i` = 1"));
+    let cases = [
+        (
+            ("/functions_arithmetic.yaml", "equal:any_any"),
+            "Unexpected scalar function with key equal:any_any. The namespace /functions_arithmetic.yaml is loaded but no scalar function with this key found.",
+        ),
+        (
+            ("/functions_comparison.yaml", "equal"),
+            "Unexpected scalar function with key equal. The namespace /functions_comparison.yaml is loaded but no scalar function with this key found.",
+        ),
+        (
+            ("/nope.yaml", "equal:any_any"),
+            "Received a reference for extension /nope.yaml but that extension is not currently loaded.",
+        ),
+    ];
+    for (declaration, message) in cases {
+        assert_eq!(message, root_cause(&equal(declaration)));
+    }
+    let mut plan = Plan::decode(
+        base64::engine::general_purpose::STANDARD
+            .decode(equal(("/functions_comparison.yaml", "equal:any_any")))
+            .expect("base64")
+            .as_slice(),
+    )
+    .expect("plan");
+    if let Some(MappingType::ExtensionFunction(f)) = &mut plan.extensions[0].mapping_type {
+        f.extension_uri_reference = 77;
+    }
+    let plan_string = base64::engine::general_purpose::STANDARD.encode(plan.encode_to_vec());
+    assert_eq!(
+        (
+            "java.lang.IllegalStateException".to_string(),
+            "Could not find extension URI of 77".to_string()
+        ),
+        root_cause_error(&plan_string)
+    );
+}
+
+#[test]
+fn aggregate_and_window_declarations_use_their_own_catalog_messages() {
+    use athena_federation_substrait::proto::aggregate_rel::{Grouping, Measure};
+    use athena_federation_substrait::proto::expression::WindowFunction;
+    use athena_federation_substrait::proto::{AggregateFunction, AggregateRel};
+    let i = column("i");
+    let aggregate = |declaration: (&str, &str)| {
+        #[allow(
+            deprecated,
+            reason = "Isthmus 0.65 reads grouping expressions from the deprecated field"
+        )]
+        let grouping = Grouping {
+            grouping_expressions: vec![field(i)],
+            expression_references: Vec::new(),
+        };
+        encode(
+            &[declaration],
+            rel(RelType::Aggregate(Box::new(AggregateRel {
+                input: Some(Box::new(read())),
+                groupings: vec![grouping],
+                measures: vec![Measure {
+                    measure: Some(AggregateFunction {
+                        function_reference: 1,
+                        arguments: vec![value(field(i))],
+                        output_type: Some(i64_type(NULLABLE)),
+                        phase: 3,
+                        invocation: 1,
+                        ..Default::default()
+                    }),
+                    filter: None,
+                }],
+                ..Default::default()
+            }))),
+        )
+    };
+    let window = |declaration: (&str, &str)| {
+        encode(
+            &[declaration],
+            project_rel(
+                read(),
+                vec![Expression {
+                    rex_type: Some(RexType::WindowFunction(WindowFunction {
+                        function_reference: 1,
+                        arguments: vec![value(field(i))],
+                        output_type: Some(i64_type(NULLABLE)),
+                        phase: 3,
+                        invocation: 1,
+                        bounds_type: 1,
+                        ..Default::default()
+                    })),
+                }],
+            ),
+        )
+    };
+    let add = ("/functions_arithmetic.yaml", "add:i64_i64");
+    assert_eq!(
+        "SELECT `i`, SUM(`i`) AS `$f1`\nFROM `t`\nGROUP BY `i`",
+        sql(&aggregate(("/functions_arithmetic.yaml", "sum:i64")))
+    );
+    assert_eq!(
+        "Unexpected aggregate function with key add:i64_i64. The namespace /functions_arithmetic.yaml is loaded but no aggregate function with this key was found.",
+        root_cause(&aggregate(add))
+    );
+    assert_eq!(
+        "Received a reference for extension /nope.yaml but that extension is not currently loaded.",
+        root_cause(&aggregate(("/nope.yaml", "sum:i64")))
+    );
+    assert_eq!(
+        "Unexpected window aggregate function with key add:i64_i64. The namespace /functions_arithmetic.yaml is loaded but no window aggregate function with this key was found.",
+        root_cause(&window(add))
+    );
+}
+
+#[test]
+fn missing_plan_parts_fail_with_the_isthmus_messages() {
+    use athena_federation_substrait::proto::expression::subquery::{
+        Scalar, SetPredicate, SubqueryType,
+    };
+    use athena_federation_substrait::proto::expression::Subquery;
+    let missing_if = Expression {
+        rex_type: Some(RexType::IfThen(Box::new(IfThen {
+            ifs: vec![IfClause {
+                r#if: None,
+                then: Some(lit(LiteralType::I64(1))),
+            }],
+            r#else: Some(Box::new(lit(LiteralType::I64(2)))),
+        }))),
+    };
+    assert_eq!(
+        "Unknown type: REXTYPE_NOT_SET",
+        root_cause(&encode(&[], project_rel(read(), vec![missing_if])))
+    );
+    let join = rel(RelType::Join(Box::new(JoinRel {
+        left: Some(Box::new(read())),
+        right: Some(Box::new(small_read())),
+        expression: None,
+        r#type: 1,
+        ..Default::default()
+    })));
+    assert_eq!(
+        "Unknown type: REXTYPE_NOT_SET",
+        root_cause(&encode(&[], join))
+    );
+    let unspecified = Expression {
+        rex_type: Some(RexType::Subquery(Box::new(Subquery {
+            subquery_type: Some(SubqueryType::SetPredicate(Box::new(SetPredicate {
+                predicate_op: 0,
+                tuples: Some(Box::new(small_read())),
+            }))),
+        }))),
+    };
+    assert_eq!(
+        "Cannot handle SetPredicate when PredicateOp is PREDICATE_OP_UNSPECIFIED.",
+        root_cause(&encode(&[], filter_rel(read(), unspecified)))
+    );
+    let two_columns = Expression {
+        rex_type: Some(RexType::Subquery(Box::new(Subquery {
+            subquery_type: Some(SubqueryType::Scalar(Box::new(Scalar {
+                input: Some(Box::new(small_read())),
+            }))),
+        }))),
+    };
+    assert_eq!(
+        "Scalar subquery must have exactly one field",
+        root_cause(&project(FACTORIAL, read(), vec![value(two_columns)]))
+    );
+    let no_output = Expression {
+        rex_type: Some(RexType::ScalarFunction(ScalarFunction {
+            function_reference: 1,
+            arguments: vec![value(field(column("i"))), value(field(column("i")))],
+            output_type: None,
+            ..Default::default()
+        })),
+    };
+    assert_eq!(
+        "Type is not set: ",
+        root_cause(&encode(
+            &[("/functions_arithmetic.yaml", "add:i64_i64")],
+            project_rel(read(), vec![no_output])
+        ))
+    );
+}
+
+#[test]
+fn base_schema_errors_match_java_list_messages() {
+    let short_names = rel(RelType::Read(Box::new(ReadRel {
+        base_schema: Some(NamedStruct {
+            names: vec!["a".into()],
+            r#struct: Some(r#type::Struct {
+                types: vec![i64_type(REQUIRED), i64_type(REQUIRED)],
+                type_variation_reference: 0,
+                nullability: REQUIRED,
+            }),
+        }),
+        read_type: Some(ReadType::NamedTable(NamedTable {
+            names: vec!["w".into()],
+            advanced_extension: None,
+        })),
+        ..Default::default()
+    })));
+    assert_eq!(
+        (
+            "java.lang.IndexOutOfBoundsException".to_string(),
+            "Index: 1, Size: 1".to_string()
+        ),
+        root_cause_error(&encode(&[], short_names))
+    );
+    let uuid = ty(Kind::Uuid(r#type::Uuid {
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+    }));
+    assert_eq!(
+        (
+            "java.lang.UnsupportedOperationException".to_string(),
+            "Unknown expression type.".to_string()
+        ),
+        root_cause_error(&encode(
+            &[],
+            project_rel(single_column_read(uuid), vec![field(0)])
+        ))
+    );
+}

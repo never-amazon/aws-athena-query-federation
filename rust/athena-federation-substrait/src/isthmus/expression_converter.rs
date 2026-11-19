@@ -3,8 +3,9 @@ use std::rc::Rc;
 use bigdecimal::BigDecimal;
 
 use super::function_mappings::{aggregate_operator, scalar_operator, window_operator};
+use super::substrait_type::SubstraitType;
 use super::type_converter::to_calcite;
-use super::type_text::{calcite_type_text, literal_type_text, proto_type_text, TypeText};
+use super::type_text::{calcite_type_text, TypeText};
 use super::SubstraitToCalcite;
 use crate::calcite::operators::{self, SqlOperator};
 use crate::calcite::rel::RelNode;
@@ -40,8 +41,8 @@ fn unconvertible_argument() -> SubstraitError {
     SubstraitError::Unsupported("Unable to convert FunctionArgument .".into())
 }
 
-fn required<'b, T>(v: Option<&'b T>, what: &str) -> Result<&'b T> {
-    v.ok_or_else(|| SubstraitError::IllegalArgument(format!("Unknown type: {what}")))
+fn required(v: Option<&Expression>) -> Result<&Expression> {
+    v.ok_or_else(|| SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into()))
 }
 
 pub(crate) fn sort_direction(field: &SortField) -> Result<Option<(Direction, NullDirection)>> {
@@ -262,27 +263,27 @@ impl SubstraitToCalcite {
             RexType::IfThen(it) => {
                 let mut args = Vec::new();
                 for clause in &it.ifs {
-                    args.push(self.rex(required(clause.r#if.as_ref(), "IF")?, input)?);
-                    args.push(self.rex(required(clause.then.as_ref(), "THEN")?, input)?);
+                    args.push(self.rex(required(clause.r#if.as_ref())?, input)?);
+                    args.push(self.rex(required(clause.then.as_ref())?, input)?);
                 }
-                args.push(self.rex(required(it.r#else.as_deref(), "ELSE")?, input)?);
+                args.push(self.rex(required(it.r#else.as_deref())?, input)?);
                 let ty = case_type(&args);
                 Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SwitchExpression(sw) => {
-                let m = self.rex(required(sw.r#match.as_deref(), "MATCH")?, input)?;
+                let m = self.rex(required(sw.r#match.as_deref())?, input)?;
                 let mut args = Vec::new();
                 for clause in &sw.ifs {
-                    let cond = self.literal(required(clause.r#if.as_ref(), "IF")?)?;
+                    let cond = self.literal(&clause.r#if.clone().unwrap_or_default())?;
                     args.push(self.rex_builder.make_call(&operators::EQUALS, vec![m.clone(), cond]));
-                    args.push(self.rex(required(clause.then.as_ref(), "THEN")?, input)?);
+                    args.push(self.rex(required(clause.then.as_ref())?, input)?);
                 }
-                args.push(self.rex(required(sw.r#else.as_deref(), "ELSE")?, input)?);
+                args.push(self.rex(required(sw.r#else.as_deref())?, input)?);
                 let ty = case_type(&args);
                 Ok(RexBuilder::make_call_typed(ty, &operators::CASE, args))
             }
             RexType::SingularOrList(or) => {
-                let lhs = self.rex(required(or.value.as_deref(), "VALUE")?, input)?;
+                let lhs = self.rex(required(or.value.as_deref())?, input)?;
                 let mut options = Vec::with_capacity(or.options.len());
                 for o in &or.options {
                     options.push(self.rex(o, input)?);
@@ -291,7 +292,7 @@ impl SubstraitToCalcite {
             }
             RexType::Cast(c) => {
                 let ty = self.ty(c.r#type.as_ref())?;
-                let operand = self.rex(required(c.input.as_deref(), "INPUT")?, input)?;
+                let operand = self.rex(required(c.input.as_deref())?, input)?;
                 let safe = c.failure_behavior == crate::proto::expression::cast::FailureBehavior::ReturnNull as i32;
                 Ok(RexBuilder::make_cast(ty, operand, safe))
             }
@@ -362,7 +363,13 @@ impl SubstraitToCalcite {
                 let kind = match PredicateOp::try_from(p.predicate_op) {
                     Ok(PredicateOp::Exists) => SubQueryKind::Exists,
                     Ok(PredicateOp::Unique) => SubQueryKind::Unique,
-                    _ => {
+                    Ok(PredicateOp::Unspecified) => {
+                        return Err(SubstraitError::Unsupported(
+                            "Cannot handle SetPredicate when PredicateOp is PREDICATE_OP_UNSPECIFIED."
+                                .into(),
+                        ))
+                    }
+                    Err(_) => {
                         return Err(SubstraitError::Unsupported(format!(
                             "Unsupported set predicate operation: {}",
                             p.predicate_op
@@ -449,19 +456,35 @@ impl SubstraitToCalcite {
         };
         match &f.root_type {
             Some(RootType::RootReference(_) | RootType::OuterReference(_)) => {}
-            Some(RootType::Expression(_)) | None => {
+            Some(RootType::Expression(_)) => {
                 return Err(SubstraitError::Unsupported(format!(
                     "Expression {f:?} of type io.substrait.expression.FieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
                 )))
             }
+            None => {
+                return Err(SubstraitError::IllegalArgument(
+                    "Unhandled type: ROOTTYPE_NOT_SET".into(),
+                ))
+            }
         }
         let field = match &segment.reference_type {
-            Some(reference_segment::ReferenceType::StructField(sf)) if sf.child.is_none() => sf.field,
+            Some(reference_segment::ReferenceType::StructField(sf)) if sf.child.is_none() => {
+                sf.field
+            }
             Some(_) => {
-                return Err(SubstraitError::Unsupported("Expression FieldReference with nested segments not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.".into()))
+                let text = self
+                    .checked
+                    .field(f)
+                    .and_then(|info| info.nested_text.as_deref())
+                    .unwrap_or("FieldReference with nested segments");
+                return Err(SubstraitError::Unsupported(format!(
+                    "Expression {text} of type io.substrait.expression.ImmutableFieldReference not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
+                )));
             }
             None => {
-                return Err(SubstraitError::IllegalArgument("Unhandled type: REFERENCETYPE_NOT_SET".into()))
+                return Err(SubstraitError::IllegalArgument(
+                    "Unhandled type: REFERENCETYPE_NOT_SET".into(),
+                ))
             }
         };
         if let Some(RootType::OuterReference(o)) = &f.root_type {
@@ -514,7 +537,8 @@ impl SubstraitToCalcite {
                 Some(ArgType::Enum(v)) => out.push(self.enum_arg(decl, index, v)?),
                 Some(ArgType::Type(t)) => {
                     return Err(SubstraitError::Unsupported(format!(
-                        "FunctionArg {t:?} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter."
+                        "FunctionArg {} not handled by visitor type io.substrait.isthmus.expression.ExpressionRexConverter.",
+                        SubstraitType::from_proto(t, &self.checked.extensions)?
                     )))
                 }
                 None => return Err(unconvertible_argument()),
@@ -574,7 +598,7 @@ impl SubstraitToCalcite {
         for a in args {
             described.push(match &a.arg_type {
                 Some(ArgType::Enum(v)) => format!("Optional[{v}]"),
-                Some(ArgType::Type(t)) => proto_type_text(t, &self.type_names)?.to_string(),
+                Some(ArgType::Type(t)) => self.signature(t)?.to_string(),
                 Some(ArgType::Value(e)) => self.expression_type(e, input)?.to_string(),
                 None => return Err(unconvertible_argument()),
             });
@@ -582,26 +606,29 @@ impl SubstraitToCalcite {
         Ok(described.join(", "))
     }
 
+    fn signature(&self, t: &Type) -> Result<TypeText> {
+        Ok(SubstraitType::from_proto(t, &self.checked.extensions)?.signature())
+    }
+
     fn expression_type(&mut self, e: &Expression, input: &RelDataType) -> Result<TypeText> {
         let declared = match &e.rex_type {
-            Some(RexType::Literal(l)) => literal_type_text(l, &self.type_names)?,
+            Some(RexType::Literal(l)) => {
+                SubstraitType::of_literal(l, &self.checked.extensions)?.map(|t| t.signature())
+            }
+            Some(RexType::Selection(f)) => self.checked.field(f).map(|info| info.ty.signature()),
             Some(
                 RexType::ScalarFunction(ScalarFunction { output_type, .. })
                 | RexType::WindowFunction(WindowFunction { output_type, .. }),
             ) => output_type
                 .as_ref()
-                .map(|t| proto_type_text(t, &self.type_names))
+                .map(|t| self.signature(t))
                 .transpose()?,
-            Some(RexType::Cast(c)) => c
-                .r#type
-                .as_ref()
-                .map(|t| proto_type_text(t, &self.type_names))
-                .transpose()?,
+            Some(RexType::Cast(c)) => c.r#type.as_ref().map(|t| self.signature(t)).transpose()?,
             Some(RexType::IfThen(it)) => match it.r#else.as_deref() {
                 Some(otherwise) => {
                     let mut ty = self.expression_type(otherwise, input)?;
                     for clause in &it.ifs {
-                        let then = required(clause.then.as_ref(), "THEN")?;
+                        let then = required(clause.then.as_ref())?;
                         if self.expression_type(then, input)?.nullable() {
                             ty = ty.into_nullable();
                             break;
@@ -651,7 +678,7 @@ impl SubstraitToCalcite {
         }
         let mut order_keys = Vec::with_capacity(w.sorts.len());
         for s in &w.sorts {
-            let expr = self.rex(required(s.expr.as_ref(), "EXPR")?, input)?;
+            let expr = self.rex(required(s.expr.as_ref())?, input)?;
             let (direction, null_direction) = sort_direction(s)?.ok_or_else(|| {
                 SubstraitError::IllegalArgument("SORT_DIRECTION_CLUSTERED is not supported".into())
             })?;
