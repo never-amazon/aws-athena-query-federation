@@ -19,7 +19,7 @@ const TABLE_QUERY: &str =
 fn casing(mode: FederationSdkCasingMode) -> HashMap<String, String> {
     HashMap::from([(
         CASING_MODE_CONFIGURATION_KEY.to_string(),
-        mode.name().to_string(),
+        mode.as_str().to_string(),
     )])
 }
 

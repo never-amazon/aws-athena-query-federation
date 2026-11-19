@@ -1,53 +1,30 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::str::FromStr;
 
 use crate::exceptions::{FederationError, Result};
+use crate::named_enum::named_enum;
 
 pub const CASING_MODE_CONFIGURATION_KEY: &str = "casing_mode";
 pub const DEFAULT_GLUE_CONNECTION: &str = "glue_connection";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FederationSdkCasingMode {
-    None,
-    Lower,
-    Upper,
-    CaseInsensitiveSearch,
-    Annotation,
+named_enum! {
+    pub enum FederationSdkCasingMode {
+        None => "NONE",
+        Lower => "LOWER",
+        Upper => "UPPER",
+        CaseInsensitiveSearch => "CASE_INSENSITIVE_SEARCH",
+        Annotation => "ANNOTATION",
+    }
 }
 
 impl FederationSdkCasingMode {
-    pub fn values() -> &'static [FederationSdkCasingMode] {
-        use FederationSdkCasingMode::{Annotation, CaseInsensitiveSearch, Lower, None, Upper};
-        &[None, Lower, Upper, CaseInsensitiveSearch, Annotation]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            FederationSdkCasingMode::None => "NONE",
-            FederationSdkCasingMode::Lower => "LOWER",
-            FederationSdkCasingMode::Upper => "UPPER",
-            FederationSdkCasingMode::CaseInsensitiveSearch => "CASE_INSENSITIVE_SEARCH",
-            FederationSdkCasingMode::Annotation => "ANNOTATION",
-        }
-    }
-
     pub fn value_of(name: &str) -> Result<FederationSdkCasingMode> {
-        FederationSdkCasingMode::values()
-            .iter()
-            .copied()
-            .find(|m| m.name() == name)
+        FederationSdkCasingMode::from_name(name)
             .ok_or_else(|| {
                 FederationError::IllegalArgument(format!(
                     "No enum constant com.amazonaws.athena.connector.lambda.resolver.CaseResolver.FederationSDKCasingMode.{name}"
                 ))
             })
-    }
-}
-
-impl fmt::Display for FederationSdkCasingMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
     }
 }
 
@@ -110,7 +87,7 @@ impl CaseResolver {
                     CASING_MODE_CONFIGURATION_KEY,
                     self.source_type,
                     configured,
-                    FederationSdkCasingMode::values()
+                    FederationSdkCasingMode::ALL
                 );
                 Err(e)
             }

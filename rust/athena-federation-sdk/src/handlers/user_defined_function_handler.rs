@@ -345,7 +345,7 @@ impl<T: UserDefinedFunctionHandler + ?Sized> UserDefinedFunctionHandlerExt for T
         request: &UserDefinedFunctionRequest,
     ) -> Result<UserDefinedFunctionResponse> {
         match request.function_type() {
-            UserDefinedFunctionType::SCALAR => {
+            UserDefinedFunctionType::Scalar => {
                 let udf_method = extract_scalar_function_method(self.udf_methods(), request)?;
                 let output_records = self.process_rows(
                     allocator,

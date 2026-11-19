@@ -1,43 +1,21 @@
-use std::fmt;
-
 use super::pushdown::{
     FilterPushdownSubType, HintsSubtype, LimitPushdownSubType, SubTypeProperties,
     TopNPushdownSubType,
 };
 use super::OptimizationSubType;
+use crate::named_enum::named_enum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DataSourceOptimizations {
-    SupportsLimitPushdown,
-    SupportsTopNPushdown,
-    SupportsFilterPushdown,
-    SupportsComplexExpressionPushdown,
-    DataSourceHints,
+named_enum! {
+    pub enum DataSourceOptimizations {
+        SupportsLimitPushdown => "SUPPORTS_LIMIT_PUSHDOWN",
+        SupportsTopNPushdown => "SUPPORTS_TOP_N_PUSHDOWN",
+        SupportsFilterPushdown => "SUPPORTS_FILTER_PUSHDOWN",
+        SupportsComplexExpressionPushdown => "SUPPORTS_COMPLEX_EXPRESSION_PUSHDOWN",
+        DataSourceHints => "DATA_SOURCE_HINTS",
+    }
 }
 
 impl DataSourceOptimizations {
-    pub fn values() -> &'static [DataSourceOptimizations] {
-        &[
-            DataSourceOptimizations::SupportsLimitPushdown,
-            DataSourceOptimizations::SupportsTopNPushdown,
-            DataSourceOptimizations::SupportsFilterPushdown,
-            DataSourceOptimizations::SupportsComplexExpressionPushdown,
-            DataSourceOptimizations::DataSourceHints,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            DataSourceOptimizations::SupportsLimitPushdown => "SUPPORTS_LIMIT_PUSHDOWN",
-            DataSourceOptimizations::SupportsTopNPushdown => "SUPPORTS_TOP_N_PUSHDOWN",
-            DataSourceOptimizations::SupportsFilterPushdown => "SUPPORTS_FILTER_PUSHDOWN",
-            DataSourceOptimizations::SupportsComplexExpressionPushdown => {
-                "SUPPORTS_COMPLEX_EXPRESSION_PUSHDOWN"
-            }
-            DataSourceOptimizations::DataSourceHints => "DATA_SOURCE_HINTS",
-        }
-    }
-
     pub fn optimization(&self) -> &'static str {
         match self {
             DataSourceOptimizations::SupportsLimitPushdown => "supports_limit_pushdown",
@@ -48,12 +26,6 @@ impl DataSourceOptimizations {
             }
             DataSourceOptimizations::DataSourceHints => "data_source_hints",
         }
-    }
-}
-
-impl fmt::Display for DataSourceOptimizations {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
     }
 }
 

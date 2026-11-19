@@ -1,19 +1,12 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LimitPushdownSubType {
-    IntegerConstant,
+use crate::named_enum::named_enum;
+
+named_enum! {
+    pub enum LimitPushdownSubType {
+        IntegerConstant => "INTEGER_CONSTANT",
+    }
 }
 
 impl LimitPushdownSubType {
-    pub fn values() -> &'static [LimitPushdownSubType] {
-        &[LimitPushdownSubType::IntegerConstant]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            LimitPushdownSubType::IntegerConstant => "INTEGER_CONSTANT",
-        }
-    }
-
     pub fn sub_type(&self) -> &'static str {
         match self {
             LimitPushdownSubType::IntegerConstant => "integer_constant",

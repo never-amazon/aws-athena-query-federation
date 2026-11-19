@@ -1,20 +1,14 @@
 use super::SubTypeProperties;
 use crate::exceptions::{FederationError, Result};
+use crate::named_enum::named_enum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ComplexExpressionPushdownSubType {
-    SupportedFunctionExpressionTypes,
+named_enum! {
+    pub enum ComplexExpressionPushdownSubType {
+        SupportedFunctionExpressionTypes => "SUPPORTED_FUNCTION_EXPRESSION_TYPES",
+    }
 }
 
 impl ComplexExpressionPushdownSubType {
-    pub fn values() -> &'static [ComplexExpressionPushdownSubType] {
-        &[ComplexExpressionPushdownSubType::SupportedFunctionExpressionTypes]
-    }
-
-    pub fn name(&self) -> &'static str {
-        "SUPPORTED_FUNCTION_EXPRESSION_TYPES"
-    }
-
     pub fn sub_type(&self) -> &'static str {
         "supported_function_expression_types"
     }

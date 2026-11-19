@@ -7,6 +7,7 @@ pub mod handlers;
 mod java_cast;
 pub mod lambda;
 pub mod metadata;
+mod named_enum;
 mod query_status_checker;
 pub mod records;
 pub mod request;

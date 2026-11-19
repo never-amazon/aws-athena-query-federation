@@ -522,7 +522,7 @@ mod user_defined_function_request_ser_de_test {
             input_records,
             output_schema,
             "test-method",
-            UserDefinedFunctionType::SCALAR,
+            UserDefinedFunctionType::Scalar,
         )
     }
 

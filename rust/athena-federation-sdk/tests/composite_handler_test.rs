@@ -422,7 +422,7 @@ async fn handle_request_with_unknown_request_throws_invalid_input_exception() {
         block,
         SchemaBuilder::new_builder().add_int_field("out").build(),
         "method",
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     );
     let err = handle(&s, unknown_request.into()).await.unwrap_err();
     assert!(err.to_string().contains("Unknown request class"));

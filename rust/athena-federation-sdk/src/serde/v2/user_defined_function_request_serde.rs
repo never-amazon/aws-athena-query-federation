@@ -29,7 +29,7 @@ pub fn do_typed_serialize(
         version,
     )?;
     jgen.write_string_field(METHOD_NAME_FIELD, Some(request.method_name()))?;
-    jgen.write_string_field(FUNCTION_TYPE_FIELD, Some(request.function_type().name()))
+    jgen.write_string_field(FUNCTION_TYPE_FIELD, Some(request.function_type().as_str()))
 }
 
 pub fn do_typed_deserialize(
@@ -44,15 +44,14 @@ pub fn do_typed_deserialize(
     let output_schema = super::block_serde::deserialize_schema_for_version(jparser, ctx.version)?;
     let method_name = get_next_string_field(jparser, METHOD_NAME_FIELD)?;
     let function_type_name = get_next_string_field(jparser, FUNCTION_TYPE_FIELD)?;
-    let function_type = UserDefinedFunctionType::value_of(
-        function_type_name.as_deref().unwrap_or(""),
-    )
-    .ok_or_else(|| {
-        no_enum_constant(
-            "com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType",
-            function_type_name.as_deref(),
-        )
-    })?;
+    let function_type =
+        UserDefinedFunctionType::from_name(function_type_name.as_deref().unwrap_or(""))
+            .ok_or_else(|| {
+                no_enum_constant(
+                    "com.amazonaws.athena.connector.lambda.udf.UserDefinedFunctionType",
+                    function_type_name.as_deref(),
+                )
+            })?;
     Ok(UserDefinedFunctionRequest::new(
         identity,
         require_non_null(input_records, "inputRecords is null")?,

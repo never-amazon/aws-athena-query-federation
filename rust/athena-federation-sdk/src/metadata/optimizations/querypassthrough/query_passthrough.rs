@@ -1,29 +1,15 @@
 use super::super::OptimizationSubType;
+use crate::named_enum::named_enum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum QueryPassthrough {
-    QueryPassthroughSchema,
-    QueryPassthroughName,
-    QueryPassthroughArguments,
+named_enum! {
+    pub enum QueryPassthrough {
+        QueryPassthroughSchema => "QUERY_PASSTHROUGH_SCHEMA",
+        QueryPassthroughName => "QUERY_PASSTHROUGH_NAME",
+        QueryPassthroughArguments => "QUERY_PASSTHROUGH_ARGUMENTS",
+    }
 }
 
 impl QueryPassthrough {
-    pub fn values() -> &'static [QueryPassthrough] {
-        &[
-            QueryPassthrough::QueryPassthroughSchema,
-            QueryPassthrough::QueryPassthroughName,
-            QueryPassthrough::QueryPassthroughArguments,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            QueryPassthrough::QueryPassthroughSchema => "QUERY_PASSTHROUGH_SCHEMA",
-            QueryPassthrough::QueryPassthroughName => "QUERY_PASSTHROUGH_NAME",
-            QueryPassthrough::QueryPassthroughArguments => "QUERY_PASSTHROUGH_ARGUMENTS",
-        }
-    }
-
     pub fn value(&self) -> &'static str {
         match self {
             QueryPassthrough::QueryPassthroughSchema => "query_passthrough_schema",

@@ -453,7 +453,7 @@ fn create_udf_request(
         block,
         output_schema,
         method_name,
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     )
 }
 
@@ -668,7 +668,7 @@ fn first_row_write_failure_wins_over_later_invoke_failure() {
         block,
         schema,
         "decbad",
-        UserDefinedFunctionType::SCALAR,
+        UserDefinedFunctionType::Scalar,
     );
     let err = s
         .handler
