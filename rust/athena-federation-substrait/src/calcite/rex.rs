@@ -417,6 +417,32 @@ impl RexBuilder {
         RexBuilder { system }
     }
 
+    pub fn make_window(
+        partition_keys: Vec<RexNode>,
+        order_keys: Vec<RexFieldCollation>,
+        lower_bound: RexWindowBound,
+        upper_bound: RexWindowBound,
+        is_rows: bool,
+    ) -> RexWindow {
+        let (lower_bound, upper_bound) = if order_keys.is_empty() && !is_rows {
+            (
+                RexWindowBound::UnboundedPreceding,
+                RexWindowBound::UnboundedFollowing,
+            )
+        } else {
+            (lower_bound, upper_bound)
+        };
+        let whole_partition = lower_bound == RexWindowBound::UnboundedPreceding
+            && upper_bound == RexWindowBound::UnboundedFollowing;
+        RexWindow {
+            partition_keys,
+            order_keys,
+            lower_bound,
+            upper_bound,
+            is_rows: is_rows && !whole_partition,
+        }
+    }
+
     pub fn boolean_type(self, nullable: bool) -> RelDataType {
         RelDataType::create_sql_type(self.system, SqlTypeName::Boolean).with_nullability(nullable)
     }

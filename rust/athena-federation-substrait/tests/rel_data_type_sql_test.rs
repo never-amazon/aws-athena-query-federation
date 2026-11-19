@@ -440,8 +440,8 @@ fn expected(name: &str) -> (&'static str, &'static str) {
             "CAST(\"s\" AS BINARY(4)) AS \"s0\"",
         ),
         "null_interval" => (
-            "CAST(NULL AS INTERVAL DAY TO SECOND) AS `$f17`",
-            "CAST(NULL AS INTERVAL DAY TO SECOND) AS \"$f17\"",
+            "error: Unsupported type when convertTypeToSpec: INTERVAL_DAY_SECOND",
+            "error: Unsupported type when convertTypeToSpec: INTERVAL_DAY_SECOND",
         ),
         "null_varchar" => (
             "CAST(NULL AS VARCHAR(7) CHARACTER SET `UTF-8`) AS `$f17`",

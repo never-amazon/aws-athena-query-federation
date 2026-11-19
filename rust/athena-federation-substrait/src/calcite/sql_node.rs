@@ -200,13 +200,17 @@ impl LiteralObject {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SqlDataTypeSpec {
-    pub type_name: String,
-    pub precision: Option<i32>,
-    pub scale: Option<i32>,
-    pub charset: Option<String>,
-    pub alien: bool,
-    pub collection: Option<String>,
+pub enum SqlDataTypeSpec {
+    Basic {
+        type_name: &'static str,
+        precision: Option<i32>,
+        scale: Option<i32>,
+        charset: Option<&'static str>,
+    },
+    Alien(&'static str),
+    Array(Box<SqlDataTypeSpec>),
+    Row(Vec<(String, SqlDataTypeSpec)>),
+    Map(Box<SqlDataTypeSpec>, Box<SqlDataTypeSpec>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use super::expression_converter::sort_direction;
 use super::function_mappings::function_name;
+use super::plan_check::{self, CheckedPlan};
 use super::type_converter::{is_nullable, named_struct_to_calcite, to_calcite};
 use crate::calcite::rel::{AggregateCall, JoinType, RelFieldCollation, RelNode, SetOpKind};
 use crate::calcite::rel_builder::{RelBuilder, SortKey};
@@ -35,7 +36,7 @@ pub(crate) struct SubstraitToCalcite {
     pub(super) rex_builder: RexBuilder,
     rel_builder: RelBuilder,
     pub(super) functions: HashMap<u32, Rc<str>>,
-    pub(super) type_names: HashMap<u32, Rc<str>>,
+    pub(super) checked: CheckedPlan,
     outer: Vec<OuterFrame>,
     used_correl: Vec<usize>,
     next_correl: usize,
@@ -108,20 +109,13 @@ fn input_of(input: Option<&Rel>) -> Result<&Rel> {
 }
 
 impl SubstraitToCalcite {
-    pub(crate) fn new(plan: &Plan, dialect: &SqlDialect) -> SubstraitToCalcite {
+    fn new(plan: &Plan, dialect: &SqlDialect, checked: CheckedPlan) -> SubstraitToCalcite {
         let system = dialect.type_system();
         let rex_builder = RexBuilder::new(system);
         let mut functions = HashMap::new();
-        let mut type_names = HashMap::new();
         for ext in &plan.extensions {
-            match &ext.mapping_type {
-                Some(MappingType::ExtensionFunction(f)) => {
-                    functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
-                }
-                Some(MappingType::ExtensionType(t)) => {
-                    type_names.insert(t.type_anchor, Rc::from(t.name.as_str()));
-                }
-                _ => {}
+            if let Some(MappingType::ExtensionFunction(f)) = &ext.mapping_type {
+                functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
             }
         }
         SubstraitToCalcite {
@@ -129,7 +123,7 @@ impl SubstraitToCalcite {
             rex_builder,
             rel_builder: RelBuilder::new(RexBuilder::new(RelDataTypeSystem::Default)),
             functions,
-            type_names,
+            checked,
             outer: Vec::new(),
             used_correl: Vec::new(),
             next_correl: 0,
@@ -184,7 +178,8 @@ impl SubstraitToCalcite {
     }
 
     pub(crate) fn convert_plan(plan: &Plan, dialect: &SqlDialect) -> Result<RelNode> {
-        let mut converter = SubstraitToCalcite::new(plan, dialect);
+        let checked = plan_check::check(plan)?;
+        let mut converter = SubstraitToCalcite::new(plan, dialect, checked);
         let mut roots = Vec::with_capacity(plan.relations.len());
         for plan_rel in &plan.relations {
             let input = match &plan_rel.rel_type {
