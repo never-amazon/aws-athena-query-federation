@@ -4,9 +4,9 @@ use std::time::Duration;
 
 pub const SNOWFLAKE_NAME: &str = "snowflake";
 pub const SNOWFLAKE_DRIVER_CLASS: &str = "net.snowflake.client.api.driver.SnowflakeDriver";
-pub const SNOWFLAKE_DEFAULT_PORT: i32 = 1025;
-pub const MAX_PARTITION_COUNT: i32 = 50;
-pub const SINGLE_SPLIT_LIMIT_COUNT: i32 = 10000;
+pub const SNOWFLAKE_DEFAULT_PORT: u16 = 1025;
+pub const MAX_PARTITION_COUNT: u32 = 50;
+pub const SINGLE_SPLIT_LIMIT_COUNT: u32 = 10000;
 pub const LARGE_TABLE_THRESHOLD: i64 = 100_000_000;
 pub const UNIQUENESS_CHECK_TIMEOUT: Duration = Duration::from_mins(2);
 pub const DOUBLE_QUOTE_CHAR: &str = "\"";

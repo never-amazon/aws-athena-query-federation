@@ -99,7 +99,7 @@ impl PostGreSqlMetadataDialect {
             Some(jdbc_properties()),
             DatabaseConnectionInfo::new(
                 constants::POSTGRESQL_DRIVER_CLASS,
-                constants::POSTGRESQL_DEFAULT_PORT,
+                i32::from(constants::POSTGRESQL_DEFAULT_PORT),
             )?,
             Some(config_options),
             Arc::new(PgDriver),
