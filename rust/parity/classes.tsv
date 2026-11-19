@@ -304,7 +304,7 @@ com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-p
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxRecordHandler	athena-postgresql/src/mux_record_handler.rs::PostGreSqlMuxRecordHandler	ported	type alias for the athena-jdbc MultiplexingJdbcRecordHandler over PostGreSqlRecordHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlQueryStringBuilder	athena-postgresql/src/query_string_builder.rs::PostGreSqlQueryStringBuilder	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlRecordHandler	athena-postgresql/src/record_handler.rs::PostGreSqlRecordHandler	ported	
-com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
 com.amazonaws.athena.connectors.postgresql.PostgresqlSqlDialect	athena-postgresql/src/sql_dialect.rs::PostgresqlSqlDialect	ported	
 com.amazonaws.athena.connectors.postgresql.resolver.PostGreSqlJDBCCaseResolver	athena-postgresql/src/resolver/postgresql_jdbc_case_resolver.rs::PostGreSqlJdbcCaseResolver	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
@@ -312,7 +312,7 @@ com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/sr
 com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::SnowflakeEnvironmentProperties	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
 com.amazonaws.athena.connectors.snowflake.SnowflakeMetadataHandler	athena-snowflake/src/snowflake_metadata_handler.rs::SnowflakeMetadataHandler	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
 com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-snowflake/src/snowflake_mux_metadata_handler.rs::SnowflakeMuxMetadataHandler	ported	type alias for the athena-jdbc MultiplexingJdbcMetadataHandler over SnowflakeMetadataHandler

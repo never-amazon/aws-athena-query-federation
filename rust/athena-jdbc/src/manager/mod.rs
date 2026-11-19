@@ -15,6 +15,7 @@ pub use federation_expression_parser::FederationExpressionParser;
 pub use jdbc_arrow_type_converter::{JdbcArrowTypeConverter, DEFAULT_PRECISION};
 pub use jdbc_federation_expression_parser::{
     JdbcFederationExpressionParser, JdbcFederationExpressionParserExt,
+    StandardFederationExpressionParser,
 };
 pub use jdbc_metadata_handler::{
     columns, escape_name_pattern, list_database_names, JdbcMetadataHandler, MetadataDelegate,
