@@ -246,7 +246,6 @@ async fn test_paged_split_rejects_query_plan_without_table() {
     assert_eq!(
         "Cannot apply the split to a query plan that does not read one table: SELECT *\nFROM (VALUES (1, 'a'),\n(2, 'b')) AS \"t\" (\"EXPR$0\", \"EXPR$1\")",
         std::error::Error::source(&error)
-            .and_then(std::error::Error::source)
             .unwrap()
             .to_string()
     );

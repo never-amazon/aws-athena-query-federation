@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::resolver::{
     CaseResolver, FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY, DEFAULT_GLUE_CONNECTION,
 };

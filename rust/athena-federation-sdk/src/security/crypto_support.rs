@@ -67,6 +67,7 @@ mod tests {
     use std::error::Error as _;
 
     use super::*;
+    use crate::exceptions::JavaThrowable;
 
     #[test]
     fn arrow_error_becomes_connector_exception_with_io_exception_response() {

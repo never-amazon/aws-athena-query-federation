@@ -2,17 +2,34 @@ use std::sync::Arc;
 
 use arrow::error::ArrowError;
 use athena_federation_sdk::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode, JavaExceptionKind,
+    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode, JavaCause, JavaThrowable,
 };
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::FederationError;
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct CheckedError(&'static str);
+
+impl JavaThrowable for CheckedError {
+    fn java_class_name(&self) -> String {
+        "org.postgresql.util.PSQLException".to_string()
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        None
+    }
+
+    fn is_runtime_exception(&self) -> bool {
+        false
+    }
+}
+
 #[test]
 fn checked_cause_wrapped_in_runtime_exception_matches_java_report() {
-    let checked = FederationError::wrapped(
-        JavaExceptionKind::Checked("org.postgresql.util.PSQLException"),
-        std::io::Error::other("ERROR: column \"ghost\" does not exist\n  Position: 14"),
-    );
+    let checked = FederationError::external(CheckedError(
+        "ERROR: column \"ghost\" does not exist\n  Position: 14",
+    ));
     let error = checked.into_runtime_exception();
     assert_eq!(
         "errorType: java.lang.RuntimeException\n\

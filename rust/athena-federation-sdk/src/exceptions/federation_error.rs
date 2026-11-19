@@ -7,42 +7,7 @@ use thiserror::Error;
 use super::athena_connector_exception::AthenaConnectorException;
 use super::error_details::{ErrorDetails, FederationSourceErrorCode};
 use super::federation_throttle_exception::FederationThrottleException;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum JavaExceptionKind {
-    Runtime,
-    IllegalArgument,
-    IllegalState,
-    UnsupportedOperation,
-    IndexOutOfBounds,
-    NullPointer,
-    NumberFormat,
-    Unchecked(&'static str),
-    Checked(&'static str),
-}
-
-impl JavaExceptionKind {
-    pub fn java_class_name(&self) -> &'static str {
-        match self {
-            JavaExceptionKind::Runtime => RUNTIME_EXCEPTION,
-            JavaExceptionKind::IllegalArgument => "java.lang.IllegalArgumentException",
-            JavaExceptionKind::IllegalState => "java.lang.IllegalStateException",
-            JavaExceptionKind::UnsupportedOperation => "java.lang.UnsupportedOperationException",
-            JavaExceptionKind::IndexOutOfBounds => "java.lang.IndexOutOfBoundsException",
-            JavaExceptionKind::NullPointer => "java.lang.NullPointerException",
-            JavaExceptionKind::NumberFormat => "java.lang.NumberFormatException",
-            JavaExceptionKind::Unchecked(name) | JavaExceptionKind::Checked(name) => name,
-        }
-    }
-
-    pub fn is_runtime_exception(&self) -> bool {
-        !matches!(self, JavaExceptionKind::Checked(_))
-    }
-}
-
-const RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
-const IO_EXCEPTION: &str = "java.io.IOException";
-const AWS_SERVICE_EXCEPTION: &str = "software.amazon.awssdk.awscore.exception.AwsServiceException";
+use super::java_throwable::JavaThrowable;
 
 #[derive(Debug, Error, Clone)]
 pub enum FederationError {
@@ -76,12 +41,16 @@ pub enum FederationError {
     Runtime(String),
     #[error("{}", .0.get_message().unwrap_or_default())]
     AwsService(crate::security::AwsServiceError),
-    #[error("{source}")]
-    Wrapped {
-        kind: JavaExceptionKind,
+    #[error("{message}")]
+    RuntimeWithCause {
+        message: String,
         #[source]
-        source: Arc<dyn StdError + Send + Sync>,
+        cause: Arc<FederationError>,
     },
+    #[error("{0}")]
+    Other(#[source] Arc<dyn StdError + Send + Sync>),
+    #[error("{0}")]
+    External(#[source] Arc<dyn JavaThrowable>),
     #[error("{}", java_to_string(source))]
     RuntimeWrapper {
         #[source]
@@ -97,14 +66,6 @@ fn java_to_string(error: &FederationError) -> String {
 }
 
 pub type Result<T> = std::result::Result<T, FederationError>;
-
-#[derive(Debug, Clone, Error)]
-#[error("{message}")]
-struct CausedRuntimeException {
-    message: String,
-    #[source]
-    cause: Arc<FederationError>,
-}
 
 impl FederationError {
     pub fn connector(
@@ -159,33 +120,31 @@ impl FederationError {
         FederationError::IllegalState(message.into())
     }
 
-    pub fn wrapped(
-        kind: JavaExceptionKind,
-        source: impl StdError + Send + Sync + 'static,
-    ) -> FederationError {
-        FederationError::Wrapped {
-            kind,
-            source: Arc::new(source),
-        }
+    pub fn external(error: impl JavaThrowable) -> FederationError {
+        FederationError::External(Arc::new(error))
+    }
+
+    pub fn other(error: impl StdError + Send + Sync + 'static) -> FederationError {
+        FederationError::Other(Arc::new(error))
     }
 
     pub fn runtime_with_cause(
         message: impl Into<String>,
         cause: FederationError,
     ) -> FederationError {
-        FederationError::wrapped(
-            JavaExceptionKind::Runtime,
-            CausedRuntimeException {
-                message: message.into(),
-                cause: Arc::new(cause),
-            },
-        )
+        FederationError::RuntimeWithCause {
+            message: message.into(),
+            cause: Arc::new(cause),
+        }
     }
 
-    pub fn java_message(&self) -> Option<String> {
+    pub fn downcast_external<T: JavaThrowable>(&self) -> Option<&T> {
         match self {
-            FederationError::NullPointer(None) => None,
-            other => Some(other.to_string()),
+            FederationError::External(error) => {
+                let error: &(dyn StdError + 'static) = error.as_ref();
+                error.downcast_ref::<T>()
+            }
+            _ => None,
         }
     }
 
@@ -201,14 +160,6 @@ impl FederationError {
             .and_then(super::athena_connector_exception::AthenaConnectorException::error_code)
     }
 
-    pub fn is_runtime_exception(&self) -> bool {
-        match self {
-            FederationError::Io(_) | FederationError::IoError(_) => false,
-            FederationError::Wrapped { kind, .. } => kind.is_runtime_exception(),
-            _ => true,
-        }
-    }
-
     #[must_use]
     pub fn into_runtime_exception(self) -> FederationError {
         if self.is_runtime_exception() {
@@ -218,42 +169,6 @@ impl FederationError {
                 source: Arc::new(self),
             }
         }
-    }
-
-    pub fn java_class_name(&self) -> String {
-        let name = match self {
-            FederationError::AthenaConnector(_) => {
-                "com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException"
-            }
-            FederationError::Throttle(_) => {
-                "com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException"
-            }
-            FederationError::IllegalArgument(_) => {
-                JavaExceptionKind::IllegalArgument.java_class_name()
-            }
-            FederationError::IllegalState(_) => JavaExceptionKind::IllegalState.java_class_name(),
-            FederationError::UnsupportedOperation(_) => {
-                JavaExceptionKind::UnsupportedOperation.java_class_name()
-            }
-            FederationError::ClassCast(_) => "java.lang.ClassCastException",
-            FederationError::NullPointer(_) => JavaExceptionKind::NullPointer.java_class_name(),
-            FederationError::Arithmetic(_) => "java.lang.ArithmeticException",
-            FederationError::IndexOutOfBounds(_) => {
-                JavaExceptionKind::IndexOutOfBounds.java_class_name()
-            }
-            FederationError::NumberFormat(_) => JavaExceptionKind::NumberFormat.java_class_name(),
-            FederationError::Io(_) | FederationError::IoError(_) => IO_EXCEPTION,
-            FederationError::Arrow(_)
-            | FederationError::Runtime(_)
-            | FederationError::RuntimeWrapper { .. } => RUNTIME_EXCEPTION,
-            FederationError::AwsService(e) => {
-                return e
-                    .java_class_name()
-                    .unwrap_or_else(|| AWS_SERVICE_EXCEPTION.to_string())
-            }
-            FederationError::Wrapped { kind, .. } => kind.java_class_name(),
-        };
-        name.to_string()
     }
 }
 

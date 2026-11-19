@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use athena_federation_sdk::exceptions::JavaExceptionKind;
+use athena_federation_sdk::exceptions::{JavaCause, JavaThrowable};
 use athena_federation_sdk::FederationError;
 
 pub const SQL_EXCEPTION_CLASS: &str = "java.sql.SQLException";
@@ -66,10 +66,7 @@ impl SqlException {
     }
 
     pub fn from_federation_error(error: &FederationError) -> Option<&SqlException> {
-        match error {
-            FederationError::Wrapped { source, .. } => source.downcast_ref::<SqlException>(),
-            _ => None,
-        }
+        error.downcast_external::<SqlException>()
     }
 }
 
@@ -94,8 +91,24 @@ impl Error for SqlException {
     }
 }
 
+impl JavaThrowable for SqlException {
+    fn java_class_name(&self) -> String {
+        self.class_name.to_string()
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        self.cause
+            .as_deref()
+            .map(|cause| JavaCause::foreign(cause as &(dyn Error + 'static)))
+    }
+
+    fn is_runtime_exception(&self) -> bool {
+        false
+    }
+}
+
 impl From<SqlException> for FederationError {
     fn from(error: SqlException) -> Self {
-        FederationError::wrapped(JavaExceptionKind::Checked(error.class_name), error)
+        FederationError::external(error)
     }
 }

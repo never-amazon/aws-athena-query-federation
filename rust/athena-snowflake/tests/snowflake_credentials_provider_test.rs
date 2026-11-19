@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use athena_federation_sdk::credentials::{
     Credentials, CredentialsProvider, HttpClient, HttpClientError, HttpRequest, HttpResponse,
 };
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, AwsServiceError, SecretsManagerClient,

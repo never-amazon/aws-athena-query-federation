@@ -9,6 +9,7 @@ use arrow::datatypes::Schema;
 use async_trait::async_trait;
 use athena_federation_sdk::data::SimpleBlockWriter;
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{
     HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };

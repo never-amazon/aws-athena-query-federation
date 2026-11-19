@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use athena_federation_sdk::connection::{
     environment_constants, EnvironmentProperties, GlueConnectionClient,
 };
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::security::AwsServiceError;
 use aws_sdk_glue::types::{AuthenticationConfiguration, Connection, ConnectionPropertyKey};
 

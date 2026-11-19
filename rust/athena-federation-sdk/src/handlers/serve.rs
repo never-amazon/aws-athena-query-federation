@@ -8,7 +8,8 @@ use super::record_handler::{self, RecordHandler};
 use super::user_defined_function_handler::{self, UserDefinedFunctionHandler};
 use crate::data::{BlockAllocator, BlockAllocatorImpl};
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode,
+    JavaThrowable, Result,
 };
 use crate::lambda::{LambdaContext, RequestStreamHandler};
 use crate::request::{FederationRequest, PingRequest, PingResponse};

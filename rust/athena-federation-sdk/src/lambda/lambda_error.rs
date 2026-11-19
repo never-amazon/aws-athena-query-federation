@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use crate::exceptions::FederationError;
+use crate::exceptions::{FederationError, JavaThrowable};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LambdaErrorCause {

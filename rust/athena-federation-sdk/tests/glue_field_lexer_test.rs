@@ -1,5 +1,6 @@
 use arrow::datatypes::Field;
 use athena_federation_sdk::data::{arrow_type_to_string, get_children, minor_type_of, MinorType};
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::metadata::glue;
 use athena_federation_sdk::FederationError;
 
