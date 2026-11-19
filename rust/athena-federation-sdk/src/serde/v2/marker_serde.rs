@@ -35,7 +35,7 @@ pub fn do_serialize(
     jgen.write_field_name(VALUE_BLOCK_FIELD)?;
     let block = marker.get_value_block()?;
     super::block_serde::serialize(Some(&block), jgen, version)?;
-    jgen.write_string_field(BOUND_FIELD, Some(marker.bound().name()))?;
+    jgen.write_string_field(BOUND_FIELD, Some(marker.bound().as_str()))?;
     jgen.write_boolean_field(NULL_VALUE_FIELD, marker.is_null_value())
 }
 

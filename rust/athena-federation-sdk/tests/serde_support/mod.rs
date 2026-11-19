@@ -232,8 +232,8 @@ pub fn federation_expression(allocator: &dyn BlockAllocator) -> FederationExpres
 
 pub fn order_by_clause() -> Vec<OrderByField> {
     vec![
-        OrderByField::new("col3", Direction::ASC_NULLS_FIRST),
-        OrderByField::new("col2", Direction::DESC_NULLS_FIRST),
+        OrderByField::new("col3", Direction::AscNullsFirst),
+        OrderByField::new("col2", Direction::DescNullsFirst),
     ]
 }
 
