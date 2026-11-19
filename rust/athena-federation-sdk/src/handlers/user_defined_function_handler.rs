@@ -3,23 +3,18 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::datatypes::Schema;
-use async_trait::async_trait;
 
-use super::federation_capabilities::CAPABILITIES;
-use super::metadata_handler::java_class_of_request;
 use crate::data::projectors::ArrowValueProjector;
 use crate::data::writers::extractors::Extractor;
 use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use crate::data::writers::GeneratedRowWriter;
 use crate::data::{
     local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, Block, BlockAllocator,
-    BlockAllocatorImpl, DefaultFieldResolver, FieldVector, MinorType, Value,
+    DefaultFieldResolver, FieldVector, MinorType, Value,
 };
 use crate::domain::predicate::ConstraintProjector;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
-use crate::lambda::LambdaContext;
-use crate::request::{FederationRequest, PingRequest, PingResponse};
-use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
+use crate::serde::ObjectMapper;
 use crate::udf::{
     UserDefinedFunctionRequest, UserDefinedFunctionResponse, UserDefinedFunctionType,
 };
@@ -221,19 +216,14 @@ impl UdfMethods {
     }
 }
 
-#[async_trait]
 pub trait UserDefinedFunctionHandler: Send + Sync {
     fn source_type(&self) -> &str;
 
     fn udf_methods(&self) -> &UdfMethods;
 
-    async fn on_ping(&self, _request: &PingRequest) -> Result<()> {
-        Ok(())
-    }
-
     fn process_rows(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
+        allocator: &dyn BlockAllocator,
         udf_method: &UdfMethod,
         input_records: &Block,
         output_schema: &Schema,
@@ -268,117 +258,40 @@ pub trait UserDefinedFunctionHandler: Send + Sync {
     }
 }
 
-#[async_trait]
-pub trait UserDefinedFunctionHandlerExt: UserDefinedFunctionHandler {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>>;
-
-    async fn do_handle_request(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        object_mapper: &ObjectMapper,
-        request: &UserDefinedFunctionRequest,
-    ) -> Result<Vec<u8>>;
-
-    fn process_function(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &UserDefinedFunctionRequest,
-    ) -> Result<UserDefinedFunctionResponse>;
-}
-
-#[async_trait]
-impl<T: UserDefinedFunctionHandler + ?Sized> UserDefinedFunctionHandlerExt for T {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        _context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>> {
-        let block_allocator = Arc::new(BlockAllocatorImpl::new());
-        let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
-        let result = async {
-            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
-            let raw_request = object_mapper.read_request(input)?;
-            match &raw_request {
-                FederationRequest::Ping(ping) => {
-                    let response = do_ping(self, ping).await;
-                    object_mapper
-                        .write_response(&response.into())
-                        .map(String::into_bytes)
-                }
-                FederationRequest::UserDefinedFunction(request) => {
-                    self.do_handle_request(&allocator, &object_mapper, request)
-                        .await
-                }
-                other => Err(FederationError::invalid_input(format!(
-                    "Expected a UserDefinedFunctionRequest but found {}",
-                    java_class_of_request(other)
-                ))),
-            }
-        }
-        .await;
-        block_allocator.close();
-        result.map_err(FederationError::into_runtime_exception)
-    }
-
-    async fn do_handle_request(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        object_mapper: &ObjectMapper,
-        request: &UserDefinedFunctionRequest,
-    ) -> Result<Vec<u8>> {
-        tracing::info!("doHandleRequest: request[{}]", request);
-        let response = self.process_function(allocator, request)?;
-        tracing::info!("doHandleRequest: response[{}]", response);
-        object_mapper
-            .write_response(&response.into())
-            .map(String::into_bytes)
-    }
-
-    fn process_function(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &UserDefinedFunctionRequest,
-    ) -> Result<UserDefinedFunctionResponse> {
-        match request.function_type() {
-            UserDefinedFunctionType::Scalar => {
-                let udf_method = extract_scalar_function_method(self.udf_methods(), request)?;
-                let output_records = self.process_rows(
-                    allocator,
-                    udf_method,
-                    request.input_records(),
-                    request.output_schema(),
-                )?;
-                Ok(UserDefinedFunctionResponse::new(
-                    output_records,
-                    udf_method.name(),
-                ))
-            }
-        }
-    }
-}
-
-async fn do_ping<H: UserDefinedFunctionHandler + ?Sized>(
+pub(crate) fn dispatch<H: UserDefinedFunctionHandler + ?Sized>(
     handler: &H,
-    request: &PingRequest,
-) -> PingResponse {
-    let response = PingResponse::new(
-        request.catalog_name(),
-        request.query_id(),
-        Some(handler.source_type().to_string()),
-        CAPABILITIES,
-        SERDE_VERSION,
-    );
-    if let Err(ex) = handler.on_ping(request).await {
-        tracing::warn!(
-            "doPing: encountered an exception while delegating onPing. {}",
-            ex
-        );
+    allocator: &dyn BlockAllocator,
+    object_mapper: &ObjectMapper,
+    request: &UserDefinedFunctionRequest,
+) -> Result<Vec<u8>> {
+    tracing::info!("doHandleRequest: request[{}]", request);
+    let response = process_function(handler, allocator, request)?;
+    tracing::info!("doHandleRequest: response[{}]", response);
+    object_mapper
+        .write_response(&response.into())
+        .map(String::into_bytes)
+}
+
+pub fn process_function<H: UserDefinedFunctionHandler + ?Sized>(
+    handler: &H,
+    allocator: &dyn BlockAllocator,
+    request: &UserDefinedFunctionRequest,
+) -> Result<UserDefinedFunctionResponse> {
+    match request.function_type() {
+        UserDefinedFunctionType::Scalar => {
+            let udf_method = extract_scalar_function_method(handler.udf_methods(), request)?;
+            let output_records = handler.process_rows(
+                allocator,
+                udf_method,
+                request.input_records(),
+                request.output_schema(),
+            )?;
+            Ok(UserDefinedFunctionResponse::new(
+                output_records,
+                udf_method.name(),
+            ))
+        }
     }
-    response
 }
 
 fn extract_java_types(schema: &Schema) -> Result<Vec<JavaType>> {

@@ -6,15 +6,14 @@ use async_trait::async_trait;
 use athena_federation_sdk::connection::environment_constants;
 use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
-    ArrowType, Block, BlockAllocator, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
-    SupportedTypes,
+    ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter, SupportedTypes,
 };
 use athena_federation_sdk::domain::predicate::functions::StandardFunctions;
-use athena_federation_sdk::domain::split::{Split, SplitBuilder};
+use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{
-    AwsClients, FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
+    AwsClients, HandlerContext, MetadataContext, MetadataHandler,
 };
 use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, LimitPushdownSubType,
@@ -23,27 +22,25 @@ use athena_federation_sdk::metadata::optimizations::pushdown::{
 use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
-    GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
-    ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
+    GetSplitsResponse, GetTableLayoutRequest, ListTablesRequest, ListTablesResponse,
 };
 use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, CachableSecretsManager, KmsEncryptionProvider,
-};
+use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
 use athena_federation_sdk::util::{
     calculate_next_token, validate_and_parse_pagination_arguments, UNLIMITED_PAGE_SIZE_VALUE,
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
+use athena_jdbc::close_after;
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory,
 };
 use athena_jdbc::manager::{
-    JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt, JdbcSplitQueryBuilder,
-    JdbcUtil, PreparedStatementBuilder, TABLES_AND_VIEWS,
+    columns, ConnectionSource, JdbcMetadataHandler, JdbcSplitQueryBuilder, JdbcUtil,
+    MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
-use athena_jdbc::resolver::{DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt};
+use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
 use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlException};
 use indexmap::IndexMap;
 
@@ -68,11 +65,12 @@ const INTEGRATION_NOT_FOUND: &str = "does not exist or not authorized";
 const MISSING_S3_CLIENT: &str =
     "Cannot invoke \"software.amazon.awssdk.services.s3.S3Client.utilities()\" because \"this.amazonS3\" is null";
 
-pub struct SnowflakeMetadataHandler {
-    base: JdbcMetadataHandlerBase,
+pub struct SnowflakeMetadataDialect {
     amazon_s3: Option<Arc<dyn S3ObjectLister>>,
     snowflake_query_string_builder: SnowflakeQueryStringBuilder,
 }
+
+pub type SnowflakeMetadataHandler = JdbcMetadataHandler<SnowflakeMetadataDialect>;
 
 fn java_text(error: &FederationError) -> String {
     error.java_message().unwrap_or_else(|| "null".to_string())
@@ -96,16 +94,7 @@ fn missing_field_reader() -> FederationError {
     )
 }
 
-async fn close_after<T>(connection: &dyn JdbcConnection, result: Result<T>) -> Result<T> {
-    let closed = connection.close().await;
-    match (result, closed) {
-        (Err(e), _) => Err(e),
-        (Ok(_), Err(e)) => Err(e.into()),
-        (Ok(value), Ok(())) => Ok(value),
-    }
-}
-
-impl SnowflakeMetadataHandler {
+impl SnowflakeMetadataDialect {
     pub fn connection_factory(
         config: &DatabaseConnectionConfig,
         config_options: &HashMap<String, String>,
@@ -123,6 +112,112 @@ impl SnowflakeMetadataHandler {
             Some(config_options),
         )
     }
+}
+
+impl SnowflakeMetadataDialect {
+    pub fn get_sf_storage_integration_name_from_config(
+        config_options: &HashMap<String, String>,
+    ) -> Option<&str> {
+        config_options
+            .get(SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY)
+            .map(String::as_str)
+    }
+}
+
+fn storage_integration_name(config_options: &HashMap<String, String>) -> Result<String> {
+    SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(config_options)
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            FederationError::connector(
+                FederationSourceErrorCode::InvalidInputException,
+                "Snowflake storage integration name not found",
+            )
+        })
+}
+
+pub fn create_snowflake_credentials_provider(
+    context: &HandlerContext,
+    secret_name: Option<&str>,
+    request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
+) -> Option<SnowflakeCredentialsProvider> {
+    let secret_name = secret_name.filter(|name| !is_blank(Some(name)))?;
+    Some(SnowflakeCredentialsProvider::new(
+        secret_name,
+        Arc::clone(context.secrets_manager().secrets_manager()),
+        request_override_configuration.cloned(),
+    ))
+}
+
+pub fn create_credentials_provider(
+    context: &HandlerContext,
+    secret_name: &str,
+    request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
+) -> Result<Box<dyn CredentialsProvider>> {
+    create_snowflake_credentials_provider(
+        context,
+        Some(secret_name),
+        request_override_configuration,
+    )
+    .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>)
+    .ok_or_else(|| {
+        FederationError::null_pointer("credentials provider is null for a blank secret name")
+    })
+}
+
+impl SnowflakeMetadataDialect {
+    pub fn new(amazon_s3: Option<Arc<dyn S3ObjectLister>>) -> SnowflakeMetadataDialect {
+        SnowflakeMetadataDialect {
+            amazon_s3,
+            snowflake_query_string_builder: SnowflakeQueryStringBuilder::new(
+                SnowflakeConstants::DOUBLE_QUOTE_CHAR,
+                Arc::new(SnowflakeFederationExpressionParser::new(
+                    SnowflakeConstants::DOUBLE_QUOTE_CHAR,
+                )),
+            ),
+        }
+    }
+
+    pub fn handler(
+        context: MetadataContext,
+        config: DatabaseConnectionConfig,
+        connection_factory: Arc<dyn JdbcConnectionFactory>,
+        case_resolver: Arc<dyn JdbcCaseResolver>,
+        amazon_s3: Option<Arc<dyn S3ObjectLister>>,
+    ) -> SnowflakeMetadataHandler {
+        JdbcMetadataHandler::new(
+            context,
+            ConnectionSource::Direct {
+                config,
+                factory: connection_factory,
+            },
+            case_resolver,
+            SnowflakeMetadataDialect::new(amazon_s3),
+        )
+    }
+
+    pub fn from_config(
+        clients: AwsClients,
+        config: DatabaseConnectionConfig,
+        config_options: HashMap<String, String>,
+        amazon_s3: Option<Arc<dyn S3ObjectLister>>,
+    ) -> Result<SnowflakeMetadataHandler> {
+        let factory = Arc::new(SnowflakeMetadataDialect::connection_factory(
+            &config,
+            &config_options,
+        )?);
+        let context = MetadataContext::builder(config.engine(), clients)
+            .config_options(config_options)
+            .build()?;
+        Ok(SnowflakeMetadataDialect::handler(
+            context,
+            config,
+            factory,
+            Arc::new(SnowflakeJdbcCaseResolver::new(
+                SnowflakeConstants::SNOWFLAKE_NAME,
+            )),
+            amazon_s3,
+        ))
+    }
 
     pub async fn from_config_options(
         clients: AwsClients,
@@ -132,124 +227,13 @@ impl SnowflakeMetadataHandler {
             SnowflakeConstants::SNOWFLAKE_NAME,
             &config_options,
         )?;
-        let mut handler = SnowflakeMetadataHandler::new(clients, config, config_options)?;
         let sdk_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        handler.amazon_s3 = Some(Arc::new(aws_sdk_s3::Client::new(&sdk_config)));
-        Ok(handler)
-    }
-
-    pub fn new(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        config_options: HashMap<String, String>,
-    ) -> Result<SnowflakeMetadataHandler> {
-        let factory = Arc::new(SnowflakeMetadataHandler::connection_factory(
-            &config,
-            &config_options,
-        )?);
-        SnowflakeMetadataHandler::with_connection_factory(clients, config, factory, config_options)
-    }
-
-    pub fn with_connection_factory(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        jdbc_connection_factory: Arc<dyn JdbcConnectionFactory>,
-        config_options: HashMap<String, String>,
-    ) -> Result<SnowflakeMetadataHandler> {
-        SnowflakeMetadataHandler::with_case_resolver(
+        SnowflakeMetadataDialect::from_config(
             clients,
             config,
-            jdbc_connection_factory,
             config_options,
-            Arc::new(SnowflakeJdbcCaseResolver::new(
-                SnowflakeConstants::SNOWFLAKE_NAME,
-            )),
-            None,
+            Some(Arc::new(aws_sdk_s3::Client::new(&sdk_config))),
         )
-    }
-
-    pub fn with_s3_client(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        s3_client: Arc<dyn S3ObjectLister>,
-        jdbc_connection_factory: Arc<dyn JdbcConnectionFactory>,
-        config_options: HashMap<String, String>,
-    ) -> Result<SnowflakeMetadataHandler> {
-        let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
-        SnowflakeMetadataHandler::with_case_resolver(
-            clients,
-            config,
-            jdbc_connection_factory,
-            config_options,
-            case_resolver,
-            Some(s3_client),
-        )
-    }
-
-    pub fn with_case_resolver(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        jdbc_connection_factory: Arc<dyn JdbcConnectionFactory>,
-        config_options: HashMap<String, String>,
-        case_resolver: Arc<dyn JdbcCaseResolver>,
-        amazon_s3: Option<Arc<dyn S3ObjectLister>>,
-    ) -> Result<SnowflakeMetadataHandler> {
-        let metadata_base = MetadataHandlerBase::builder(config.engine(), clients)
-            .config_options(config_options)
-            .build()?;
-        Ok(SnowflakeMetadataHandler {
-            base: JdbcMetadataHandlerBase::new_with_case_resolver(
-                metadata_base,
-                config,
-                jdbc_connection_factory,
-                case_resolver,
-            ),
-            amazon_s3,
-            snowflake_query_string_builder: SnowflakeQueryStringBuilder::new(
-                SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-                Arc::new(SnowflakeFederationExpressionParser::new(
-                    SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-                )),
-            ),
-        })
-    }
-
-    fn config_options(&self) -> &HashMap<String, String> {
-        self.base.config_options()
-    }
-
-    fn s3_export_enabled(&self) -> bool {
-        SnowflakeConstants::is_s3_export_enabled(self.config_options())
-    }
-
-    pub fn get_sf_storage_integration_name_from_config(&self) -> Option<&str> {
-        self.config_options()
-            .get(SnowflakeConstants::STORAGE_INTEGRATION_CONFIG_KEY)
-            .map(String::as_str)
-    }
-
-    fn storage_integration_name(&self) -> Result<String> {
-        self.get_sf_storage_integration_name_from_config()
-            .map(ToString::to_string)
-            .ok_or_else(|| {
-                FederationError::connector(
-                    FederationSourceErrorCode::InvalidInputException,
-                    "Snowflake storage integration name not found",
-                )
-            })
-    }
-
-    pub fn create_snowflake_credentials_provider(
-        &self,
-        secret_name: Option<&str>,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Option<SnowflakeCredentialsProvider> {
-        let secret_name = secret_name.filter(|name| !is_blank(Some(name)))?;
-        Some(SnowflakeCredentialsProvider::new(
-            secret_name,
-            Arc::clone(self.cachable_secrets_manager().secrets_manager()),
-            request_override_configuration.cloned(),
-        ))
     }
 
     pub async fn get_paginated_tables(
@@ -336,7 +320,7 @@ impl SnowflakeMetadataHandler {
         }
     }
 
-    fn validate_sf_storage_integration_exist_and_valid(
+    pub fn validate_sf_storage_integration_exist_and_valid(
         storage_integration_map: &HashMap<String, String>,
     ) -> Result<()> {
         let bucket_key = SnowflakeConstants::STORAGE_INTEGRATION_BUCKET_KEY;
@@ -382,7 +366,7 @@ impl SnowflakeMetadataHandler {
                 "Snowflake Storage Integration: name:{integration_name} not found"
             )));
         };
-        SnowflakeMetadataHandler::validate_sf_storage_integration_exist_and_valid(&properties)?;
+        SnowflakeMetadataDialect::validate_sf_storage_integration_exist_and_valid(&properties)?;
         let mut bucket_path = properties
             .get(SnowflakeConstants::STORAGE_INTEGRATION_BUCKET_KEY)
             .cloned()
@@ -430,21 +414,9 @@ impl SnowflakeMetadataHandler {
         Ok(generated.unwrap_or_else(|| "null".to_string()))
     }
 
-    async fn make_split_builder(&self, request: &GetSplitsRequest) -> Result<SplitBuilder> {
-        let spill_location = self.make_spill_location(request)?;
-        let override_config = self
-            .get_request_override_config_with_config_options(
-                request.identity().map(FederatedIdentity::config_options),
-            )
-            .await?;
-        let encryption_key = self
-            .make_encryption_key_with_aws_request_override_configuration(override_config.as_ref())
-            .await?;
-        Ok(Split::new_builder(Some(spill_location), encryption_key))
-    }
-
     async fn handle_direct_query_splits(
         &self,
+        handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
         tracing::info!(
@@ -455,7 +427,7 @@ impl SnowflakeMetadataHandler {
         );
         if request.constraints().is_query_pass_through() {
             tracing::info!("QPT Split Requested");
-            return self.setup_query_passthrough_split(request).await;
+            return handler.query_passthrough_split(request).await;
         }
         let partition_contd = match request.continuation_token() {
             Some(token) if request.has_continuation_token() => {
@@ -476,7 +448,7 @@ impl SnowflakeMetadataHandler {
                 location_reader.set_position(cur_partition);
                 location_reader.read_text()
             };
-            let mut builder = self.make_split_builder(request).await?;
+            let mut builder = handler.context().split_builder(request).await?;
             tracing::info!(
                 "{}: Input partition is {:?}",
                 request.query_id().unwrap_or("null"),
@@ -510,13 +482,14 @@ impl SnowflakeMetadataHandler {
 
     async fn run_export(
         &self,
+        handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
         s3_uri: &mut Option<S3Uri>,
     ) -> Result<()> {
         let query_id = request.query_id().unwrap_or("null");
-        let connection = self.jdbc_get_connection(request.identity()).await?;
+        let connection = handler.connect(request.identity()).await?;
         let result = async {
-            let sf_integration_name = self.storage_integration_name()?;
+            let sf_integration_name = storage_integration_name(handler.config_options())?;
             let sf_s3_export_path_prefix = self
                 .get_storage_integration_s3_path_from_snow_flake(
                     connection.as_ref(),
@@ -559,11 +532,12 @@ impl SnowflakeMetadataHandler {
 
     async fn handle_s3_export_splits(
         &self,
+        handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
         let query_id = request.query_id().unwrap_or("null");
         let mut s3_uri = None;
-        if let Err(error) = self.run_export(request, &mut s3_uri).await {
+        if let Err(error) = self.run_export(handler, request, &mut s3_uri).await {
             match snowflake_sql_exception(&error) {
                 Some(sql) if sql.message().contains(FILES_ALREADY_EXISTING) => {}
                 Some(sql) => {
@@ -604,34 +578,13 @@ impl SnowflakeMetadataHandler {
                 "s3ObjectSummaries returned empty on SnowFlake for queryId {}",
                 query_id
             );
-            splits.push(self.export_split(request, bucket, "").await?);
+            splits.push(export_split(handler, request, bucket, "").await?);
         } else {
             for object_summary in &s3_object_summaries {
-                splits.push(
-                    self.export_split(request, bucket, object_summary.key())
-                        .await?,
-                );
+                splits.push(export_split(handler, request, bucket, object_summary.key()).await?);
             }
         }
         Ok(GetSplitsResponse::new(request.catalog_name(), splits, None))
-    }
-
-    async fn export_split(
-        &self,
-        request: &GetSplitsRequest,
-        bucket: &str,
-        key: &str,
-    ) -> Result<Split> {
-        Ok(self
-            .make_split_builder(request)
-            .await?
-            .add(
-                SnowflakeConstants::SNOWFLAKE_SPLIT_QUERY_ID,
-                request.query_id().unwrap_or("null"),
-            )
-            .add(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket)
-            .add(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY, key)
-            .build())
     }
 
     async fn check_for_view(
@@ -799,6 +752,25 @@ impl SnowflakeMetadataHandler {
     }
 }
 
+async fn export_split(
+    handler: &SnowflakeMetadataHandler,
+    request: &GetSplitsRequest,
+    bucket: &str,
+    key: &str,
+) -> Result<Split> {
+    Ok(handler
+        .context()
+        .split_builder(request)
+        .await?
+        .add(
+            SnowflakeConstants::SNOWFLAKE_SPLIT_QUERY_ID,
+            request.query_id().unwrap_or("null"),
+        )
+        .add(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket)
+        .add(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY, key)
+        .build())
+}
+
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -890,92 +862,14 @@ fn capabilities(
 }
 
 #[async_trait]
-impl FederationRequestHandler for SnowflakeMetadataHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.metadata_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.metadata_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-
-    async fn get_credential_provider_with_request_override_configuration(
-        &self,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Result<Option<Box<dyn CredentialsProvider>>> {
-        Ok(self
-            .create_snowflake_credentials_provider(
-                self.database_connection_secret(),
-                request_override_configuration,
-            )
-            .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>))
-    }
-
-    async fn create_credentials_provider(
-        &self,
-        secret_name: &str,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Result<Box<dyn CredentialsProvider>> {
-        self.create_snowflake_credentials_provider(
-            Some(secret_name),
-            request_override_configuration,
-        )
-        .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>)
-        .ok_or_else(|| {
-            FederationError::null_pointer("credentials provider is null for a blank secret name")
-        })
-    }
-}
-
-#[async_trait]
-impl MetadataHandler for SnowflakeMetadataHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        self.base.metadata_base()
-    }
-
-    async fn do_list_schema_names(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse> {
-        self.jdbc_do_list_schema_names(allocator, request).await
-    }
-
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
-        self.jdbc_do_list_tables(allocator, request).await
-    }
-
-    async fn do_get_query_passthrough_schema(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.jdbc_do_get_query_passthrough_schema(allocator, request)
-            .await
-    }
-
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.jdbc_do_get_table(allocator, request).await
-    }
-
+impl MetadataDialect for SnowflakeMetadataDialect {
     fn enhance_partition_schema(
         &self,
+        handler: &SnowflakeMetadataHandler,
         partition_schema_builder: &mut SchemaBuilder,
         request: &GetTableLayoutRequest,
     ) {
-        let s3_export_enabled = self.s3_export_enabled();
+        let s3_export_enabled = SnowflakeConstants::is_s3_export_enabled(handler.config_options());
         if request.constraints().is_query_pass_through() && !s3_export_enabled {
             return;
         }
@@ -1007,6 +901,7 @@ impl MetadataHandler for SnowflakeMetadataHandler {
 
     async fn get_partitions(
         &self,
+        handler: &SnowflakeMetadataHandler,
         block_writer: &mut SimpleBlockWriter<'_>,
         request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
@@ -1029,7 +924,7 @@ impl MetadataHandler for SnowflakeMetadataHandler {
             table_name.schema_name(),
             table_name.table_name()
         );
-        if self.s3_export_enabled() {
+        if SnowflakeConstants::is_s3_export_enabled(handler.config_options()) {
             let serialized = schema_to_bytes(request.schema(), IpcFormat::ArrowDefault)?;
             return block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                 block.set_value(
@@ -1040,46 +935,52 @@ impl MetadataHandler for SnowflakeMetadataHandler {
                 Ok(1)
             });
         }
-        let connection = self.jdbc_get_connection(request.identity()).await?;
+        let connection = handler.connect(request.identity()).await?;
         let result = self
             .write_table_partitions(block_writer, &table_name, connection.as_ref())
             .await;
         close_after(connection.as_ref(), result).await
     }
 
-    async fn do_get_splits(
+    async fn get_splits(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
-        if self.s3_export_enabled() {
-            self.handle_s3_export_splits(request).await
+        if SnowflakeConstants::is_s3_export_enabled(handler.config_options()) {
+            self.handle_s3_export_splits(handler, request).await
         } else {
-            self.handle_direct_query_splits(request).await
+            self.handle_direct_query_splits(handler, request).await
         }
     }
 
-    async fn do_get_data_source_capabilities(
+    fn capabilities(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        handler: &SnowflakeMetadataHandler,
         request: &GetDataSourceCapabilitiesRequest,
     ) -> Result<GetDataSourceCapabilitiesResponse> {
         tracing::debug!("doGetDataSourceCapabilities: {:?}", request.catalog_name());
         Ok(GetDataSourceCapabilitiesResponse::new(
             request.catalog_name(),
-            capabilities(self.config_options())?,
+            capabilities(handler.config_options())?,
         ))
     }
-}
 
-#[async_trait]
-impl JdbcMetadataHandler for SnowflakeMetadataHandler {
-    fn jdbc_metadata_base(&self) -> &JdbcMetadataHandlerBase {
-        &self.base
+    async fn credentials_provider(
+        &self,
+        context: &HandlerContext,
+        secret_name: Option<&str>,
+        override_config: Option<&AwsRequestOverrideConfiguration>,
+    ) -> Result<Option<Box<dyn CredentialsProvider>>> {
+        Ok(
+            create_snowflake_credentials_provider(context, secret_name, override_config)
+                .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>),
+        )
     }
 
     async fn list_database_names(
         &self,
+        _handler: &SnowflakeMetadataHandler,
         jdbc_connection: &dyn JdbcConnection,
     ) -> Result<Vec<String>> {
         let catalog = jdbc_connection.get_catalog().await?;
@@ -1116,6 +1017,7 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
 
     async fn list_paginated_tables(
         &self,
+        handler: &SnowflakeMetadataHandler,
         connection: &dyn JdbcConnection,
         list_tables_request: &ListTablesRequest,
     ) -> Result<ListTablesResponse> {
@@ -1126,13 +1028,12 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
         if page_size == UNLIMITED_PAGE_SIZE_VALUE {
             page_size = i32::MAX;
         }
-        let adjusted_schema_name = self
-            .base
+        let adjusted_schema_name = handler
             .case_resolver()
             .get_adjusted_schema_name_string(
                 connection,
                 list_tables_request.schema_name().unwrap_or_default(),
-                self.config_options(),
+                handler.config_options(),
             )
             .await?;
         tracing::info!(
@@ -1156,7 +1057,7 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
         ))
     }
 
-    fn convert_datasource_type_to_arrow(
+    fn convert_datasource_type(
         &self,
         column_index: usize,
         precision: i32,
@@ -1170,14 +1071,14 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
 
     async fn get_schema(
         &self,
+        handler: &SnowflakeMetadataHandler,
         jdbc_connection: &dyn JdbcConnection,
         table_name: &TableName,
         partition_schema: &Schema,
-        _request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Schema> {
         tracing::debug!("getSchema start, tableName:{}", table_name);
         let built = self
-            .build_schema(jdbc_connection, table_name, partition_schema)
+            .build_schema(handler, jdbc_connection, table_name, partition_schema)
             .await;
         match built {
             Err(error) => match snowflake_sql_exception(&error) {
@@ -1191,9 +1092,13 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
         }
     }
 
-    fn get_partition_schema(&self, catalog_name: &str) -> Result<Schema> {
+    fn partition_schema(
+        &self,
+        handler: &SnowflakeMetadataHandler,
+        catalog_name: &str,
+    ) -> Result<Schema> {
         let mut schema_builder = SchemaBuilder::new_builder();
-        if self.s3_export_enabled() {
+        if SnowflakeConstants::is_s3_export_enabled(handler.config_options()) {
             tracing::debug!("Skipping partition, s3 export enable: {}", catalog_name);
             return Ok(schema_builder.build());
         }
@@ -1206,18 +1111,18 @@ impl JdbcMetadataHandler for SnowflakeMetadataHandler {
     }
 }
 
-impl SnowflakeMetadataHandler {
+impl SnowflakeMetadataDialect {
     async fn build_schema(
         &self,
+        handler: &SnowflakeMetadataHandler,
         jdbc_connection: &dyn JdbcConnection,
         table_name: &TableName,
         partition_schema: &Schema,
     ) -> Result<Schema> {
         let mut schema_builder = SchemaBuilder::new_builder();
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set = self
-            .get_columns(catalog.as_deref(), table_name, jdbc_connection.metadata())
-            .await?;
+        let mut result_set =
+            columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
         let mut found = false;
         while result_set.next().await? {
             found = true;
@@ -1225,7 +1130,7 @@ impl SnowflakeMetadataHandler {
                 result_set.get_int("DATA_TYPE")?.unwrap_or(0),
                 result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
                 result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
-                self.config_options(),
+                handler.config_options(),
             )?;
             let column_name = result_set
                 .get_string(COLUMN_NAME)?

@@ -17,7 +17,7 @@ use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler};
+use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::{
@@ -25,13 +25,16 @@ use athena_federation_sdk::security::{
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker};
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{JdbcRecordHandler, EXPORT_SCHEMA};
+use athena_jdbc::manager::{RecordDialect, SplitQuery, EXPORT_SCHEMA};
 use athena_jdbc::qpt::QUERY;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, Types};
 use athena_snowflake::{
     construct_s3_uri, convert_timestamp_tz_milli_to_date_milli_fast, ExportReader,
     S3ParquetExportReader, SnowflakeConstants, SnowflakeCredentialsProvider,
     SnowflakeRecordHandler,
+};
+use athena_snowflake::{
+    create_snowflake_credentials_provider, default_query_builder, SnowflakeRecordDialect,
 };
 use bigdecimal::BigDecimal;
 use indexmap::IndexMap;
@@ -77,17 +80,19 @@ fn fixture_with(
     let connection = FakeConnection::new();
     connection.meta.set_database_product_name("Snowflake");
     let factory = Arc::new(FakeConnectionFactory::new(connection.clone()));
-    let mut handler = SnowflakeRecordHandler::with_query_builder(
-        fakes.clients(),
+    let clients = fakes.clients();
+    let export_reader: Arc<dyn ExportReader> = match reader {
+        Some(reader) => Arc::new(reader),
+        None => Arc::new(S3ParquetExportReader::new(Arc::clone(&clients.s3))),
+    };
+    let context = HandlerContext::new(config.engine(), clients, options(export)).unwrap();
+    let handler = SnowflakeRecordDialect::handler(
+        context,
         config,
         factory,
-        SnowflakeRecordHandler::default_query_builder(),
-        options(export),
-    )
-    .unwrap();
-    if let Some(reader) = reader {
-        handler = handler.with_export_reader(Arc::new(reader));
-    }
+        default_query_builder(),
+        export_reader,
+    );
     Fixture {
         fakes,
         connection,
@@ -220,11 +225,7 @@ fn root_batch() -> RecordBatch {
 }
 
 fn checker(f: &Fixture) -> QueryStatusChecker {
-    QueryStatusChecker::new(
-        f.fakes.athena.clone(),
-        Arc::clone(f.handler.record_base().athena_invoker()),
-        QUERY_ID,
-    )
+    f.handler.context().query_status_checker(None, QUERY_ID)
 }
 
 fn id_name_result() -> ResultSetData {
@@ -273,7 +274,7 @@ async fn assert_export_uses_jdbc(f: &Fixture, split: Split, reader: &FakeExportR
     });
     let response = f
         .handler
-        .do_read_records(&f.allocator, &export_request(split))
+        .read_records(&f.allocator, &export_request(split))
         .await
         .unwrap();
     let FederationResponse::RemoteReadRecords(response) = response else {
@@ -310,7 +311,7 @@ async fn do_read_records_no_spill() {
     );
     let response = f
         .handler
-        .do_read_records(&f.allocator, &request)
+        .read_records(&f.allocator, &request)
         .await
         .unwrap();
     let FederationResponse::ReadRecords(response) = response else {
@@ -353,7 +354,7 @@ async fn do_read_records_spill() {
     );
     let response = f
         .handler
-        .do_read_records(&f.allocator, &request)
+        .read_records(&f.allocator, &request)
         .await
         .unwrap();
     let FederationResponse::RemoteReadRecords(response) = response else {
@@ -390,7 +391,7 @@ async fn test_handle_direct_read() {
     );
     let response = f
         .handler
-        .do_read_records(&f.allocator, &request)
+        .read_records(&f.allocator, &request)
         .await
         .unwrap();
     let FederationResponse::ReadRecords(response) = response else {
@@ -407,11 +408,13 @@ async fn test_build_split_sql() {
         .handler
         .build_split_sql(
             &f.connection,
-            "testCatalog",
-            &TableName::new("default", "test_table"),
-            &id_name_schema(),
-            &constraints(),
-            &partition_split("partition-primary-id-limit-1000-offset-0").await,
+            &SplitQuery {
+                catalog_name: "testCatalog",
+                table_name: &TableName::new("default", "test_table"),
+                schema: &id_name_schema(),
+                constraints: &constraints(),
+                split: &partition_split("partition-primary-id-limit-1000-offset-0").await,
+            },
         )
         .await
         .unwrap();
@@ -432,8 +435,15 @@ async fn test_get_credential_provider() {
         "testSecret",
     )
     .unwrap();
+    let secret = config.secret().map(ToString::to_string);
     let f = fixture_with(config, false, None);
-    let provider = f.handler.get_credential_provider().await.unwrap().unwrap();
+    let provider = f
+        .handler
+        .dialect()
+        .credentials_provider(f.handler.context(), secret.as_deref(), None)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(provider.as_any().is::<SnowflakeCredentialsProvider>());
 }
 
@@ -441,10 +451,12 @@ async fn test_get_credential_provider() {
 async fn test_create_credentials_provider_passes_request_override_configuration() {
     let f = fixture(false, None);
     let override_config = AwsRequestOverrideConfiguration::builder().build();
-    let provider = f
-        .handler
-        .create_snowflake_credentials_provider(Some("testSecret"), Some(&override_config))
-        .unwrap();
+    let provider = create_snowflake_credentials_provider(
+        f.handler.context(),
+        Some("testSecret"),
+        Some(&override_config),
+    )
+    .unwrap();
     assert_eq!("testSecret", provider.oauth_secret_name());
     assert!(provider.request_override_configuration().is_some());
 }
@@ -489,7 +501,7 @@ async fn test_handle_s3_export_read_empty_key() {
     );
     let response = f
         .handler
-        .do_read_records(&f.allocator, &request)
+        .read_records(&f.allocator, &request)
         .await
         .unwrap();
     let FederationResponse::ReadRecords(response) = response else {
@@ -507,8 +519,15 @@ async fn test_get_credential_provider_without_secret() {
         "snowflake://jdbc:snowflake://hostname/",
     )
     .unwrap();
+    let secret = config.secret().map(ToString::to_string);
     let f = fixture_with(config, false, None);
-    assert!(f.handler.get_credential_provider().await.unwrap().is_none());
+    assert!(f
+        .handler
+        .dialect()
+        .credentials_provider(f.handler.context(), secret.as_deref(), None)
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -535,11 +554,13 @@ async fn test_build_split_sql_with_query_passthrough() {
         .handler
         .build_split_sql(
             &f.connection,
-            "testCatalog",
-            &TableName::new("default", "test_table"),
-            &id_name_schema(),
-            &constraints,
-            &partition_split("partition-primary--limit-1000-offset-0").await,
+            &SplitQuery {
+                catalog_name: "testCatalog",
+                table_name: &TableName::new("default", "test_table"),
+                schema: &id_name_schema(),
+                constraints: &constraints,
+                split: &partition_split("partition-primary--limit-1000-offset-0").await,
+            },
         )
         .await
         .unwrap();
@@ -612,6 +633,7 @@ async fn test_handle_s3_export_read_with_timestamp_tz() {
     );
     let spiller = CountingSpiller::default();
     f.handler
+        .dialect()
         .handle_s3_export_read(&spiller, &request, &checker(&f))
         .await
         .unwrap();
@@ -655,11 +677,13 @@ async fn test_build_split_sql_exception() {
         .handler
         .build_split_sql(
             &f.connection,
-            "testCatalog",
-            &TableName::new("default", "test_table"),
-            &id_name_schema(),
-            &constraints(),
-            &partition_split("partition-primary-id-limit-1000-offset-0").await,
+            &SplitQuery {
+                catalog_name: "testCatalog",
+                table_name: &TableName::new("default", "test_table"),
+                schema: &id_name_schema(),
+                constraints: &constraints(),
+                split: &partition_split("partition-primary-id-limit-1000-offset-0").await,
+            },
         )
         .await
         .unwrap_err();
@@ -698,6 +722,7 @@ async fn test_handle_s3_export_read_io_exception() {
     let spiller = CountingSpiller::default();
     let error = f
         .handler
+        .dialect()
         .handle_s3_export_read(&spiller, &request, &checker(&f))
         .await
         .unwrap_err();
@@ -774,7 +799,7 @@ async fn export_schema_respills_exported_parquet() {
     let split = export_split(Some("export_bucket"), Some("test_key.parquet")).await;
     let response = f
         .handler
-        .do_read_records(&f.allocator, &export_request(split))
+        .read_records(&f.allocator, &export_request(split))
         .await
         .unwrap();
     let FederationResponse::RemoteReadRecords(response) = response else {
@@ -831,7 +856,11 @@ fn derive_export_schema_maps_scale_zero_number_to_decimal() {
             .with_precision(10)
             .with_scale(2),
     ]);
-    let schema = f.handler.derive_export_schema(&metadata).unwrap();
+    let schema = f
+        .handler
+        .dialect()
+        .derive_export_schema(&f.handler, &metadata)
+        .unwrap();
     let type_of = |name: &str| schema.field_with_name(name).unwrap().data_type().clone();
     assert_eq!(DataType::Decimal128(19, 0), type_of("number_19_0"));
     assert_eq!(DataType::Int64, type_of("number_precision_0"));

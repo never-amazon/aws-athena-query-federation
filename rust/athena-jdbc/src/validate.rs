@@ -35,10 +35,7 @@ pub(crate) fn null_pointer(message: impl Into<String>) -> FederationError {
     FederationError::null_pointer(message)
 }
 
-pub(crate) async fn close_after<T>(
-    connection: &dyn JdbcConnection,
-    result: Result<T>,
-) -> Result<T> {
+pub async fn close_after<T>(connection: &dyn JdbcConnection, result: Result<T>) -> Result<T> {
     let closed = connection.close().await;
     match (result, closed) {
         (Err(e), _) => Err(e),

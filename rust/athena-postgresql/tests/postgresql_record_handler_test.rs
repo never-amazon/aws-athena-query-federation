@@ -14,14 +14,15 @@ use athena_federation_sdk::domain::predicate::{
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
+use athena_federation_sdk::handlers::HandlerContext;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use athena_jdbc::manager::JdbcRecordHandler;
+use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
 use athena_postgresql::{
-    PostGreSqlConstants, PostGreSqlQueryStringBuilder, PostGreSqlRecordHandler,
-    PostgreSqlFederationExpressionParser,
+    PostGreSqlConstants, PostGreSqlQueryStringBuilder, PostGreSqlRecordDialect,
+    PostGreSqlRecordHandler, PostgreSqlFederationExpressionParser,
 };
 use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
@@ -69,14 +70,8 @@ fn setup() -> Fixture {
         "\"",
         Arc::new(PostgreSqlFederationExpressionParser::new("\"")),
     ));
-    let handler = PostGreSqlRecordHandler::with_query_builder(
-        fakes.clients(),
-        config,
-        factory,
-        builder,
-        HashMap::new(),
-    )
-    .unwrap();
+    let context = HandlerContext::new(config.engine(), fakes.clients(), HashMap::new()).unwrap();
+    let handler = PostGreSqlRecordDialect::handler(context, config, factory, builder);
     Fixture {
         handler,
         connection,
@@ -95,11 +90,13 @@ impl Fixture {
         self.handler
             .build_split_sql(
                 &self.connection,
-                TEST_CATALOG,
-                table_name,
-                schema,
-                constraints,
-                split,
+                &SplitQuery {
+                    catalog_name: TEST_CATALOG,
+                    table_name,
+                    schema,
+                    constraints,
+                    split,
+                },
             )
             .await
     }
@@ -573,7 +570,7 @@ fn test_config_options_constructor() {
         ),
     ]);
     let handler =
-        PostGreSqlRecordHandler::from_config_options(Fakes::new().clients(), config_options);
+        PostGreSqlRecordDialect::from_config_options(Fakes::new().clients(), config_options);
     handler.unwrap();
 }
 
@@ -1073,6 +1070,7 @@ async fn test_prepare_export_statement_sets_fetch_size() {
     let f = setup();
     let statement = f
         .handler
+        .dialect()
         .prepare_export_statement(&f.connection, "SELECT 1")
         .await
         .unwrap();
@@ -1103,7 +1101,11 @@ fn test_derive_export_schema_maps_postgres_types() {
             })
             .collect(),
     );
-    let schema = f.handler.derive_export_schema(&metadata).unwrap();
+    let schema = f
+        .handler
+        .dialect()
+        .derive_export_schema(&f.handler, &metadata)
+        .unwrap();
     let field_type = |name: &str| schema.field_with_name(name).unwrap().data_type().clone();
     assert_eq!(DataType::Int32, field_type("int4_col"));
     assert_eq!(DataType::Decimal128(38, 0), field_type("numeric_col"));

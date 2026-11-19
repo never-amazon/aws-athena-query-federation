@@ -6,22 +6,17 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 
 use athena_federation_sdk::data::{BlockAllocator, SimpleBlockWriter};
-use athena_federation_sdk::handlers::{
-    FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
-};
+use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse,
 };
-use athena_federation_sdk::security::{CachableSecretsManager, KmsEncryptionProvider};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 
-use crate::manager::{
-    JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt,
-    JdbcMetadataHandlerFactory, JdbcUtil,
-};
+use crate::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use crate::manager::{JdbcUtil, MetadataDelegate};
 
 const MAX_CATALOGS_TO_MULTIPLEX: usize = 100;
 
@@ -49,122 +44,132 @@ pub(crate) fn validate_catalog_count<V>(map: &IndexMap<String, V>) -> Result<()>
     Ok(())
 }
 
-pub struct MultiplexingJdbcMetadataHandler {
-    base: JdbcMetadataHandlerBase,
-    metadata_handler_map: IndexMap<String, Arc<dyn JdbcMetadataHandler>>,
+pub(crate) async fn close_all<'a, F: std::future::Future<Output = Result<()>>>(
+    kind: &str,
+    closes: impl IntoIterator<Item = (&'a String, F)>,
+) -> Option<FederationError> {
+    let mut first_failure = None;
+    for (catalog, close) in closes {
+        if let Err(e) = close.await {
+            tracing::warn!(
+                "Failed to close {kind} handler for catalog {} {}",
+                catalog,
+                e
+            );
+            first_failure.get_or_insert(e);
+        }
+    }
+    first_failure
 }
 
-impl MultiplexingJdbcMetadataHandler {
+pub struct MultiplexingJdbcMetadataHandler<H> {
+    context: MetadataContext,
+    connection_factory: Option<Arc<dyn JdbcConnectionFactory>>,
+    delegates: IndexMap<String, Arc<H>>,
+}
+
+impl<H: MetadataHandler + MetadataDelegate + 'static> MultiplexingJdbcMetadataHandler<H> {
     pub fn new(
-        base: JdbcMetadataHandlerBase,
-        metadata_handler_map: IndexMap<String, Arc<dyn JdbcMetadataHandler>>,
-    ) -> Result<MultiplexingJdbcMetadataHandler> {
-        validate_handler_map(
-            &metadata_handler_map,
-            "metadataHandlerMap must not be empty",
-        )?;
-        validate_catalog_count(&metadata_handler_map)?;
+        context: MetadataContext,
+        connection_factory: Arc<dyn JdbcConnectionFactory>,
+        delegates: IndexMap<String, Arc<H>>,
+    ) -> Result<MultiplexingJdbcMetadataHandler<H>> {
+        validate_handler_map(&delegates, "metadataHandlerMap must not be empty")?;
+        validate_catalog_count(&delegates)?;
         Ok(MultiplexingJdbcMetadataHandler {
-            base,
-            metadata_handler_map,
+            context,
+            connection_factory: Some(connection_factory),
+            delegates,
         })
     }
 
-    pub async fn new_with_factory(
-        metadata_base: MetadataHandlerBase,
-        jdbc_metadata_handler_factory: &dyn JdbcMetadataHandlerFactory,
+    pub fn from_config(
+        context: MetadataContext,
+        engine: &str,
         config_options: &HashMap<String, String>,
-    ) -> Result<MultiplexingJdbcMetadataHandler> {
-        let metadata_handler_map = JdbcUtil::create_jdbc_metadata_handler_map(
-            config_options,
-            jdbc_metadata_handler_factory,
-        )
-        .await?;
-        validate_handler_map(&metadata_handler_map, "Could not find any delegatee.")?;
+        make_delegate: impl Fn(&DatabaseConnectionConfig) -> Result<Arc<H>>,
+    ) -> Result<MultiplexingJdbcMetadataHandler<H>> {
+        let delegates = JdbcUtil::handler_map(engine, config_options, make_delegate)?;
+        validate_handler_map(&delegates, "Could not find any delegatee.")?;
         Ok(MultiplexingJdbcMetadataHandler {
-            base: JdbcMetadataHandlerBase::new_without_connection(metadata_base),
-            metadata_handler_map,
+            context,
+            connection_factory: None,
+            delegates,
         })
     }
 
-    pub fn metadata_handler_map(&self) -> &IndexMap<String, Arc<dyn JdbcMetadataHandler>> {
-        &self.metadata_handler_map
+    pub fn delegates(&self) -> &IndexMap<String, Arc<H>> {
+        &self.delegates
     }
 
-    fn validate_multiplexer(&self, catalog_name: &str) -> Result<&Arc<dyn JdbcMetadataHandler>> {
-        self.metadata_handler_map
+    fn delegate(&self, catalog_name: &str) -> Result<&H> {
+        self.delegates
             .get(catalog_name)
+            .map(AsRef::as_ref)
             .ok_or_else(|| catalog_not_registered(catalog_name))
     }
-}
 
-impl FederationRequestHandler for MultiplexingJdbcMetadataHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.metadata_base().cachable_secrets_manager()
+    pub fn partition_schema(&self, catalog_name: &str) -> Result<Schema> {
+        self.delegate(catalog_name)?.partition_schema(catalog_name)
     }
 
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.metadata_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
+    pub async fn close(&self) -> Result<()> {
+        let mut first_failure = close_all(
+            "metadata",
+            self.delegates.iter().map(|(c, d)| (c, d.close())),
+        )
+        .await;
+        if let Some(factory) = &self.connection_factory {
+            if let Err(e) = factory.close().await {
+                first_failure.get_or_insert(e);
+            }
+        }
+        first_failure.map_or(Ok(()), Err)
     }
 }
 
 #[async_trait]
-impl MetadataHandler for MultiplexingJdbcMetadataHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        self.base.metadata_base()
+impl<H: MetadataHandler + MetadataDelegate + 'static> MetadataHandler
+    for MultiplexingJdbcMetadataHandler<H>
+{
+    fn context(&self) -> &MetadataContext {
+        &self.context
     }
 
-    async fn do_list_schema_names(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_list_schema_names(allocator, request)
+    async fn list_schema_names(&self, request: &ListSchemasRequest) -> Result<ListSchemasResponse> {
+        self.delegate(request.catalog_name())?
+            .list_schema_names(request)
             .await
     }
 
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_list_tables(allocator, request)
+    async fn list_tables(&self, request: &ListTablesRequest) -> Result<ListTablesResponse> {
+        self.delegate(request.catalog_name())?
+            .list_tables(request)
             .await
     }
 
-    async fn do_get_query_passthrough_schema(
+    async fn get_query_passthrough_schema(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableRequest,
     ) -> Result<GetTableResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_get_query_passthrough_schema(allocator, request)
+        self.delegate(request.catalog_name())?
+            .get_query_passthrough_schema(request)
             .await
     }
 
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_get_table(allocator, request)
+    async fn get_table(&self, request: &GetTableRequest) -> Result<GetTableResponse> {
+        self.delegate(request.catalog_name())?
+            .get_table(request)
             .await
     }
 
-    async fn do_get_table_layout(
+    async fn get_table_layout(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
+        allocator: &dyn BlockAllocator,
         request: &GetTableLayoutRequest,
     ) -> Result<GetTableLayoutResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_get_table_layout(allocator, request)
+        self.delegate(request.catalog_name())?
+            .get_table_layout(allocator, request)
             .await
     }
 
@@ -174,60 +179,23 @@ impl MetadataHandler for MultiplexingJdbcMetadataHandler {
         request: &GetTableLayoutRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        self.validate_multiplexer(request.catalog_name())?
+        self.delegate(request.catalog_name())?
             .get_partitions(block_writer, request, query_status_checker)
             .await
     }
 
-    async fn do_get_splits(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetSplitsRequest,
-    ) -> Result<GetSplitsResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_get_splits(allocator, request)
+    async fn get_splits(&self, request: &GetSplitsRequest) -> Result<GetSplitsResponse> {
+        self.delegate(request.catalog_name())?
+            .get_splits(request)
             .await
     }
 
-    async fn do_get_data_source_capabilities(
+    async fn get_data_source_capabilities(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
         request: &GetDataSourceCapabilitiesRequest,
     ) -> Result<GetDataSourceCapabilitiesResponse> {
-        self.validate_multiplexer(request.catalog_name())?
-            .do_get_data_source_capabilities(allocator, request)
+        self.delegate(request.catalog_name())?
+            .get_data_source_capabilities(request)
             .await
-    }
-}
-
-#[async_trait]
-impl JdbcMetadataHandler for MultiplexingJdbcMetadataHandler {
-    fn jdbc_metadata_base(&self) -> &JdbcMetadataHandlerBase {
-        &self.base
-    }
-
-    fn get_partition_schema(&self, catalog_name: &str) -> Result<Schema> {
-        self.validate_multiplexer(catalog_name)?
-            .get_partition_schema(catalog_name)
-    }
-
-    async fn close(&self) -> Result<()> {
-        let mut first_failure = None;
-        for (catalog, delegate) in &self.metadata_handler_map {
-            if let Err(e) = delegate.close().await {
-                tracing::warn!(
-                    "Failed to close metadata handler for catalog {} {}",
-                    catalog,
-                    e
-                );
-                first_failure.get_or_insert(e);
-            }
-        }
-        if let Some(factory) = self.base.jdbc_connection_factory() {
-            if let Err(e) = factory.close().await {
-                first_failure.get_or_insert(e);
-            }
-        }
-        first_failure.map_or(Ok(()), Err)
     }
 }

@@ -4,8 +4,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
 use athena_federation_sdk::data::{GetObjectRequest, PutObjectRequest, S3Client};
-use athena_federation_sdk::handlers::{AwsClients, CompositeHandler, MetadataHandlerBase};
-use athena_federation_sdk::lambda::{LambdaContext, LambdaError};
+use athena_federation_sdk::handlers::{
+    AwsClients, CompositeHandler, HandlerContext, MetadataContext,
+};
+use athena_federation_sdk::lambda::{LambdaContext, LambdaError, RequestStreamHandler};
 use athena_federation_sdk::security::{
     AwsCrypto, AwsRequestOverrideConfiguration, AwsService, AwsServiceError, KeySource, KmsClient,
     KmsEncryptionProvider, SecretsManagerClient,
@@ -14,12 +16,12 @@ use athena_federation_sdk::{AthenaClient, FederationError};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use athena_jdbc::manager::{
-    JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcRecordHandler, JdbcUtil,
-};
+use athena_jdbc::manager::JdbcUtil;
+use athena_jdbc::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
 use athena_postgresql::{
-    PostGreSqlConstants, PostGreSqlJdbcCaseResolver, PostGreSqlMetadataHandler,
-    PostGreSqlMuxMetadataHandler, PostGreSqlMuxRecordHandler, PostGreSqlRecordHandler,
+    default_query_builder, PostGreSqlConstants, PostGreSqlMetadataDialect,
+    PostGreSqlMetadataHandler, PostGreSqlMuxMetadataHandler, PostGreSqlMuxRecordHandler,
+    PostGreSqlRecordDialect, PostGreSqlRecordHandler,
 };
 use aws_credential_types::Credentials;
 use aws_sdk_kms::types::DataKeySpec;
@@ -236,35 +238,27 @@ fn metadata_handler(
     db_config: &DatabaseConnectionConfig,
     config: &HashMap<String, String>,
 ) -> athena_federation_sdk::Result<PostGreSqlMetadataHandler> {
-    let factory = Arc::new(PostGreSqlMetadataHandler::connection_factory(
+    let factory = Arc::new(PostGreSqlMetadataDialect::connection_factory(
         db_config, config,
     )?);
     let disabled = config
         .get("disable_spill_encryption")
         .is_some_and(|v| v.eq_ignore_ascii_case("true"));
-    if disabled {
-        return PostGreSqlMetadataHandler::with_connection_factory(
-            clients.clone(),
-            db_config.clone(),
-            factory,
-            config.clone(),
-        );
-    }
-    let metadata_base = MetadataHandlerBase::builder(db_config.engine(), clients.clone())
+    let key_source = if disabled {
+        None
+    } else {
+        Some(KeySource::Local)
+    };
+    let context = MetadataContext::builder(db_config.engine(), clients.clone())
         .config_options(config.clone())
-        .encryption_key_factory(Some(KeySource::Local))
+        .encryption_key_factory(key_source)
         .spill_bucket(None)
         .spill_prefix(None)
         .build()?;
-    Ok(PostGreSqlMetadataHandler::with_base(
-        JdbcMetadataHandlerBase::new_with_case_resolver(
-            metadata_base,
-            db_config.clone(),
-            factory,
-            Arc::new(PostGreSqlJdbcCaseResolver::new(
-                PostGreSqlConstants::POSTGRES_NAME,
-            )),
-        ),
+    Ok(PostGreSqlMetadataDialect::handler(
+        context,
+        db_config.clone(),
+        factory,
     ))
 }
 
@@ -273,15 +267,16 @@ fn record_handler(
     db_config: &DatabaseConnectionConfig,
     config: &HashMap<String, String>,
 ) -> athena_federation_sdk::Result<PostGreSqlRecordHandler> {
-    PostGreSqlRecordHandler::with_query_builder(
-        clients.clone(),
+    let factory = Arc::new(PostGreSqlMetadataDialect::connection_factory(
+        db_config, config,
+    )?);
+    let context = HandlerContext::new(db_config.engine(), clients.clone(), config.clone())?;
+    Ok(PostGreSqlRecordDialect::handler(
+        context,
         db_config.clone(),
-        Arc::new(PostGreSqlMetadataHandler::connection_factory(
-            db_config, config,
-        )?),
-        PostGreSqlRecordHandler::default_query_builder(),
-        config.clone(),
-    )
+        factory,
+        default_query_builder(),
+    ))
 }
 
 fn single_handler(
@@ -292,7 +287,11 @@ fn single_handler(
         JdbcUtil::get_single_database_config_from_env(PostGreSqlConstants::POSTGRES_NAME, config)?;
     let metadata = metadata_handler(clients, &db_config, config)?;
     let record = record_handler(clients, &db_config, config)?;
-    Ok(CompositeHandler::new(Arc::new(metadata), Arc::new(record)))
+    Ok(CompositeHandler::new(
+        Arc::new(metadata),
+        Arc::new(record),
+        None,
+    ))
 }
 
 fn mux_handler(
@@ -306,14 +305,12 @@ fn mux_handler(
         .engine(PostGreSqlConstants::POSTGRES_NAME)
         .properties(config.clone())
         .build()?;
-    let mut metadata_map: IndexMap<String, Arc<dyn JdbcMetadataHandler>> = IndexMap::new();
-    let mut record_map: IndexMap<String, Arc<dyn JdbcRecordHandler>> = IndexMap::new();
+    let mut metadata_map: IndexMap<String, Arc<PostGreSqlMetadataHandler>> = IndexMap::new();
+    let mut record_map: IndexMap<String, Arc<PostGreSqlRecordHandler>> = IndexMap::new();
     let mut default_config = None;
     for db_config in configs {
-        let metadata: Arc<dyn JdbcMetadataHandler> =
-            Arc::new(metadata_handler(clients, &db_config, config)?);
-        let record: Arc<dyn JdbcRecordHandler> =
-            Arc::new(record_handler(clients, &db_config, config)?);
+        let metadata = Arc::new(metadata_handler(clients, &db_config, config)?);
+        let record = Arc::new(record_handler(clients, &db_config, config)?);
         metadata_map.insert(db_config.catalog().to_string(), Arc::clone(&metadata));
         record_map.insert(db_config.catalog().to_string(), Arc::clone(&record));
         if db_config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY {
@@ -325,27 +322,36 @@ fn mux_handler(
     let default_config = default_config.ok_or_else(|| {
         FederationError::IllegalState("mux mode needs a default connection string".to_string())
     })?;
-    let metadata = PostGreSqlMuxMetadataHandler::with_handler_map(
-        clients.clone(),
-        Arc::new(PostGreSqlMetadataHandler::connection_factory(
+    let metadata_context = MetadataContext::builder(default_config.engine(), clients.clone())
+        .config_options(config.clone())
+        .encryption_key_factory(None)
+        .spill_bucket(None)
+        .spill_prefix(None)
+        .build()?;
+    let metadata: PostGreSqlMuxMetadataHandler = MultiplexingJdbcMetadataHandler::new(
+        metadata_context,
+        Arc::new(PostGreSqlMetadataDialect::connection_factory(
             &default_config,
             config,
         )?),
         metadata_map,
-        default_config.clone(),
-        config.clone(),
     )?;
-    let record = PostGreSqlMuxRecordHandler::with_handler_map(
-        clients.clone(),
-        Arc::new(PostGreSqlMetadataHandler::connection_factory(
+    let record_context =
+        HandlerContext::new(default_config.engine(), clients.clone(), config.clone())?;
+    let record: PostGreSqlMuxRecordHandler = RecordMultiplexer::handler(
+        record_context,
+        default_config.clone(),
+        Arc::new(PostGreSqlMetadataDialect::connection_factory(
             &default_config,
             config,
         )?),
-        default_config,
         record_map,
-        config.clone(),
     )?;
-    Ok(CompositeHandler::new(Arc::new(metadata), Arc::new(record)))
+    Ok(CompositeHandler::new(
+        Arc::new(metadata),
+        Arc::new(record),
+        None,
+    ))
 }
 
 fn secrets() -> HashMap<String, String> {

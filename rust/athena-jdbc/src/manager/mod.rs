@@ -3,9 +3,7 @@ mod federation_expression_parser;
 mod jdbc_arrow_type_converter;
 mod jdbc_federation_expression_parser;
 mod jdbc_metadata_handler;
-mod jdbc_metadata_handler_factory;
 mod jdbc_record_handler;
-mod jdbc_record_handler_factory;
 mod jdbc_split_query_builder;
 mod jdbc_to_arrow_utils;
 mod jdbc_util;
@@ -19,14 +17,13 @@ pub use jdbc_federation_expression_parser::{
     JdbcFederationExpressionParser, JdbcFederationExpressionParserExt,
 };
 pub use jdbc_metadata_handler::{
-    JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt, TABLES_AND_VIEWS,
+    columns, escape_name_pattern, list_database_names, JdbcMetadataHandler, MetadataDelegate,
+    MetadataDialect, TABLES_AND_VIEWS,
 };
-pub use jdbc_metadata_handler_factory::JdbcMetadataHandlerFactory;
 pub use jdbc_record_handler::{
-    default_export_result_set_to_spill, JdbcRecordHandler, JdbcRecordHandlerBase,
-    JdbcRecordHandlerExt, EXPORT_SCHEMA,
+    make_extractor, make_field_writer_factory, ConnectionSource, JdbcRecordHandler, RecordDelegate,
+    RecordDialect, SplitQuery, EXPORT_SCHEMA,
 };
-pub use jdbc_record_handler_factory::JdbcRecordHandlerFactory;
 pub use jdbc_split_query_builder::{
     default_build_sql_string_literal, JdbcSplitQueryBuilder, JdbcSplitQueryBuilderBase,
 };

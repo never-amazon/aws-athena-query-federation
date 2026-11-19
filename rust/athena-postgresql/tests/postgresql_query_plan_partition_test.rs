@@ -15,7 +15,8 @@ use athena_federation_sdk::domain::split::Split;
 use athena_jdbc::manager::JdbcSplitQueryBuilder;
 use athena_jdbc::sql::SqlValue;
 use athena_postgresql::{
-    PostGreSqlMetadataHandler, PostGreSqlQueryStringBuilder, PostgreSqlFederationExpressionParser,
+    PostGreSqlQueryStringBuilder, PostgreSqlFederationExpressionParser,
+    BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
 };
 
 use jdbc_support::FakeConnection;
@@ -83,14 +84,8 @@ fn split(partition_schema: &str, partition_name: &str) -> Split {
         )),
         None,
     )
-    .add(
-        PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
-        partition_schema,
-    )
-    .add(
-        PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME,
-        partition_name,
-    )
+    .add(BLOCK_PARTITION_SCHEMA_COLUMN_NAME, partition_schema)
+    .add(BLOCK_PARTITION_COLUMN_NAME, partition_name)
     .build()
 }
 

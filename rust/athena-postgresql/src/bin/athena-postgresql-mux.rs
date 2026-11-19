@@ -1,7 +1,6 @@
 use athena_federation_sdk::lambda;
-use athena_postgresql::PostGreSqlMuxCompositeHandler;
 
 #[tokio::main]
 async fn main() -> athena_federation_sdk::Result<()> {
-    lambda::run(PostGreSqlMuxCompositeHandler::from_environment().await?).await
+    lambda::run(athena_postgresql::mux_composite_handler_from_environment().await?).await
 }

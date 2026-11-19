@@ -1,6 +1,7 @@
 use std::fmt;
 
 use super::{FederatedIdentity, PingRequest};
+use crate::connection::environment_constants;
 use crate::lambda::LambdaContext;
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
@@ -51,8 +52,19 @@ impl FederationRequest {
         }
     }
 
-    pub fn set_context(&mut self, context: Option<LambdaContext>) {
-        match self {
+    pub fn is_federated(&self) -> bool {
+        self.identity()
+            .and_then(|identity| {
+                identity
+                    .config_options()
+                    .get(environment_constants::FAS_TOKEN)
+            })
+            .is_some_and(Option::is_some)
+    }
+
+    #[must_use]
+    pub fn with_context(mut self, context: Option<LambdaContext>) -> FederationRequest {
+        match &mut self {
             FederationRequest::ListSchemas(r) => r.set_context(context),
             FederationRequest::ListTables(r) => r.set_context(context),
             FederationRequest::GetTable(r) => r.set_context(context),
@@ -63,6 +75,7 @@ impl FederationRequest {
             | FederationRequest::ReadRecords(_)
             | FederationRequest::UserDefinedFunction(_) => {}
         }
+        self
     }
 
     pub fn is_metadata_request(&self) -> bool {

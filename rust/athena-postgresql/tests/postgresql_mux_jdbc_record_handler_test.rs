@@ -15,15 +15,13 @@ use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints}
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler, RecordHandlerBase};
+use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::security::{CachableSecretsManager, KmsEncryptionProvider};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{JdbcRecordHandler, JdbcRecordHandlerBase};
+use athena_jdbc::manager::{RecordDelegate, SplitQuery};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
-use athena_jdbc::MultiplexingJdbcRecordHandler;
-use athena_postgresql::PostGreSqlMuxRecordHandler;
+use athena_jdbc::{MultiplexingJdbcRecordHandler, RecordMultiplexer};
 use indexmap::IndexMap;
 use jdbc_support::{addr, FakeConnection, FakeConnectionFactory, Fakes};
 
@@ -51,25 +49,15 @@ struct Calls {
 }
 
 struct FakeJdbcRecordHandler {
-    base: JdbcRecordHandlerBase,
+    context: HandlerContext,
     calls: Arc<Calls>,
     close_error: Option<String>,
 }
 
-impl FederationRequestHandler for FakeJdbcRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.record_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.record_base().kms_encryption_provider()
-    }
-}
-
 #[async_trait]
 impl RecordHandler for FakeJdbcRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        self.base.record_base()
+    fn context(&self) -> &HandlerContext {
+        &self.context
     }
 
     async fn read_with_constraint(
@@ -88,19 +76,11 @@ impl RecordHandler for FakeJdbcRecordHandler {
 }
 
 #[async_trait]
-impl JdbcRecordHandler for FakeJdbcRecordHandler {
-    fn jdbc_record_base(&self) -> &JdbcRecordHandlerBase {
-        &self.base
-    }
-
+impl RecordDelegate for FakeJdbcRecordHandler {
     async fn build_split_sql(
         &self,
         jdbc_connection: &dyn JdbcConnection,
-        catalog_name: &str,
-        table_name: &TableName,
-        schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
+        query: &SplitQuery<'_>,
     ) -> Result<PreparedStatement> {
         self.calls
             .build_split_sql
@@ -108,11 +88,11 @@ impl JdbcRecordHandler for FakeJdbcRecordHandler {
             .unwrap()
             .push(BuildSplitSqlCall {
                 connection: addr(jdbc_connection),
-                catalog_name: catalog_name.to_string(),
-                table_name: table_name.clone(),
-                schema: addr(schema),
-                constraints: addr(constraints),
-                split: addr(split),
+                catalog_name: query.catalog_name.to_string(),
+                table_name: query.table_name.clone(),
+                schema: addr(query.schema),
+                constraints: addr(query.constraints),
+                split: addr(query.split),
             });
         Ok(PreparedStatement::new("delegate"))
     }
@@ -126,8 +106,8 @@ impl JdbcRecordHandler for FakeJdbcRecordHandler {
     }
 }
 
-fn record_base(fakes: &Fakes) -> RecordHandlerBase {
-    RecordHandlerBase::new(FAKE_DATABASE, fakes.clients(), HashMap::new()).unwrap()
+fn record_context(fakes: &Fakes) -> HandlerContext {
+    HandlerContext::new(FAKE_DATABASE, fakes.clients(), HashMap::new()).unwrap()
 }
 
 fn config() -> DatabaseConnectionConfig {
@@ -143,10 +123,10 @@ fn config() -> DatabaseConnectionConfig {
 fn fake_delegate(
     fakes: &Fakes,
     close_error: Option<&str>,
-) -> (Arc<dyn JdbcRecordHandler>, Arc<Calls>) {
+) -> (Arc<FakeJdbcRecordHandler>, Arc<Calls>) {
     let calls = Arc::new(Calls::default());
     let handler = FakeJdbcRecordHandler {
-        base: JdbcRecordHandlerBase::new_without_connection(record_base(fakes)),
+        context: record_context(fakes),
         calls: Arc::clone(&calls),
         close_error: close_error.map(ToString::to_string),
     };
@@ -156,7 +136,7 @@ fn fake_delegate(
 struct Setup {
     fakes: Fakes,
     calls: Arc<Calls>,
-    handler: MultiplexingJdbcRecordHandler,
+    handler: MultiplexingJdbcRecordHandler<FakeJdbcRecordHandler>,
 }
 
 fn set_up() -> Setup {
@@ -164,14 +144,10 @@ fn set_up() -> Setup {
     let factory = FakeConnectionFactory::default();
     let (delegate, calls) = fake_delegate(&fakes, None);
     let map = IndexMap::from([(FAKE_DATABASE.to_string(), delegate)]);
-    let handler = PostGreSqlMuxRecordHandler::with_handler_map(
-        fakes.clients(),
-        Arc::new(factory.clone()),
-        config(),
-        map,
-        HashMap::new(),
-    )
-    .unwrap();
+    let config = config();
+    let context = HandlerContext::new(config.engine(), fakes.clients(), HashMap::new()).unwrap();
+    let handler =
+        RecordMultiplexer::handler(context, config, Arc::new(factory.clone()), map).unwrap();
     Setup {
         fakes,
         calls,
@@ -220,11 +196,7 @@ fn spiller(fakes: &Fakes) -> S3BlockSpiller {
 }
 
 fn checker(s: &Setup) -> QueryStatusChecker {
-    QueryStatusChecker::new(
-        s.fakes.athena.clone(),
-        Arc::clone(s.handler.record_base().athena_invoker()),
-        "queryId",
-    )
+    s.handler.context().query_status_checker(None, "queryId")
 }
 
 #[tokio::test]
@@ -279,11 +251,13 @@ async fn build_split_sql() {
         .handler
         .build_split_sql(
             &jdbc_connection,
-            FAKE_DATABASE,
-            &table_name,
-            &schema,
-            &constraints,
-            &split,
+            &SplitQuery {
+                catalog_name: FAKE_DATABASE,
+                table_name: &table_name,
+                schema: &schema,
+                constraints: &constraints,
+                split: &split,
+            },
         )
         .await
         .unwrap();

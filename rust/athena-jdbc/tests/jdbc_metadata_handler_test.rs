@@ -5,27 +5,23 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
-};
+use athena_federation_sdk::data::{FieldBuilder, SchemaBuilder, SimpleBlockWriter};
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{
-    FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
-};
+use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::optimizations::querypassthrough::{
     ENABLE_QUERY_PASSTHROUGH, SCHEMA_FUNCTION_NAME,
 };
 use athena_federation_sdk::metadata::{
-    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
-    ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
+    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest,
+    ListSchemasRequest, ListTablesRequest,
 };
 use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::security::{CachableSecretsManager, KmsEncryptionProvider};
 use athena_federation_sdk::util::UNLIMITED_PAGE_SIZE_VALUE;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
-use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt};
+use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};
 use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
+use athena_jdbc::resolver::DefaultJdbcCaseResolver;
 use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
@@ -42,65 +38,21 @@ fn partition_schema() -> Schema {
     builder.build()
 }
 
-struct TestHandler {
-    base: JdbcMetadataHandlerBase,
-}
-
-impl FederationRequestHandler for TestHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.metadata_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.metadata_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-}
+struct TestDialect;
 
 #[async_trait]
-impl MetadataHandler for TestHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        self.base.metadata_base()
-    }
-
-    async fn do_list_schema_names(
+impl MetadataDialect for TestDialect {
+    fn partition_schema(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse> {
-        self.jdbc_do_list_schema_names(allocator, request).await
-    }
-
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
-        self.jdbc_do_list_tables(allocator, request).await
-    }
-
-    async fn do_get_query_passthrough_schema(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.jdbc_do_get_query_passthrough_schema(allocator, request)
-            .await
-    }
-
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.jdbc_do_get_table(allocator, request).await
+        _handler: &JdbcMetadataHandler<Self>,
+        _catalog_name: &str,
+    ) -> Result<Schema> {
+        Ok(partition_schema())
     }
 
     async fn get_partitions(
         &self,
+        _handler: &JdbcMetadataHandler<Self>,
         _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
@@ -108,40 +60,30 @@ impl MetadataHandler for TestHandler {
         Ok(())
     }
 
-    async fn do_get_splits(
+    async fn get_splits(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        _handler: &JdbcMetadataHandler<Self>,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
         Ok(GetSplitsResponse::new(request.catalog_name(), [], None))
     }
 }
 
-#[async_trait]
-impl JdbcMetadataHandler for TestHandler {
-    fn jdbc_metadata_base(&self) -> &JdbcMetadataHandlerBase {
-        &self.base
-    }
-
-    fn get_partition_schema(&self, _catalog_name: &str) -> Result<Schema> {
-        Ok(partition_schema())
-    }
-}
+type TestHandler = JdbcMetadataHandler<TestDialect>;
 
 struct Fixture {
     handler: TestHandler,
     factory: FakeConnectionFactory,
-    factory_arc: Arc<FakeConnectionFactory>,
+    factory_arc: Arc<dyn JdbcConnectionFactory>,
     connection: FakeConnection,
-    allocator: Arc<dyn BlockAllocator>,
 }
 
-fn metadata_base() -> MetadataHandlerBase {
+fn metadata_context() -> MetadataContext {
     let fakes = Fakes::with_secrets(FakeSecretsManager::with_secret(
         "testSecret",
         "{\"username\": \"testUser\", \"password\": \"testPassword\"}",
     ));
-    MetadataHandlerBase::builder("fakedatabase", fakes.clients())
+    MetadataContext::builder("fakedatabase", fakes.clients())
         .config_options(HashMap::new())
         .build()
         .unwrap()
@@ -158,14 +100,22 @@ fn setup() -> Fixture {
         "testSecret",
     )
     .unwrap();
-    let factory_arc = Arc::new(factory.clone());
-    let base = JdbcMetadataHandlerBase::new(metadata_base(), config, factory_arc.clone());
+    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
+    let factory_arc: Arc<dyn JdbcConnectionFactory> = Arc::new(factory.clone());
+    let handler = JdbcMetadataHandler::new(
+        metadata_context(),
+        ConnectionSource::Direct {
+            config,
+            factory: Arc::clone(&factory_arc),
+        },
+        case_resolver,
+        TestDialect,
+    );
     Fixture {
-        handler: TestHandler { base },
+        handler,
         factory,
         factory_arc,
         connection,
-        allocator: Arc::new(BlockAllocatorImpl::new()),
     }
 }
 
@@ -282,13 +232,11 @@ fn columns_result(rows: Vec<ColumnRow<'_>>) -> ResultSetData {
 #[tokio::test]
 async fn get_jdbc_connection_factory() {
     let fixture = setup();
-    let actual = fixture
-        .handler
-        .jdbc_metadata_base()
-        .jdbc_connection_factory()
-        .unwrap();
+    let ConnectionSource::Direct { factory, .. } = fixture.handler.connection() else {
+        panic!("expected a direct connection");
+    };
     assert_eq!(
-        Arc::as_ptr(actual).cast::<()>(),
+        Arc::as_ptr(factory).cast::<()>(),
         Arc::as_ptr(&fixture.factory_arc).cast::<()>()
     );
 }
@@ -302,13 +250,14 @@ async fn close_delegates_to_jdbc_connection_factory() {
 
 #[tokio::test]
 async fn close_with_null_factory_is_no_op() {
-    let handler = TestHandler {
-        base: JdbcMetadataHandlerBase::new_without_connection(metadata_base()),
-    };
-    assert!(handler
-        .jdbc_metadata_base()
-        .jdbc_connection_factory()
-        .is_none());
+    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new("fakedatabase"));
+    let handler = JdbcMetadataHandler::new(
+        metadata_context(),
+        ConnectionSource::Delegating,
+        case_resolver,
+        TestDialect,
+    );
+    assert!(matches!(handler.connection(), ConnectionSource::Delegating));
     handler.close().await.unwrap();
 }
 
@@ -324,14 +273,11 @@ async fn do_list_schema_names() {
         )));
     let response = fixture
         .handler
-        .do_list_schema_names(
-            &fixture.allocator,
-            &ListSchemasRequest::new(
-                Some(federated_identity()),
-                Some("testQueryId".to_string()),
-                "testCatalog",
-            ),
-        )
+        .list_schema_names(&ListSchemasRequest::new(
+            Some(federated_identity()),
+            Some("testQueryId".to_string()),
+            "testCatalog",
+        ))
         .await
         .unwrap();
     assert_eq!(response.schemas(), ["testDB", "testdb2"]);
@@ -346,10 +292,11 @@ async fn do_list_tables() {
     ])));
     let response = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", None, UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "testSchema",
+            None,
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -371,10 +318,7 @@ async fn do_list_tables_fake_pagination_single_page() {
     ])));
     let response = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", None, 1),
-        )
+        .list_tables(&list_tables_request("testSchema", None, 1))
         .await
         .unwrap();
     assert_eq!(
@@ -391,10 +335,7 @@ async fn do_list_tables_fake_pagination_multi_page() {
     fixture.connection.meta.set_tables(Ok(five_tables()));
     let response = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", None, 5),
-        )
+        .list_tables(&list_tables_request("testSchema", None, 5))
         .await
         .unwrap();
     assert_eq!(
@@ -417,10 +358,11 @@ async fn do_list_tables_fake_pagination_unlimited_page_size() {
     fixture.connection.meta.set_tables(Ok(five_tables()));
     let response = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", Some("1"), UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "testSchema",
+            Some("1"),
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -442,14 +384,11 @@ async fn do_list_tables_number_format_exception() {
     fixture.connection.meta.set_tables(Ok(five_tables()));
     let error = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request(
-                "testSchema",
-                Some("not_a_valid_number"),
-                UNLIMITED_PAGE_SIZE_VALUE,
-            ),
-        )
+        .list_tables(&list_tables_request(
+            "testSchema",
+            Some("not_a_valid_number"),
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap_err();
     assert_connector_exception(&error);
@@ -468,10 +407,11 @@ async fn do_list_tables_invalid_argument_exception_negative_token() {
     fixture.connection.meta.set_tables(Ok(five_tables()));
     let error = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", Some("-1"), UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "testSchema",
+            Some("-1"),
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap_err();
     assert_connector_exception(&error);
@@ -490,10 +430,7 @@ async fn do_list_tables_invalid_argument_exception_negative_page_size() {
     fixture.connection.meta.set_tables(Ok(five_tables()));
     let error = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", Some("0"), -3),
-        )
+        .list_tables(&list_tables_request("testSchema", Some("0"), -3))
         .await
         .unwrap_err();
     assert_connector_exception(&error);
@@ -516,10 +453,11 @@ async fn do_list_tables_escaped() {
     fixture.connection.meta.set_search_string_escape(Some("\\"));
     let response = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("test_Schema", None, UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "test_Schema",
+            None,
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap();
     assert_eq!(
@@ -535,10 +473,11 @@ async fn do_list_tables_escaped_exception() {
     fixture.connection.meta.set_search_string_escape(Some("_"));
     let error = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("test_Schema", None, UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "test_Schema",
+            None,
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap_err();
     assert!(
@@ -579,10 +518,7 @@ async fn do_get_table() {
     let input_table_name = TableName::new("testSchema", "testTable");
     let response = fixture
         .handler
-        .do_get_table(
-            &fixture.allocator,
-            &get_table_request(&input_table_name, HashMap::new()),
-        )
+        .get_table(&get_table_request(&input_table_name, HashMap::new()))
         .await
         .unwrap();
     assert_eq!(response.schema(), &expected);
@@ -625,10 +561,7 @@ async fn do_get_query_passthrough_schema() {
     let input_table_name = TableName::new("testSchema", "testTable");
     let response = fixture
         .handler
-        .do_get_query_passthrough_schema(
-            &fixture.allocator,
-            &get_table_request(&input_table_name, qpt),
-        )
+        .get_query_passthrough_schema(&get_table_request(&input_table_name, qpt))
         .await
         .unwrap();
     assert_eq!(response.schema(), &expected);
@@ -650,10 +583,7 @@ async fn do_get_table_case_insensitive() {
     let input_table_name = TableName::new("testSchema", "testTable");
     let response = fixture
         .handler
-        .do_get_table(
-            &fixture.allocator,
-            &get_table_request(&input_table_name, HashMap::new()),
-        )
+        .get_table(&get_table_request(&input_table_name, HashMap::new()))
         .await
         .unwrap();
     assert_eq!(response.table_name().table_name(), "testTable");
@@ -677,10 +607,7 @@ async fn do_get_table_no_columns() {
     let input_table_name = TableName::new("testSchema", "testTable");
     let response = fixture
         .handler
-        .do_get_table(
-            &fixture.allocator,
-            &get_table_request(&input_table_name, HashMap::new()),
-        )
+        .get_table(&get_table_request(&input_table_name, HashMap::new()))
         .await
         .unwrap();
     assert_eq!(response.table_name().table_name(), "testTable");
@@ -697,10 +624,7 @@ async fn do_get_table_sql_exception() {
     let input_table_name = TableName::new("testSchema", "testTable");
     let error = fixture
         .handler
-        .do_get_table(
-            &fixture.allocator,
-            &get_table_request(&input_table_name, HashMap::new()),
-        )
+        .get_table(&get_table_request(&input_table_name, HashMap::new()))
         .await
         .unwrap_err();
     assert_sql_exception(&error);
@@ -715,14 +639,11 @@ async fn do_list_schema_names_sql_exception() {
         .set_schemas(Err(SqlException::new("")));
     let error = fixture
         .handler
-        .do_list_schema_names(
-            &fixture.allocator,
-            &ListSchemasRequest::new(
-                Some(federated_identity()),
-                Some("testQueryId".to_string()),
-                "testCatalog",
-            ),
-        )
+        .list_schema_names(&ListSchemasRequest::new(
+            Some(federated_identity()),
+            Some("testQueryId".to_string()),
+            "testCatalog",
+        ))
         .await
         .unwrap_err();
     assert_sql_exception(&error);
@@ -737,10 +658,11 @@ async fn do_list_tables_sql_exception() {
         .set_tables(Err(SqlException::new("")));
     let error = fixture
         .handler
-        .do_list_tables(
-            &fixture.allocator,
-            &list_tables_request("testSchema", None, UNLIMITED_PAGE_SIZE_VALUE),
-        )
+        .list_tables(&list_tables_request(
+            "testSchema",
+            None,
+            UNLIMITED_PAGE_SIZE_VALUE,
+        ))
         .await
         .unwrap_err();
     assert_sql_exception(&error);

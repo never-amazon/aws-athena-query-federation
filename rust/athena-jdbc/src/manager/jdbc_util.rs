@@ -6,10 +6,6 @@ use indexmap::IndexMap;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::{FederationError, Result};
 
-use super::jdbc_metadata_handler::JdbcMetadataHandler;
-use super::jdbc_metadata_handler_factory::JdbcMetadataHandlerFactory;
-use super::jdbc_record_handler::JdbcRecordHandler;
-use super::jdbc_record_handler_factory::JdbcRecordHandlerFactory;
 use crate::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
@@ -80,50 +76,16 @@ impl JdbcUtil {
             })
     }
 
-    pub async fn create_jdbc_metadata_handler_map(
+    pub fn handler_map<H: ?Sized>(
+        engine: &str,
         config_options: &HashMap<String, String>,
-        metadata_handler_factory: &dyn JdbcMetadataHandlerFactory,
-    ) -> Result<IndexMap<String, Arc<dyn JdbcMetadataHandler>>> {
-        let (function_name, configs) =
-            connection_configs(metadata_handler_factory.engine(), config_options)?;
-        let mut handlers: IndexMap<String, Arc<dyn JdbcMetadataHandler>> = IndexMap::new();
+        make_handler: impl Fn(&DatabaseConnectionConfig) -> Result<Arc<H>>,
+    ) -> Result<IndexMap<String, Arc<H>>> {
+        let (function_name, configs) = connection_configs(engine, config_options)?;
+        let mut handlers: IndexMap<String, Arc<H>> = IndexMap::new();
         let mut default_present = false;
         for config in &configs {
-            let handler = metadata_handler_factory
-                .create_jdbc_metadata_handler(config, config_options)
-                .await?;
-            insert_unique(
-                &mut handlers,
-                config.catalog().to_string(),
-                Arc::clone(&handler),
-            )?;
-            if config.catalog() == DEFAULT_CONNECTION_STRING_PROPERTY {
-                insert_unique(
-                    &mut handlers,
-                    format!("{DEFAULT_CATALOG_PREFIX}{function_name}"),
-                    handler,
-                )?;
-                default_present = true;
-            }
-        }
-        if !default_present {
-            return Err(missing_default());
-        }
-        Ok(handlers)
-    }
-
-    pub async fn create_jdbc_record_handler_map(
-        config_options: &HashMap<String, String>,
-        record_handler_factory: &dyn JdbcRecordHandlerFactory,
-    ) -> Result<IndexMap<String, Arc<dyn JdbcRecordHandler>>> {
-        let (function_name, configs) =
-            connection_configs(record_handler_factory.engine(), config_options)?;
-        let mut handlers: IndexMap<String, Arc<dyn JdbcRecordHandler>> = IndexMap::new();
-        let mut default_present = false;
-        for config in &configs {
-            let handler = record_handler_factory
-                .create_jdbc_record_handler(config, config_options)
-                .await?;
+            let handler = make_handler(config)?;
             insert_unique(
                 &mut handlers,
                 config.catalog().to_string(),

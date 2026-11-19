@@ -1,92 +1,75 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use athena_federation_sdk::handlers::{
-    AwsClients, CompositeHandler, MetadataHandler, RecordHandler,
+    AwsClients, CompositeHandler, HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
-use athena_federation_sdk::lambda::{LambdaContext, RequestStreamHandler};
 use athena_federation_sdk::Result;
-use athena_jdbc::MultiplexingJdbcCompositeHandler;
+use athena_jdbc::{
+    multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, RecordMultiplexer,
+};
 
-use crate::metadata_handler::PostGreSqlMetadataHandler;
-use crate::mux_metadata_handler::PostGreSqlMuxMetadataHandler;
-use crate::mux_record_handler::PostGreSqlMuxRecordHandler;
-use crate::record_handler::PostGreSqlRecordHandler;
+use crate::constants::PostGreSqlConstants;
+use crate::metadata_handler::PostGreSqlMetadataDialect;
+use crate::record_handler::PostGreSqlRecordDialect;
 
-pub struct PostGreSqlMuxCompositeHandler {
-    composite_handler: CompositeHandler,
-}
-
-impl PostGreSqlMuxCompositeHandler {
-    pub async fn from_environment() -> Result<PostGreSqlMuxCompositeHandler> {
-        let clients = AwsClients::from_environment().await?;
-        PostGreSqlMuxCompositeHandler::new(clients, std::env::vars().collect()).await
-    }
-
-    pub async fn new(
-        clients: AwsClients,
-        environment: HashMap<String, String>,
-    ) -> Result<PostGreSqlMuxCompositeHandler> {
-        let mux_metadata_clients = clients.clone();
-        let mux_record_clients = clients.clone();
-        let metadata_clients = clients.clone();
-        let record_clients = clients;
-        let handler = MultiplexingJdbcCompositeHandler::new_with_environment(
-            environment,
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn MetadataHandler> = Arc::new(
-                    PostGreSqlMuxMetadataHandler::from_config_options(
-                        mux_metadata_clients,
-                        config_options,
-                    )
-                    .await?,
-                );
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn RecordHandler> = Arc::new(
-                    PostGreSqlMuxRecordHandler::from_config_options(
-                        mux_record_clients,
-                        config_options,
-                    )
-                    .await?,
-                );
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn MetadataHandler> =
-                    Arc::new(PostGreSqlMetadataHandler::from_config_options(
-                        metadata_clients,
-                        config_options,
-                    )?);
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn RecordHandler> = Arc::new(
-                    PostGreSqlRecordHandler::from_config_options(record_clients, config_options)?,
-                );
-                Ok(handler)
-            },
-        )
-        .await?;
-        Ok(PostGreSqlMuxCompositeHandler {
-            composite_handler: handler.into_composite_handler(),
-        })
-    }
-
-    pub fn composite_handler(&self) -> &CompositeHandler {
-        &self.composite_handler
-    }
-}
-
-#[async_trait]
-impl RequestStreamHandler for PostGreSqlMuxCompositeHandler {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>> {
-        self.composite_handler.handle_request(input, context).await
-    }
+pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler> {
+    let clients = AwsClients::from_environment().await?;
+    let record_clients = clients.clone();
+    multiplexing_composite_handler(
+        std::env::vars().collect(),
+        async move |multiplexed, config_options| {
+            let handler: Arc<dyn MetadataHandler> = if multiplexed {
+                let context =
+                    MetadataContext::builder(PostGreSqlConstants::POSTGRES_NAME, clients.clone())
+                        .config_options(config_options.clone())
+                        .build()?;
+                Arc::new(MultiplexingJdbcMetadataHandler::from_config(
+                    context,
+                    PostGreSqlConstants::POSTGRES_NAME,
+                    &config_options,
+                    |config| {
+                        Ok(Arc::new(PostGreSqlMetadataDialect::from_config(
+                            clients.clone(),
+                            config.clone(),
+                            config_options.clone(),
+                        )?))
+                    },
+                )?)
+            } else {
+                Arc::new(PostGreSqlMetadataDialect::from_config_options(
+                    clients,
+                    config_options,
+                )?)
+            };
+            Ok(handler)
+        },
+        async move |multiplexed, config_options| {
+            let handler: Arc<dyn RecordHandler> = if multiplexed {
+                let context = HandlerContext::new(
+                    PostGreSqlConstants::POSTGRES_NAME,
+                    record_clients.clone(),
+                    config_options.clone(),
+                )?;
+                Arc::new(RecordMultiplexer::handler_from_config(
+                    context,
+                    PostGreSqlConstants::POSTGRES_NAME,
+                    &config_options,
+                    |config| {
+                        Ok(Arc::new(PostGreSqlRecordDialect::from_config(
+                            record_clients.clone(),
+                            config.clone(),
+                            config_options.clone(),
+                        )?))
+                    },
+                )?)
+            } else {
+                Arc::new(PostGreSqlRecordDialect::from_config_options(
+                    record_clients,
+                    config_options,
+                )?)
+            };
+            Ok(handler)
+        },
+    )
+    .await
 }

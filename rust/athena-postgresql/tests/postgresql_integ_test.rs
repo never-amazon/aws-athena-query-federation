@@ -19,7 +19,10 @@ use athena_federation_sdk::request::FederationResponse;
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcDriver};
 use athena_jdbc::sql::JdbcConnection;
-use athena_postgresql::{PgDriver, PostGreSqlMetadataHandler, PostGreSqlRecordHandler};
+use athena_postgresql::{
+    PgDriver, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler, PostGreSqlRecordDialect,
+    PostGreSqlRecordHandler, BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+};
 use chrono::NaiveDate;
 use indexmap::IndexMap;
 use jdbc_support::Fakes;
@@ -100,12 +103,12 @@ impl Database {
 
     fn metadata_handler(&self) -> PostGreSqlMetadataHandler {
         let (config, options) = self.config();
-        PostGreSqlMetadataHandler::new(Fakes::new().clients(), config, options).unwrap()
+        PostGreSqlMetadataDialect::from_config(Fakes::new().clients(), config, options).unwrap()
     }
 
     fn record_handler(&self) -> PostGreSqlRecordHandler {
         let (config, options) = self.config();
-        PostGreSqlRecordHandler::new(Fakes::new().clients(), config, options).unwrap()
+        PostGreSqlRecordDialect::from_config(Fakes::new().clients(), config, options).unwrap()
     }
 
     async fn select(
@@ -123,11 +126,8 @@ impl Database {
             ))),
             None,
         )
-        .add(
-            PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
-            "*",
-        )
-        .add(PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME, "*")
+        .add(BLOCK_PARTITION_SCHEMA_COLUMN_NAME, "*")
+        .add(BLOCK_PARTITION_COLUMN_NAME, "*")
         .build();
         let request = ReadRecordsRequest::new(
             Some(identity()),
@@ -143,7 +143,7 @@ impl Database {
         let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
         let response = self
             .record_handler()
-            .do_read_records(&allocator, &request)
+            .read_records(&allocator, &request)
             .await
             .unwrap();
         let FederationResponse::ReadRecords(response) = response else {
@@ -179,13 +179,13 @@ async fn list_databases_integ_test() {
         return;
     };
     db.set_up().await;
-    let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
     let response = db
         .metadata_handler()
-        .do_list_schema_names(
-            &allocator,
-            &ListSchemasRequest::new(Some(identity()), Some("integ-query".to_string()), CATALOG),
-        )
+        .list_schema_names(&ListSchemasRequest::new(
+            Some(identity()),
+            Some("integ-query".to_string()),
+            CATALOG,
+        ))
         .await
         .unwrap();
     db.tear_down().await;
@@ -202,20 +202,16 @@ async fn list_tables_integ_test() {
         return;
     };
     db.set_up().await;
-    let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
     let response = db
         .metadata_handler()
-        .do_list_tables(
-            &allocator,
-            &ListTablesRequest::new(
-                Some(identity()),
-                Some("integ-query".to_string()),
-                CATALOG,
-                Some(db.schema.clone()),
-                None,
-                -1,
-            ),
-        )
+        .list_tables(&ListTablesRequest::new(
+            Some(identity()),
+            Some("integ-query".to_string()),
+            CATALOG,
+            Some(db.schema.clone()),
+            None,
+            -1,
+        ))
         .await
         .unwrap();
     db.tear_down().await;
@@ -235,19 +231,15 @@ async fn list_table_schema_integ_test() {
         return;
     };
     db.set_up().await;
-    let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
     let response = db
         .metadata_handler()
-        .do_get_table(
-            &allocator,
-            &GetTableRequest::new(
-                Some(identity()),
-                Some("integ-query".to_string()),
-                CATALOG,
-                TableName::new(&db.schema, MOVIES),
-                HashMap::new(),
-            ),
-        )
+        .get_table(&GetTableRequest::new(
+            Some(identity()),
+            Some("integ-query".to_string()),
+            CATALOG,
+            TableName::new(&db.schema, MOVIES),
+            HashMap::new(),
+        ))
         .await
         .unwrap();
     db.tear_down().await;

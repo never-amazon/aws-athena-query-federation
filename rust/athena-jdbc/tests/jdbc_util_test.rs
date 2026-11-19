@@ -3,31 +3,25 @@ mod jdbc_support;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use indexmap::IndexMap;
+
 use arrow::datatypes::Schema;
 use async_trait::async_trait;
-use athena_federation_sdk::data::{BlockAllocator, BlockSpiller, SimpleBlockWriter};
-use athena_federation_sdk::domain::predicate::Constraints;
+use athena_federation_sdk::data::SimpleBlockWriter;
 use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
-    FederationRequestHandler, MetadataHandler, MetadataHandlerBase, RecordHandler,
-    RecordHandlerBase,
+    HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
-use athena_federation_sdk::metadata::{
-    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest, GetTableResponse,
-    ListSchemasRequest, ListSchemasResponse, ListTablesRequest, ListTablesResponse,
-};
-use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::security::{CachableSecretsManager, KmsEncryptionProvider};
+use athena_federation_sdk::metadata::{GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{
-    JdbcMetadataHandler, JdbcMetadataHandlerBase, JdbcMetadataHandlerExt,
-    JdbcMetadataHandlerFactory, JdbcRecordHandler, JdbcRecordHandlerBase, JdbcRecordHandlerExt,
-    JdbcRecordHandlerFactory, JdbcUtil,
+    ConnectionSource, JdbcMetadataHandler, JdbcRecordHandler, JdbcUtil, MetadataDialect,
+    RecordDialect, SplitQuery,
 };
+use athena_jdbc::resolver::DefaultJdbcCaseResolver;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException};
-use jdbc_support::{FakeConnection, Fakes, ResultSetData};
+use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes, ResultSetData};
 
 const CONNECTION_STRING1: &str = "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}";
 const CONNECTION_STRING2: &str =
@@ -37,56 +31,21 @@ const FAKE_DATABASE: &str = "fakedatabase";
 const TEST_SCHEMA: &str = "testSchema";
 const TEST_TABLE: &str = "testTable";
 
-struct FakeDatabaseJdbcMetadataHandler {
-    base: JdbcMetadataHandlerBase,
-}
-
-impl FederationRequestHandler for FakeDatabaseJdbcMetadataHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.metadata_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.metadata_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-}
+struct FakeDatabaseMetadataDialect;
 
 #[async_trait]
-impl MetadataHandler for FakeDatabaseJdbcMetadataHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        self.base.metadata_base()
-    }
-
-    async fn do_list_schema_names(
+impl MetadataDialect for FakeDatabaseMetadataDialect {
+    fn partition_schema(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse> {
-        self.jdbc_do_list_schema_names(allocator, request).await
-    }
-
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
-        self.jdbc_do_list_tables(allocator, request).await
-    }
-
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.jdbc_do_get_table(allocator, request).await
+        _handler: &JdbcMetadataHandler<Self>,
+        _catalog_name: &str,
+    ) -> Result<Schema> {
+        Ok(Schema::empty())
     }
 
     async fn get_partitions(
         &self,
+        _handler: &JdbcMetadataHandler<Self>,
         _block_writer: &mut SimpleBlockWriter<'_>,
         _request: &GetTableLayoutRequest,
         _query_status_checker: &QueryStatusChecker,
@@ -94,9 +53,9 @@ impl MetadataHandler for FakeDatabaseJdbcMetadataHandler {
         Ok(())
     }
 
-    async fn do_get_splits(
+    async fn get_splits(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        _handler: &JdbcMetadataHandler<Self>,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
         Ok(GetSplitsResponse::new(
@@ -107,114 +66,66 @@ impl MetadataHandler for FakeDatabaseJdbcMetadataHandler {
     }
 }
 
-impl JdbcMetadataHandler for FakeDatabaseJdbcMetadataHandler {
-    fn jdbc_metadata_base(&self) -> &JdbcMetadataHandlerBase {
-        &self.base
-    }
+type FakeDatabaseJdbcMetadataHandler = JdbcMetadataHandler<FakeDatabaseMetadataDialect>;
 
-    fn get_partition_schema(&self, _catalog_name: &str) -> Result<Schema> {
-        Ok(Schema::empty())
-    }
-}
-
-struct FakeDatabaseJdbcRecordHandler {
-    base: JdbcRecordHandlerBase,
-}
-
-impl FederationRequestHandler for FakeDatabaseJdbcRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.record_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.record_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-}
+struct FakeDatabaseRecordDialect;
 
 #[async_trait]
-impl RecordHandler for FakeDatabaseJdbcRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        self.base.record_base()
-    }
-
-    async fn read_with_constraint(
-        &self,
-        block_spiller: &dyn BlockSpiller,
-        request: &ReadRecordsRequest,
-        query_status_checker: &QueryStatusChecker,
-    ) -> Result<()> {
-        self.jdbc_read_with_constraint(block_spiller, request, query_status_checker)
-            .await
-    }
-}
-
-#[async_trait]
-impl JdbcRecordHandler for FakeDatabaseJdbcRecordHandler {
-    fn jdbc_record_base(&self) -> &JdbcRecordHandlerBase {
-        &self.base
-    }
-
+impl RecordDialect for FakeDatabaseRecordDialect {
     async fn build_split_sql(
         &self,
+        _handler: &JdbcRecordHandler<Self>,
         _jdbc_connection: &dyn JdbcConnection,
-        _catalog_name: &str,
-        _table_name: &TableName,
-        _schema: &Schema,
-        _constraints: &Constraints,
-        _split: &Split,
+        _query: &SplitQuery<'_>,
     ) -> Result<PreparedStatement> {
         Ok(PreparedStatement::new(""))
     }
 }
 
-struct FakeDatabaseMetadataHandlerFactory;
+type FakeDatabaseJdbcRecordHandler = JdbcRecordHandler<FakeDatabaseRecordDialect>;
 
-#[async_trait]
-impl JdbcMetadataHandlerFactory for FakeDatabaseMetadataHandlerFactory {
-    fn engine(&self) -> &str {
-        FAKE_DATABASE
-    }
-
-    async fn create_jdbc_metadata_handler(
-        &self,
-        _config: &DatabaseConnectionConfig,
-        config_options: &HashMap<String, String>,
-    ) -> Result<Arc<dyn JdbcMetadataHandler>> {
-        let metadata_base = MetadataHandlerBase::builder(FAKE_DATABASE, Fakes::new().clients())
-            .config_options(config_options.clone())
-            .build()?;
-        Ok(Arc::new(FakeDatabaseJdbcMetadataHandler {
-            base: JdbcMetadataHandlerBase::new_without_connection(metadata_base),
-        }))
-    }
+fn metadata_handler_map(
+    config_options: &HashMap<String, String>,
+) -> Result<IndexMap<String, Arc<FakeDatabaseJdbcMetadataHandler>>> {
+    JdbcUtil::handler_map(
+        FAKE_DATABASE,
+        config_options,
+        |config: &DatabaseConnectionConfig| {
+            let context = MetadataContext::builder(FAKE_DATABASE, Fakes::new().clients())
+                .config_options(config_options.clone())
+                .build()?;
+            Ok(Arc::new(JdbcMetadataHandler::new(
+                context,
+                ConnectionSource::Direct {
+                    config: config.clone(),
+                    factory: Arc::new(FakeConnectionFactory::default()),
+                },
+                Arc::new(DefaultJdbcCaseResolver::new(FAKE_DATABASE)),
+                FakeDatabaseMetadataDialect,
+            )))
+        },
+    )
 }
 
-struct FakeDatabaseRecordHandlerFactory;
-
-#[async_trait]
-impl JdbcRecordHandlerFactory for FakeDatabaseRecordHandlerFactory {
-    fn engine(&self) -> &str {
-        FAKE_DATABASE
-    }
-
-    async fn create_jdbc_record_handler(
-        &self,
-        _config: &DatabaseConnectionConfig,
-        config_options: &HashMap<String, String>,
-    ) -> Result<Arc<dyn JdbcRecordHandler>> {
-        let record_base = RecordHandlerBase::new(
-            FAKE_DATABASE,
-            Fakes::new().clients(),
-            config_options.clone(),
-        )?;
-        Ok(Arc::new(FakeDatabaseJdbcRecordHandler {
-            base: JdbcRecordHandlerBase::new_without_connection(record_base),
-        }))
-    }
+fn record_handler_map(
+    config_options: &HashMap<String, String>,
+) -> Result<IndexMap<String, Arc<FakeDatabaseJdbcRecordHandler>>> {
+    JdbcUtil::handler_map(
+        FAKE_DATABASE,
+        config_options,
+        |_config: &DatabaseConnectionConfig| {
+            let context = HandlerContext::new(
+                FAKE_DATABASE,
+                Fakes::new().clients(),
+                config_options.clone(),
+            )?;
+            Ok(Arc::new(JdbcRecordHandler::new(
+                context,
+                ConnectionSource::Delegating,
+                FakeDatabaseRecordDialect,
+            )))
+        },
+    )
 }
 
 fn options(entries: &[(&str, &str)]) -> HashMap<String, String> {
@@ -230,25 +141,22 @@ fn statement() -> PreparedStatement {
 
 #[tokio::test]
 async fn create_jdbc_metadata_handler_map() {
-    let catalogs = JdbcUtil::create_jdbc_metadata_handler_map(
-        &options(&[
-            ("testCatalog1_connection_string", CONNECTION_STRING1),
-            (DEFAULT, CONNECTION_STRING1),
-            ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
-        ]),
-        &FakeDatabaseMetadataHandlerFactory,
-    )
-    .await
+    let catalogs = metadata_handler_map(&options(&[
+        ("testCatalog1_connection_string", CONNECTION_STRING1),
+        (DEFAULT, CONNECTION_STRING1),
+        ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
+    ]))
     .unwrap();
     assert_eq!(3, catalogs.len());
     assert_eq!(
         FAKE_DATABASE,
-        catalogs["testCatalog1"].metadata_base().source_type()
+        catalogs["testCatalog1"].context().handler().source_type()
     );
     assert_eq!(
         FAKE_DATABASE,
         catalogs["lambda:functionName"]
-            .metadata_base()
+            .context()
+            .handler()
             .source_type()
     );
     assert!(Arc::ptr_eq(
@@ -259,101 +167,73 @@ async fn create_jdbc_metadata_handler_map() {
 
 #[tokio::test]
 async fn create_jdbc_metadata_handler_map_different_databases_throws() {
-    let result = JdbcUtil::create_jdbc_metadata_handler_map(
-        &options(&[
-            ("testCatalog_connection_string", CONNECTION_STRING1),
-            ("wrong_connection_string", CONNECTION_STRING2),
-            (DEFAULT, CONNECTION_STRING1),
-            ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
-        ]),
-        &FakeDatabaseMetadataHandlerFactory,
-    )
-    .await;
+    let result = metadata_handler_map(&options(&[
+        ("testCatalog_connection_string", CONNECTION_STRING1),
+        ("wrong_connection_string", CONNECTION_STRING2),
+        (DEFAULT, CONNECTION_STRING1),
+        ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
+    ]));
     assert!(matches!(result, Err(FederationError::IllegalArgument(_))));
 }
 
 #[tokio::test]
 async fn create_jdbc_metadata_handler_empty_connection_strings() {
-    let result = JdbcUtil::create_jdbc_metadata_handler_map(
-        &HashMap::new(),
-        &FakeDatabaseMetadataHandlerFactory,
-    )
-    .await;
+    let result = metadata_handler_map(&HashMap::new());
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }
 
 #[tokio::test]
 async fn create_jdbc_metadata_handler_no_default() {
-    let result = JdbcUtil::create_jdbc_metadata_handler_map(
-        &options(&[
-            ("testCatalog1_connection_string", CONNECTION_STRING1),
-            ("testCatalog2_connection_string", CONNECTION_STRING2),
-            (DEFAULT, CONNECTION_STRING2),
-            ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
-        ]),
-        &FakeDatabaseMetadataHandlerFactory,
-    )
-    .await;
+    let result = metadata_handler_map(&options(&[
+        ("testCatalog1_connection_string", CONNECTION_STRING1),
+        ("testCatalog2_connection_string", CONNECTION_STRING2),
+        (DEFAULT, CONNECTION_STRING2),
+        ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
+    ]));
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }
 
 #[tokio::test]
 async fn create_jdbc_record_handler_map() {
-    let catalogs = JdbcUtil::create_jdbc_record_handler_map(
-        &options(&[
-            ("testCatalog1_connection_string", CONNECTION_STRING1),
-            (DEFAULT, CONNECTION_STRING1),
-            ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
-        ]),
-        &FakeDatabaseRecordHandlerFactory,
-    )
-    .await
+    let catalogs = record_handler_map(&options(&[
+        ("testCatalog1_connection_string", CONNECTION_STRING1),
+        (DEFAULT, CONNECTION_STRING1),
+        ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
+    ]))
     .unwrap();
     assert_eq!(
         FAKE_DATABASE,
-        catalogs["testCatalog1"].record_base().source_type()
+        catalogs["testCatalog1"].context().source_type()
     );
     assert_eq!(
         FAKE_DATABASE,
-        catalogs["lambda:functionName"].record_base().source_type()
+        catalogs["lambda:functionName"].context().source_type()
     );
 }
 
 #[tokio::test]
 async fn create_jdbc_record_handler_map_different_databases_throws() {
-    let result = JdbcUtil::create_jdbc_record_handler_map(
-        &options(&[
-            ("testCatalog_connection_string", CONNECTION_STRING1),
-            ("wrong_connection_string", CONNECTION_STRING2),
-            (DEFAULT, CONNECTION_STRING1),
-            ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
-        ]),
-        &FakeDatabaseRecordHandlerFactory,
-    )
-    .await;
+    let result = record_handler_map(&options(&[
+        ("testCatalog_connection_string", CONNECTION_STRING1),
+        ("wrong_connection_string", CONNECTION_STRING2),
+        (DEFAULT, CONNECTION_STRING1),
+        ("AWS_LAMBDA_FUNCTION_NAME", "functionName"),
+    ]));
     assert!(matches!(result, Err(FederationError::IllegalArgument(_))));
 }
 
 #[tokio::test]
 async fn create_jdbc_record_handler_map_empty_connection_strings() {
-    let result = JdbcUtil::create_jdbc_record_handler_map(
-        &HashMap::new(),
-        &FakeDatabaseRecordHandlerFactory,
-    )
-    .await;
+    let result = record_handler_map(&HashMap::new());
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }
 
 #[tokio::test]
 async fn create_jdbc_record_handler_map_no_default() {
-    let result = JdbcUtil::create_jdbc_record_handler_map(
-        &options(&[
-            ("testCatalog1_connection_string", CONNECTION_STRING1),
-            ("testCatalog2_connection_string", CONNECTION_STRING2),
-        ]),
-        &FakeDatabaseRecordHandlerFactory,
-    )
-    .await;
+    let result = record_handler_map(&options(&[
+        ("testCatalog1_connection_string", CONNECTION_STRING1),
+        ("testCatalog2_connection_string", CONNECTION_STRING2),
+    ]));
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }
 
@@ -455,20 +335,12 @@ async fn test_get_schema_table_name() {
 
 #[tokio::test]
 async fn test_create_jdbc_metadata_handler_map_missing_lambda_function_name() {
-    let result = JdbcUtil::create_jdbc_metadata_handler_map(
-        &options(&[(DEFAULT, CONNECTION_STRING1)]),
-        &FakeDatabaseMetadataHandlerFactory,
-    )
-    .await;
+    let result = metadata_handler_map(&options(&[(DEFAULT, CONNECTION_STRING1)]));
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }
 
 #[tokio::test]
 async fn test_create_jdbc_record_handler_map_missing_lambda_function_name() {
-    let result = JdbcUtil::create_jdbc_record_handler_map(
-        &options(&[(DEFAULT, CONNECTION_STRING1)]),
-        &FakeDatabaseRecordHandlerFactory,
-    )
-    .await;
+    let result = record_handler_map(&options(&[(DEFAULT, CONNECTION_STRING1)]));
     assert!(result.err().is_some_and(|e| e.is_runtime_exception()));
 }

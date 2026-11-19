@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value};
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{MetadataHandler, RecordHandler};
+use athena_federation_sdk::handlers::{
+    HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
+};
 use athena_federation_sdk::metadata::{GetSplitsRequest, GetTableLayoutRequest, GetTableRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
@@ -24,7 +26,10 @@ use athena_snowflake::sql::{
     SnowflakeQueryResult,
 };
 use athena_snowflake::utils::SnowflakePrivateKey;
-use athena_snowflake::{SnowflakeConstants, SnowflakeMetadataHandler, SnowflakeRecordHandler};
+use athena_snowflake::{
+    default_query_builder, S3ParquetExportReader, SnowflakeConstants, SnowflakeMetadataDialect,
+    SnowflakeMetadataHandler, SnowflakeRecordDialect, SnowflakeRecordHandler,
+};
 use indexmap::IndexMap;
 use snowflake_support::Fakes;
 
@@ -359,25 +364,29 @@ fn lambda() -> Lambda {
         )
         .unwrap(),
     );
-    let metadata = SnowflakeMetadataHandler::with_case_resolver(
-        fakes.clients(),
+    let metadata_context = MetadataContext::builder(config.engine(), fakes.clients())
+        .config_options(options.clone())
+        .build()
+        .unwrap();
+    let metadata = SnowflakeMetadataDialect::handler(
+        metadata_context,
         config.clone(),
         factory.clone(),
-        options.clone(),
         Arc::new(SnowflakeJdbcCaseResolver::new(
             SnowflakeConstants::SNOWFLAKE_NAME,
         )),
         None,
-    )
-    .unwrap();
-    let record = SnowflakeRecordHandler::with_query_builder(
-        fakes.clients(),
+    );
+    let record_clients = fakes.clients();
+    let export_reader = Arc::new(S3ParquetExportReader::new(Arc::clone(&record_clients.s3)));
+    let record_context = HandlerContext::new(config.engine(), record_clients, options).unwrap();
+    let record = SnowflakeRecordDialect::handler(
+        record_context,
         config,
         factory,
-        SnowflakeRecordHandler::default_query_builder(),
-        options,
-    )
-    .unwrap();
+        default_query_builder(),
+        export_reader,
+    );
     Lambda {
         database,
         metadata,
@@ -441,7 +450,7 @@ async fn read_splits(
     for split in splits {
         let response = lambda
             .record
-            .do_read_records(
+            .read_records(
                 &lambda.allocator,
                 &ReadRecordsRequest::new(
                     Some(identity()),
@@ -484,23 +493,20 @@ async fn run_query(
     let table_name = TableName::new(SCHEMA, table);
     let table_response = lambda
         .metadata
-        .do_get_table(
-            &lambda.allocator,
-            &GetTableRequest::new(
-                Some(identity()),
-                Some("query".to_string()),
-                "snowflake",
-                table_name.clone(),
-                HashMap::new(),
-            ),
-        )
+        .get_table(&GetTableRequest::new(
+            Some(identity()),
+            Some("query".to_string()),
+            "snowflake",
+            table_name.clone(),
+            HashMap::new(),
+        ))
         .await
         .unwrap();
     let schema = table_response.schema().clone();
     let layout = lambda
         .metadata
-        .do_get_table_layout(
-            &lambda.allocator,
+        .get_table_layout(
+            lambda.allocator.as_ref(),
             &GetTableLayoutRequest::new(
                 Some(identity()),
                 Some("query".to_string()),
@@ -515,19 +521,16 @@ async fn run_query(
         .unwrap();
     let splits = lambda
         .metadata
-        .do_get_splits(
-            &lambda.allocator,
-            &GetSplitsRequest::new(
-                Some(identity()),
-                Some("query".to_string()),
-                "snowflake",
-                table_name.clone(),
-                layout.partitions().clone(),
-                vec!["partition".to_string()],
-                constraints.clone(),
-                None,
-            ),
-        )
+        .get_splits(&GetSplitsRequest::new(
+            Some(identity()),
+            Some("query".to_string()),
+            "snowflake",
+            table_name.clone(),
+            layout.partitions().clone(),
+            vec!["partition".to_string()],
+            constraints.clone(),
+            None,
+        ))
         .await
         .unwrap();
     let mut builder = SchemaBuilder::new_builder();

@@ -16,21 +16,17 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::handlers::{
-    CompositeHandler, FederationRequestHandler, MetadataHandler, MetadataHandlerBase,
-    RecordHandler, RecordHandlerBase,
+    CompositeHandler, HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
+use athena_federation_sdk::lambda::RequestStreamHandler;
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse,
     GetTableRequest, GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse,
 };
 use athena_federation_sdk::records::{ReadRecordsRequest, ReadRecordsResponse};
-use athena_federation_sdk::request::{
-    FederationRequest, FederationResponse, PingRequest, PingResponse,
-};
-use athena_federation_sdk::security::{
-    AwsService, AwsServiceError, CachableSecretsManager, FederatedIdentity, KmsEncryptionProvider,
-};
+use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
+use athena_federation_sdk::security::{AwsService, AwsServiceError, FederatedIdentity};
 use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::udf::{UserDefinedFunctionRequest, UserDefinedFunctionType};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -43,47 +39,31 @@ struct Calls {
     get_table: AtomicUsize,
     get_table_layout: AtomicUsize,
     get_splits: AtomicUsize,
-    ping: AtomicUsize,
     read_records: AtomicUsize,
     list_tables_requests: Mutex<Vec<ListTablesRequest>>,
 }
 
 struct MockMetadataHandler {
-    base: MetadataHandlerBase,
+    context: MetadataContext,
     calls: Arc<Calls>,
     allocator: Arc<dyn BlockAllocator>,
 }
 
-impl FederationRequestHandler for MockMetadataHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.kms_encryption_provider()
-    }
-}
-
 #[async_trait]
 impl MetadataHandler for MockMetadataHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        &self.base
+    fn context(&self) -> &MetadataContext {
+        &self.context
     }
 
-    async fn do_list_schema_names(
+    async fn list_schema_names(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         _request: &ListSchemasRequest,
     ) -> Result<ListSchemasResponse> {
         self.calls.list_schemas.fetch_add(1, Ordering::SeqCst);
         Ok(ListSchemasResponse::new("catalog", vec!["schema1".into()]))
     }
 
-    async fn do_list_tables(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
+    async fn list_tables(&self, request: &ListTablesRequest) -> Result<ListTablesResponse> {
         self.calls.list_tables.fetch_add(1, Ordering::SeqCst);
         self.calls
             .list_tables_requests
@@ -97,11 +77,7 @@ impl MetadataHandler for MockMetadataHandler {
         ))
     }
 
-    async fn do_get_table(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        _request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
+    async fn get_table(&self, _request: &GetTableRequest) -> Result<GetTableResponse> {
         self.calls.get_table.fetch_add(1, Ordering::SeqCst);
         Ok(GetTableResponse::new(
             "catalog",
@@ -113,9 +89,9 @@ impl MetadataHandler for MockMetadataHandler {
         ))
     }
 
-    async fn do_get_table_layout(
+    async fn get_table_layout(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
+        _allocator: &dyn BlockAllocator,
         _request: &GetTableLayoutRequest,
     ) -> Result<GetTableLayoutResponse> {
         self.calls.get_table_layout.fetch_add(1, Ordering::SeqCst);
@@ -135,11 +111,7 @@ impl MetadataHandler for MockMetadataHandler {
         Ok(())
     }
 
-    async fn do_get_splits(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        _request: &GetSplitsRequest,
-    ) -> Result<GetSplitsResponse> {
+    async fn get_splits(&self, _request: &GetSplitsRequest) -> Result<GetSplitsResponse> {
         self.calls.get_splits.fetch_add(1, Ordering::SeqCst);
         Ok(GetSplitsResponse::new(
             "catalog",
@@ -147,36 +119,21 @@ impl MetadataHandler for MockMetadataHandler {
             None,
         ))
     }
-
-    async fn do_ping(&self, _request: &PingRequest) -> PingResponse {
-        self.calls.ping.fetch_add(1, Ordering::SeqCst);
-        PingResponse::new("catalog", "queryId", Some("type".into()), 23, 2)
-    }
 }
 
 struct MockRecordHandler {
-    base: RecordHandlerBase,
+    context: HandlerContext,
     calls: Arc<Calls>,
     allocator: Arc<dyn BlockAllocator>,
 }
 
-impl FederationRequestHandler for MockRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.kms_encryption_provider()
-    }
-}
-
 #[async_trait]
 impl RecordHandler for MockRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        &self.base
+    fn context(&self) -> &HandlerContext {
+        &self.context
     }
 
-    async fn do_read_records(
+    async fn read_records(
         &self,
         _allocator: &Arc<dyn BlockAllocator>,
         _request: &ReadRecordsRequest,
@@ -211,20 +168,20 @@ fn set_up() -> Setup {
     let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
     let calls = Arc::new(Calls::default());
     let metadata = MockMetadataHandler {
-        base: MetadataHandlerBase::builder("type", fakes.clients())
+        context: MetadataContext::builder("type", fakes.clients())
             .build()
             .unwrap(),
         calls: calls.clone(),
         allocator: allocator.clone(),
     };
     let record = MockRecordHandler {
-        base: RecordHandlerBase::new("type", fakes.clients(), HashMap::new()).unwrap(),
+        context: HandlerContext::new("type", fakes.clients(), HashMap::new()).unwrap(),
         calls: calls.clone(),
         allocator: allocator.clone(),
     };
     Setup {
         calls,
-        composite_handler: CompositeHandler::new(Arc::new(metadata), Arc::new(record)),
+        composite_handler: CompositeHandler::new(Arc::new(metadata), Arc::new(record), None),
         object_mapper: ObjectMapper::new(SerdeVersion::V1, allocator.clone()),
         allocator,
     }
@@ -236,7 +193,7 @@ fn fake_identity() -> FederatedIdentity {
 
 async fn handle(s: &Setup, request: FederationRequest) -> Result<Vec<u8>> {
     s.composite_handler
-        .handle_request_with_object_mapper(&s.allocator, &request, &s.object_mapper)
+        .route(&s.allocator, request, &s.object_mapper, None)
         .await
 }
 
@@ -341,9 +298,15 @@ async fn do_get_splits() {
 #[tokio::test]
 async fn do_ping() {
     let s = set_up();
-    let req = PingRequest::new(None, "catalog", "queryId");
-    handle(&s, req.into()).await.unwrap();
-    assert_eq!(1, s.calls.ping.load(Ordering::SeqCst));
+    let req = FederationRequest::from(PingRequest::new(None, "catalog", "queryId"));
+    let input = s.object_mapper.write_request(&req).unwrap();
+    let output = s
+        .composite_handler
+        .handle_request(input.as_bytes(), None)
+        .await
+        .unwrap();
+    let response = String::from_utf8(output).unwrap();
+    assert!(response.contains(r#""sourceType":"type""#), "{response}");
 }
 
 #[tokio::test]
@@ -435,13 +398,12 @@ async fn handle_request_with_unknown_request_throws_invalid_input_exception() {
 
 #[test]
 fn test_handle_exception_kms_exception_transformed_to_athena_connector_exception() {
-    let s = set_up();
     let kms_exception = FederationError::AwsService(AwsServiceError::service(
         AwsService::Kms,
         None,
         Some("KMS access denied".into()),
     ));
-    let result = s.composite_handler.handle_exception(kms_exception);
+    let result = CompositeHandler::handle_exception(kms_exception);
     assert!(matches!(result, FederationError::AthenaConnector(_)));
     assert_eq!(
         Some(FederationSourceErrorCode::InvalidInputException),
@@ -451,9 +413,8 @@ fn test_handle_exception_kms_exception_transformed_to_athena_connector_exception
 
 #[test]
 fn test_handle_exception_non_kms_exception_not_transformed() {
-    let s = set_up();
     let runtime_exception = FederationError::Runtime("Generic error".into());
-    let result = s.composite_handler.handle_exception(runtime_exception);
+    let result = CompositeHandler::handle_exception(runtime_exception);
     assert!(matches!(&result, FederationError::Runtime(m) if m == "Generic error"));
 }
 
@@ -481,7 +442,7 @@ fn test_map_http_error_code_mapping() {
     for (http_code, expected_error_code) in data {
         assert_eq!(
             expected_error_code,
-            CompositeHandler::map_http_error_code(http_code),
+            FederationSourceErrorCode::from_http_status(http_code),
             "HTTP {http_code} should map to {expected_error_code:?}"
         );
     }

@@ -12,7 +12,7 @@ use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuil
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::MetadataHandler;
+use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::optimizations::pushdown::{
     ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype,
 };
@@ -24,9 +24,12 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::JdbcMetadataHandler;
+use athena_jdbc::manager::MetadataDialect;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
-use athena_postgresql::PostGreSqlMetadataHandler;
+use athena_postgresql::{
+    get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
+    PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
+};
 use indexmap::IndexMap;
 use jdbc_support::{
     FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetPrimaryKeysCall,
@@ -88,13 +91,15 @@ fn handler_with(
     config_options: HashMap<String, String>,
 ) -> PostGreSqlMetadataHandler {
     let factory = Arc::new(FakeConnectionFactory::new(connection.clone()));
-    PostGreSqlMetadataHandler::with_connection_factory(
-        fakes().clients(),
-        config(),
-        factory,
-        config_options,
-    )
-    .unwrap()
+    let config = config();
+    let context = MetadataContext::builder(config.engine(), fakes().clients())
+        .config_options(config_options)
+        .encryption_key_factory(None)
+        .spill_bucket(None)
+        .spill_prefix(None)
+        .build()
+        .unwrap();
+    PostGreSqlMetadataDialect::handler(context, config, factory)
 }
 
 fn setup() -> Fixture {
@@ -140,7 +145,7 @@ fn route(connection: &FakeConnection, routes: Vec<(&'static str, ResultSetData)>
 }
 
 fn partition_schema(handler: &PostGreSqlMetadataHandler) -> Schema {
-    handler.get_partition_schema(CATALOG_NAME).unwrap()
+    handler.partition_schema(CATALOG_NAME).unwrap()
 }
 
 fn layout_request(
@@ -174,13 +179,10 @@ async fn table_layout(
 ) -> GetTableLayoutResponse {
     route(
         &f.connection,
-        vec![(
-            PostGreSqlMetadataHandler::GET_PARTITIONS_QUERY,
-            partitions(rows),
-        )],
+        vec![(athena_postgresql::GET_PARTITIONS_QUERY, partitions(rows))],
     );
     handler
-        .do_get_table_layout(&f.allocator, &layout_request(handler, constraints))
+        .get_table_layout(f.allocator.as_ref(), &layout_request(handler, constraints))
         .await
         .unwrap()
 }
@@ -411,7 +413,7 @@ async fn do_list_paginated_tables() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&calls);
     f.connection.on_query(move |statement: &PreparedStatement| {
-        if statement.sql() == PostGreSqlMetadataHandler::LIST_PAGINATED_TABLES_QUERY {
+        if statement.sql() == athena_postgresql::LIST_PAGINATED_TABLES_QUERY {
             let n = counter.fetch_add(1, Ordering::SeqCst);
             let table = if n == 0 { TEST_TABLE } else { "testTable2" };
             return Ok(tables(&[(TEST_SCHEMA, table)]));
@@ -429,11 +431,7 @@ async fn do_list_paginated_tables() {
         None,
         1,
     );
-    let response = f
-        .handler
-        .do_list_tables(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.list_tables(&request).await.unwrap();
     assert_eq!(Some("1"), response.next_token());
     assert_eq!(
         &[TableName::new(TEST_SCHEMA, TEST_TABLE)],
@@ -448,11 +446,7 @@ async fn do_list_paginated_tables() {
         Some("1".to_string()),
         10,
     );
-    let response = f
-        .handler
-        .do_list_tables(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.list_tables(&request).await.unwrap();
     assert_eq!(
         &[TableName::new(TEST_SCHEMA, "testTable2")],
         response.tables()
@@ -479,7 +473,7 @@ async fn do_get_table_layout() {
     let executed = f.connection.executed();
     let partitions_query = executed
         .iter()
-        .find(|s| s.sql() == PostGreSqlMetadataHandler::GET_PARTITIONS_QUERY)
+        .find(|s| s.sql() == athena_postgresql::GET_PARTITIONS_QUERY)
         .unwrap();
     assert_eq!(
         vec![
@@ -521,7 +515,7 @@ async fn test_list_tables_with_valid_connection() {
     );
     let result = f
         .handler
-        .list_tables(&connection, TEST_SCHEMA)
+        .list_schema_tables(&connection, TEST_SCHEMA)
         .await
         .unwrap();
     assert_eq!(
@@ -550,7 +544,7 @@ async fn test_list_tables_with_no_materialized_views() {
     );
     let result = f
         .handler
-        .list_tables(&connection, TEST_SCHEMA)
+        .list_schema_tables(&connection, TEST_SCHEMA)
         .await
         .unwrap();
     assert_eq!(vec![TableName::new(TEST_SCHEMA, "table1")], result);
@@ -563,7 +557,7 @@ async fn test_list_tables_with_database_connection_error() {
     connection.on_prepare(|_| Err(SqlException::new("Database error")));
     let error = f
         .handler
-        .list_tables(&connection, TEST_SCHEMA)
+        .list_schema_tables(&connection, TEST_SCHEMA)
         .await
         .unwrap_err();
     let sql = SqlException::from_federation_error(&error).expect("SQLException");
@@ -577,7 +571,7 @@ async fn do_get_table_layout_with_no_partitions() {
     let executed = f.connection.executed();
     let partitions_query = executed
         .iter()
-        .find(|s| s.sql() == PostGreSqlMetadataHandler::GET_PARTITIONS_QUERY)
+        .find(|s| s.sql() == athena_postgresql::GET_PARTITIONS_QUERY)
         .unwrap();
     assert_eq!(
         vec![
@@ -608,8 +602,8 @@ async fn do_get_table_layout_with_sql_exception() {
         .on_query(|_| Err(SqlException::new("partition query failed")));
     let result = f
         .handler
-        .do_get_table_layout(
-            &f.allocator,
+        .get_table_layout(
+            f.allocator.as_ref(),
             &layout_request(&f.handler, Constraints::empty()),
         )
         .await;
@@ -627,11 +621,7 @@ async fn do_get_splits() {
     )
     .await;
     let request = splits_request(&f.handler, identity(), &layout, Constraints::empty(), None);
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     let expected = vec![partition_map("s0", "p0"), partition_map("s1", "p1")];
     assert_eq!(expected.len(), response.splits().len());
     assert_eq!(expected, split_properties(&response));
@@ -646,11 +636,7 @@ async fn do_get_splits_with_catalog_casing_filter() {
         Some(environment_constants::UPPERCASE_ONLY.to_string()),
     )]));
     let request = splits_request(&f.handler, identity, &layout, Constraints::empty(), None);
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(1, response.splits().len());
     assert_eq!(
         Some(environment_constants::UPPERCASE_ONLY),
@@ -675,11 +661,7 @@ async fn do_get_splits_continuation() {
         Constraints::empty(),
         Some("1"),
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     let expected = vec![partition_map("s1", "p1")];
     assert_eq!(expected.len(), response.splits().len());
     assert_eq!(expected, split_properties(&response));
@@ -762,10 +744,7 @@ async fn do_get_table_with_array_columns() {
     let expected = with_partition_fields(&f.handler, &mut builder);
     let response = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &get_table_request(TableName::new(TEST_SCHEMA, "testtable")),
-        )
+        .get_table(&get_table_request(TableName::new(TEST_SCHEMA, "testtable")))
         .await
         .unwrap();
     let calls = f.connection.meta.get_columns_calls();
@@ -822,10 +801,10 @@ async fn do_get_table_materialized_view() {
     let expected = with_partition_fields(&f.handler, &mut builder);
     let response = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &get_table_request(TableName::new(TEST_SCHEMA, "testmatview")),
-        )
+        .get_table(&get_table_request(TableName::new(
+            TEST_SCHEMA,
+            "testmatview",
+        )))
         .await
         .unwrap();
     let calls = f.connection.meta.get_columns_calls();
@@ -843,7 +822,7 @@ async fn test_do_get_data_source_capabilities_without_query_passthrough() {
     let f = setup();
     let response = f
         .handler
-        .do_get_data_source_capabilities(&f.allocator, &capabilities_request())
+        .get_data_source_capabilities(&capabilities_request())
         .await
         .unwrap();
     verify_common_capabilities(&response);
@@ -858,7 +837,7 @@ async fn test_do_get_data_source_capabilities_with_query_passthrough() {
         HashMap::from([("enable_query_passthrough".to_string(), "true".to_string())]),
     );
     let response = handler
-        .do_get_data_source_capabilities(&f.allocator, &capabilities_request())
+        .get_data_source_capabilities(&capabilities_request())
         .await
         .unwrap();
     verify_common_capabilities(&response);
@@ -877,7 +856,7 @@ async fn test_do_get_data_source_capabilities_with_non_default_collate() {
         HashMap::from([("non_default_collate".to_string(), "true".to_string())]),
     );
     let response = handler
-        .do_get_data_source_capabilities(&f.allocator, &capabilities_request())
+        .get_data_source_capabilities(&capabilities_request())
         .await
         .unwrap();
     verify_common_capabilities(&response);
@@ -909,7 +888,7 @@ async fn test_schema_case_sensitivity_handling() {
     );
     let result = f
         .handler
-        .list_tables(&connection, "testschema")
+        .list_schema_tables(&connection, "testschema")
         .await
         .unwrap();
     assert_eq!(1, result.len());
@@ -935,7 +914,7 @@ async fn test_table_name_case_sensitivity_handling() {
     );
     let result = f
         .handler
-        .list_tables(&connection, "testtable")
+        .list_schema_tables(&connection, "testtable")
         .await
         .unwrap();
     assert_eq!(1, result.len());
@@ -961,11 +940,11 @@ async fn test_list_tables_with_invalid_schema() {
     );
     let result = f
         .handler
-        .list_tables(&connection, "nonexistentschema")
+        .list_schema_tables(&connection, "nonexistentschema")
         .await
         .unwrap();
     assert!(result.is_empty(), "Expected empty list for invalid schema");
-    let result = f.handler.list_tables(&connection, "").await.unwrap();
+    let result = f.handler.list_schema_tables(&connection, "").await.unwrap();
     assert!(result.is_empty(), "Expected empty list for null schema");
 }
 
@@ -976,10 +955,9 @@ async fn test_get_char_columns_with_empty_result_set() {
         &connection,
         vec![(CHAR_COLUMNS_SQL, ResultSetData::empty(&[COLUMN_NAME]))],
     );
-    let char_columns =
-        PostGreSqlMetadataHandler::get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
-            .await
-            .unwrap();
+    let char_columns = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
+        .await
+        .unwrap();
     let executed = connection.executed();
     assert_eq!(CHAR_COLUMNS_SQL, executed[0].sql());
     assert_eq!(
@@ -996,8 +974,7 @@ async fn test_get_char_columns_with_empty_result_set() {
 async fn test_get_char_columns_with_sql_exception() {
     let connection = FakeConnection::new();
     connection.on_query(|_| Err(SqlException::new("Database connection error")));
-    let result =
-        PostGreSqlMetadataHandler::get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
+    let result = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
     assert_eq!("Database connection error", result.unwrap_err().message());
 }
 
@@ -1025,10 +1002,7 @@ async fn test_get_table_with_null_array_types() {
     );
     let response = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &get_table_request(TableName::new(TEST_SCHEMA, TEST_TABLE)),
-        )
+        .get_table(&get_table_request(TableName::new(TEST_SCHEMA, TEST_TABLE)))
         .await
         .unwrap();
     let schema = response.schema();
@@ -1063,7 +1037,7 @@ async fn test_do_get_splits_with_partition_splitter() {
     let bounds_sql = min_max_sql("id");
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
-        if sql == PostGreSqlMetadataHandler::GET_PARTITIONS_QUERY {
+        if sql == athena_postgresql::GET_PARTITIONS_QUERY {
             return Ok(partitions(&[("*", "*")]));
         }
         if sql == bounds_sql {
@@ -1075,11 +1049,14 @@ async fn test_do_get_splits_with_partition_splitter() {
         Err(SqlException::new(format!("unexpected query {sql}")))
     });
     let layout = handler
-        .do_get_table_layout(&allocator, &layout_request(&handler, constraints.clone()))
+        .get_table_layout(
+            allocator.as_ref(),
+            &layout_request(&handler, constraints.clone()),
+        )
         .await
         .unwrap();
     let request = splits_request(&handler, identity(), &layout, constraints, None);
-    let response = handler.do_get_splits(&allocator, &request).await.unwrap();
+    let response = handler.get_splits(&request).await.unwrap();
     let expected_clauses = [
         "(\"id\" >= 1 AND \"id\" <= 5)",
         "(\"id\" >= 6 AND \"id\" <= 10)",
@@ -1139,10 +1116,9 @@ async fn test_get_char_columns_with_character_columns() {
             single_column(COLUMN_NAME, &["col1", "col2"]),
         )],
     );
-    let char_columns =
-        PostGreSqlMetadataHandler::get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
-            .await
-            .unwrap();
+    let char_columns = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
+        .await
+        .unwrap();
     let executed = connection.executed();
     assert_eq!(
         vec![
@@ -1167,11 +1143,11 @@ async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_t
         )
         .unwrap()
         .unwrap(),
-        h.get_array_arrow_type_from_type_name(Some("_timestamptz"), 0, 0)
+        h.dialect().array_element_type(Some("_timestamptz"), 0, 0)
     );
     assert_eq!(
         DataType::Date64,
-        h.get_array_arrow_type_from_type_name(Some("_timestamptz"), 0, 0)
+        h.dialect().array_element_type(Some("_timestamptz"), 0, 0)
     );
 }
 
@@ -1180,43 +1156,43 @@ async fn test_get_array_arrow_type_from_type_name() {
     let f = setup();
     let h = &f.handler;
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_bool"), 0, 0),
+        h.dialect().array_element_type(Some("_bool"), 0, 0),
         DataType::Boolean
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_int2"), 0, 0),
+        h.dialect().array_element_type(Some("_int2"), 0, 0),
         DataType::Int16
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_int4"), 0, 0),
+        h.dialect().array_element_type(Some("_int4"), 0, 0),
         DataType::Int32
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_int8"), 0, 0),
+        h.dialect().array_element_type(Some("_int8"), 0, 0),
         DataType::Int64
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_float4"), 0, 0),
+        h.dialect().array_element_type(Some("_float4"), 0, 0),
         DataType::Float32
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_float8"), 0, 0),
+        h.dialect().array_element_type(Some("_float8"), 0, 0),
         DataType::Float64
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_date"), 0, 0),
+        h.dialect().array_element_type(Some("_date"), 0, 0),
         DataType::Date32
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_timestamp"), 0, 0),
+        h.dialect().array_element_type(Some("_timestamp"), 0, 0),
         DataType::Date64
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_numeric"), 10, 2),
+        h.dialect().array_element_type(Some("_numeric"), 10, 2),
         DataType::Decimal128(10, 2)
     ));
     assert!(matches!(
-        h.get_array_arrow_type_from_type_name(Some("_unknown"), 0, 0),
+        h.dialect().array_element_type(Some("_unknown"), 0, 0),
         DataType::Utf8
     ));
 }
@@ -1227,11 +1203,11 @@ async fn test_get_partition_schema() {
     let schema = partition_schema(&f.handler);
     assert_eq!(2, schema.fields().len());
     assert_eq!(
-        PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+        athena_postgresql::BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
         schema.field(0).name()
     );
     assert_eq!(
-        PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME,
+        athena_postgresql::BLOCK_PARTITION_COLUMN_NAME,
         schema.field(1).name()
     );
 }
@@ -1240,10 +1216,8 @@ async fn test_get_partition_schema() {
 async fn get_split_clauses_no_primary_key_returns_empty_list() {
     let f = setup();
     split_clause_routes(&f.connection, None, None, None);
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1252,10 +1226,8 @@ async fn get_split_clauses_no_primary_key_returns_empty_list() {
 async fn get_split_clauses_uuid_primary_key_returns_empty_list() {
     let f = setup();
     split_clause_routes(&f.connection, Some("id"), Some("uuid"), None);
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
     assert_eq!(f.connection.prepared_sql(), [DATA_TYPE_SQL]);
@@ -1270,10 +1242,8 @@ async fn get_split_clauses_integer_primary_key_returns_split_clauses() {
         Some("integer"),
         Some((1, 100)),
     );
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1284,10 +1254,8 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
     f.connection
         .meta
         .set_primary_keys(Err(SqlException::new("Database connection error")));
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, "errorTable"), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, "errorTable"), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, "errorTable");
 }
@@ -1296,10 +1264,8 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
 async fn get_split_clauses_uuid_check_returns_false_generates_splits() {
     let f = setup();
     split_clause_routes(&f.connection, Some("product_id"), None, Some((1, 50)));
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1315,10 +1281,8 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
             Ok(PreparedStatement::new(sql))
         }
     });
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1329,10 +1293,8 @@ async fn get_split_clauses_malicious_primary_key_column_name_is_quoted_and_escap
     let malicious_column = "id\");GRANT rds_superuser TO report_user;--";
     let wrapped_column = format!("\"{}\"", malicious_column.replace('"', "\"\""));
     split_clause_routes(&f.connection, Some(malicious_column), None, Some((1, 100)));
-    let result = f
-        .handler
-        .get_split_clauses(&TableName::new(TEST_SCHEMA, TEST_TABLE), None)
-        .await;
+    let result =
+        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     let prepared = f.connection.prepared_sql();
     let bounds_sql = prepared
         .iter()
@@ -1353,27 +1315,17 @@ async fn get_split_clauses_malicious_primary_key_column_name_is_quoted_and_escap
 
 #[tokio::test]
 async fn is_valid_split_column_rejects_null_empty_and_control_chars_accepts_normal() {
-    let f = setup();
-    let h = &f.handler;
-    assert!(h.is_valid_split_column(Some("order_id")));
-    assert!(h.is_valid_split_column(Some("my order id")));
-    assert!(!h.is_valid_split_column(None));
-    assert!(!h.is_valid_split_column(Some("")));
-    assert!(!h.is_valid_split_column(Some("id\nGRANT")));
-    assert!(!h.is_valid_split_column(Some("id\u{0}GRANT")));
+    assert!(is_valid_split_column(Some("order_id")));
+    assert!(is_valid_split_column(Some("my order id")));
+    assert!(!is_valid_split_column(None));
+    assert!(!is_valid_split_column(Some("")));
+    assert!(!is_valid_split_column(Some("id\nGRANT")));
+    assert!(!is_valid_split_column(Some("id\u{0}GRANT")));
 }
 
 #[tokio::test]
 async fn wrap_name_with_escaped_character_escapes_embedded_double_quotes() {
-    let f = setup();
-    let h = &f.handler;
-    assert_eq!(
-        "\"order_id\"",
-        h.wrap_name_with_escaped_character("order_id")
-    );
-    assert_eq!("\"a\"\"b\"", h.wrap_name_with_escaped_character("a\"b"));
-    assert_eq!(
-        "\"x\"\");--\"",
-        h.wrap_name_with_escaped_character("x\");--")
-    );
+    assert_eq!("\"order_id\"", wrap_name_with_escaped_character("order_id"));
+    assert_eq!("\"a\"\"b\"", wrap_name_with_escaped_character("a\"b"));
+    assert_eq!("\"x\"\");--\"", wrap_name_with_escaped_character("x\");--"));
 }

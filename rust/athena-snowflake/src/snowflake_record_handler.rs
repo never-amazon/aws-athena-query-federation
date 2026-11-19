@@ -9,43 +9,38 @@ use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockSpiller, FieldVector, S3BlockSpiller,
 };
-use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints};
+use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
 use athena_federation_sdk::domain::spill::SpillLocation;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::handlers::{
-    AwsClients, FederationRequestHandler, RecordHandler, RecordHandlerBase,
-};
+use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::request::FederationResponse;
-use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, CachableSecretsManager, KmsEncryptionProvider,
-};
+use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{
-    default_export_result_set_to_spill, jdbc_to_arrow_schema, JdbcRecordHandler,
-    JdbcRecordHandlerBase, JdbcRecordHandlerExt, JdbcSplitQueryBuilder, JdbcUtil,
+    jdbc_to_arrow_schema, ConnectionSource, JdbcRecordHandler, JdbcSplitQueryBuilder, JdbcUtil,
+    RecordDialect, SplitQuery,
 };
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, SqlException};
 
 use crate::s3_export::{construct_s3_uri, ExportReader, S3ParquetExportReader};
-use crate::snowflake_constants::{is_blank, SnowflakeConstants};
-use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
+use crate::snowflake_constants::SnowflakeConstants;
 use crate::snowflake_federation_expression_parser::SnowflakeFederationExpressionParser;
-use crate::snowflake_metadata_handler::SnowflakeMetadataHandler;
+use crate::snowflake_metadata_handler::{
+    create_snowflake_credentials_provider, SnowflakeMetadataDialect,
+};
 use crate::snowflake_query_string_builder::SnowflakeQueryStringBuilder;
 use crate::utils::SnowflakeArrowTypeConverter;
 
 const FETCH_SIZE: i32 = 1000;
 const UTC: &str = "UTC";
 
-pub struct SnowflakeRecordHandler {
-    base: JdbcRecordHandlerBase,
-    jdbc_split_query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+pub struct SnowflakeRecordDialect {
+    query_builder: Arc<dyn JdbcSplitQueryBuilder>,
     export_reader: Arc<dyn ExportReader>,
 }
+
+pub type SnowflakeRecordHandler = JdbcRecordHandler<SnowflakeRecordDialect>;
 
 fn java_text(error: &FederationError) -> String {
     error.java_message().unwrap_or_else(|| "null".to_string())
@@ -121,13 +116,53 @@ fn append_batch(
     Ok(batch.num_rows())
 }
 
-impl SnowflakeRecordHandler {
-    pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
-        Arc::new(SnowflakeQueryStringBuilder::new(
+pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
+    Arc::new(SnowflakeQueryStringBuilder::new(
+        SnowflakeConstants::DOUBLE_QUOTE_CHAR,
+        Arc::new(SnowflakeFederationExpressionParser::new(
             SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-            Arc::new(SnowflakeFederationExpressionParser::new(
-                SnowflakeConstants::DOUBLE_QUOTE_CHAR,
-            )),
+        )),
+    ))
+}
+
+impl SnowflakeRecordDialect {
+    pub fn handler(
+        context: HandlerContext,
+        config: DatabaseConnectionConfig,
+        connection_factory: Arc<dyn JdbcConnectionFactory>,
+        query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+        export_reader: Arc<dyn ExportReader>,
+    ) -> SnowflakeRecordHandler {
+        JdbcRecordHandler::new(
+            context,
+            ConnectionSource::Direct {
+                config,
+                factory: connection_factory,
+            },
+            SnowflakeRecordDialect {
+                query_builder,
+                export_reader,
+            },
+        )
+    }
+
+    pub fn from_config(
+        clients: AwsClients,
+        config: DatabaseConnectionConfig,
+        config_options: HashMap<String, String>,
+    ) -> Result<SnowflakeRecordHandler> {
+        let factory = Arc::new(SnowflakeMetadataDialect::connection_factory(
+            &config,
+            &config_options,
+        )?);
+        let export_reader = Arc::new(S3ParquetExportReader::new(Arc::clone(&clients.s3)));
+        let context = HandlerContext::new(config.engine(), clients, config_options)?;
+        Ok(SnowflakeRecordDialect::handler(
+            context,
+            config,
+            factory,
+            default_query_builder(),
+            export_reader,
         ))
     }
 
@@ -139,67 +174,7 @@ impl SnowflakeRecordHandler {
             SnowflakeConstants::SNOWFLAKE_NAME,
             &config_options,
         )?;
-        SnowflakeRecordHandler::new(clients, config, config_options)
-    }
-
-    pub fn new(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        config_options: HashMap<String, String>,
-    ) -> Result<SnowflakeRecordHandler> {
-        let factory = Arc::new(SnowflakeMetadataHandler::connection_factory(
-            &config,
-            &config_options,
-        )?);
-        SnowflakeRecordHandler::with_query_builder(
-            clients,
-            config,
-            factory,
-            SnowflakeRecordHandler::default_query_builder(),
-            config_options,
-        )
-    }
-
-    pub fn with_query_builder(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        jdbc_connection_factory: Arc<dyn JdbcConnectionFactory>,
-        jdbc_split_query_builder: Arc<dyn JdbcSplitQueryBuilder>,
-        config_options: HashMap<String, String>,
-    ) -> Result<SnowflakeRecordHandler> {
-        let export_reader = Arc::new(S3ParquetExportReader::new(Arc::clone(&clients.s3)));
-        let record_base = RecordHandlerBase::new(config.engine(), clients, config_options)?;
-        Ok(SnowflakeRecordHandler {
-            base: JdbcRecordHandlerBase::new(record_base, config, jdbc_connection_factory),
-            jdbc_split_query_builder,
-            export_reader,
-        })
-    }
-
-    #[must_use]
-    pub fn with_export_reader(
-        mut self,
-        export_reader: Arc<dyn ExportReader>,
-    ) -> SnowflakeRecordHandler {
-        self.export_reader = export_reader;
-        self
-    }
-
-    fn s3_export_enabled(&self) -> bool {
-        SnowflakeConstants::is_s3_export_enabled(self.base.config_options())
-    }
-
-    pub fn create_snowflake_credentials_provider(
-        &self,
-        secret_name: Option<&str>,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Option<SnowflakeCredentialsProvider> {
-        let secret_name = secret_name.filter(|name| !is_blank(Some(name)))?;
-        Some(SnowflakeCredentialsProvider::new(
-            secret_name,
-            Arc::clone(self.cachable_secrets_manager().secrets_manager()),
-            request_override_configuration.cloned(),
-        ))
+        SnowflakeRecordDialect::from_config(clients, config, config_options)
     }
 
     pub async fn handle_s3_export_read(
@@ -258,12 +233,12 @@ impl SnowflakeRecordHandler {
 
     async fn respill_exported_parquet(
         &self,
+        handler: &SnowflakeRecordHandler,
         request: &ReadRecordsRequest,
         allocator: &Arc<dyn BlockAllocator>,
         spill_locations: &mut Vec<SpillLocation>,
         query_status_checker: &QueryStatusChecker,
-        export_bucket: &str,
-        s3_object_key: &str,
+        s3_path: &str,
     ) -> Result<Schema> {
         let split = request.split();
         let Some(SpillLocation::S3(spill_location)) = split.spill_location() else {
@@ -271,17 +246,16 @@ impl SnowflakeRecordHandler {
                 "Cannot invoke \"com.amazonaws.athena.connector.lambda.domain.spill.S3SpillLocation.getKey()\" because \"spillLocation\" is null",
             ));
         };
-        let s3_client = self.resolve_scoped_s3_client(request).await?;
-        let spill_config = self.build_export_spill_config(request)?;
-        let s3_path = construct_s3_uri(export_bucket, s3_object_key);
+        let s3_client = handler.resolve_scoped_s3_client(request).await?;
+        let spill_config = handler.build_export_spill_config(request)?;
         tracing::info!(
             "exportResultSetToSpill(S3 export): reading exported Parquet {} and re-spilling as Arrow",
             s3_path
         );
-        let derived_schema = self.export_reader.inspect_parquet_schema(&s3_path).await?;
+        let derived_schema = self.export_reader.inspect_parquet_schema(s3_path).await?;
         let reader = self
             .export_reader
-            .construct_arrow_reader(&s3_path, &derived_schema)
+            .construct_arrow_reader(s3_path, &derived_schema)
             .await?;
         let evaluator = Arc::new(ConstraintEvaluator::new(
             &derived_schema,
@@ -293,16 +267,17 @@ impl SnowflakeRecordHandler {
             Arc::clone(allocator),
             Arc::new(derived_schema.clone()),
             evaluator,
-            self.base.config_options().clone(),
+            handler.config_options().clone(),
         )?;
         let written = async {
-            self.write_schema_sidecar(
-                s3_client.as_ref(),
-                spill_location,
-                split.encryption_key(),
-                &derived_schema,
-            )
-            .await?;
+            handler
+                .write_schema_sidecar(
+                    s3_client.as_ref(),
+                    spill_location,
+                    split.encryption_key(),
+                    &derived_schema,
+                )
+                .await?;
             for batch in reader {
                 let batch = batch?;
                 if !query_status_checker.is_query_running() {
@@ -326,85 +301,39 @@ impl SnowflakeRecordHandler {
 }
 
 #[async_trait]
-impl FederationRequestHandler for SnowflakeRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.record_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.record_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-
-    async fn get_credential_provider_with_request_override_configuration(
+impl RecordDialect for SnowflakeRecordDialect {
+    async fn credentials_provider(
         &self,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
+        context: &HandlerContext,
+        secret_name: Option<&str>,
+        override_config: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Option<Box<dyn CredentialsProvider>>> {
-        Ok(self
-            .create_snowflake_credentials_provider(
-                self.database_connection_secret(),
-                request_override_configuration,
-            )
-            .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>))
-    }
-
-    async fn create_credentials_provider(
-        &self,
-        secret_name: &str,
-        request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
-    ) -> Result<Box<dyn CredentialsProvider>> {
-        self.create_snowflake_credentials_provider(
-            Some(secret_name),
-            request_override_configuration,
+        Ok(
+            create_snowflake_credentials_provider(context, secret_name, override_config)
+                .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>),
         )
-        .map(|provider| Box::new(provider) as Box<dyn CredentialsProvider>)
-        .ok_or_else(|| {
-            FederationError::null_pointer("credentials provider is null for a blank secret name")
-        })
-    }
-}
-
-#[async_trait]
-impl RecordHandler for SnowflakeRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        self.base.record_base()
-    }
-
-    async fn do_read_records(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ReadRecordsRequest,
-    ) -> Result<FederationResponse> {
-        self.jdbc_do_read_records(allocator, request).await
     }
 
     async fn read_with_constraint(
         &self,
+        handler: &SnowflakeRecordHandler,
         spiller: &dyn BlockSpiller,
         request: &ReadRecordsRequest,
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()> {
-        if self.s3_export_enabled() {
+        if SnowflakeConstants::is_s3_export_enabled(handler.config_options()) {
             self.handle_s3_export_read(spiller, request, query_status_checker)
                 .await
         } else {
-            self.jdbc_read_with_constraint(spiller, request, query_status_checker)
+            handler
+                .read_split(spiller, request, query_status_checker)
                 .await
         }
-    }
-}
-
-#[async_trait]
-impl JdbcRecordHandler for SnowflakeRecordHandler {
-    fn jdbc_record_base(&self) -> &JdbcRecordHandlerBase {
-        &self.base
     }
 
     async fn export_result_set_to_spill(
         &self,
+        handler: &SnowflakeRecordHandler,
         request: &ReadRecordsRequest,
         allocator: &Arc<dyn BlockAllocator>,
         spill_locations: &mut Vec<SpillLocation>,
@@ -414,53 +343,49 @@ impl JdbcRecordHandler for SnowflakeRecordHandler {
         let export_bucket = split.get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_EXPORT_BUCKET);
         let s3_object_key = split.get_property(SnowflakeConstants::SNOWFLAKE_SPLIT_OBJECT_KEY);
         match s3_object_key {
-            Some(key) if self.s3_export_enabled() && !key.is_empty() => {
+            Some(key)
+                if SnowflakeConstants::is_s3_export_enabled(handler.config_options())
+                    && !key.is_empty() =>
+            {
                 self.respill_exported_parquet(
+                    handler,
                     request,
                     allocator,
                     spill_locations,
                     query_status_checker,
-                    export_bucket.unwrap_or("null"),
-                    key,
+                    &construct_s3_uri(export_bucket.unwrap_or("null"), key),
                 )
                 .await
             }
             _ => {
-                default_export_result_set_to_spill(
-                    self,
-                    request,
-                    allocator,
-                    spill_locations,
-                    query_status_checker,
-                )
-                .await
+                handler
+                    .export_query_result(request, allocator, spill_locations, query_status_checker)
+                    .await
             }
         }
     }
 
     async fn build_split_sql(
         &self,
-        jdbc_connection: &dyn JdbcConnection,
-        _catalog_name: &str,
-        table_name: &TableName,
-        schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
+        handler: &SnowflakeRecordHandler,
+        connection: &dyn JdbcConnection,
+        query: &SplitQuery<'_>,
     ) -> Result<PreparedStatement> {
         let result = async {
-            let mut prepared_statement = if constraints.is_query_pass_through() {
-                self.build_query_passthrough_sql(jdbc_connection, constraints)
+            let mut prepared_statement = if query.constraints.is_query_pass_through() {
+                handler
+                    .build_query_passthrough_sql(connection, query.constraints)
                     .await?
             } else {
-                self.jdbc_split_query_builder
+                self.query_builder
                     .build_sql(
-                        jdbc_connection,
+                        connection,
                         "",
-                        table_name.schema_name(),
-                        table_name.table_name(),
-                        schema,
-                        constraints,
-                        split,
+                        query.table_name.schema_name(),
+                        query.table_name.table_name(),
+                        query.schema,
+                        query.constraints,
+                        query.split,
                     )
                     .await?
             };
@@ -471,7 +396,11 @@ impl JdbcRecordHandler for SnowflakeRecordHandler {
         result.map_err(internal_service_error)
     }
 
-    fn derive_export_schema(&self, metadata: &ResultSetMetaData) -> Result<Schema> {
+    fn derive_export_schema(
+        &self,
+        _handler: &SnowflakeRecordHandler,
+        metadata: &ResultSetMetaData,
+    ) -> Result<Schema> {
         let base_schema = jdbc_to_arrow_schema(metadata)?;
         let mut fields = Vec::with_capacity(base_schema.fields().len());
         for (i, base_field) in base_schema.fields().iter().enumerate() {
