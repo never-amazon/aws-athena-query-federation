@@ -246,14 +246,41 @@ pub fn parse_connection_settings(
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SnowflakeAuth<'a> {
+    Properties,
+    KeyPair(&'a SnowflakePrivateKey),
+}
+
 #[async_trait]
-pub trait SnowflakeDriver: JdbcDriver {
-    async fn connect_with_private_key(
+pub trait SnowflakeDriver: Send + Sync {
+    fn driver_class_name(&self) -> &str;
+
+    async fn connect(
         &self,
         url: &str,
         properties: &JdbcProperties,
-        private_key: &SnowflakePrivateKey,
+        auth: SnowflakeAuth<'_>,
     ) -> Result<Box<dyn JdbcConnection>, SqlError>;
+}
+
+pub(crate) struct PooledSnowflakeDriver(pub(crate) Arc<dyn SnowflakeDriver>);
+
+#[async_trait]
+impl JdbcDriver for PooledSnowflakeDriver {
+    fn driver_class_name(&self) -> &str {
+        self.0.driver_class_name()
+    }
+
+    async fn connect(
+        &self,
+        url: &str,
+        properties: &JdbcProperties,
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
+        self.0
+            .connect(url, properties, SnowflakeAuth::Properties)
+            .await
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -263,13 +290,24 @@ impl SnowflakeJdbcDriver {
     pub fn new() -> SnowflakeJdbcDriver {
         SnowflakeJdbcDriver
     }
+}
 
-    async fn open(
+#[async_trait]
+impl SnowflakeDriver for SnowflakeJdbcDriver {
+    fn driver_class_name(&self) -> &str {
+        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
+    }
+
+    async fn connect(
         &self,
         url: &str,
         properties: &JdbcProperties,
-        private_key: Option<&SnowflakePrivateKey>,
+        auth: SnowflakeAuth<'_>,
     ) -> Result<Box<dyn JdbcConnection>, SqlError> {
+        let private_key = match auth {
+            SnowflakeAuth::Properties => None,
+            SnowflakeAuth::KeyPair(private_key) => Some(private_key),
+        };
         let settings = parse_connection_settings(url, properties)?;
         let query_timeout = settings.query_timeout()?;
         let config = settings.client_config(private_key)?;
@@ -285,32 +323,5 @@ impl SnowflakeJdbcDriver {
             )))
             .with_query_timeout(query_timeout),
         ))
-    }
-}
-
-#[async_trait]
-impl JdbcDriver for SnowflakeJdbcDriver {
-    fn driver_class_name(&self) -> &str {
-        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
-    }
-
-    async fn connect(
-        &self,
-        url: &str,
-        properties: &JdbcProperties,
-    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
-        self.open(url, properties, None).await
-    }
-}
-
-#[async_trait]
-impl SnowflakeDriver for SnowflakeJdbcDriver {
-    async fn connect_with_private_key(
-        &self,
-        url: &str,
-        properties: &JdbcProperties,
-        private_key: &SnowflakePrivateKey,
-    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
-        self.open(url, properties, Some(private_key)).await
     }
 }

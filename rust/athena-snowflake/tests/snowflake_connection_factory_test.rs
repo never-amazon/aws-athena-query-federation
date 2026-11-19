@@ -9,13 +9,12 @@ use athena_federation_sdk::credentials::{Credentials, CredentialsProvider};
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
-    DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcDriver,
-    JdbcProperties,
+    DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::sql::{JdbcConnection, SqlError};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
 use athena_snowflake::snowflake_constants;
-use athena_snowflake::sql::SnowflakeDriver;
+use athena_snowflake::sql::{SnowflakeAuth, SnowflakeDriver};
 use athena_snowflake::utils::{SnowflakeAuthUtils, SnowflakePrivateKey};
 use snowflake_support::FakeConnection;
 
@@ -126,13 +125,8 @@ impl RecordingDriver {
     }
 }
 
-#[async_trait]
-impl JdbcDriver for RecordingDriver {
-    fn driver_class_name(&self) -> &str {
-        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
-    }
-
-    async fn connect(
+impl RecordingDriver {
+    fn connect_pooled(
         &self,
         url: &str,
         properties: &JdbcProperties,
@@ -150,12 +144,19 @@ impl JdbcDriver for RecordingDriver {
 
 #[async_trait]
 impl SnowflakeDriver for RecordingDriver {
-    async fn connect_with_private_key(
+    fn driver_class_name(&self) -> &str {
+        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
+    }
+
+    async fn connect(
         &self,
         url: &str,
         properties: &JdbcProperties,
-        private_key: &SnowflakePrivateKey,
+        auth: SnowflakeAuth<'_>,
     ) -> std::result::Result<Box<dyn JdbcConnection>, SqlError> {
+        let SnowflakeAuth::KeyPair(private_key) = auth else {
+            return self.connect_pooled(url, properties);
+        };
         self.key_pair_calls.lock().unwrap().push(KeyPairCall {
             url: url.to_string(),
             properties: properties.clone(),

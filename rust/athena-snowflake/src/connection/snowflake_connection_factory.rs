@@ -14,7 +14,9 @@ use athena_jdbc::connection::{
 use athena_jdbc::sql::{JdbcConnection, SqlError};
 
 use crate::snowflake_constants;
-use crate::sql::{url_decode, SnowflakeDriver, SnowflakeJdbcDriver};
+use crate::sql::{
+    url_decode, PooledSnowflakeDriver, SnowflakeAuth, SnowflakeDriver, SnowflakeJdbcDriver,
+};
 use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
 
 const KEY_PAIR_FAILURE: &str = "Failed to create Snowflake connection with key-pair authentication";
@@ -115,7 +117,7 @@ impl SnowflakeConnectionFactory {
         driver: Arc<dyn SnowflakeDriver>,
     ) -> Result<SnowflakeConnectionFactory> {
         let key_pair_base_properties = properties.clone().unwrap_or_default();
-        let jdbc_driver: Arc<dyn JdbcDriver> = driver.clone();
+        let jdbc_driver: Arc<dyn JdbcDriver> = Arc::new(PooledSnowflakeDriver(Arc::clone(&driver)));
         let generic = GenericJdbcConnectionFactory::new_with_config_options(
             database_connection_config,
             properties,
@@ -191,7 +193,7 @@ impl SnowflakeConnectionFactory {
             return Err(KeyPairError::DriverNotFound(driver_class_name.to_string()));
         }
         self.driver
-            .connect_with_private_key(&base_url, &properties, &private_key)
+            .connect(&base_url, &properties, SnowflakeAuth::KeyPair(&private_key))
             .await
             .map_err(KeyPairError::Connect)
     }

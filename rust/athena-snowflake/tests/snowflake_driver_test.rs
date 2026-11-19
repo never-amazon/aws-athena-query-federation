@@ -3,9 +3,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use athena_jdbc::connection::JdbcDriver;
 use athena_jdbc::sql::PreparedStatement;
-use athena_snowflake::sql::{parse_connection_settings, SnowflakeJdbcDriver, TimestampTypeMapping};
+use athena_snowflake::sql::{
+    parse_connection_settings, SnowflakeAuth, SnowflakeDriver, SnowflakeJdbcDriver,
+    TimestampTypeMapping,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
@@ -112,7 +114,7 @@ async fn login_sends_json_query_result_format() {
     let fake = Arc::new(FakeSnowflake::default());
     let address = start(Arc::clone(&fake)).await;
     SnowflakeJdbcDriver::new()
-        .connect(&url(address), &properties(&[]))
+        .connect(&url(address), &properties(&[]), SnowflakeAuth::Properties)
         .await
         .unwrap();
     let login = body(&fake.requests()[0]);
@@ -130,6 +132,7 @@ async fn login_keeps_an_explicit_query_result_format() {
         .connect(
             &url(address),
             &properties(&[("QUERY_RESULT_FORMAT", "ARROW")]),
+            SnowflakeAuth::Properties,
         )
         .await
         .unwrap();
@@ -210,7 +213,7 @@ async fn statement_query_timeout_cancels_the_query_in_snowflake() {
     });
     let address = start(Arc::clone(&fake)).await;
     let connection = SnowflakeJdbcDriver::new()
-        .connect(&url(address), &properties(&[]))
+        .connect(&url(address), &properties(&[]), SnowflakeAuth::Properties)
         .await
         .unwrap();
     let mut statement = PreparedStatement::new("select 1");
@@ -232,7 +235,11 @@ async fn connection_query_timeout_property_cancels_the_query_in_snowflake() {
     });
     let address = start(Arc::clone(&fake)).await;
     let connection = SnowflakeJdbcDriver::new()
-        .connect(&url(address), &properties(&[("queryTimeout", "1")]))
+        .connect(
+            &url(address),
+            &properties(&[("queryTimeout", "1")]),
+            SnowflakeAuth::Properties,
+        )
         .await
         .unwrap();
     let error = connection
@@ -251,7 +258,7 @@ async fn query_without_timeout_returns_rows() {
     let fake = Arc::new(FakeSnowflake::default());
     let address = start(Arc::clone(&fake)).await;
     let connection = SnowflakeJdbcDriver::new()
-        .connect(&url(address), &properties(&[]))
+        .connect(&url(address), &properties(&[]), SnowflakeAuth::Properties)
         .await
         .unwrap();
     let mut result = connection
