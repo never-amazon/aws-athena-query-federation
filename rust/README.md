@@ -161,12 +161,14 @@ Snowflake:
 - Rust reads `CLIENT_TIMESTAMP_TYPE_MAPPING` from the connection string only, with `TIMESTAMP_LTZ` as the default. An account-level value is not applied, so filters on `TIMESTAMP_NTZ` or `TIMESTAMP_TZ` columns can shift by the session zone offset.
 - Java `SnowflakeUtils` writes the JVM CA certificates to `/tmp/cacert.pem` and sets the native environment variables at startup. Rust has no counterpart (`classes.tsv` marks the class `not_ported`). The Rust HTTPS client trusts the operating system store, so a CA added only to a JVM truststore is not trusted.
 - For timestamps before 1582-10-15, the Snowflake JDBC driver maps some different server values to one value, and Java returns the earliest of them. Rust returns the exact server value.
+- When a connection string key or value has a bad `%` escape, both sides fail, but the message differs. Java `URLDecoder` appends ` - Error at index N in: ...` and uses a separate message for a `%` with fewer than two characters after it. Rust always returns `URLDecoder: Illegal hex characters in escape (%) pattern`.
 
 SDK and JDBC:
 
 - `aws-esdk` has no caching materials manager. Java caches one per KMS key for 24 hours. Rust caches only the keyring, so each decrypt of a FAS token calls KMS.
 - Rust stores dates and timestamps with `chrono`, which ends at year 262143. Java binds PostgreSQL filter values from year 262143 to 294276 and Rust rejects them. Both reject values outside the PostgreSQL range.
 - Error text from JSON parsing (serde_json in place of Jackson) and from Substrait plan decoding (prost in place of protobuf-java) differs. These are the only differences in the wire harness.
+- Java Isthmus converts a Substrait outer field reference that has child segments by dropping the child segments, so the generated SQL reads the wrong column. It also reads an outer list element reference as field 0. Rust rejects both plans with the same "not handled by visitor" error that Java gives for nested root references.
 - A `ClassCastException` message for a class outside the JDK, such as a Calcite or SDK class, has no "is in unnamed module of loader" suffix. JDK classes keep the suffix.
 - Lambda error responses carry `errorType` and `errorMessage` with the Java exception class name, and no Java stack trace.
 - Rust emulates Java `HashMap` and `HashSet` iteration order. When two `TableName` keys have the same hash code, Java orders them by identity hash and Rust uses a fixed rule, so the `ListTables` order can differ. This needs 8 or more tables in one hash bucket.
