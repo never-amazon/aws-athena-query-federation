@@ -7,6 +7,7 @@ use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::arrow_type_comparator::ArrowTypeComparator;
 use super::block_utils;
+use super::date_time_formatter_util::TzEncoding;
 use super::field_resolver::FieldResolver;
 use super::record_batch_serde::ArrowRecordBatch;
 use super::value::Value;
@@ -37,6 +38,12 @@ impl Block {
             vectors,
             row_count: 0,
             constraint_evaluator: Arc::new(ConstraintEvaluator::empty_evaluator()),
+        }
+    }
+
+    pub fn set_tz_encoding(&mut self, encoding: TzEncoding) {
+        for vector in &mut self.vectors {
+            vector.set_tz_encoding(encoding);
         }
     }
 

@@ -33,7 +33,7 @@ pub use block_utils::{
     to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short,
     MAP_DATA_VECTOR_NAME, MAP_KEY_NAME, MAP_VALUE_NAME, UTC_ZONE_ID,
 };
-pub use date_time_formatter_util::{TimeStampMicroTzHolder, TimeStampMilliTzHolder};
+pub use date_time_formatter_util::{TimeStampMicroTzHolder, TimeStampMilliTzHolder, TzEncoding};
 pub use field_builder::FieldBuilder;
 pub use field_resolver::{DefaultFieldResolver, FieldResolver};
 pub use java_time::{

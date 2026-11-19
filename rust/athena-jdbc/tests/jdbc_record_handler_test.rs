@@ -1025,7 +1025,8 @@ async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() 
         orders_created_on,
         date_time_formatter_util::timestamp_milli_tz_holder_from_object(
             &Value::Date(orders_created_on),
-            Some("UTC")
+            Some("UTC"),
+            date_time_formatter_util::TzEncoding::Packed
         )
         .unwrap()
         .value

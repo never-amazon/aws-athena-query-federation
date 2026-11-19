@@ -1,6 +1,3 @@
-use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use arrow::datatypes::{DataType, TimeUnit};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Duration, Months, NaiveDate, NaiveDateTime, Utc};
@@ -23,10 +20,11 @@ const SUPPORTED_DATETIME_FORMAT: [&str; 5] = [
 const TIME_ZONE_MASK: i64 = 0xFFF;
 const MILLIS_SHIFT: i64 = 12;
 
-static PACK_TIMEZONE: AtomicBool = AtomicBool::new(true);
-
-thread_local! {
-    static PACK_TIMEZONE_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TzEncoding {
+    #[default]
+    Packed,
+    Unpacked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -39,30 +37,6 @@ pub struct TimeStampMilliTzHolder {
 pub struct TimeStampMicroTzHolder {
     pub value: i64,
     pub timezone: String,
-}
-
-pub fn override_timezone_packing(enabled: bool) {
-    PACK_TIMEZONE_OVERRIDE.with(|c| c.set(Some(enabled)));
-}
-
-pub fn clear_timezone_packing_override() {
-    PACK_TIMEZONE_OVERRIDE.with(|c| c.set(None));
-}
-
-pub fn is_pack_timezone() -> bool {
-    PACK_TIMEZONE_OVERRIDE
-        .with(std::cell::Cell::get)
-        .unwrap_or_else(|| PACK_TIMEZONE.load(Ordering::SeqCst))
-}
-
-pub fn disable_timezone_packing() {
-    tracing::info!("Timezone packing disabled");
-    PACK_TIMEZONE.store(false, Ordering::SeqCst);
-}
-
-pub fn enable_timezone_packing() {
-    tracing::info!("Timezone packing enabled");
-    PACK_TIMEZONE.store(true, Ordering::SeqCst);
 }
 
 pub fn string_to_local_date(
@@ -182,6 +156,7 @@ pub fn unpack_zone_key(date_time_with_time_zone: i64) -> Result<TimeZoneKey> {
 pub fn construct_zoned_date_time(
     epoch_timestamp: i64,
     arrow_type: &ArrowType,
+    encoding: TzEncoding,
 ) -> Result<ZonedDateTime> {
     let (unit, tz) = match arrow_type {
         DataType::Timestamp(unit, tz) => (*unit, tz.clone()),
@@ -194,7 +169,7 @@ pub fn construct_zoned_date_time(
     let tz = tz.ok_or_else(|| FederationError::null_pointer("timezone is null"))?;
     let mut zone = ZoneId::of(&tz)?;
     let mut epoch = epoch_timestamp;
-    if is_pack_timezone() {
+    if encoding == TzEncoding::Packed {
         if unit != TimeUnit::Millisecond {
             return Err(FederationError::not_supported(
                 "Unpacking is only supported for milliseconds",
@@ -232,13 +207,14 @@ pub fn zoned_date_time_from_object(value: &Value) -> Result<ZonedDateTime> {
 pub fn timestamp_milli_tz_holder_from_object(
     value: &Value,
     target_time_zone_id: Option<&str>,
+    encoding: TzEncoding,
 ) -> Result<TimeStampMilliTzHolder> {
     let zdt = zoned_date_time_from_object(value)?;
     let mut holder = TimeStampMilliTzHolder {
         timezone: zdt.zone().id().to_string(),
         value: zdt.to_epoch_milli(),
     };
-    if is_pack_timezone() {
+    if encoding == TzEncoding::Packed {
         holder.value = pack_millis_with_zone(holder.value, &holder.timezone)?;
     }
     if let Some(tz) = target_time_zone_id {
@@ -250,8 +226,9 @@ pub fn timestamp_milli_tz_holder_from_object(
 pub fn timestamp_micro_tz_holder_from_object(
     value: &Value,
     target_time_zone_id: Option<&str>,
+    encoding: TzEncoding,
 ) -> Result<TimeStampMicroTzHolder> {
-    if is_pack_timezone() {
+    if encoding == TzEncoding::Packed {
         return Err(FederationError::not_supported(
             "Packing for TimeStampMicroTZ is not currently supported",
         ));

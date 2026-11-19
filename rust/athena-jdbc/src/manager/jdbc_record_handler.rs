@@ -1,5 +1,4 @@
 use athena_federation_sdk::data::block_utils;
-use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 use std::sync::Arc;
@@ -14,7 +13,7 @@ use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWrite
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector, MinorType,
-    PutObjectRequest, S3BlockSpiller, S3Client, Value,
+    PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -562,10 +561,8 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
                     let row = result_set.take_current_row()?;
                     spiller
                         .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
-                            date_time_formatter_util::override_timezone_packing(false);
-                            let written = write_export_row(block, row_num, &row, column_count);
-                            date_time_formatter_util::clear_timezone_packing_override();
-                            written
+                            block.set_tz_encoding(TzEncoding::Unpacked);
+                            write_export_row(block, row_num, &row, column_count)
                         })
                         .await?;
                     rows_returned_from_database += 1;

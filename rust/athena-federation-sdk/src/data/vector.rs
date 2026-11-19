@@ -18,6 +18,7 @@ use chrono::NaiveDateTime;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use super::date_time_formatter_util::TzEncoding;
 use super::java_time::{local_date_time_of_epoch_micro_utc, local_date_time_of_epoch_milli_utc};
 use super::types::{minor_type_of, MinorType};
 use super::value::Value;
@@ -45,6 +46,7 @@ pub struct FieldVector {
     field: FieldRef,
     minor_type: MinorType,
     value_count: usize,
+    tz_encoding: TzEncoding,
     data: VectorData,
 }
 
@@ -98,6 +100,7 @@ impl FieldVector {
             field,
             minor_type,
             value_count: 0,
+            tz_encoding: TzEncoding::default(),
             data,
         }
     }
@@ -128,8 +131,26 @@ impl FieldVector {
     }
 
     pub fn reset(&mut self) {
-        let fresh = FieldVector::new(self.field.clone());
+        let mut fresh = FieldVector::new(self.field.clone());
+        fresh.set_tz_encoding(self.tz_encoding);
         *self = fresh;
+    }
+
+    pub fn tz_encoding(&self) -> TzEncoding {
+        self.tz_encoding
+    }
+
+    pub fn set_tz_encoding(&mut self, encoding: TzEncoding) {
+        self.tz_encoding = encoding;
+        match &mut self.data {
+            VectorData::Struct { children, .. } => {
+                for c in children.iter_mut() {
+                    c.set_tz_encoding(encoding);
+                }
+            }
+            VectorData::List { child, .. } => child.set_tz_encoding(encoding),
+            VectorData::Scalar(_) => {}
+        }
     }
 
     pub fn children(&self) -> Vec<&FieldVector> {
