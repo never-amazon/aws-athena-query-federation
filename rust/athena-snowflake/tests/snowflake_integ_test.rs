@@ -308,12 +308,11 @@ impl JdbcDriver for FakeDriver {
     async fn connect(
         &self,
         _url: &str,
-        properties: &JdbcProperties,
+        _properties: &JdbcProperties,
     ) -> Result<Box<dyn JdbcConnection>, SqlError> {
-        Ok(Box::new(SnowflakeConnection::new(
-            Arc::new(self.database.clone()),
-            properties.get("user").cloned(),
-        )))
+        Ok(Box::new(SnowflakeConnection::new(Arc::new(
+            self.database.clone(),
+        ))))
     }
 }
 

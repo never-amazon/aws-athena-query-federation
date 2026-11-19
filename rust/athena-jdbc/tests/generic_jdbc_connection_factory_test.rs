@@ -85,7 +85,7 @@ impl JdbcDriver for FakeDriver {
         let connection = FakeConnection::new();
         *connection.state.schema.lock().unwrap() =
             Some(format!("{}-conn{}", self.class_name, state.opened));
-        *connection.meta.state.user_name.lock().unwrap() = user;
+        *connection.state.catalog.lock().unwrap() = user;
         Ok(Box::new(connection))
     }
 }
@@ -258,7 +258,7 @@ async fn get_connection_pooled_mode_rebuilds_pool_when_credentials_change() {
         let first = factory.get_connection(Some(&tenant_a)).await.unwrap();
         assert_eq!(
             Some("TENANTA".to_string()),
-            first.metadata().get_user_name().await.unwrap()
+            first.get_catalog().await.unwrap()
         );
     }
     let failure = factory.get_connection(Some(&tenant_b)).await.err().unwrap();

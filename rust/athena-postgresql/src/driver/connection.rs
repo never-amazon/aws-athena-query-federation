@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use athena_jdbc::connection::{JdbcDriver, JdbcProperties};
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, Nullability, PreparedStatement,
-    ResultSet, ResultSetMetaData, RowSource, SqlError, SqlValue, StatementHandle,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, Nullability, PreparedStatement, ResultSet,
+    ResultSetMetaData, RowSource, SqlError, SqlValue, StatementHandle,
 };
 use tokio::sync::Mutex;
 
@@ -436,12 +436,4 @@ impl JdbcConnection for PgConnection {
         self.session.lock().await.close().await;
         Ok(())
     }
-}
-
-pub(crate) fn driver_column(name: &str, jdbc_type: JdbcType, type_name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, jdbc_type).with_type_name(type_name)
-}
-
-pub(crate) fn varchar_column(name: &str) -> ColumnMetadata {
-    driver_column(name, JdbcType::Varchar, "varchar")
 }

@@ -6,7 +6,7 @@ mod sql_error;
 mod sql_value;
 mod types;
 
-pub use connection::{DatabaseMetaData, JdbcConnection};
+pub use connection::{ColumnInfo, DatabaseMetaData, JdbcConnection, SchemaEntry, TableEntry};
 pub use prepared_statement::{PreparedStatement, StatementHandle};
 pub use result_set::{ColumnIndex, ResultSet, Row, RowSource, VecRowSource};
 pub use result_set_metadata::{ColumnMetadata, Nullability, ResultSetMetaData};

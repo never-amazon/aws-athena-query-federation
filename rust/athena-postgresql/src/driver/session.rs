@@ -105,7 +105,6 @@ pub(crate) struct SessionOptions {
     pub(crate) string_type_unspecified: bool,
     pub(crate) log_server_error_detail: bool,
     pub(crate) socket_timeout: Option<Duration>,
-    pub(crate) user: Option<String>,
 }
 
 pub(crate) struct Session {
@@ -204,10 +203,6 @@ impl Session {
                 .collect();
             server_error(&without_detail)
         }
-    }
-
-    pub(crate) fn user(&self) -> Option<&str> {
-        self.options.user.as_deref()
     }
 
     pub(crate) fn is_closed(&self) -> bool {

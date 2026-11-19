@@ -270,19 +270,17 @@ async fn split_clauses_from(
     table_name: &TableName,
 ) -> Result<Vec<String>> {
     let mut split_clauses = Vec::new();
-    let mut result_set = connection
+    let primary_key_column = connection
         .metadata()
-        .get_primary_keys(
+        .primary_key_columns(
             None,
             Some(table_name.schema_name()),
             table_name.table_name(),
         )
-        .await?;
-    let primary_key_column = if result_set.next().await? {
-        result_set.get_string("COLUMN_NAME")?
-    } else {
-        None
-    };
+        .await?
+        .into_iter()
+        .next()
+        .flatten();
     let Some(primary_key_column) = primary_key_column else {
         return Ok(split_clauses);
     };

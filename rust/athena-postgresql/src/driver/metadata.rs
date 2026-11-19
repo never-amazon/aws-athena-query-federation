@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcType, ResultSet, ResultSetMetaData, SqlError, SqlValue,
+    ColumnInfo, DatabaseMetaData, JdbcType, SchemaEntry, SqlError, SqlValue, TableEntry,
 };
 
-use super::connection::{driver_column, result_metadata, varchar_column, SharedSession};
+use super::connection::SharedSession;
 use super::types::{oid, TypeCache};
 
 const SCHEMAS_QUERY: &str = "SELECT nspname AS \"TABLE_SCHEM\", current_database() AS \"TABLE_CATALOG\" FROM pg_catalog.pg_namespace  WHERE nspname <> 'pg_toast' AND (nspname !~ '^pg_temp_'  OR nspname = (pg_catalog.current_schemas(true))[1]) AND (nspname !~ '^pg_toast_temp_'  OR nspname = replace((pg_catalog.current_schemas(true))[1], 'pg_temp_', 'pg_toast_temp_')) ";
@@ -68,20 +66,15 @@ const PRIMARY_KEYS_QUERY_START: &str = "SELECT        result.TABLE_CAT AS \"TABL
 
 const PRIMARY_KEYS_QUERY_END: &str = " ) result where  result.A_ATTNUM = (result.KEYS).x  ORDER BY result.table_name, result.pk_name, result.key_seq";
 
-const CHARACTER_SQL_TYPES: [JdbcType; 12] = [
-    JdbcType::LongNVarchar,
-    JdbcType::NChar,
-    JdbcType::NVarchar,
-    JdbcType::LongVarBinary,
-    JdbcType::VarBinary,
-    JdbcType::Binary,
-    JdbcType::LongVarchar,
-    JdbcType::Char,
-    JdbcType::Varchar,
-    JdbcType::Blob,
-    JdbcType::Clob,
-    JdbcType::NClob,
-];
+const CURRENT_DATABASE: usize = 0;
+const ATTNAME: usize = 3;
+const ATTTYPID: usize = 4;
+const ATTTYPMOD: usize = 6;
+const TYPTYPMOD: usize = 8;
+const ATTNUM: usize = 9;
+const ADSRC: usize = 12;
+const TYPBASETYPE: usize = 14;
+const TYPTYPE: usize = 15;
 
 pub struct PgDatabaseMetaData {
     session: SharedSession,
@@ -89,44 +82,6 @@ pub struct PgDatabaseMetaData {
 
 fn present(value: Option<&str>) -> Option<&str> {
     value.filter(|v| !v.is_empty())
-}
-
-fn string_or_null(value: Option<String>) -> SqlValue {
-    value.map_or(SqlValue::Null, SqlValue::String)
-}
-
-fn int_column(name: &str) -> ColumnMetadata {
-    driver_column(name, JdbcType::Integer, "int4")
-}
-
-fn columns_metadata() -> ResultSetMetaData {
-    let smallint = |name: &str| driver_column(name, JdbcType::SmallInt, "int2");
-    ResultSetMetaData::new(vec![
-        varchar_column("TABLE_CAT"),
-        varchar_column("TABLE_SCHEM"),
-        varchar_column("TABLE_NAME"),
-        varchar_column("COLUMN_NAME"),
-        smallint("DATA_TYPE"),
-        varchar_column("TYPE_NAME"),
-        int_column("COLUMN_SIZE"),
-        varchar_column("BUFFER_LENGTH"),
-        int_column("DECIMAL_DIGITS"),
-        int_column("NUM_PREC_RADIX"),
-        int_column("NULLABLE"),
-        varchar_column("REMARKS"),
-        varchar_column("COLUMN_DEF"),
-        int_column("SQL_DATA_TYPE"),
-        int_column("SQL_DATETIME_SUB"),
-        int_column("CHAR_OCTET_LENGTH"),
-        int_column("ORDINAL_POSITION"),
-        varchar_column("IS_NULLABLE"),
-        varchar_column("SCOPE_CATALOG"),
-        varchar_column("SCOPE_SCHEMA"),
-        varchar_column("SCOPE_TABLE"),
-        smallint("SOURCE_DATA_TYPE"),
-        varchar_column("IS_AUTOINCREMENT"),
-        varchar_column("IS_GENERATEDCOLUMN"),
-    ])
 }
 
 fn text(row: &[SqlValue], i: usize) -> Option<String> {
@@ -139,10 +94,10 @@ fn number(row: &[SqlValue], i: usize) -> i64 {
         .unwrap_or(0)
 }
 
-fn column_row(types: &TypeCache, row: &[SqlValue]) -> Vec<SqlValue> {
-    let type_oid = u32::try_from(number(row, 4)).unwrap_or(0);
-    let type_mod = i32::try_from(number(row, 6)).unwrap_or(-1);
-    let type_type = text(row, 15).unwrap_or_default();
+fn column_info(types: &TypeCache, row: &[SqlValue]) -> ColumnInfo {
+    let type_oid = u32::try_from(number(row, ATTTYPID)).unwrap_or(0);
+    let type_mod = i32::try_from(number(row, ATTTYPMOD)).unwrap_or(-1);
+    let type_type = text(row, TYPTYPE).unwrap_or_default();
     let sql_type = match type_type.as_str() {
         "c" => JdbcType::Struct,
         "d" => JdbcType::Distinct,
@@ -150,7 +105,7 @@ fn column_row(types: &TypeCache, row: &[SqlValue]) -> Vec<SqlValue> {
         _ => types.sql_type(type_oid),
     };
     let mut pg_type = types.pg_type_name(type_oid);
-    let default_value = text(row, 12);
+    let default_value = text(row, ADSRC);
     let uses_sequence = default_value
         .as_deref()
         .is_some_and(|d| d.contains("nextval("));
@@ -162,11 +117,9 @@ fn column_row(types: &TypeCache, row: &[SqlValue]) -> Vec<SqlValue> {
             _ => pg_type,
         };
     }
-    let identity = text(row, 10);
-    let generated = text(row, 11);
-    let base_type_oid = u32::try_from(number(row, 14)).unwrap_or(0);
+    let base_type_oid = u32::try_from(number(row, TYPBASETYPE)).unwrap_or(0);
     let (decimal_digits, column_size) = if sql_type == JdbcType::Distinct {
-        let type_type_mod = i32::try_from(number(row, 8)).unwrap_or(-1);
+        let type_type_mod = i32::try_from(number(row, TYPTYPMOD)).unwrap_or(-1);
         if type_type_mod == -1 {
             (
                 types.scale(base_type_oid, type_mod),
@@ -189,57 +142,17 @@ fn column_row(types: &TypeCache, row: &[SqlValue]) -> Vec<SqlValue> {
         };
         (types.scale(type_oid, type_mod), size)
     };
-    let decimal_digits =
-        if (sql_type == JdbcType::Numeric || sql_type == JdbcType::Decimal) && type_mod == -1 {
-            SqlValue::Null
-        } else {
-            SqlValue::Integer(decimal_digits)
-        };
-    let radix = if pg_type == "bit" || pg_type == "varbit" {
-        2
-    } else {
-        10
-    };
-    let not_null = text(row, 5).as_deref() == Some("t");
-    let char_octet_length = if CHARACTER_SQL_TYPES.contains(&sql_type) {
-        SqlValue::Integer(column_size)
-    } else {
-        SqlValue::Null
-    };
-    let source_data_type = if sql_type == JdbcType::Distinct {
-        i16::try_from(types.sql_type(base_type_oid).code())
-            .map_or(SqlValue::Null, SqlValue::SmallInt)
-    } else {
-        SqlValue::Null
-    };
-    let auto_increment = uses_sequence || identity.is_some();
-    vec![
-        string_or_null(text(row, 0)),
-        string_or_null(text(row, 1)),
-        string_or_null(text(row, 2)),
-        string_or_null(text(row, 3)),
-        i16::try_from(sql_type.code())
-            .map_or(SqlValue::Integer(sql_type.code()), SqlValue::SmallInt),
-        SqlValue::String(pg_type),
-        SqlValue::Integer(column_size),
-        SqlValue::Null,
+    let decimal_digits = ((sql_type != JdbcType::Numeric && sql_type != JdbcType::Decimal)
+        || type_mod != -1)
+        .then_some(decimal_digits);
+    ColumnInfo {
+        name: text(row, ATTNAME),
+        data_type: sql_type,
+        type_name: Some(pg_type),
+        column_size: Some(column_size),
         decimal_digits,
-        SqlValue::Integer(radix),
-        SqlValue::Integer(i32::from(!not_null)),
-        string_or_null(text(row, 13)),
-        string_or_null(default_value),
-        SqlValue::Null,
-        SqlValue::Null,
-        char_octet_length,
-        SqlValue::Integer(i32::try_from(number(row, 9)).unwrap_or(0)),
-        SqlValue::String(if not_null { "NO" } else { "YES" }.to_string()),
-        SqlValue::Null,
-        SqlValue::Null,
-        SqlValue::Null,
-        source_data_type,
-        SqlValue::String(if auto_increment { "YES" } else { "NO" }.to_string()),
-        SqlValue::String(if generated.is_some() { "YES" } else { "NO" }.to_string()),
-    ]
+        ordinal_position: i32::try_from(number(row, ATTNUM)).unwrap_or(0),
+    }
 }
 
 impl PgDatabaseMetaData {
@@ -247,28 +160,24 @@ impl PgDatabaseMetaData {
         PgDatabaseMetaData { session }
     }
 
-    async fn query(&self, sql: &str, parameters: Vec<SqlValue>) -> Result<ResultSet, SqlError> {
+    async fn query(
+        &self,
+        sql: &str,
+        parameters: Vec<SqlValue>,
+    ) -> Result<Vec<Vec<SqlValue>>, SqlError> {
         let mut session = self.session.lock().await;
-        let (fields, rows) = session.query_all(sql, &parameters, false).await?;
-        let metadata = result_metadata(session.types(), &fields);
-        Ok(ResultSet::new(
-            Arc::new(metadata),
-            Box::new(athena_jdbc::sql::VecRowSource::new(rows)),
-        ))
+        let (_, rows) = session.query_all(sql, &parameters, false).await?;
+        Ok(rows)
     }
 }
 
 #[async_trait]
 impl DatabaseMetaData for PgDatabaseMetaData {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
-        self.get_schemas_with_catalog(None, None).await
-    }
-
-    async fn get_schemas_with_catalog(
+    async fn schemas(
         &self,
         _catalog: Option<&str>,
         schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<SchemaEntry>, SqlError> {
         let mut sql = SCHEMAS_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -276,17 +185,25 @@ impl DatabaseMetaData for PgDatabaseMetaData {
             parameters.push(SqlValue::String(pattern.to_string()));
         }
         sql.push_str(" ORDER BY \"TABLE_SCHEM\"");
-        self.query(&super::parser::to_native_sql(&sql).sql, parameters)
-            .await
+        let rows = self
+            .query(&super::parser::to_native_sql(&sql).sql, parameters)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| SchemaEntry {
+                schema: text(row, 0),
+                catalog: text(row, 1),
+            })
+            .collect())
     }
 
-    async fn get_tables(
+    async fn tables(
         &self,
         _catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<TableEntry>, SqlError> {
         let mut sql = TABLES_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -310,17 +227,28 @@ impl DatabaseMetaData for PgDatabaseMetaData {
             sql.push_str(") ");
         }
         sql.push_str(" ORDER BY \"TABLE_TYPE\",\"TABLE_SCHEM\",\"TABLE_NAME\" ");
-        self.query(&super::parser::to_native_sql(&sql).sql, parameters)
-            .await
+        let rows = self
+            .query(&super::parser::to_native_sql(&sql).sql, parameters)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| TableEntry {
+                catalog: text(row, 0),
+                schema: text(row, 1),
+                name: text(row, 2).unwrap_or_default(),
+                kind: text(row, 3),
+                remarks: text(row, 4),
+            })
+            .collect())
     }
 
-    async fn get_columns(
+    async fn columns(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<ColumnInfo>, SqlError> {
         let mut sql = COLUMNS_QUERY.to_string();
         let mut parameters = Vec::new();
         if let Some(pattern) = present(schema_pattern) {
@@ -342,26 +270,25 @@ impl DatabaseMetaData for PgDatabaseMetaData {
         let (_, rows) = session.query_all(&native, &parameters, false).await?;
         let oids: Vec<u32> = rows
             .iter()
-            .flat_map(|r| [number(r, 4), number(r, 14)])
+            .flat_map(|r| [number(r, ATTTYPID), number(r, TYPBASETYPE)])
             .filter_map(|o| u32::try_from(o).ok())
             .filter(|o| *o != 0)
             .collect();
         session.resolve_types(oids).await?;
         let types = session.types();
-        let rows: Vec<Vec<SqlValue>> = rows
+        Ok(rows
             .iter()
-            .filter(|r| catalog.is_none_or(|c| text(r, 0).as_deref() == Some(c)))
-            .map(|r| column_row(types, r))
-            .collect();
-        Ok(ResultSet::from_rows(columns_metadata(), rows))
+            .filter(|r| catalog.is_none_or(|c| text(r, CURRENT_DATABASE).as_deref() == Some(c)))
+            .map(|r| column_info(types, r))
+            .collect())
     }
 
-    async fn get_primary_keys(
+    async fn primary_key_columns(
         &self,
         _catalog: Option<&str>,
         schema: Option<&str>,
         table: &str,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<Option<String>>, SqlError> {
         let mut sql = PRIMARY_KEYS_QUERY_START.to_string();
         let mut parameters = Vec::new();
         if let Some(schema) = present(schema) {
@@ -373,23 +300,17 @@ impl DatabaseMetaData for PgDatabaseMetaData {
             parameters.push(SqlValue::String(table.to_string()));
         }
         sql.push_str(PRIMARY_KEYS_QUERY_END);
-        self.query(&super::parser::to_native_sql(&sql).sql, parameters)
-            .await
+        let rows = self
+            .query(&super::parser::to_native_sql(&sql).sql, parameters)
+            .await?;
+        Ok(rows.iter().map(|row| text(row, 3)).collect())
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
-        Ok(Some("\\".to_string()))
+    fn search_string_escape(&self) -> Option<String> {
+        Some("\\".to_string())
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
-        Ok("\"".to_string())
-    }
-
-    fn get_database_product_name(&self) -> Result<String, SqlError> {
-        Ok("PostgreSQL".to_string())
-    }
-
-    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
-        Ok(self.session.lock().await.user().map(ToString::to_string))
+    fn database_product_name(&self) -> String {
+        "PostgreSQL".to_string()
     }
 }

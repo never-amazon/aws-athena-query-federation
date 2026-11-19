@@ -41,7 +41,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{JdbcConnection, JdbcType, ResultSetMetaData, SqlError};
+use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
@@ -57,7 +57,6 @@ use crate::snowflake_query_string_builder::{
 use crate::utils;
 
 const MAX_SPLITS_PER_REQUEST: usize = 1_000_000;
-const COLUMN_NAME: &str = "COLUMN_NAME";
 const COUNTS_COLUMN_NAME: &str = "COUNTS";
 const PRIMARY_KEY_COLUMN_NAME: &str = "column_name";
 const ALL_PARTITIONS: &str = "*";
@@ -962,20 +961,20 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         jdbc_connection: &dyn JdbcConnection,
     ) -> Result<Vec<String>> {
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set = jdbc_connection
+        let schemas = jdbc_connection
             .metadata()
-            .get_schemas_with_catalog(catalog.as_deref(), None)
+            .schemas(catalog.as_deref(), None)
             .await?;
         let input_catalog_name = jdbc_connection.get_catalog().await?;
         let input_schema_name = jdbc_connection.get_schema().await?;
         let mut schema_names: Vec<String> = Vec::new();
-        while result_set.next().await? {
-            let schema_name = result_set.get_string("TABLE_SCHEM")?.ok_or_else(|| {
+        for entry in schemas {
+            let schema_name = entry.schema.ok_or_else(|| {
                 FederationError::null_pointer(
                     "Cannot invoke \"String.equals(Object)\" because \"schemaName\" is null",
                 )
             })?;
-            let catalog_name = result_set.get_string("TABLE_CATALOG")?;
+            let catalog_name = entry.catalog;
             let schema_matches = input_schema_name
                 .as_deref()
                 .is_none_or(|input| schema_name == input);
@@ -1099,20 +1098,16 @@ impl SnowflakeMetadataDialect {
     ) -> Result<Schema> {
         let mut schema_builder = SchemaBuilder::new_builder();
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set =
-            columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
-        let mut found = false;
-        while result_set.next().await? {
-            found = true;
+        let columns = columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
+        let found = !columns.is_empty();
+        for column in columns {
             let column_type = utils::to_arrow_type(
-                JdbcType::from_code(result_set.get_int("DATA_TYPE")?.unwrap_or(0)),
-                result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
-                result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
+                column.data_type,
+                column.column_size.unwrap_or(0),
+                column.decimal_digits.unwrap_or(0),
                 handler.config_options(),
             )?;
-            let column_name = result_set
-                .get_string(COLUMN_NAME)?
-                .unwrap_or_else(|| "null".to_string());
+            let column_name = column.name.unwrap_or_else(|| "null".to_string());
             let column_type = match column_type {
                 None => DataType::Utf8,
                 Some(arrow_type) if !SupportedTypes::is_supported_arrow_type(&arrow_type) => {

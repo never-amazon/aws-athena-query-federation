@@ -606,7 +606,7 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
         );
         let connection = self.connect(read_records_request.identity()).await?;
         let result = async {
-            let database_product_name = connection.metadata().get_database_product_name()?;
+            let database_product_name = connection.metadata().database_product_name();
             let is_clickhouse = CLICKHOUSE_DB.eq_ignore_ascii_case(&database_product_name);
             if !is_clickhouse {
                 connection.set_auto_commit(false).await?;

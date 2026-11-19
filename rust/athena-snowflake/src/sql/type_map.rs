@@ -249,8 +249,6 @@ pub(crate) struct ShowColumnType {
     pub type_name: String,
     pub column_size: Option<i32>,
     pub scale: i32,
-    pub nullable: bool,
-    pub char_octet_length: Option<i32>,
 }
 
 fn json_int(node: &Value, key: &str) -> i32 {
@@ -261,15 +259,6 @@ fn json_int(node: &Value, key: &str) -> i32 {
             .unwrap_or_default(),
         Some(Value::String(s)) => s.trim().parse().unwrap_or_default(),
         _ => 0,
-    }
-}
-
-fn json_bool(node: &Value, key: &str) -> bool {
-    match node.get(key) {
-        Some(Value::Bool(b)) => *b,
-        Some(Value::String(s)) => s.trim().eq_ignore_ascii_case("true"),
-        Some(Value::Number(n)) => n.as_i64().is_some_and(|v| v != 0),
-        _ => false,
     }
 }
 
@@ -325,14 +314,10 @@ pub(crate) fn show_column_type(data_type: &Value) -> ShowColumnType {
         EXTRA_TYPES_VECTOR => Some(dimension),
         _ => None,
     };
-    let char_octet_length =
-        matches!(info.internal_type, JdbcType::Varchar | JdbcType::Char).then_some(length);
     ShowColumnType {
         jdbc_type: external_type(info.internal_type),
         type_name: info.type_name,
         column_size,
         scale,
-        nullable: json_bool(data_type, "nullable"),
-        char_octet_length,
     }
 }

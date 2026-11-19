@@ -279,13 +279,10 @@ impl SnowflakeJdbcDriver {
             .await
             .map_err(|e| from_connector_error(&e))?;
         Ok(Box::new(
-            SnowflakeConnection::new(
-                Arc::new(ConnectorExecutor::new(
-                    session,
-                    settings.timestamp_type_mapping(),
-                )),
-                settings.user().map(ToString::to_string),
-            )
+            SnowflakeConnection::new(Arc::new(ConnectorExecutor::new(
+                session,
+                settings.timestamp_type_mapping(),
+            )))
             .with_query_timeout(query_timeout),
         ))
     }

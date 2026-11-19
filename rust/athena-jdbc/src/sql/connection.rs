@@ -6,47 +6,67 @@ use super::prepared_statement::PreparedStatement;
 use super::result_set::ResultSet;
 use super::result_set_metadata::ResultSetMetaData;
 use super::sql_error::SqlError;
+use super::types::JdbcType;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SchemaEntry {
+    pub schema: Option<String>,
+    pub catalog: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TableEntry {
+    pub catalog: Option<String>,
+    pub schema: Option<String>,
+    pub name: String,
+    pub kind: Option<String>,
+    pub remarks: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ColumnInfo {
+    pub name: Option<String>,
+    pub data_type: JdbcType,
+    pub type_name: Option<String>,
+    pub column_size: Option<i32>,
+    pub decimal_digits: Option<i32>,
+    pub ordinal_position: i32,
+}
 
 #[async_trait]
 pub trait DatabaseMetaData: Send + Sync {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlError>;
-
-    async fn get_schemas_with_catalog(
+    async fn schemas(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError>;
+    ) -> Result<Vec<SchemaEntry>, SqlError>;
 
-    async fn get_tables(
+    async fn tables(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlError>;
+    ) -> Result<Vec<TableEntry>, SqlError>;
 
-    async fn get_columns(
+    async fn columns(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError>;
+    ) -> Result<Vec<ColumnInfo>, SqlError>;
 
-    async fn get_primary_keys(
+    async fn primary_key_columns(
         &self,
         catalog: Option<&str>,
         schema: Option<&str>,
         table: &str,
-    ) -> Result<ResultSet, SqlError>;
+    ) -> Result<Vec<Option<String>>, SqlError>;
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError>;
+    fn search_string_escape(&self) -> Option<String>;
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlError>;
-
-    fn get_database_product_name(&self) -> Result<String, SqlError>;
-
-    async fn get_user_name(&self) -> Result<Option<String>, SqlError>;
+    fn database_product_name(&self) -> String;
 }
 
 #[async_trait]

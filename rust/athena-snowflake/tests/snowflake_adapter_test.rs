@@ -75,7 +75,7 @@ fn empty() -> Answer {
 
 fn connection(executor: &Arc<RecordingExecutor>) -> SnowflakeConnection {
     let executor: Arc<dyn SnowflakeExecutor> = executor.clone();
-    SnowflakeConnection::new(executor, Some("athena".to_string()))
+    SnowflakeConnection::new(executor)
 }
 
 #[tokio::test]
@@ -97,8 +97,8 @@ async fn get_tables_builds_show_objects_and_maps_rows() {
         ))
     }));
     let connection = connection(&executor);
-    let mut result = connection
-        .get_tables(
+    let result = connection
+        .tables(
             Some("DB"),
             Some("PUBLIC"),
             Some("ORD%"),
@@ -110,24 +110,11 @@ async fn get_tables_builds_show_objects_and_maps_rows() {
         vec!["show /* JDBC:DatabaseMetaData.getTables() */ objects like 'ORD%' in schema \"DB\".\"PUBLIC\"".to_string()],
         executor.sql()
     );
-    assert!(result.next().await.unwrap());
-    assert_eq!(
-        Some("DB".to_string()),
-        result.get_string("TABLE_CAT").unwrap()
-    );
-    assert_eq!(
-        Some("PUBLIC".to_string()),
-        result.get_string("TABLE_SCHEM").unwrap()
-    );
-    assert_eq!(
-        Some("ORDERS".to_string()),
-        result.get_string("TABLE_NAME").unwrap()
-    );
-    assert_eq!(
-        Some("TABLE".to_string()),
-        result.get_string("TABLE_TYPE").unwrap()
-    );
-    assert!(!result.next().await.unwrap());
+    assert_eq!(1, result.len());
+    assert_eq!(Some("DB".to_string()), result[0].catalog);
+    assert_eq!(Some("PUBLIC".to_string()), result[0].schema);
+    assert_eq!("ORDERS", result[0].name);
+    assert_eq!(Some("TABLE".to_string()), result[0].kind);
 }
 
 #[tokio::test]
@@ -147,8 +134,8 @@ async fn get_tables_for_views_reads_view_columns() {
         ))
     }));
     let connection = connection(&executor);
-    let mut result = connection
-        .get_tables(Some("DB"), Some("PUBLIC"), None, Some(&["VIEW"]))
+    let result = connection
+        .tables(Some("DB"), Some("PUBLIC"), None, Some(&["VIEW"]))
         .await
         .unwrap();
     assert_eq!(
@@ -158,15 +145,8 @@ async fn get_tables_for_views_reads_view_columns() {
         ],
         executor.sql()
     );
-    assert!(result.next().await.unwrap());
-    assert_eq!(
-        Some("VIEW".to_string()),
-        result.get_string("TABLE_TYPE").unwrap()
-    );
-    assert_eq!(
-        Some("a view".to_string()),
-        result.get_string("REMARKS").unwrap()
-    );
+    assert_eq!(Some("VIEW".to_string()), result[0].kind);
+    assert_eq!(Some("a view".to_string()), result[0].remarks);
 }
 
 #[tokio::test]
@@ -200,25 +180,27 @@ async fn get_columns_parses_show_columns_output() {
         ))
     }));
     let connection = connection(&executor);
-    let mut result = connection
-        .get_columns(Some("DB"), Some("PUBLIC"), Some("MY\\_TABLE"), None)
+    let result = connection
+        .columns(Some("DB"), Some("PUBLIC"), Some("MY\\_TABLE"), None)
         .await
         .unwrap();
     assert_eq!(
         vec!["show /* JDBC:DatabaseMetaData.getColumns() */ columns in table \"DB\".\"PUBLIC\".\"MY_TABLE\"".to_string()],
         executor.sql()
     );
-    let mut columns = Vec::new();
-    while result.next().await.unwrap() {
-        columns.push((
-            result.get_string("COLUMN_NAME").unwrap().unwrap(),
-            JdbcType::from_code(result.get_int("DATA_TYPE").unwrap().unwrap()),
-            result.get_string("TYPE_NAME").unwrap().unwrap(),
-            result.get_int("COLUMN_SIZE").unwrap(),
-            result.get_int("DECIMAL_DIGITS").unwrap(),
-            result.get_int("ORDINAL_POSITION").unwrap(),
-        ));
-    }
+    let columns: Vec<_> = result
+        .into_iter()
+        .map(|column| {
+            (
+                column.name.unwrap(),
+                column.data_type,
+                column.type_name.unwrap(),
+                column.column_size,
+                column.decimal_digits,
+                Some(column.ordinal_position),
+            )
+        })
+        .collect();
     assert_eq!(
         vec![
             (
@@ -263,14 +245,11 @@ async fn get_primary_keys_and_schemas_build_show_sql() {
     let executor = RecordingExecutor::new(empty());
     let connection = connection(&executor);
     connection
-        .get_primary_keys(Some("DB"), Some("PUBLIC"), "T")
+        .primary_key_columns(Some("DB"), Some("PUBLIC"), "T")
         .await
         .unwrap();
-    connection
-        .get_schemas_with_catalog(Some("DB"), None)
-        .await
-        .unwrap();
-    connection.get_schemas().await.unwrap();
+    connection.schemas(Some("DB"), None).await.unwrap();
+    connection.schemas(None, None).await.unwrap();
     assert_eq!(
         vec![
             "show /* JDBC:DatabaseMetaData.getPrimaryKeys() */ primary keys in table \"DB\".\"PUBLIC\".\"T\"".to_string(),
@@ -287,11 +266,11 @@ async fn show_commands_return_empty_for_missing_objects() {
         Err(SqlError::new("Object does not exist").with_sql_state("02000"))
     }));
     let connection = connection(&executor);
-    let mut result = connection
-        .get_tables(Some("DB"), Some("MISSING"), None, None)
+    let result = connection
+        .tables(Some("DB"), Some("MISSING"), None, None)
         .await
         .unwrap();
-    assert!(!result.next().await.unwrap());
+    assert!(result.is_empty());
     let error = connection
         .execute_query(&PreparedStatement::new("select 2"))
         .await

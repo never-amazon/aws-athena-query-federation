@@ -21,8 +21,8 @@ use athena_federation_sdk::security::{
 use athena_federation_sdk::AthenaClient;
 use athena_jdbc::connection::JdbcConnectionFactory;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlError, SqlValue,
+    ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement,
+    ResultSet, ResultSetMetaData, SchemaEntry, SqlError, SqlValue, TableEntry,
 };
 use athena_snowflake::{BatchIterator, ExportReader, S3ObjectLister, S3ObjectSummary};
 use aws_credential_types::Credentials;
@@ -71,7 +71,7 @@ impl ResultSetData {
     }
 }
 
-pub type MetaResult = Result<ResultSetData, SqlError>;
+pub type MetaResult<T> = Result<Vec<T>, SqlError>;
 
 pub type QueryHandler =
     Arc<dyn Fn(&PreparedStatement) -> Result<ResultSetData, SqlError> + Send + Sync>;
@@ -98,14 +98,12 @@ pub struct GetColumnsCall {
 
 #[derive(Default)]
 pub struct MetaDataState {
-    pub schemas: Mutex<Option<MetaResult>>,
-    pub tables: Mutex<Option<MetaResult>>,
-    pub columns: Mutex<Option<MetaResult>>,
-    pub primary_keys: Mutex<Option<MetaResult>>,
+    pub schemas: Mutex<Option<MetaResult<SchemaEntry>>>,
+    pub tables: Mutex<Option<MetaResult<TableEntry>>>,
+    pub columns: Mutex<Option<MetaResult<ColumnInfo>>>,
+    pub primary_keys: Mutex<Option<MetaResult<Option<String>>>>,
     pub search_string_escape: Mutex<Option<String>>,
-    pub identifier_quote_string: Mutex<String>,
     pub database_product_name: Mutex<String>,
-    pub user_name: Mutex<Option<String>>,
     pub get_tables_calls: Mutex<Vec<GetTablesCall>>,
     pub get_columns_calls: Mutex<Vec<GetColumnsCall>>,
     pub get_schemas_calls: AtomicUsize,
@@ -117,19 +115,19 @@ pub struct FakeDatabaseMetaData {
 }
 
 impl FakeDatabaseMetaData {
-    pub fn set_schemas(&self, result: MetaResult) {
+    pub fn set_schemas(&self, result: MetaResult<SchemaEntry>) {
         *self.state.schemas.lock().unwrap() = Some(result);
     }
 
-    pub fn set_tables(&self, result: MetaResult) {
+    pub fn set_tables(&self, result: MetaResult<TableEntry>) {
         *self.state.tables.lock().unwrap() = Some(result);
     }
 
-    pub fn set_columns(&self, result: MetaResult) {
+    pub fn set_columns(&self, result: MetaResult<ColumnInfo>) {
         *self.state.columns.lock().unwrap() = Some(result);
     }
 
-    pub fn set_primary_keys(&self, result: MetaResult) {
+    pub fn set_primary_keys(&self, result: MetaResult<Option<String>>) {
         *self.state.primary_keys.lock().unwrap() = Some(result);
     }
 
@@ -149,37 +147,32 @@ impl FakeDatabaseMetaData {
         self.state.get_columns_calls.lock().unwrap().clone()
     }
 
-    fn take(slot: &Mutex<Option<MetaResult>>, labels: &[&str]) -> Result<ResultSet, SqlError> {
-        match slot.lock().unwrap().as_ref() {
-            Some(Ok(data)) => Ok(data.to_result_set()),
-            Some(Err(e)) => Err(e.clone()),
-            None => Ok(ResultSetData::empty(labels).to_result_set()),
-        }
+    fn take<T: Clone>(slot: &Mutex<Option<MetaResult<T>>>) -> MetaResult<T> {
+        slot.lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| Ok(Vec::new()))
     }
 }
 
 #[async_trait]
 impl DatabaseMetaData for FakeDatabaseMetaData {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
-        self.state.get_schemas_calls.fetch_add(1, Ordering::SeqCst);
-        FakeDatabaseMetaData::take(&self.state.schemas, &["TABLE_SCHEM", "TABLE_CATALOG"])
-    }
-
-    async fn get_schemas_with_catalog(
+    async fn schemas(
         &self,
         _catalog: Option<&str>,
         _schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
-        self.get_schemas().await
+    ) -> MetaResult<SchemaEntry> {
+        self.state.get_schemas_calls.fetch_add(1, Ordering::SeqCst);
+        FakeDatabaseMetaData::take(&self.state.schemas)
     }
 
-    async fn get_tables(
+    async fn tables(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> MetaResult<TableEntry> {
         self.state
             .get_tables_calls
             .lock()
@@ -190,16 +183,16 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
                 table_name_pattern: table_name_pattern.map(ToString::to_string),
                 types: types.map(|t| t.iter().map(ToString::to_string).collect()),
             });
-        FakeDatabaseMetaData::take(&self.state.tables, &["TABLE_NAME", "TABLE_SCHEM"])
+        FakeDatabaseMetaData::take(&self.state.tables)
     }
 
-    async fn get_columns(
+    async fn columns(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> MetaResult<ColumnInfo> {
         self.state
             .get_columns_calls
             .lock()
@@ -210,41 +203,24 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
                 table_name_pattern: table_name_pattern.map(ToString::to_string),
                 column_name_pattern: column_name_pattern.map(ToString::to_string),
             });
-        FakeDatabaseMetaData::take(
-            &self.state.columns,
-            &[
-                "DATA_TYPE",
-                "COLUMN_SIZE",
-                "DECIMAL_DIGITS",
-                "COLUMN_NAME",
-                "TYPE_NAME",
-            ],
-        )
+        FakeDatabaseMetaData::take(&self.state.columns)
     }
 
-    async fn get_primary_keys(
+    async fn primary_key_columns(
         &self,
         _catalog: Option<&str>,
         _schema: Option<&str>,
         _table: &str,
-    ) -> Result<ResultSet, SqlError> {
-        FakeDatabaseMetaData::take(&self.state.primary_keys, &["COLUMN_NAME"])
+    ) -> MetaResult<Option<String>> {
+        FakeDatabaseMetaData::take(&self.state.primary_keys)
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
-        Ok(self.state.search_string_escape.lock().unwrap().clone())
+    fn search_string_escape(&self) -> Option<String> {
+        self.state.search_string_escape.lock().unwrap().clone()
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
-        Ok(self.state.identifier_quote_string.lock().unwrap().clone())
-    }
-
-    fn get_database_product_name(&self) -> Result<String, SqlError> {
-        Ok(self.state.database_product_name.lock().unwrap().clone())
-    }
-
-    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
-        Ok(self.state.user_name.lock().unwrap().clone())
+    fn database_product_name(&self) -> String {
+        self.state.database_product_name.lock().unwrap().clone()
     }
 }
 

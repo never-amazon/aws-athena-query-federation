@@ -25,7 +25,9 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::MetadataDialect;
-use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
+use athena_jdbc::sql::{
+    ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue,
+};
 use athena_postgresql::{
     get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
     PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
@@ -259,28 +261,17 @@ const ARRAY: JdbcType = JdbcType::Array;
 
 type ColumnRow<'a> = (JdbcType, &'a str, Option<i32>, Option<i32>, Option<&'a str>);
 
-fn columns(rows: &[ColumnRow<'_>]) -> ResultSetData {
-    let metadata = vec![
-        ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
-        ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
-        ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
-        ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
-        ColumnMetadata::new("TYPE_NAME", JdbcType::Varchar),
-    ];
-    let int = |v: Option<i32>| v.map_or(SqlValue::Null, SqlValue::Integer);
-    let rows = rows
-        .iter()
-        .map(|(data_type, name, size, digits, type_name)| {
-            vec![
-                SqlValue::Integer(data_type.code()),
-                SqlValue::String((*name).to_string()),
-                int(*size),
-                int(*digits),
-                type_name.map_or(SqlValue::Null, |t| SqlValue::String(t.to_string())),
-            ]
+fn columns(rows: &[ColumnRow<'_>]) -> Vec<ColumnInfo> {
+    rows.iter()
+        .map(|(data_type, name, size, digits, type_name)| ColumnInfo {
+            name: Some((*name).to_string()),
+            data_type: *data_type,
+            type_name: type_name.map(ToString::to_string),
+            column_size: *size,
+            decimal_digits: *digits,
+            ordinal_position: 0,
         })
-        .collect();
-    ResultSetData::of_columns(metadata, rows)
+        .collect()
 }
 
 fn get_table_request(table: TableName) -> GetTableRequest {
@@ -358,10 +349,10 @@ fn split_clause_routes(
     data_type: Option<&'static str>,
     bounds: Option<(i32, i32)>,
 ) {
-    connection.meta.set_primary_keys(Ok(match primary_key {
-        Some(pk) => single_column("COLUMN_NAME", &[pk]),
-        None => ResultSetData::empty(&["COLUMN_NAME"]),
-    }));
+    connection.meta.set_primary_keys(Ok(primary_key
+        .map(|pk| Some(pk.to_string()))
+        .into_iter()
+        .collect()));
     let bounds_sql = primary_key.map(min_max_sql);
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
@@ -975,7 +966,7 @@ async fn test_do_get_splits_with_partition_splitter() {
     );
     connection
         .meta
-        .set_primary_keys(Ok(single_column("COLUMN_NAME", &["id"])));
+        .set_primary_keys(Ok(vec![Some("id".to_string())]));
     let bounds_sql = min_max_sql("id");
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
