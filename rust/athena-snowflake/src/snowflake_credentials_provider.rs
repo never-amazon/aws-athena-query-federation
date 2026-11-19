@@ -111,7 +111,7 @@ impl SnowflakeCredentialsProvider {
             (snowflake_constants::PASSWORD.to_string(), access_token),
             (
                 snowflake_constants::AUTHENTICATOR.to_string(),
-                SnowflakeAuthType::Oauth.value().to_string(),
+                SnowflakeAuthType::Oauth.as_str().to_string(),
             ),
         ]))
     }

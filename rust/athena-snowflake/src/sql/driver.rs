@@ -51,67 +51,64 @@ const CLIENT_SIDE_PROPERTIES: [&str; 24] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Authenticator {
+    Snowflake,
+    OAuth,
+    SnowflakeJwt,
+    Unsupported(String),
+}
+
+impl Authenticator {
+    fn parse(value: Option<&str>) -> Authenticator {
+        let Some(value) = value else {
+            return Authenticator::Snowflake;
+        };
+        if value.eq_ignore_ascii_case("oauth") {
+            Authenticator::OAuth
+        } else if value.eq_ignore_ascii_case("snowflake_jwt") {
+            Authenticator::SnowflakeJwt
+        } else if value.eq_ignore_ascii_case("snowflake") {
+            Authenticator::Snowflake
+        } else {
+            Authenticator::Unsupported(value.to_string())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnowflakeConnectionSettings {
     pub base_url: Url,
     pub account: String,
-    pub parameters: BTreeMap<String, String>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    pub token: Option<String>,
+    pub authenticator: Authenticator,
+    pub warehouse: Option<String>,
+    pub database: Option<String>,
+    pub schema: Option<String>,
+    pub role: Option<String>,
+    pub query_timeout: Option<Duration>,
+    pub timestamp_mapping: TimestampTypeMapping,
+    pub session_parameters: Vec<(String, String)>,
 }
 
 impl SnowflakeConnectionSettings {
-    fn get(&self, key: &str) -> Option<&str> {
-        self.parameters.get(key).map(String::as_str)
-    }
-
-    pub fn user(&self) -> Option<&str> {
-        self.get("USER")
-    }
-
-    pub fn authenticator(&self) -> Option<&str> {
-        self.get("AUTHENTICATOR")
-    }
-
-    pub fn session_parameters(&self) -> impl Iterator<Item = (&str, &str)> {
-        let default_result_format = (!self.parameters.contains_key(QUERY_RESULT_FORMAT))
-            .then_some((QUERY_RESULT_FORMAT, JSON_RESULT_FORMAT));
-        self.parameters
-            .iter()
-            .filter(|(key, _)| !CLIENT_SIDE_PROPERTIES.contains(&key.as_str()))
-            .map(|(key, value)| (key.as_str(), value.as_str()))
-            .chain(default_result_format)
-    }
-
-    pub fn timestamp_type_mapping(&self) -> TimestampTypeMapping {
-        TimestampTypeMapping::from_parameter(self.get(CLIENT_TIMESTAMP_TYPE_MAPPING))
-    }
-
-    pub fn query_timeout(&self) -> Result<Option<Duration>, SqlError> {
-        let Some(value) = self.get(QUERY_TIMEOUT) else {
-            return Ok(None);
-        };
-        value.parse::<i32>().map(positive_seconds).map_err(|_| {
-            SqlError::snowflake(
-                "Invalid parameter value java.lang.String for parameter type java.lang.Integer.",
-            )
-        })
-    }
-
     pub fn session_config(&self) -> SessionConfig {
         let mut session = SessionConfig::new();
-        if let Some(warehouse) = self.get("WAREHOUSE") {
+        if let Some(warehouse) = &self.warehouse {
             session = session.with_warehouse(warehouse);
         }
-        if let Some(database) = self.get("DB").or_else(|| self.get("DATABASE")) {
+        if let Some(database) = &self.database {
             session = session.with_database(database);
         }
-        if let Some(schema) = self.get("SCHEMA") {
+        if let Some(schema) = &self.schema {
             session = session.with_schema(schema);
         }
-        if let Some(role) = self.get("ROLE") {
+        if let Some(role) = &self.role {
             session = session.with_role(role);
         }
-        for (key, value) in self.session_parameters() {
-            session =
-                session.with_session_parameter(key, serde_json::Value::String(value.to_string()));
+        for (key, value) in &self.session_parameters {
+            session = session.with_session_parameter(key, serde_json::Value::String(value.clone()));
         }
         session
     }
@@ -126,28 +123,29 @@ impl SnowflakeConnectionSettings {
                 .map_err(|e| SqlError::snowflake(e.to_string()))?;
             return Ok(AuthConfig::key_pair(KeyPairConfig::from_pem(pem)));
         }
-        let authenticator = self.authenticator().unwrap_or("snowflake");
-        if authenticator.eq_ignore_ascii_case("oauth") {
-            let token = self
-                .get("TOKEN")
-                .or_else(|| self.get("PASSWORD"))
-                .ok_or_else(|| SqlError::snowflake("Missing OAuth token."))?;
-            return Ok(AuthConfig::oauth(token));
-        }
-        if authenticator.eq_ignore_ascii_case("snowflake_jwt") {
-            return Err(SqlError::snowflake(
+        match &self.authenticator {
+            Authenticator::OAuth => {
+                let token = self
+                    .token
+                    .as_deref()
+                    .or(self.password.as_deref())
+                    .ok_or_else(|| SqlError::snowflake("Missing OAuth token."))?;
+                Ok(AuthConfig::oauth(token))
+            }
+            Authenticator::SnowflakeJwt => Err(SqlError::snowflake(
                 "Private key provided is invalid or not supported: null",
-            ));
-        }
-        if !authenticator.eq_ignore_ascii_case("snowflake") {
-            return Err(SqlError::snowflake(format!(
+            )),
+            Authenticator::Unsupported(authenticator) => Err(SqlError::snowflake(format!(
                 "Unsupported authenticator: {authenticator}"
-            )));
+            ))),
+            Authenticator::Snowflake => {
+                let password = self
+                    .password
+                    .as_deref()
+                    .ok_or_else(|| SqlError::snowflake("Missing password."))?;
+                Ok(AuthConfig::password(PasswordConfig::from(password)))
+            }
         }
-        let password = self
-            .get("PASSWORD")
-            .ok_or_else(|| SqlError::snowflake("Missing password."))?;
-        Ok(AuthConfig::password(PasswordConfig::from(password)))
     }
 
     pub fn client_config(
@@ -155,7 +153,8 @@ impl SnowflakeConnectionSettings {
         private_key: Option<&SnowflakePrivateKey>,
     ) -> Result<ClientConfig, SqlError> {
         let user = self
-            .user()
+            .user
+            .as_deref()
             .ok_or_else(|| SqlError::snowflake("Missing user name."))?;
         Ok(
             ClientConfig::new(user, &self.account, self.auth_config(private_key)?)
@@ -164,6 +163,32 @@ impl SnowflakeConnectionSettings {
                 .with_endpoint(EndpointConfig::CustomBaseUrl(self.base_url.clone())),
         )
     }
+}
+
+fn session_parameters(parameters: &BTreeMap<String, String>) -> Vec<(String, String)> {
+    let default_result_format = (!parameters.contains_key(QUERY_RESULT_FORMAT)).then(|| {
+        (
+            QUERY_RESULT_FORMAT.to_string(),
+            JSON_RESULT_FORMAT.to_string(),
+        )
+    });
+    parameters
+        .iter()
+        .filter(|(key, _)| !CLIENT_SIDE_PROPERTIES.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .chain(default_result_format)
+        .collect()
+}
+
+fn query_timeout(value: Option<&String>) -> Result<Option<Duration>, SqlError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    value.parse::<i32>().map(positive_seconds).map_err(|_| {
+        SqlError::snowflake(
+            "Invalid parameter value java.lang.String for parameter type java.lang.Integer.",
+        )
+    })
 }
 
 pub fn url_decode(text: &str) -> Result<String, SqlError> {
@@ -239,10 +264,26 @@ pub fn parse_connection_settings(
         .get("ACCOUNT")
         .cloned()
         .unwrap_or_else(|| host.split('.').next().unwrap_or(host).to_string());
+    let query_timeout = query_timeout(parameters.get(QUERY_TIMEOUT))?;
+    let get = |key: &str| parameters.get(key).cloned();
     Ok(SnowflakeConnectionSettings {
         base_url,
         account,
-        parameters,
+        user: get("USER"),
+        password: get("PASSWORD"),
+        token: get("TOKEN"),
+        authenticator: Authenticator::parse(parameters.get("AUTHENTICATOR").map(String::as_str)),
+        warehouse: get("WAREHOUSE"),
+        database: get("DB").or_else(|| get("DATABASE")),
+        schema: get("SCHEMA"),
+        role: get("ROLE"),
+        query_timeout,
+        timestamp_mapping: TimestampTypeMapping::from_parameter(
+            parameters
+                .get(CLIENT_TIMESTAMP_TYPE_MAPPING)
+                .map(String::as_str),
+        ),
+        session_parameters: session_parameters(&parameters),
     })
 }
 
@@ -309,7 +350,6 @@ impl SnowflakeDriver for SnowflakeJdbcDriver {
             SnowflakeAuth::KeyPair(private_key) => Some(private_key),
         };
         let settings = parse_connection_settings(url, properties)?;
-        let query_timeout = settings.query_timeout()?;
         let config = settings.client_config(private_key)?;
         let client = Client::new(config).map_err(|e| from_connector_error(&e))?;
         let session = client
@@ -319,9 +359,9 @@ impl SnowflakeDriver for SnowflakeJdbcDriver {
         Ok(Box::new(
             SnowflakeConnection::new(Arc::new(ConnectorExecutor::new(
                 session,
-                settings.timestamp_type_mapping(),
+                settings.timestamp_mapping,
             )))
-            .with_query_timeout(query_timeout),
+            .with_query_timeout(settings.query_timeout),
         ))
     }
 }

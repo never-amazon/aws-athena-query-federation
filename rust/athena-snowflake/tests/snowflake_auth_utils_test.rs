@@ -296,23 +296,23 @@ fn test_validate_credentials_with_o_auth_auth_missing_username() {
 fn test_snowflake_auth_type_from_string() {
     assert_eq!(
         SnowflakeAuthType::Snowflake,
-        SnowflakeAuthType::from_string(Some("snowflake")).unwrap()
+        "snowflake".parse::<SnowflakeAuthType>().unwrap()
     );
     assert_eq!(
         SnowflakeAuthType::SnowflakeJwt,
-        SnowflakeAuthType::from_string(Some("snowflake_jwt")).unwrap()
+        "snowflake_jwt".parse::<SnowflakeAuthType>().unwrap()
     );
     assert_eq!(
         SnowflakeAuthType::Oauth,
-        SnowflakeAuthType::from_string(Some("oauth")).unwrap()
+        "oauth".parse::<SnowflakeAuthType>().unwrap()
     );
 }
 
 #[test]
 fn test_snowflake_auth_type_get_value() {
-    assert_eq!("snowflake", SnowflakeAuthType::Snowflake.value());
-    assert_eq!("snowflake_jwt", SnowflakeAuthType::SnowflakeJwt.value());
-    assert_eq!("oauth", SnowflakeAuthType::Oauth.value());
+    assert_eq!("snowflake", SnowflakeAuthType::Snowflake.as_str());
+    assert_eq!("snowflake_jwt", SnowflakeAuthType::SnowflakeJwt.as_str());
+    assert_eq!("oauth", SnowflakeAuthType::Oauth.as_str());
 }
 
 #[test]

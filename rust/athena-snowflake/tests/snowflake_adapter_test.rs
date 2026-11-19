@@ -437,14 +437,14 @@ fn connection_settings_parse_the_jdbc_url() {
         &properties,
     )
     .unwrap();
-    assert_eq!(Some("athena"), settings.user());
+    assert_eq!(Some("athena"), settings.user.as_deref());
     assert_eq!("myorg-acct", settings.account);
     assert_eq!(
         "https://myorg-acct.snowflakecomputing.com/",
         settings.base_url.as_str()
     );
-    assert_eq!(Some(&"SALES".to_string()), settings.parameters.get("DB"));
-    assert_eq!(Some(&"READER".to_string()), settings.parameters.get("ROLE"));
+    assert_eq!(Some("SALES"), settings.database.as_deref());
+    assert_eq!(Some("READER"), settings.role.as_deref());
     let error = parse_connection_settings("jdbc:mysql://host/", &properties).unwrap_err();
     assert_eq!(
         "Invalid Connect String: jdbc:mysql://host/.",

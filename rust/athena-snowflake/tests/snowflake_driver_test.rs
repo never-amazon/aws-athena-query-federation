@@ -173,11 +173,12 @@ fn timestamp_type_mapping_comes_from_the_connection_string() {
             &properties(&[]),
         )
         .unwrap();
-        assert_eq!(mapping, settings.timestamp_type_mapping(), "{query}");
+        assert_eq!(mapping, settings.timestamp_mapping, "{query}");
         assert_eq!(
             !query.is_empty(),
             settings
-                .session_parameters()
+                .session_parameters
+                .iter()
                 .any(|(key, _)| key == "CLIENT_TIMESTAMP_TYPE_MAPPING")
         );
     }
@@ -185,24 +186,21 @@ fn timestamp_type_mapping_comes_from_the_connection_string() {
 
 #[test]
 fn invalid_query_timeout_property_fails_like_the_jdbc_driver() {
-    let settings = parse_connection_settings(
+    let error = parse_connection_settings(
         "jdbc:snowflake://acct.snowflakecomputing.com/?queryTimeout=abc",
         &properties(&[]),
     )
-    .unwrap();
+    .unwrap_err();
     assert_eq!(
         "Invalid parameter value java.lang.String for parameter type java.lang.Integer.",
-        settings.query_timeout().unwrap_err().message()
+        error.message()
     );
     let settings = parse_connection_settings(
         "jdbc:snowflake://acct.snowflakecomputing.com/?queryTimeout=30",
         &properties(&[]),
     )
     .unwrap();
-    assert_eq!(
-        Some(Duration::from_secs(30)),
-        settings.query_timeout().unwrap()
-    );
+    assert_eq!(Some(Duration::from_secs(30)), settings.query_timeout);
 }
 
 #[tokio::test]

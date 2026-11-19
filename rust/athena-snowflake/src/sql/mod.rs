@@ -8,8 +8,8 @@ mod wildcard;
 pub use connection::SnowflakeConnection;
 pub(crate) use driver::PooledSnowflakeDriver;
 pub use driver::{
-    parse_connection_settings, url_decode, SnowflakeAuth, SnowflakeConnectionSettings,
-    SnowflakeDriver, SnowflakeJdbcDriver,
+    parse_connection_settings, url_decode, Authenticator, SnowflakeAuth,
+    SnowflakeConnectionSettings, SnowflakeDriver, SnowflakeJdbcDriver,
 };
 pub use executor::{
     ConnectorExecutor, SnowflakeExecutor, SnowflakeQueryResult, TimestampTypeMapping,

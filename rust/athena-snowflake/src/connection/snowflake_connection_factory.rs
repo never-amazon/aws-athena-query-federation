@@ -183,7 +183,7 @@ impl SnowflakeConnectionFactory {
         properties.insert(snowflake_constants::USER.to_string(), username.clone());
         properties.insert(
             snowflake_constants::AUTHENTICATOR.to_string(),
-            SnowflakeAuthType::SnowflakeJwt.value().to_string(),
+            SnowflakeAuthType::SnowflakeJwt.as_str().to_string(),
         );
         tracing::debug!(
             "Creating Snowflake connection with key-pair authentication for user: {username}"
