@@ -642,3 +642,195 @@ fn missing_function_argument_fails_like_java() {
     );
     assert_eq!(message, root_cause(&mapped));
 }
+
+fn null_of(t: Type) -> Expression {
+    Expression {
+        rex_type: Some(RexType::Literal(literal_of(LiteralType::Null(t), true))),
+    }
+}
+
+fn list_of(element: Type) -> Type {
+    ty(Kind::List(Box::new(r#type::List {
+        r#type: Some(Box::new(element)),
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    })))
+}
+
+fn map_of(key: Type, value: Type) -> Type {
+    ty(Kind::Map(Box::new(r#type::Map {
+        key: Some(Box::new(key)),
+        value: Some(Box::new(value)),
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    })))
+}
+
+fn varchar(length: i32) -> Type {
+    ty(Kind::Varchar(r#type::VarChar {
+        length,
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+    }))
+}
+
+fn decimal(precision: i32, scale: i32) -> Type {
+    ty(Kind::Decimal(r#type::Decimal {
+        scale,
+        precision,
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+    }))
+}
+
+fn interval_day() -> Type {
+    ty(Kind::IntervalDay(r#type::IntervalDay {
+        precision: Some(3),
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    }))
+}
+
+fn select_null(t: Type, dialect: &SqlDialect) -> Result<String, String> {
+    let plan_string = encode(
+        &[],
+        rel(RelType::Project(Box::new(ProjectRel {
+            input: Some(Box::new(small_read())),
+            expressions: vec![null_of(t)],
+            ..Default::default()
+        }))),
+    );
+    match plan::to_sql_node(&plan_string, dialect) {
+        Ok(node) => Ok(node.to_sql_string(dialect).replace('\n', " ")),
+        Err(error) => {
+            let mut source: &dyn Error = &error;
+            while let Some(next) = source.source() {
+                source = next;
+            }
+            Err(source.to_string())
+        }
+    }
+}
+
+#[test]
+fn null_collection_casts_spell_element_types_like_calcite() {
+    let string = ty(Kind::String(r#type::String {
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+    }));
+    let row = ty(Kind::Struct(r#type::Struct {
+        types: vec![i64_type(REQUIRED), varchar(5), decimal(10, 2)],
+        type_variation_reference: 0,
+        nullability: REQUIRED,
+    }));
+    let cases = [
+        (
+            list_of(varchar(5)),
+            "VARCHAR(5) CHARACTER SET `UTF-8` ARRAY",
+            "VARCHAR(5) ARRAY",
+            "VARCHAR(5) CHARACTER SET \"UTF-8\" ARRAY",
+        ),
+        (
+            list_of(list_of(i64_type(REQUIRED))),
+            "BIGINT ARRAY ARRAY",
+            "BIGINT ARRAY ARRAY",
+            "BIGINT ARRAY ARRAY",
+        ),
+        (
+            list_of(decimal(38, 30)),
+            "DECIMAL(19, 30) ARRAY",
+            "DECIMAL(19, 30) ARRAY",
+            "DECIMAL(19, 30) ARRAY",
+        ),
+        (
+            list_of(varchar(100_000)),
+            "VARCHAR(65536) CHARACTER SET `UTF-8` ARRAY",
+            "VARCHAR(100000) ARRAY",
+            "VARCHAR(65536) CHARACTER SET \"UTF-8\" ARRAY",
+        ),
+        (
+            row.clone(),
+            "ROW(`f0` BIGINT, `f1` VARCHAR(5) CHARACTER SET `UTF-8`, `f2` DECIMAL(10, 2))",
+            "ROW(\"f0\" BIGINT, \"f1\" VARCHAR(5), \"f2\" DECIMAL(10, 2))",
+            "ROW(\"f0\" BIGINT, \"f1\" VARCHAR(5) CHARACTER SET \"UTF-8\", \"f2\" DECIMAL(10, 2))",
+        ),
+        (
+            list_of(row),
+            "ROW(`f0` BIGINT, `f1` VARCHAR(5) CHARACTER SET `UTF-8`, `f2` DECIMAL(10, 2)) ARRAY",
+            "ROW(\"f0\" BIGINT, \"f1\" VARCHAR(5), \"f2\" DECIMAL(10, 2)) ARRAY",
+            "ROW(\"f0\" BIGINT, \"f1\" VARCHAR(5) CHARACTER SET \"UTF-8\", \"f2\" DECIMAL(10, 2)) ARRAY",
+        ),
+        (
+            map_of(string, list_of(i64_type(NULLABLE))),
+            "MAP< VARCHAR CHARACTER SET `UTF-8`, BIGINT ARRAY >",
+            "MAP< VARCHAR, BIGINT ARRAY >",
+            "MAP< VARCHAR CHARACTER SET \"UTF-8\", BIGINT ARRAY >",
+        ),
+    ];
+    for (t, ansi, postgresql, snowflake) in cases {
+        assert_eq!(
+            Ok(format!(
+                "SELECT `k`, `v`, CAST(NULL AS {ansi}) AS `$f2` FROM `u`"
+            )),
+            select_null(t.clone(), &SqlDialect::ansi())
+        );
+        assert_eq!(
+            Ok(format!(
+                "SELECT \"k\", \"v\", CAST(NULL AS {postgresql}) AS \"$f2\" FROM \"u\""
+            )),
+            select_null(t.clone(), &SqlDialect::postgresql())
+        );
+        assert_eq!(
+            Ok(format!(
+                "SELECT \"k\", \"v\", CAST(NULL AS {snowflake}) AS \"$f2\" FROM \"u\""
+            )),
+            select_null(t, &SqlDialect::snowflake())
+        );
+    }
+}
+
+#[test]
+fn interval_casts_fail_in_convert_type_to_spec_like_calcite() {
+    let year = ty(Kind::IntervalYear(r#type::IntervalYear {
+        type_variation_reference: 0,
+        nullability: NULLABLE,
+    }));
+    let day_second = "Unsupported type when convertTypeToSpec: INTERVAL_DAY_SECOND";
+    let cases = [
+        (interval_day(), day_second),
+        (
+            year,
+            "Unsupported type when convertTypeToSpec: INTERVAL_YEAR_MONTH",
+        ),
+        (list_of(interval_day()), day_second),
+        (map_of(i64_type(REQUIRED), interval_day()), day_second),
+    ];
+    for dialect in [
+        SqlDialect::ansi(),
+        SqlDialect::postgresql(),
+        SqlDialect::snowflake(),
+    ] {
+        for (t, message) in &cases {
+            assert_eq!(
+                Err((*message).to_string()),
+                select_null(t.clone(), &dialect)
+            );
+        }
+    }
+    let cast = Expression {
+        rex_type: Some(RexType::Cast(Box::new(Cast {
+            r#type: Some(interval_day()),
+            input: Some(Box::new(field(column("iy")))),
+            failure_behavior: 0,
+        }))),
+    };
+    let plan_string = encode(
+        &[],
+        rel(RelType::Project(Box::new(ProjectRel {
+            input: Some(Box::new(read())),
+            expressions: vec![cast],
+            ..Default::default()
+        }))),
+    );
+    assert_eq!(day_second, root_cause(&plan_string));
+}

@@ -1,6 +1,7 @@
 use super::rel_data_type::{RelDataType, RelDataTypeSystem};
 use super::sql_node::SqlDataTypeSpec;
-use super::sql_type_name::SqlTypeName;
+use super::sql_type_name::{SqlTypeFamily, SqlTypeName};
+use crate::error::{Result, SubstraitError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DatabaseProduct {
@@ -159,27 +160,17 @@ impl SqlDialect {
         }
     }
 
-    pub fn cast_spec(&self, ty: &RelDataType) -> Option<SqlDataTypeSpec> {
+    pub fn cast_spec(&self, ty: &RelDataType) -> Result<Option<SqlDataTypeSpec>> {
         let tn = ty.sql_type_name();
         if self.product == DatabaseProduct::Postgresql {
-            let alien = match tn {
-                SqlTypeName::Tinyint => Some("smallint"),
-                SqlTypeName::Double => Some("double precision"),
-                _ => None,
-            };
-            if let Some(a) = alien {
-                return Some(SqlDataTypeSpec {
-                    type_name: a.to_string(),
-                    precision: None,
-                    scale: None,
-                    charset: None,
-                    alien: true,
-                    collection: None,
-                });
+            match tn {
+                SqlTypeName::Tinyint => return Ok(Some(SqlDataTypeSpec::Alien("smallint"))),
+                SqlTypeName::Double => return Ok(Some(SqlDataTypeSpec::Alien("double precision"))),
+                _ => {}
             }
         }
         if tn == SqlTypeName::Null {
-            return None;
+            return Ok(None);
         }
         let system = self.type_system();
         let clamp = |value: Option<i32>, max: Option<i32>| match (value, max) {
@@ -196,28 +187,59 @@ impl SqlDialect {
             }
             _ => (ty.precision(), ty.scale()),
         };
-        let precision = precision.filter(|_| tn.allows_prec());
-        let scale = scale.filter(|_| tn.allows_scale());
-        let charset = if tn.is_character() && self.supports_char_set() {
-            Some("UTF-8".to_string())
-        } else {
-            None
+        self.type_spec(ty, precision, scale).map(Some)
+    }
+
+    fn type_spec(
+        &self,
+        ty: &RelDataType,
+        precision: Option<i32>,
+        scale: Option<i32>,
+    ) -> Result<SqlDataTypeSpec> {
+        let tn = ty.sql_type_name();
+        let unsupported = || {
+            SubstraitError::Unsupported(format!(
+                "Unsupported type when convertTypeToSpec: {}",
+                tn.name()
+            ))
         };
-        let type_name = match tn {
-            SqlTypeName::IntervalYearMonth => "INTERVAL YEAR TO MONTH".to_string(),
-            SqlTypeName::IntervalDaySecond => "INTERVAL DAY TO SECOND".to_string(),
-            SqlTypeName::TimeWithLocalTimeZone => "TIME WITH LOCAL TIME ZONE".to_string(),
-            SqlTypeName::TimestampWithLocalTimeZone => "TIMESTAMP WITH LOCAL TIME ZONE".to_string(),
-            other => other.name().to_string(),
+        let nested = |t: Option<&RelDataType>| {
+            let t = t.ok_or_else(unsupported)?;
+            self.type_spec(t, t.precision(), t.scale())
         };
-        Some(SqlDataTypeSpec {
-            type_name,
-            precision,
-            scale,
-            charset,
-            alien: false,
-            collection: None,
-        })
+        let spec = match tn.family() {
+            SqlTypeFamily::Boolean
+            | SqlTypeFamily::Numeric
+            | SqlTypeFamily::Date
+            | SqlTypeFamily::Time
+            | SqlTypeFamily::Timestamp
+            | SqlTypeFamily::Character
+            | SqlTypeFamily::Binary
+            | SqlTypeFamily::Null => SqlDataTypeSpec::Basic {
+                type_name: match tn {
+                    SqlTypeName::TimeWithLocalTimeZone => "TIME WITH LOCAL TIME ZONE",
+                    SqlTypeName::TimestampWithLocalTimeZone => "TIMESTAMP WITH LOCAL TIME ZONE",
+                    other => other.name(),
+                },
+                precision: precision.filter(|_| tn.allows_prec()),
+                scale: scale.filter(|_| tn.allows_scale()),
+                charset: (tn.is_character() && self.supports_char_set()).then_some("UTF-8"),
+            },
+            SqlTypeFamily::Array => SqlDataTypeSpec::Array(Box::new(nested(ty.component_type())?)),
+            SqlTypeFamily::Map => SqlDataTypeSpec::Map(
+                Box::new(nested(ty.key_type())?),
+                Box::new(nested(ty.value_type())?),
+            ),
+            SqlTypeFamily::Other if tn == SqlTypeName::Row => {
+                let mut fields = Vec::with_capacity(ty.field_count());
+                for f in ty.field_list() {
+                    fields.push((f.name().to_string(), nested(Some(f.ty()))?));
+                }
+                SqlDataTypeSpec::Row(fields)
+            }
+            _ => return Err(unsupported()),
+        };
+        Ok(spec)
     }
 
     pub fn supports_char_set(&self) -> bool {

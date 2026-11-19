@@ -781,7 +781,7 @@ impl Context {
         }
         let mut nodes = self.to_sql_list(&call.operands)?;
         if matches!(call.op.kind, SqlKind::Cast | SqlKind::SafeCast) {
-            if let Some(spec) = self.dialect.cast_spec(&call.ty) {
+            if let Some(spec) = self.dialect.cast_spec(&call.ty)? {
                 nodes.push(SqlNode::DataType(spec));
             }
         }
@@ -1632,7 +1632,7 @@ impl RelToSqlConverter {
                         .get(select_list.len())
                         .map(|f| f.ty().clone());
                     if let Some(ft) = field_type {
-                        if let Some(spec) = self.dialect.cast_spec(&ft) {
+                        if let Some(spec) = self.dialect.cast_spec(&ft)? {
                             sql =
                                 SqlNode::call(&operators::CAST, vec![sql, SqlNode::DataType(spec)]);
                         }

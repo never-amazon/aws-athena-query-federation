@@ -668,26 +668,52 @@ fn unparse_window(w: &mut SqlWriter<'_>, win: &SqlWindow) {
 }
 
 fn unparse_data_type(w: &mut SqlWriter<'_>, spec: &SqlDataTypeSpec) {
-    if spec.alien {
-        w.keyword(&spec.type_name);
-        return;
-    }
-    w.keyword(&spec.type_name);
-    if let Some(precision) = spec.precision.filter(|p| *p >= 0) {
-        w.start_list(FrameType::FunCall, "(", ")");
-        w.print_int(precision);
-        if let Some(scale) = spec.scale {
-            w.sep_with(",", true);
-            w.print_int(scale);
+    match spec {
+        SqlDataTypeSpec::Alien(name) => w.keyword(name),
+        SqlDataTypeSpec::Basic {
+            type_name,
+            precision,
+            scale,
+            charset,
+        } => {
+            w.keyword(type_name);
+            if let Some(precision) = precision.filter(|p| *p >= 0) {
+                w.start_list(FrameType::FunCall, "(", ")");
+                w.print_int(precision);
+                if let Some(scale) = scale {
+                    w.sep_with(",", true);
+                    w.print_int(*scale);
+                }
+                w.end_list();
+            }
+            if let Some(cs) = charset {
+                w.keyword("CHARACTER SET");
+                w.identifier(cs);
+            }
         }
-        w.end_list();
-    }
-    if let Some(cs) = &spec.charset {
-        w.keyword("CHARACTER SET");
-        w.identifier(cs);
-    }
-    if let Some(coll) = &spec.collection {
-        w.keyword(coll);
+        SqlDataTypeSpec::Array(element) => {
+            unparse_data_type(w, element);
+            w.keyword("ARRAY");
+        }
+        SqlDataTypeSpec::Row(fields) => {
+            w.print("ROW");
+            w.start_list(FrameType::FunCall, "(", ")");
+            for (name, field) in fields {
+                w.sep(",");
+                w.identifier(name);
+                unparse_data_type(w, field);
+            }
+            w.end_list();
+        }
+        SqlDataTypeSpec::Map(key, value) => {
+            w.keyword("MAP");
+            w.start_list(FrameType::FunCall, "<", ">");
+            w.sep(",");
+            unparse_data_type(w, key);
+            w.sep(",");
+            unparse_data_type(w, value);
+            w.end_list();
+        }
     }
 }
 
