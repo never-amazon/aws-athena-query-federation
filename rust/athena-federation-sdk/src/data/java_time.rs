@@ -138,7 +138,7 @@ impl ZoneId {
             }
         }
         let tz = Tz::from_str(id)
-            .map_err(|_| FederationError::Runtime(format!("Unknown time-zone ID: {id}")))?;
+            .map_err(|_| FederationError::runtime(format!("Unknown time-zone ID: {id}")))?;
         Ok(ZoneId {
             id: id.to_string(),
             is_offset: false,
@@ -255,7 +255,7 @@ impl ZonedDateTime {
     }
 
     pub fn parse(text: &str) -> Result<ZonedDateTime> {
-        let err = || FederationError::Runtime(format!("Text '{text}' could not be parsed"));
+        let err = || FederationError::runtime(format!("Text '{text}' could not be parsed"));
         let (main, bracket) = match text.find('[') {
             Some(idx) => {
                 if !text.ends_with(']') {

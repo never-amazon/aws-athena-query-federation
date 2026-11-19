@@ -1,6 +1,7 @@
 mod handler_support;
 
 use athena_federation_sdk::data::block_utils;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use std::collections::HashMap;
 use std::sync::Arc;
 

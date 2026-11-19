@@ -1,3 +1,4 @@
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_substrait::plan;
 use athena_federation_substrait::proto::expression::field_reference::{
     ReferenceType, RootReference, RootType,
@@ -948,10 +949,7 @@ fn root_cause_error(plan_string: &str) -> (String, String) {
     while let SubstraitError::Wrapped { cause, .. } = source {
         source = cause;
     }
-    (
-        source.java_kind().java_class_name().to_string(),
-        source.to_string(),
-    )
+    (source.java_class_name(), source.to_string())
 }
 
 #[test]

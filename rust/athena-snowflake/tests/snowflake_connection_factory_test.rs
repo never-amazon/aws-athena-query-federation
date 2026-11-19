@@ -11,7 +11,7 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcDriver,
     JdbcProperties,
 };
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
 use athena_snowflake::snowflake_constants;
 use athena_snowflake::sql::SnowflakeDriver;
@@ -97,8 +97,8 @@ struct KeyPairCall {
 #[derive(Default)]
 struct RecordingDriver {
     connection: FakeConnection,
-    pooled_error: Mutex<Option<SqlException>>,
-    key_pair_error: Mutex<Option<SqlException>>,
+    pooled_error: Mutex<Option<SqlError>>,
+    key_pair_error: Mutex<Option<SqlError>>,
     pooled_calls: Mutex<Vec<(String, JdbcProperties)>>,
     key_pair_calls: Mutex<Vec<KeyPairCall>>,
 }
@@ -112,7 +112,7 @@ impl RecordingDriver {
 
     fn unreachable_host() -> Arc<RecordingDriver> {
         let driver = RecordingDriver::new();
-        *driver.pooled_error.lock().unwrap() = Some(SqlException::new(FAKE_HOST_FAILURE));
+        *driver.pooled_error.lock().unwrap() = Some(SqlError::new(FAKE_HOST_FAILURE));
         driver
     }
 
@@ -135,7 +135,7 @@ impl JdbcDriver for RecordingDriver {
         &self,
         url: &str,
         properties: &JdbcProperties,
-    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlError> {
         self.pooled_calls
             .lock()
             .unwrap()
@@ -154,7 +154,7 @@ impl SnowflakeDriver for RecordingDriver {
         url: &str,
         properties: &JdbcProperties,
         private_key: &SnowflakePrivateKey,
-    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> std::result::Result<Box<dyn JdbcConnection>, SqlError> {
         self.key_pair_calls.lock().unwrap().push(KeyPairCall {
             url: url.to_string(),
             properties: properties.clone(),
@@ -236,8 +236,8 @@ async fn assert_fake_connection(connection: &dyn JdbcConnection) {
 }
 
 fn assert_key_pair_failure(error: &FederationError, cause: &str) {
-    let sql_exception = SqlException::from_federation_error(error)
-        .unwrap_or_else(|| panic!("expected a SqlException, got {error:?}"));
+    let sql_exception = SqlError::from_federation_error(error)
+        .unwrap_or_else(|| panic!("expected a SqlError, got {error:?}"));
     assert_eq!(
         format!("Failed to create Snowflake connection with key-pair authentication: {cause}"),
         sql_exception.message()
@@ -376,7 +376,7 @@ async fn test_get_connection_with_key_pair_auth_and_private_key_creation_excepti
 #[tokio::test]
 async fn test_get_connection_with_key_pair_auth_and_generic_exception() {
     let driver = RecordingDriver::new();
-    *driver.key_pair_error.lock().unwrap() = Some(SqlException::new("Generic error"));
+    *driver.key_pair_error.lock().unwrap() = Some(SqlError::new("Generic error"));
     let provider = MapCredentialsProvider::new(&[
         (snowflake_constants::USER, TESTUSER),
         (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),

@@ -28,8 +28,8 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<ListTablesRe
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for ARRAY",
                 ))
             }
             token => {

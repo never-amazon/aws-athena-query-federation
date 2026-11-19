@@ -2,7 +2,7 @@ use std::fmt;
 use std::future::Future;
 
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+    AthenaConnectorException, FederationError, FederationSourceErrorCode, Result,
 };
 use crate::security::{AwsService, AwsServiceError};
 
@@ -80,11 +80,11 @@ impl<C: HeadBucketClient> SpillLocationVerifier<C> {
                 Ok(())
             }
             Err(ex) => Err(FederationError::AthenaConnector(
-                AthenaConnectorException::with_response(
-                    std::sync::Arc::new(ex),
+                AthenaConnectorException::new(
+                    FederationSourceErrorCode::AccessDeniedException,
                     format!("Error while checking bucket ownership for {bucket}"),
-                    ErrorDetails::of(FederationSourceErrorCode::AccessDeniedException),
-                ),
+                )
+                .with_response(FederationError::AwsService(ex)),
             )),
         };
         tracing::info!(

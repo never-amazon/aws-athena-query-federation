@@ -1,7 +1,4 @@
-use std::error::Error;
-use std::fmt;
-
-use athena_federation_sdk::exceptions::{class_cast_message, JavaExceptionKind};
+use athena_federation_sdk::exceptions::{class_cast_message, JavaCause, JavaThrowable};
 use athena_federation_sdk::FederationError;
 
 #[derive(Debug, thiserror::Error)]
@@ -50,58 +47,40 @@ impl SubstraitError {
             cause: Box::new(cause),
         }
     }
+}
 
-    pub fn java_kind(&self) -> JavaExceptionKind {
-        match self {
+impl JavaThrowable for SubstraitError {
+    fn java_class_name(&self) -> String {
+        let name = match self {
             SubstraitError::Runtime(_)
             | SubstraitError::Wrapped { .. }
-            | SubstraitError::Decode(_) => JavaExceptionKind::Runtime,
+            | SubstraitError::Decode(_) => "java.lang.RuntimeException",
             SubstraitError::IllegalArgument(_) | SubstraitError::Base64(_) => {
-                JavaExceptionKind::IllegalArgument
+                "java.lang.IllegalArgumentException"
             }
-            SubstraitError::IllegalState(_) => JavaExceptionKind::IllegalState,
-            SubstraitError::Unsupported(_) => JavaExceptionKind::UnsupportedOperation,
-            SubstraitError::IndexOutOfBounds(_) => JavaExceptionKind::IndexOutOfBounds,
-            SubstraitError::NullPointer(_) => JavaExceptionKind::NullPointer,
-            SubstraitError::NumberFormat(_) => JavaExceptionKind::NumberFormat,
-            SubstraitError::ClassCast { .. } => {
-                JavaExceptionKind::Unchecked("java.lang.ClassCastException")
-            }
+            SubstraitError::IllegalState(_) => "java.lang.IllegalStateException",
+            SubstraitError::Unsupported(_) => "java.lang.UnsupportedOperationException",
+            SubstraitError::IndexOutOfBounds(_) => "java.lang.IndexOutOfBoundsException",
+            SubstraitError::NullPointer(_) => "java.lang.NullPointerException",
+            SubstraitError::NumberFormat(_) => "java.lang.NumberFormatException",
+            SubstraitError::ClassCast { .. } => "java.lang.ClassCastException",
+        };
+        name.to_string()
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        match self {
+            SubstraitError::Wrapped { cause, .. } => Some(JavaCause::Throwable(cause.as_ref())),
+            SubstraitError::Base64(e) => Some(JavaCause::foreign(e)),
+            SubstraitError::Decode(e) => Some(JavaCause::foreign(e)),
+            _ => None,
         }
-    }
-}
-
-#[derive(Debug)]
-struct CausedSubstraitError {
-    message: &'static str,
-    cause: FederationError,
-}
-
-impl fmt::Display for CausedSubstraitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message)
-    }
-}
-
-impl Error for CausedSubstraitError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.cause)
     }
 }
 
 impl From<SubstraitError> for FederationError {
     fn from(error: SubstraitError) -> Self {
-        let kind = error.java_kind();
-        match error {
-            SubstraitError::Wrapped { message, cause } => FederationError::wrapped(
-                kind,
-                CausedSubstraitError {
-                    message,
-                    cause: FederationError::from(*cause),
-                },
-            ),
-            other => FederationError::wrapped(kind, other),
-        }
+        FederationError::external(error)
     }
 }
 
@@ -109,7 +88,7 @@ impl From<SubstraitError> for FederationError {
 mod tests {
     use std::error::Error as _;
 
-    use super::{FederationError, JavaExceptionKind, SubstraitError};
+    use super::{FederationError, JavaThrowable, SubstraitError};
 
     #[test]
     fn substrait_error_keeps_kind_message_and_source() {
@@ -119,18 +98,16 @@ mod tests {
         let error_text = error.to_string();
         let federation = FederationError::from(error);
         assert_eq!(federation.to_string(), "Failed to parse Substrait plan");
-        let FederationError::Wrapped { kind, source } = &federation else {
-            panic!("expected a wrapped error, got {federation:?}");
-        };
-        assert_eq!(*kind, JavaExceptionKind::Runtime);
+        assert_eq!(federation.java_class_name(), "java.lang.RuntimeException");
+        let source = federation.source().expect("source");
         assert_eq!(source.to_string(), error_text);
-        let inner = federation
+        let inner = source
             .source()
-            .and_then(|s| s.source())
-            .and_then(|s| s.downcast_ref::<FederationError>());
+            .and_then(|s| s.downcast_ref::<Box<SubstraitError>>())
+            .map(AsRef::as_ref);
         assert_eq!(inner.map(ToString::to_string), Some(cause_text));
         assert_eq!(
-            inner.map(FederationError::java_class_name).as_deref(),
+            inner.map(SubstraitError::java_class_name).as_deref(),
             Some("java.lang.IllegalArgumentException")
         );
     }

@@ -5,12 +5,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::resolver::{
     FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY, DEFAULT_GLUE_CONNECTION,
 };
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::resolver::{CaseLookup, JdbcCaseResolver};
-use athena_jdbc::sql::{SqlException, SqlValue};
+use athena_jdbc::sql::{SqlError, SqlValue};
 use jdbc_support::{FakeConnection, ResultSetData};
 
 const TEST_SCHEMA_NAME: &str = "oRaNgE";
@@ -286,7 +287,7 @@ async fn test_schema_name_case_insensitively() {
 async fn test_do_get_schema_name_case_insensitively_sql_exception_thrown() {
     let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("DB error")));
+    connection.on_query(|_| Err(SqlError::new("DB error")));
     let error = helper
         .schema_name_case_insensitively(&connection, TEST_INVALID_SCHEMA)
         .await
@@ -326,7 +327,7 @@ async fn test_table_name_case_insensitively() {
 async fn test_do_get_table_name_case_insensitively_sql_exception_thrown() {
     let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("DB error")));
+    connection.on_query(|_| Err(SqlError::new("DB error")));
     let error = helper
         .table_name_case_insensitively(&connection, TEST_INVALID_SCHEMA, TEST_INVALID_TABLE)
         .await

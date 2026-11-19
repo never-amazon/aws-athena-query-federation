@@ -49,12 +49,12 @@ pub fn to_big_decimal(value: &Value) -> Result<BigDecimal> {
     match value {
         Value::Decimal(d) => Ok(d.clone()),
         Value::Double(d) => BigDecimal::from_str(&double_to_string(*d)).map_err(|_| {
-            FederationError::Runtime(format!(
+            FederationError::runtime(format!(
                 "Character array is missing \"exponent\" mark 'e' or 'E': {d}"
             ))
         }),
         Value::Float(f) => BigDecimal::from_str(&double_to_string(f64::from(*f)))
-            .map_err(|_| FederationError::Runtime(format!("invalid number {f}"))),
+            .map_err(|_| FederationError::runtime(format!("invalid number {f}"))),
         Value::Byte(v) => Ok(BigDecimal::from(i64::from(*v))),
         Value::Short(v) => Ok(BigDecimal::from(i64::from(*v))),
         Value::Int(v) => Ok(BigDecimal::from(i64::from(*v))),

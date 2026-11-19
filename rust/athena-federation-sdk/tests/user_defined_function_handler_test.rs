@@ -6,6 +6,7 @@ use arrow::datatypes::{DataType, Field, Fields, Schema};
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, DefaultFieldResolver, FieldReader, Value,
 };
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{
     process_function, JavaType, UdfMethod, UdfMethods, UserDefinedFunctionHandler,
     UserDefinedFunctionStreamHandler,
@@ -282,7 +283,7 @@ fn with_complex_methods(methods: UdfMethods) -> UdfMethods {
                 Value::Decimal(x) if x.sign() == bigdecimal::num_bigint::Sign::Plus => {
                     Ok(Value::Decimal(BigDecimal::from_str("1E40").unwrap()))
                 }
-                _ => Err(FederationError::Runtime("after".into())),
+                _ => Err(FederationError::runtime("after")),
             },
         ))
         .with_method(UdfMethod::new(

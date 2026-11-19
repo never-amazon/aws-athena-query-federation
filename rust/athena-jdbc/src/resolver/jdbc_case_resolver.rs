@@ -5,7 +5,7 @@ use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
 use athena_federation_sdk::{FederationError, Result};
 
 use crate::manager::PreparedStatementBuilder;
-use crate::sql::{JdbcConnection, SqlException};
+use crate::sql::{JdbcConnection, SqlError};
 use crate::validate::runtime_with_cause;
 
 pub const ANNOTATION_SUPPORTED_SOURCE_TYPES: [&str; 2] = ["snowflake", "saphana"];
@@ -35,12 +35,12 @@ pub struct JdbcCaseResolver {
 }
 
 enum QueryFailure {
-    Sql(SqlException),
+    Sql(SqlError),
     Other(FederationError),
 }
 
-impl From<SqlException> for QueryFailure {
-    fn from(e: SqlException) -> Self {
+impl From<SqlError> for QueryFailure {
+    fn from(e: SqlError) -> Self {
         QueryFailure::Sql(e)
     }
 }

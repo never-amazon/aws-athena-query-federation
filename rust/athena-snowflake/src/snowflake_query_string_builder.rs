@@ -10,6 +10,7 @@ use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 
+use crate::partition_page::PartitionPage;
 use crate::snowflake_constants;
 use crate::snowflake_dialect::SnowflakeDialect;
 
@@ -77,7 +78,7 @@ pub fn append_order_by_limit_offset(
     constraints: &Constraints,
 ) -> String {
     let order_by_clause = builder.extract_order_by_clause(constraints);
-    let Some(page) = split.and_then(split_page) else {
+    let Some(page) = split.and_then(PartitionPage::from_split) else {
         let order_by = if order_by_clause.is_empty() {
             String::new()
         } else {
@@ -104,64 +105,6 @@ fn limit_offset(limit: &str, offset: &str) -> String {
     format!(" LIMIT {limit} OFFSET {offset}")
 }
 
-struct SplitPage<'a> {
-    primary_key: &'a str,
-    limit: &'a str,
-    offset: &'a str,
-}
-
-impl SplitPage<'_> {
-    fn limit_within(&self, constraint_limit: i64) -> String {
-        if constraint_limit <= 0 {
-            return self.limit.to_string();
-        }
-        self.limit
-            .parse::<i64>()
-            .map_or(constraint_limit, |limit| limit.min(constraint_limit))
-            .to_string()
-    }
-}
-
-fn split_page(split: &Split) -> Option<SplitPage<'_>> {
-    let partition_val = split.get_property(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)?;
-    let primary_marker = snowflake_constants::PARTITION_PRIMARY_MARKER;
-    let limit_marker_text = snowflake_constants::PARTITION_LIMIT_MARKER;
-    let offset_marker_text = snowflake_constants::PARTITION_OFFSET_MARKER;
-    let (Some(primary_index), Some(limit_marker), Some(offset_marker)) = (
-        partition_val.find(primary_marker),
-        partition_val.rfind(limit_marker_text),
-        partition_val.rfind(offset_marker_text),
-    ) else {
-        return None;
-    };
-    let primary_start = primary_index + primary_marker.len();
-    if primary_start > limit_marker || limit_marker > offset_marker {
-        tracing::warn!("Malformed partition value: {partition_val}");
-        return None;
-    }
-    let primary_key = &partition_val[primary_start..limit_marker];
-    let limit = &partition_val[limit_marker + limit_marker_text.len()..offset_marker];
-    let offset = &partition_val[offset_marker + offset_marker_text.len()..];
-    if primary_key.is_empty() {
-        return None;
-    }
-    if !is_ascii_digits(limit) || !is_ascii_digits(offset) {
-        tracing::warn!(
-            "Non-numeric limit/offset in partition value: limit={limit}, offset={offset}"
-        );
-        return None;
-    }
-    Some(SplitPage {
-        primary_key,
-        limit,
-        offset,
-    })
-}
-
-fn is_ascii_digits(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
-}
-
 fn number_long(value: &Value) -> Result<i64> {
     value
         .number_long_value()
@@ -180,7 +123,7 @@ fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
             let date = NaiveDate::from_ymd_opt(1970, 1, 1)
                 .and_then(|epoch| epoch.checked_add_signed(chrono::Duration::days(days)))
                 .ok_or_else(|| {
-                    FederationError::Runtime(format!("Invalid value for EpochDay: {days}"))
+                    FederationError::runtime(format!("Invalid value for EpochDay: {days}"))
                 })?;
             format!("DATE {}", quote(&date.format("%Y-%m-%d").to_string()))
         }
@@ -207,7 +150,7 @@ fn instant_text(millis: i64) -> Result<String> {
     DateTime::from_timestamp_millis(millis)
         .map(|instant| instant.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
         .ok_or_else(|| {
-            FederationError::Runtime(format!(
+            FederationError::runtime(format!(
                 "Instant exceeds minimum or maximum instant: {millis}"
             ))
         })
@@ -280,7 +223,7 @@ impl SplitDialect for SnowflakeSplitDialect {
     }
 
     fn split_paging_clause(&self, _builder: &SnowflakeQueryStringBuilder, split: &Split) -> String {
-        split_page(split).map_or_else(String::new, |page| {
+        PartitionPage::from_split(split).map_or_else(String::new, |page| {
             format!(
                 " ORDER BY {}{}",
                 page.primary_key,

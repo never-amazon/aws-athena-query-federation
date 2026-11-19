@@ -104,10 +104,10 @@ async fn test_not_found_exception() {
         .as_connector_exception()
         .expect("AthenaConnectorException");
     assert_eq!(
-        Some(FederationSourceErrorCode::EntityNotFoundException),
-        connector.error_code()
+        FederationSourceErrorCode::EntityNotFoundException,
+        connector.code
     );
-    assert_eq!("Key not found", connector.message());
+    assert_eq!("Key not found", connector.message);
 }
 
 #[tokio::test]

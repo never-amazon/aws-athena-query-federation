@@ -7,13 +7,13 @@ use athena_federation_sdk::data::ArrowType;
 use athena_federation_sdk::{FederationError, Result};
 
 use super::jdbc_to_arrow_utils::get_arrow_type_from_jdbc_type;
-use crate::sql::Types;
+use crate::sql::JdbcType;
 
 pub const DEFAULT_PRECISION: i32 = 38;
 const DEFAULT_SCALE_KEY: &str = "default_scale";
 
 pub fn jdbc_to_arrow_type<S: BuildHasher>(
-    jdbc_type: i32,
+    jdbc_type: JdbcType,
     precision: i32,
     scale: i32,
     config_options: &HashMap<String, String, S>,
@@ -26,8 +26,9 @@ pub fn jdbc_to_arrow_type<S: BuildHasher>(
     })?;
     let mut resolved_precision = precision;
     let mut resolved_scale = scale;
-    let needs_resolving = jdbc_type == Types::NUMERIC && precision == 0 && scale <= 0;
-    let decimal_exceeding_precision = jdbc_type == Types::DECIMAL && precision > DEFAULT_PRECISION;
+    let needs_resolving = jdbc_type == JdbcType::Numeric && precision == 0 && scale <= 0;
+    let decimal_exceeding_precision =
+        jdbc_type == JdbcType::Decimal && precision > DEFAULT_PRECISION;
     if needs_resolving {
         resolved_precision = DEFAULT_PRECISION;
         resolved_scale = default_scale;
@@ -42,11 +43,15 @@ pub fn jdbc_to_arrow_type<S: BuildHasher>(
         Err(FederationError::UnsupportedOperation(message)) => {
             tracing::warn!(
                 "Error converting JDBC Type [{}] to arrow: {}",
-                jdbc_type,
+                jdbc_type.code(),
                 message
             );
-            if jdbc_type == Types::TIMESTAMP_WITH_TIMEZONE {
-                tracing::debug!("Converting JDBC Type [{}] to arrow: {}", jdbc_type, message);
+            if jdbc_type == JdbcType::TimestampWithTimezone {
+                tracing::debug!(
+                    "Converting JDBC Type [{}] to arrow: {}",
+                    jdbc_type.code(),
+                    message
+                );
                 return Ok(Some(DataType::Date64));
             }
             Ok(None)

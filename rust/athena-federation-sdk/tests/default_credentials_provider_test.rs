@@ -2,6 +2,7 @@ use athena_federation_sdk::credentials::{
     Credentials, CredentialsProvider, DefaultCredentials, DefaultCredentialsProvider,
     StaticCredentialsProvider,
 };
+use athena_federation_sdk::exceptions::JavaThrowable;
 
 #[tokio::test]
 async fn get_static_credential() {

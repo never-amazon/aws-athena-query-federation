@@ -1,18 +1,33 @@
-use std::sync::Arc;
-
 use arrow::error::ArrowError;
 use athena_federation_sdk::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode, JavaExceptionKind,
+    AthenaConnectorException, FederationSourceErrorCode, JavaCause, JavaThrowable,
 };
 use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::FederationError;
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct CheckedError(&'static str);
+
+impl JavaThrowable for CheckedError {
+    fn java_class_name(&self) -> String {
+        "org.postgresql.util.PSQLException".to_string()
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        None
+    }
+
+    fn is_runtime_exception(&self) -> bool {
+        false
+    }
+}
+
 #[test]
 fn checked_cause_wrapped_in_runtime_exception_matches_java_report() {
-    let checked = FederationError::wrapped(
-        JavaExceptionKind::Checked("org.postgresql.util.PSQLException"),
-        std::io::Error::other("ERROR: column \"ghost\" does not exist\n  Position: 14"),
-    );
+    let checked = FederationError::external(CheckedError(
+        "ERROR: column \"ghost\" does not exist\n  Position: 14",
+    ));
     let error = checked.into_runtime_exception();
     assert_eq!(
         "errorType: java.lang.RuntimeException\n\
@@ -69,11 +84,10 @@ fn io_error_wrapped_in_runtime_exception_reports_one_cause() {
 
 #[test]
 fn connector_exception_with_io_cause_reports_one_cause() {
-    let error = FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-        "outer",
-        Arc::new(FederationError::from(std::io::Error::other("inner"))),
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ));
+    let error = FederationError::AthenaConnector(
+        AthenaConnectorException::new(FederationSourceErrorCode::InternalServiceException, "outer")
+            .with_cause(FederationError::from(std::io::Error::other("inner"))),
+    );
     assert_eq!(
         "errorType: com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException\n\
          errorMessage: outer\n\
@@ -85,11 +99,10 @@ fn connector_exception_with_io_cause_reports_one_cause() {
 
 #[test]
 fn arrow_error_cause_reports_one_cause() {
-    let error = FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-        "outer",
-        Arc::new(FederationError::from(ArrowError::IpcError("bad".into()))),
-        ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-    ));
+    let error = FederationError::AthenaConnector(
+        AthenaConnectorException::new(FederationSourceErrorCode::InternalServiceException, "outer")
+            .with_cause(FederationError::from(ArrowError::IpcError("bad".into()))),
+    );
     assert_eq!(1, LambdaError::new(&error).causes().len());
 }
 

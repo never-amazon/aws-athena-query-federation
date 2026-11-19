@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 use athena_postgresql::PgConnection;
 
 const URL_VARIABLE: &str = "ATHENA_POSTGRESQL_IT_JDBC_URL";
@@ -28,7 +28,7 @@ fn rss_kb() -> u64 {
         .unwrap_or(0)
 }
 
-async fn connect(url: &str) -> Result<PgConnection, SqlException> {
+async fn connect(url: &str) -> Result<PgConnection, SqlError> {
     tokio::time::timeout(
         Duration::from_secs(30),
         PgConnection::connect(url, &HashMap::new()),

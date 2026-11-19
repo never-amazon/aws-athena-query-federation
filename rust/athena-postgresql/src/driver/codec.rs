@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
-use athena_jdbc::sql::{SqlException, SqlValue};
+use athena_jdbc::sql::{Driver, SqlError, SqlValue};
 use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
 
@@ -10,7 +10,6 @@ use super::datetime::{
     java_sql_date_epoch_day, millis_to_naive, parse_backend_timestamp, proleptic_epoch_day,
     DATE_NEGATIVE_INFINITY, DATE_POSITIVE_INFINITY,
 };
-use super::error::PSQL_EXCEPTION;
 use super::types::{oid, TypeCache};
 
 const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
@@ -21,11 +20,11 @@ const TIMESTAMP_OUT_OF_RANGE: &str =
 pub(crate) const MAX_ARRAY_DEPTH: usize = 6;
 
 fn rendered(value: SqlValue, text: String) -> SqlValue {
-    SqlValue::rendered(value, text).with_exception_class(PSQL_EXCEPTION)
+    SqlValue::rendered(value, text).with_driver(Driver::Postgres)
 }
 
 fn invalid_date_time(text: Cow<'_, str>) -> SqlValue {
-    SqlValue::invalid_date_time(text.into_owned()).with_exception_class(PSQL_EXCEPTION)
+    SqlValue::invalid_date_time(text.into_owned()).with_driver(Driver::Postgres)
 }
 
 fn infinity_millis(text: &str) -> Option<i64> {
@@ -40,7 +39,7 @@ fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
     if let Some(millis) = infinity_millis(text) {
         return Some(
             SqlValue::java_date_millis(millis, proleptic_epoch_day(millis, zoned), text)
-                .with_exception_class(PSQL_EXCEPTION),
+                .with_driver(Driver::Postgres),
         );
     }
     let parsed = parse_backend_timestamp(text)?;
@@ -51,11 +50,12 @@ fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
         match (millis_to_naive(millis, parsed.nanos), epoch_millis) {
             (Some(ts), Some(epoch_millis)) => {
                 SqlValue::java_timestamp(SqlValue::Timestamp(ts), text, epoch_millis, epoch_day)
-                    .with_exception_class(PSQL_EXCEPTION)
+                    .with_driver(Driver::Postgres)
             }
             (Some(ts), None) => rendered(SqlValue::Timestamp(ts), text.to_string()),
-            (None, _) => SqlValue::java_date_millis(millis, epoch_day, text)
-                .with_exception_class(PSQL_EXCEPTION),
+            (None, _) => {
+                SqlValue::java_date_millis(millis, epoch_day, text).with_driver(Driver::Postgres)
+            }
         },
     )
 }
@@ -68,7 +68,7 @@ fn java_date(text: &str) -> Option<SqlValue> {
     let millis = java_date_millis(text)?;
     Some(
         SqlValue::java_sql_date(millis, java_sql_date_epoch_day(millis), text)
-            .with_exception_class(PSQL_EXCEPTION),
+            .with_driver(Driver::Postgres),
     )
 }
 
@@ -212,7 +212,7 @@ impl Decoder {
         match self {
             Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
-                SqlValue::invalid_element("BigDecimal", text).with_exception_class(PSQL_EXCEPTION)
+                SqlValue::invalid_element("BigDecimal", text).with_driver(Driver::Postgres)
             }
             Decoder::Timestamp | Decoder::TimestampTz => {
                 java_timestamp(&text, *self == Decoder::TimestampTz)
@@ -422,8 +422,8 @@ fn java_time_text(date: NaiveDate, time: &str) -> String {
     format!("{year:04}-{:02}-{:02}{time}{era}", date.month(), date.day())
 }
 
-fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlException> {
-    let out_of_range = || SqlException::new(TIMESTAMP_OUT_OF_RANGE);
+fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlError> {
+    let out_of_range = || SqlError::new(TIMESTAMP_OUT_OF_RANGE);
     let rounded = if timestamp.nanosecond() % NANOS_PER_MICRO >= NANOS_PER_MICRO / 2 {
         timestamp
             .checked_add_signed(TimeDelta::microseconds(1))
@@ -446,7 +446,7 @@ fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlException> {
     ))
 }
 
-pub(crate) fn check_parameters(parameters: &[SqlValue]) -> Result<(), SqlException> {
+pub(crate) fn check_parameters(parameters: &[SqlValue]) -> Result<(), SqlError> {
     for parameter in parameters {
         encode_parameter(parameter, false)?;
     }
@@ -456,7 +456,7 @@ pub(crate) fn check_parameters(parameters: &[SqlValue]) -> Result<(), SqlExcepti
 pub(crate) fn encode_parameter(
     value: &SqlValue,
     string_unspecified: bool,
-) -> Result<(u32, Option<String>), SqlException> {
+) -> Result<(u32, Option<String>), SqlError> {
     Ok(match value {
         SqlValue::Null => (0, None),
         SqlValue::Boolean(b) => (
@@ -489,12 +489,14 @@ pub(crate) fn encode_parameter(
 
 #[cfg(test)]
 mod tests {
+    use athena_federation_sdk::exceptions::JavaThrowable;
+
     fn encoded(value: &SqlValue, string_unspecified: bool) -> (u32, Option<String>) {
         encode_parameter(value, string_unspecified).unwrap()
     }
 
     use super::*;
-    use athena_jdbc::sql::Types;
+    use athena_jdbc::sql::JdbcType;
     use chrono::{NaiveDate, NaiveDateTime};
 
     fn cache() -> TypeCache {
@@ -607,7 +609,7 @@ mod tests {
             encoded(&SqlValue::Boolean(true), false),
             (oid::BOOL, Some("TRUE".to_string()))
         );
-        assert_eq!(Types::ARRAY, cache().sql_type(1007));
+        assert_eq!(JdbcType::Array, cache().sql_type(1007));
     }
 
     #[test]
@@ -918,7 +920,7 @@ mod tests {
             "Bad value for type timestamp : infinity"
         );
         assert_eq!(
-            infinite.to_timestamp().unwrap_err().class_name(),
+            infinite.to_timestamp().unwrap_err().java_class_name(),
             "org.postgresql.util.PSQLException"
         );
     }
@@ -961,7 +963,10 @@ mod tests {
                     value.to_date().unwrap_err(),
                 ] {
                     assert_eq!(expected, error.message(), "{decoder:?} {text}");
-                    assert_eq!(PSQL_EXCEPTION, error.class_name(), "{decoder:?} {text}");
+                    assert!(
+                        matches!(error, SqlError::Postgres { .. }),
+                        "{decoder:?} {text}"
+                    );
                 }
                 assert_eq!(Some(text.to_string()), value.to_java_string());
             }
@@ -980,7 +985,7 @@ mod tests {
                 format!("Bad value for type timestamp/date/time: {malformed}"),
                 error.message()
             );
-            assert_eq!(PSQL_EXCEPTION, error.class_name());
+            assert!(matches!(error, SqlError::Postgres { .. }));
             assert!(decoder
                 .decode(Some(b"2020-01-01 00:00:00"))
                 .to_timestamp_millis()
@@ -1025,12 +1030,12 @@ mod tests {
         let nan = Decoder::Numeric.decode(Some(b"NaN"));
         let error = nan.to_big_decimal().unwrap_err();
         assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
-        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+        assert_eq!(error.java_class_name(), "org.postgresql.util.PSQLException");
         assert!(nan.to_double().unwrap().unwrap().is_nan());
         let array = Decoder::for_type(&cache(), 1231).decode(Some(b"{1.5,NaN}"));
         let error = array.to_array().unwrap_err();
         assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
-        assert_eq!(error.class_name(), "org.postgresql.util.PSQLException");
+        assert_eq!(error.java_class_name(), "org.postgresql.util.PSQLException");
     }
 
     #[test]

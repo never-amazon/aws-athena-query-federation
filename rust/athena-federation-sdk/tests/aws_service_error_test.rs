@@ -230,7 +230,7 @@ async fn environment_properties_message_uses_java_to_string() {
             error: error_from_case(&failure),
         }));
     let e = props.create_environment().await.unwrap_err();
-    assert!(matches!(e, FederationError::Runtime(_)), "{e:?}");
+    assert!(matches!(e, FederationError::Runtime { .. }), "{e:?}");
     assert_eq!(text(&failure, "toString").expect("toString"), e.to_string());
 }
 

@@ -21,8 +21,8 @@ use athena_federation_sdk::security::{
 use athena_federation_sdk::AthenaClient;
 use athena_jdbc::connection::JdbcConnectionFactory;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
+    ResultSetMetaData, SqlError, SqlValue,
 };
 use athena_snowflake::{BatchIterator, ExportReader, S3ObjectLister, S3ObjectSummary};
 use aws_credential_types::Credentials;
@@ -71,16 +71,14 @@ impl ResultSetData {
     }
 }
 
-pub type MetaResult = Result<ResultSetData, SqlException>;
+pub type MetaResult = Result<ResultSetData, SqlError>;
 
 pub type QueryHandler =
-    Arc<dyn Fn(&PreparedStatement) -> Result<ResultSetData, SqlException> + Send + Sync>;
+    Arc<dyn Fn(&PreparedStatement) -> Result<ResultSetData, SqlError> + Send + Sync>;
 
-pub type ExecuteHandler =
-    Arc<dyn Fn(&PreparedStatement) -> Result<bool, SqlException> + Send + Sync>;
+pub type ExecuteHandler = Arc<dyn Fn(&PreparedStatement) -> Result<bool, SqlError> + Send + Sync>;
 
-pub type PrepareHandler =
-    Arc<dyn Fn(&str) -> Result<PreparedStatement, SqlException> + Send + Sync>;
+pub type PrepareHandler = Arc<dyn Fn(&str) -> Result<PreparedStatement, SqlError> + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GetTablesCall {
@@ -151,7 +149,7 @@ impl FakeDatabaseMetaData {
         self.state.get_columns_calls.lock().unwrap().clone()
     }
 
-    fn take(slot: &Mutex<Option<MetaResult>>, labels: &[&str]) -> Result<ResultSet, SqlException> {
+    fn take(slot: &Mutex<Option<MetaResult>>, labels: &[&str]) -> Result<ResultSet, SqlError> {
         match slot.lock().unwrap().as_ref() {
             Some(Ok(data)) => Ok(data.to_result_set()),
             Some(Err(e)) => Err(e.clone()),
@@ -162,7 +160,7 @@ impl FakeDatabaseMetaData {
 
 #[async_trait]
 impl DatabaseMetaData for FakeDatabaseMetaData {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlException> {
+    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
         self.state.get_schemas_calls.fetch_add(1, Ordering::SeqCst);
         FakeDatabaseMetaData::take(&self.state.schemas, &["TABLE_SCHEM", "TABLE_CATALOG"])
     }
@@ -171,7 +169,7 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
         &self,
         _catalog: Option<&str>,
         _schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.get_schemas().await
     }
 
@@ -181,7 +179,7 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.state
             .get_tables_calls
             .lock()
@@ -201,7 +199,7 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.state
             .get_columns_calls
             .lock()
@@ -229,23 +227,23 @@ impl DatabaseMetaData for FakeDatabaseMetaData {
         _catalog: Option<&str>,
         _schema: Option<&str>,
         _table: &str,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         FakeDatabaseMetaData::take(&self.state.primary_keys, &["COLUMN_NAME"])
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlException> {
+    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
         Ok(self.state.search_string_escape.lock().unwrap().clone())
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlException> {
+    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
         Ok(self.state.identifier_quote_string.lock().unwrap().clone())
     }
 
-    fn get_database_product_name(&self) -> Result<String, SqlException> {
+    fn get_database_product_name(&self) -> Result<String, SqlError> {
         Ok(self.state.database_product_name.lock().unwrap().clone())
     }
 
-    async fn get_user_name(&self) -> Result<Option<String>, SqlException> {
+    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
         Ok(self.state.user_name.lock().unwrap().clone())
     }
 }
@@ -263,7 +261,7 @@ pub struct ConnectionState {
     pub commits: AtomicUsize,
     pub rollbacks: AtomicUsize,
     pub closes: AtomicUsize,
-    pub valid: Mutex<Result<bool, SqlException>>,
+    pub valid: Mutex<Result<bool, SqlError>>,
 }
 
 impl Default for ConnectionState {
@@ -303,21 +301,21 @@ impl FakeConnection {
 
     pub fn on_query<F>(&self, handler: F)
     where
-        F: Fn(&PreparedStatement) -> Result<ResultSetData, SqlException> + Send + Sync + 'static,
+        F: Fn(&PreparedStatement) -> Result<ResultSetData, SqlError> + Send + Sync + 'static,
     {
         *self.state.query_handler.lock().unwrap() = Some(Arc::new(handler));
     }
 
     pub fn on_prepare<F>(&self, handler: F)
     where
-        F: Fn(&str) -> Result<PreparedStatement, SqlException> + Send + Sync + 'static,
+        F: Fn(&str) -> Result<PreparedStatement, SqlError> + Send + Sync + 'static,
     {
         *self.state.prepare_handler.lock().unwrap() = Some(Arc::new(handler));
     }
 
     pub fn on_execute<F>(&self, handler: F)
     where
-        F: Fn(&PreparedStatement) -> Result<bool, SqlException> + Send + Sync + 'static,
+        F: Fn(&PreparedStatement) -> Result<bool, SqlError> + Send + Sync + 'static,
     {
         *self.state.execute_handler.lock().unwrap() = Some(Arc::new(handler));
     }
@@ -350,7 +348,7 @@ impl FakeConnection {
         self.state.auto_commit_calls.lock().unwrap().clone()
     }
 
-    pub fn set_valid(&self, valid: Result<bool, SqlException>) {
+    pub fn set_valid(&self, valid: Result<bool, SqlError>) {
         *self.state.valid.lock().unwrap() = valid;
     }
 }
@@ -361,15 +359,15 @@ impl JdbcConnection for FakeConnection {
         &self.meta
     }
 
-    async fn get_catalog(&self) -> Result<Option<String>, SqlException> {
+    async fn get_catalog(&self) -> Result<Option<String>, SqlError> {
         Ok(self.state.catalog.lock().unwrap().clone())
     }
 
-    async fn get_schema(&self) -> Result<Option<String>, SqlException> {
+    async fn get_schema(&self) -> Result<Option<String>, SqlError> {
         Ok(self.state.schema.lock().unwrap().clone())
     }
 
-    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlException> {
+    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlError> {
         self.state.prepared.lock().unwrap().push(sql.to_string());
         let handler = self.state.prepare_handler.lock().unwrap().clone();
         match handler {
@@ -378,10 +376,7 @@ impl JdbcConnection for FakeConnection {
         }
     }
 
-    async fn execute_query(
-        &self,
-        statement: &PreparedStatement,
-    ) -> Result<ResultSet, SqlException> {
+    async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
         self.state.executed.lock().unwrap().push(statement.clone());
         let handler = self.state.query_handler.lock().unwrap().clone();
         match handler {
@@ -390,7 +385,7 @@ impl JdbcConnection for FakeConnection {
         }
     }
 
-    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlException> {
+    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlError> {
         self.state.executed.lock().unwrap().push(statement.clone());
         let handler = self.state.execute_handler.lock().unwrap().clone();
         match handler {
@@ -399,7 +394,7 @@ impl JdbcConnection for FakeConnection {
         }
     }
 
-    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlException> {
+    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlError> {
         self.state
             .auto_commit_calls
             .lock()
@@ -409,25 +404,25 @@ impl JdbcConnection for FakeConnection {
         Ok(())
     }
 
-    async fn get_auto_commit(&self) -> Result<bool, SqlException> {
+    async fn get_auto_commit(&self) -> Result<bool, SqlError> {
         Ok(*self.state.auto_commit.lock().unwrap())
     }
 
-    async fn commit(&self) -> Result<(), SqlException> {
+    async fn commit(&self) -> Result<(), SqlError> {
         self.state.commits.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
-    async fn rollback(&self) -> Result<(), SqlException> {
+    async fn rollback(&self) -> Result<(), SqlError> {
         self.state.rollbacks.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
-    async fn is_valid(&self, _timeout_seconds: i32) -> Result<bool, SqlException> {
+    async fn is_valid(&self, _timeout_seconds: i32) -> Result<bool, SqlError> {
         self.state.valid.lock().unwrap().clone()
     }
 
-    async fn close(&self) -> Result<(), SqlException> {
+    async fn close(&self) -> Result<(), SqlError> {
         self.state.closes.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -436,7 +431,7 @@ impl JdbcConnection for FakeConnection {
 #[derive(Clone, Default)]
 pub struct FakeConnectionFactory {
     pub connection: FakeConnection,
-    pub connection_error: Arc<Mutex<Option<SqlException>>>,
+    pub connection_error: Arc<Mutex<Option<SqlError>>>,
     pub close_error: Arc<Mutex<Option<String>>>,
     pub get_connection_calls: Arc<AtomicUsize>,
     pub close_calls: Arc<AtomicUsize>,
@@ -480,7 +475,7 @@ impl JdbcConnectionFactory for FakeConnectionFactory {
     async fn close(&self) -> athena_federation_sdk::Result<()> {
         self.close_calls.fetch_add(1, Ordering::SeqCst);
         match self.close_error.lock().unwrap().clone() {
-            Some(message) => Err(athena_federation_sdk::FederationError::Runtime(message)),
+            Some(message) => Err(athena_federation_sdk::FederationError::runtime(message)),
             None => Ok(()),
         }
     }
@@ -688,7 +683,7 @@ impl Fakes {
 }
 
 pub fn string_column(label: &str) -> ColumnMetadata {
-    ColumnMetadata::new(label, Types::VARCHAR)
+    ColumnMetadata::new(label, JdbcType::Varchar)
 }
 
 #[derive(Clone, Default)]
@@ -793,7 +788,7 @@ impl ExportReader for FakeExportReader {
             .unwrap()
             .push((uri.to_string(), schema.clone()));
         if let Some(message) = self.error.lock().unwrap().clone() {
-            return Err(athena_federation_sdk::FederationError::Runtime(message));
+            return Err(athena_federation_sdk::FederationError::runtime(message));
         }
         let batches = self.batches.lock().unwrap().clone();
         Ok(Box::new(batches.into_iter().map(Ok)))

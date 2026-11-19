@@ -57,12 +57,12 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<FederatedIdentity>
         validate_object_start(jparser)?;
         config_options = nullable_map(read_string_map_entries(jparser)?);
         if jparser.next_token()? != Some(JsonToken::EndObject) {
-            return Err(FederationError::IllegalState(
+            return Err(FederationError::UnexpectedToken(
                 "Expected END_OBJECT after configOptions field".into(),
             ));
         }
     } else if next_token != Some(JsonToken::EndObject) {
-        return Err(FederationError::IllegalState(format!(
+        return Err(FederationError::UnexpectedToken(format!(
             "Expected END_OBJECT or configOptions field, got: {}",
             token_name(next_token)
         )));

@@ -5,9 +5,7 @@ use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 
-use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode,
-};
+use crate::exceptions::{AthenaConnectorException, FederationError, FederationSourceErrorCode};
 
 const SDK_CLIENT_EXCEPTION: &str = "software.amazon.awssdk.core.exception.SdkClientException";
 const REQUEST_ID_HEADERS: [&str; 2] = ["x-amzn-requestid", "x-amz-request-id"];
@@ -342,11 +340,13 @@ impl From<AwsServiceError> for FederationError {
     fn from(e: AwsServiceError) -> Self {
         if e.is_error_code(AwsServiceError::IO_ERROR_CODE) {
             let message = e.message().to_string();
-            return FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-                message,
-                std::sync::Arc::new(e),
-                ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-            ));
+            return FederationError::AthenaConnector(
+                AthenaConnectorException::new(
+                    FederationSourceErrorCode::InternalServiceException,
+                    message,
+                )
+                .with_cause(e),
+            );
         }
         FederationError::AwsService(e)
     }

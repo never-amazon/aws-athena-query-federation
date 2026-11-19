@@ -113,7 +113,7 @@ impl EnvironmentProperties {
                     "Failed to retrieve connection: {}, and parse the connection properties!",
                     glue_connection_name
                 );
-                Err(FederationError::Runtime(err.to_string()))
+                Err(FederationError::runtime_from(err.to_string(), err))
             }
         }
     }

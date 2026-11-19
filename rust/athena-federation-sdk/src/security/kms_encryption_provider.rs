@@ -29,7 +29,7 @@ impl KmsEncryptionProvider {
     ) -> Result<Credentials> {
         let fas_string = self.decrypt_data(kms_key_id, fas_token).await?;
         let credentials: FasToken = serde_json::from_str(&fas_string)
-            .map_err(|e| FederationError::Runtime(e.to_string()))?;
+            .map_err(|e| FederationError::runtime_from(e.to_string(), e))?;
         Ok(Credentials::new(
             credentials.access_token(),
             credentials.secret_token(),

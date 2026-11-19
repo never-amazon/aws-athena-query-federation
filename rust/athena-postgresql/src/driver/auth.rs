@@ -1,6 +1,6 @@
 use std::io;
 
-use athena_jdbc::sql::SqlException;
+use athena_jdbc::sql::SqlError;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::authentication::md5_hash;
 use postgres_protocol::authentication::sasl::{
@@ -19,12 +19,12 @@ use super::url::{AuthMethod, ChannelBinding, ConnectSettings};
 
 #[derive(Debug)]
 pub(crate) enum StartupError {
-    Sql(SqlException),
+    Sql(SqlError),
     Io(io::Error),
 }
 
-impl From<SqlException> for StartupError {
-    fn from(error: SqlException) -> StartupError {
+impl From<SqlError> for StartupError {
+    fn from(error: SqlError) -> StartupError {
         StartupError::Sql(error)
     }
 }

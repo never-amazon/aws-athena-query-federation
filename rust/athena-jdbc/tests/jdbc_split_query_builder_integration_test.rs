@@ -10,7 +10,7 @@ use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQueryBuilder};
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException, SqlValue};
+use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlError, SqlValue};
 
 use jdbc_support::{FakeConnection, ResultSetData};
 
@@ -238,7 +238,7 @@ fn h2_connection(java: &JavaStatement) -> FakeConnection {
     let java = java.clone();
     connection.on_query(move |statement| {
         if statement.sql() != java.sql || statement.parameters() != java.parameters {
-            return Err(SqlException::new(format!(
+            return Err(SqlError::new(format!(
                 "H2 never ran {} with {:?}",
                 statement.sql(),
                 statement.parameters()

@@ -25,7 +25,7 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::MetadataDialect;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
 use athena_postgresql::{
     get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
     PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
@@ -255,22 +255,24 @@ fn string_params(statement: &PreparedStatement) -> Vec<SqlValue> {
     statement.parameters().to_vec()
 }
 
-type ColumnRow<'a> = (i32, &'a str, Option<i32>, Option<i32>, Option<&'a str>);
+const ARRAY: JdbcType = JdbcType::Array;
+
+type ColumnRow<'a> = (JdbcType, &'a str, Option<i32>, Option<i32>, Option<&'a str>);
 
 fn columns(rows: &[ColumnRow<'_>]) -> ResultSetData {
     let metadata = vec![
-        ColumnMetadata::new("DATA_TYPE", Types::INTEGER),
-        ColumnMetadata::new("COLUMN_NAME", Types::VARCHAR),
-        ColumnMetadata::new("COLUMN_SIZE", Types::INTEGER),
-        ColumnMetadata::new("DECIMAL_DIGITS", Types::INTEGER),
-        ColumnMetadata::new("TYPE_NAME", Types::VARCHAR),
+        ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
+        ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
+        ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
+        ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
+        ColumnMetadata::new("TYPE_NAME", JdbcType::Varchar),
     ];
     let int = |v: Option<i32>| v.map_or(SqlValue::Null, SqlValue::Integer);
     let rows = rows
         .iter()
         .map(|(data_type, name, size, digits, type_name)| {
             vec![
-                SqlValue::Integer(*data_type),
+                SqlValue::Integer(data_type.code()),
                 SqlValue::String((*name).to_string()),
                 int(*size),
                 int(*digits),
@@ -343,8 +345,8 @@ fn min_max_sql(column: &str) -> String {
 fn min_max(min: i32, max: i32) -> ResultSetData {
     ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("min", Types::INTEGER),
-            ColumnMetadata::new("max", Types::INTEGER),
+            ColumnMetadata::new("min", JdbcType::Integer),
+            ColumnMetadata::new("max", JdbcType::Integer),
         ],
         vec![vec![SqlValue::Integer(min), SqlValue::Integer(max)]],
     )
@@ -554,13 +556,13 @@ async fn test_list_tables_with_no_materialized_views() {
 async fn test_list_tables_with_database_connection_error() {
     let f = setup();
     let connection = FakeConnection::new();
-    connection.on_prepare(|_| Err(SqlException::new("Database error")));
+    connection.on_prepare(|_| Err(SqlError::new("Database error")));
     let error = f
         .handler
         .list_schema_tables(&connection, TEST_SCHEMA)
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).expect("SQLException");
+    let sql = SqlError::from_federation_error(&error).expect("SQLException");
     assert_eq!("Database error", sql.message());
 }
 
@@ -599,7 +601,7 @@ async fn do_get_table_layout_with_no_partitions() {
 async fn do_get_table_layout_with_sql_exception() {
     let f = setup();
     f.connection
-        .on_query(|_| Err(SqlException::new("partition query failed")));
+        .on_query(|_| Err(SqlError::new("partition query failed")));
     let result = f
         .handler
         .get_table_layout(
@@ -672,66 +674,24 @@ async fn do_get_table_with_array_columns() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "smallint_array", Some(0), Some(0), Some("_int2")),
+        (ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
+        (ARRAY, "bigint_array", Some(0), Some(0), Some("_int8")),
+        (ARRAY, "float_array", Some(0), Some(0), Some("_float4")),
+        (ARRAY, "double_array", Some(0), Some(0), Some("_float8")),
+        (ARRAY, "date_array", Some(0), Some(0), Some("_date")),
         (
-            Types::ARRAY,
-            "smallint_array",
-            Some(0),
-            Some(0),
-            Some("_int2"),
-        ),
-        (Types::ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
-        (
-            Types::ARRAY,
-            "bigint_array",
-            Some(0),
-            Some(0),
-            Some("_int8"),
-        ),
-        (
-            Types::ARRAY,
-            "float_array",
-            Some(0),
-            Some(0),
-            Some("_float4"),
-        ),
-        (
-            Types::ARRAY,
-            "double_array",
-            Some(0),
-            Some(0),
-            Some("_float8"),
-        ),
-        (Types::ARRAY, "date_array", Some(0), Some(0), Some("_date")),
-        (
-            Types::ARRAY,
+            ARRAY,
             "timestamp_array",
             Some(0),
             Some(0),
             Some("_timestamp"),
         ),
-        (
-            Types::ARRAY,
-            "binary_array",
-            Some(0),
-            Some(0),
-            Some("_bytea"),
-        ),
-        (
-            Types::ARRAY,
-            "decimal_array",
-            Some(38),
-            Some(2),
-            Some("_numeric"),
-        ),
-        (
-            Types::ARRAY,
-            "string_array",
-            Some(0),
-            Some(0),
-            Some("_text"),
-        ),
-        (Types::ARRAY, "uuid_array", Some(0), Some(0), Some("_uuid")),
+        (ARRAY, "binary_array", Some(0), Some(0), Some("_bytea")),
+        (ARRAY, "decimal_array", Some(38), Some(2), Some("_numeric")),
+        (ARRAY, "string_array", Some(0), Some(0), Some("_text")),
+        (ARRAY, "uuid_array", Some(0), Some(0), Some("_uuid")),
     ])));
     route(
         &f.connection,
@@ -764,22 +724,10 @@ async fn do_get_table_materialized_view() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
-        (Types::ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
-        (
-            Types::ARRAY,
-            "bigint_array",
-            Some(0),
-            Some(0),
-            Some("_int8"),
-        ),
-        (
-            Types::ARRAY,
-            "float_array",
-            Some(0),
-            Some(0),
-            Some("_float4"),
-        ),
+        (ARRAY, "bool_array", Some(0), Some(0), Some("_bool")),
+        (ARRAY, "int_array", Some(0), Some(0), Some("_int4")),
+        (ARRAY, "bigint_array", Some(0), Some(0), Some("_int8")),
+        (ARRAY, "float_array", Some(0), Some(0), Some("_float4")),
     ])));
     route(
         &f.connection,
@@ -973,7 +921,7 @@ async fn test_get_char_columns_with_empty_result_set() {
 #[tokio::test]
 async fn test_get_char_columns_with_sql_exception() {
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("Database connection error")));
+    connection.on_query(|_| Err(SqlError::new("Database connection error")));
     let result = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
     assert_eq!("Database connection error", result.unwrap_err().message());
 }
@@ -983,15 +931,9 @@ async fn test_get_table_with_null_array_types() {
     let f = setup();
     f.connection.set_catalog(Some(CATALOG_NAME));
     f.connection.meta.set_columns(Ok(columns(&[
-        (Types::ARRAY, "null_array", None, None, Some("_int4")),
-        (
-            Types::ARRAY,
-            "null_size_array",
-            Some(0),
-            None,
-            Some("_numeric"),
-        ),
-        (Types::ARRAY, "null_type_array", Some(0), Some(0), None),
+        (JdbcType::Array, "null_array", None, None, Some("_int4")),
+        (ARRAY, "null_size_array", Some(0), None, Some("_numeric")),
+        (JdbcType::Array, "null_type_array", Some(0), Some(0), None),
     ])));
     route(
         &f.connection,
@@ -1046,7 +988,7 @@ async fn test_do_get_splits_with_partition_splitter() {
         if sql == DATA_TYPE_SQL {
             return Ok(ResultSetData::empty(&["data_type"]));
         }
-        Err(SqlException::new(format!("unexpected query {sql}")))
+        Err(SqlError::new(format!("unexpected query {sql}")))
     });
     let layout = handler
         .get_table_layout(
@@ -1135,7 +1077,7 @@ async fn test_get_array_arrow_type_from_type_name_maps_timestamptz_like_scalar_t
     let f = setup();
     let h = &f.handler;
     assert_eq!(
-        athena_jdbc::manager::jdbc_to_arrow_type(Types::TIMESTAMP, 0, 0, &HashMap::new())
+        athena_jdbc::manager::jdbc_to_arrow_type(JdbcType::Timestamp, 0, 0, &HashMap::new())
             .unwrap()
             .unwrap(),
         h.dialect().array_element_type(Some("_timestamptz"), 0, 0)
@@ -1248,7 +1190,7 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
     let f = setup();
     f.connection
         .meta
-        .set_primary_keys(Err(SqlException::new("Database connection error")));
+        .set_primary_keys(Err(SqlError::new("Database connection error")));
     let result =
         get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, "errorTable"), None).await;
     assert!(result.is_empty());
@@ -1271,7 +1213,7 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
     split_clause_routes(&f.connection, Some("id"), None, Some((1, 100)));
     f.connection.on_prepare(|sql| {
         if sql == DATA_TYPE_SQL {
-            Err(SqlException::new("UUID check failed"))
+            Err(SqlError::new("UUID check failed"))
         } else {
             Ok(PreparedStatement::new(sql))
         }

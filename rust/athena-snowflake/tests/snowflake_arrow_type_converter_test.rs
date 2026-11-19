@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use arrow::datatypes::DataType;
 
-use athena_jdbc::sql::Types;
+use athena_jdbc::sql::JdbcType;
 use athena_snowflake::utils;
 
 fn convert(
-    jdbc_type: i32,
+    jdbc_type: JdbcType,
     precision: i32,
     scale: i32,
     config: &HashMap<String, String>,
@@ -18,7 +18,7 @@ fn convert(
 
 #[test]
 fn test_to_arrow_type_integer() {
-    let result = convert(Types::INTEGER, 10, 0, &HashMap::new());
+    let result = convert(JdbcType::Integer, 10, 0, &HashMap::new());
     assert!(result.is_integer());
     assert_eq!(result, DataType::Int32);
 }
@@ -26,7 +26,7 @@ fn test_to_arrow_type_integer() {
 #[test]
 fn test_to_arrow_type_varchar() {
     assert_eq!(
-        convert(Types::VARCHAR, 255, 0, &HashMap::new()),
+        convert(JdbcType::Varchar, 255, 0, &HashMap::new()),
         DataType::Utf8
     );
 }
@@ -34,7 +34,7 @@ fn test_to_arrow_type_varchar() {
 #[test]
 fn test_to_arrow_type_big_int() {
     let expected_precision = 19;
-    let result = convert(Types::BIGINT, 19, 0, &HashMap::new());
+    let result = convert(JdbcType::BigInt, 19, 0, &HashMap::new());
     let DataType::Decimal128(precision, _) = result else {
         panic!("expected a decimal type, got {result:?}");
     };
@@ -45,7 +45,7 @@ fn test_to_arrow_type_big_int() {
 #[test]
 fn test_to_arrow_type_numeric_with_default_scale() {
     let config = HashMap::from([("default_scale".to_string(), "2".to_string())]);
-    let result = convert(Types::NUMERIC, 0, 0, &config);
+    let result = convert(JdbcType::Numeric, 0, 0, &config);
     let DataType::Decimal128(precision, scale) = result else {
         panic!("expected a decimal type, got {result:?}");
     };
@@ -55,7 +55,7 @@ fn test_to_arrow_type_numeric_with_default_scale() {
 
 #[test]
 fn test_to_arrow_type_decimal_exceeding_precision() {
-    let result = convert(Types::DECIMAL, 50, 10, &HashMap::new());
+    let result = convert(JdbcType::Decimal, 50, 10, &HashMap::new());
     let DataType::Decimal128(precision, _) = result else {
         panic!("expected a decimal type, got {result:?}");
     };
@@ -64,19 +64,19 @@ fn test_to_arrow_type_decimal_exceeding_precision() {
 
 #[test]
 fn test_to_arrow_type_timestamp_with_timezone() {
-    let result = convert(Types::TIMESTAMP_WITH_TIMEZONE, 0, 0, &HashMap::new());
+    let result = convert(JdbcType::TimestampWithTimezone, 0, 0, &HashMap::new());
     assert!(matches!(result, DataType::Date32 | DataType::Date64));
     assert_eq!(result, DataType::Date64);
 }
 
 #[test]
 fn test_to_arrow_type_array_type() {
-    let result = convert(Types::ARRAY, 0, 0, &HashMap::new());
+    let result = convert(JdbcType::Array, 0, 0, &HashMap::new());
     assert!(matches!(result, DataType::List(_)));
 }
 
 #[test]
 fn test_to_arrow_type_with_null_config_options() {
-    let result = utils::to_arrow_type(Types::INTEGER, 10, 0, &HashMap::new());
+    let result = utils::to_arrow_type(JdbcType::Integer, 10, 0, &HashMap::new());
     assert_eq!(result.unwrap(), Some(DataType::Int32));
 }

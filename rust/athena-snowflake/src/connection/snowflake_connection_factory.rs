@@ -3,21 +3,33 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::CredentialsProvider;
-use athena_federation_sdk::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationSourceErrorCode,
-};
+use athena_federation_sdk::exceptions::{AthenaConnectorException, FederationSourceErrorCode};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
     JdbcConnectionFactory, JdbcDriver, JdbcProperties,
 };
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 
 use crate::snowflake_constants;
 use crate::sql::{url_decode, SnowflakeDriver, SnowflakeJdbcDriver};
 use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils, SnowflakePrivateKey};
 
 const KEY_PAIR_FAILURE: &str = "Failed to create Snowflake connection with key-pair authentication";
+
+#[derive(Debug, thiserror::Error)]
+enum KeyPairError {
+    #[error("{0}")]
+    Key(#[source] FederationError),
+    #[error("{}", .0.message())]
+    Url(#[source] SqlError),
+    #[error("null")]
+    MissingUser,
+    #[error("{0}")]
+    DriverNotFound(String),
+    #[error("{}", .0.message())]
+    Connect(#[source] SqlError),
+}
 
 pub struct SnowflakeConnectionFactory {
     generic: GenericJdbcConnectionFactory,
@@ -87,16 +99,16 @@ impl SnowflakeConnectionFactory {
     ) -> Result<Box<dyn JdbcConnection>> {
         self.open_key_pair_connection(credential_map)
             .await
-            .map_err(|message| {
-                tracing::error!("{KEY_PAIR_FAILURE}: {message}");
-                FederationError::from(SqlException::new(format!("{KEY_PAIR_FAILURE}: {message}")))
+            .map_err(|error| {
+                tracing::error!("{KEY_PAIR_FAILURE}: {error}");
+                FederationError::from(SqlError::new(format!("{KEY_PAIR_FAILURE}: {error}")))
             })
     }
 
     async fn open_key_pair_connection(
         &self,
         credential_map: &HashMap<String, String>,
-    ) -> std::result::Result<Box<dyn JdbcConnection>, String> {
+    ) -> std::result::Result<Box<dyn JdbcConnection>, KeyPairError> {
         let username = credential_map.get(snowflake_constants::USER);
         let private_key_pem = credential_map
             .get(snowflake_constants::PEM_PRIVATE_KEY)
@@ -107,7 +119,7 @@ impl SnowflakeConnectionFactory {
             .map(String::as_str);
         let private_key = create_private_key_off_the_async_thread(private_key_pem, passphrase)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(KeyPairError::Key)?;
         let mut properties = self.key_pair_base_properties.clone();
         let connection_string = GenericJdbcConnectionFactory::secret_name_pattern()
             .replace_all(
@@ -117,9 +129,10 @@ impl SnowflakeConnectionFactory {
                 "",
             )
             .into_owned();
-        let base_url = move_query_parameters_to_properties(&connection_string, &mut properties)?;
+        let base_url = move_query_parameters_to_properties(&connection_string, &mut properties)
+            .map_err(KeyPairError::Url)?;
         let Some(username) = username else {
-            return Err("null".to_string());
+            return Err(KeyPairError::MissingUser);
         };
         properties.insert(snowflake_constants::USER.to_string(), username.clone());
         properties.insert(
@@ -131,28 +144,25 @@ impl SnowflakeConnectionFactory {
         );
         let driver_class_name = self.generic.database_connection_info().driver_class_name();
         if self.driver.driver_class_name() != driver_class_name {
-            return Err(driver_class_name.to_string());
+            return Err(KeyPairError::DriverNotFound(driver_class_name.to_string()));
         }
         self.driver
             .connect_with_private_key(&base_url, &properties, &private_key)
             .await
-            .map_err(|e| e.message().to_string())
+            .map_err(KeyPairError::Connect)
     }
 }
 
 fn move_query_parameters_to_properties(
     url: &str,
     properties: &mut JdbcProperties,
-) -> std::result::Result<String, String> {
+) -> std::result::Result<String, SqlError> {
     let Some(query_index) = url.find('?') else {
         return Ok(url.to_string());
     };
     for param in url[query_index + 1..].split('&') {
         if let Some((key, value)) = param.split_once('=') {
-            properties.insert(
-                url_decode(key).map_err(|e| e.message().to_string())?,
-                url_decode(value).map_err(|e| e.message().to_string())?,
-            );
+            properties.insert(url_decode(key)?, url_decode(value)?);
         }
     }
     Ok(url[..query_index].to_string())
@@ -169,11 +179,13 @@ async fn create_private_key_off_the_async_thread(
     })
     .await
     .map_err(|e| {
-        FederationError::AthenaConnector(AthenaConnectorException::with_cause(
-            e.to_string(),
-            Arc::new(e),
-            ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-        ))
+        FederationError::AthenaConnector(
+            AthenaConnectorException::new(
+                FederationSourceErrorCode::InternalServiceException,
+                e.to_string(),
+            )
+            .with_cause(FederationError::other(e)),
+        )
     })?
 }
 

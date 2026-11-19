@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    DatabaseMetaData, JdbcConnection, PreparedStatement, RowSource, SqlException, SqlValue, Types,
+    DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, RowSource, SqlError, SqlValue,
     VecRowSource,
 };
 use athena_snowflake::sql::{
@@ -12,9 +12,8 @@ use athena_snowflake::sql::{
     SnowflakeConnection, SnowflakeExecutor, SnowflakeQueryResult, EXTRA_TYPES_TIMESTAMP_LTZ,
 };
 
-type Answer = Box<
-    dyn Fn(&str) -> Result<(Vec<SnowflakeColumn>, Vec<Vec<SqlValue>>), SqlException> + Send + Sync,
->;
+type Answer =
+    Box<dyn Fn(&str) -> Result<(Vec<SnowflakeColumn>, Vec<Vec<SqlValue>>), SqlError> + Send + Sync>;
 
 type RecordedQuery = (String, Vec<SqlValue>, Option<Duration>);
 
@@ -48,7 +47,7 @@ impl SnowflakeExecutor for RecordingExecutor {
         sql: &str,
         binds: &[SqlValue],
         timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException> {
+    ) -> Result<SnowflakeQueryResult, SqlError> {
         self.queries
             .lock()
             .unwrap()
@@ -213,7 +212,7 @@ async fn get_columns_parses_show_columns_output() {
     while result.next().await.unwrap() {
         columns.push((
             result.get_string("COLUMN_NAME").unwrap().unwrap(),
-            result.get_int("DATA_TYPE").unwrap().unwrap(),
+            JdbcType::from_code(result.get_int("DATA_TYPE").unwrap().unwrap()),
             result.get_string("TYPE_NAME").unwrap().unwrap(),
             result.get_int("COLUMN_SIZE").unwrap(),
             result.get_int("DECIMAL_DIGITS").unwrap(),
@@ -224,7 +223,7 @@ async fn get_columns_parses_show_columns_output() {
         vec![
             (
                 "ID".to_string(),
-                Types::BIGINT,
+                JdbcType::BigInt,
                 "NUMBER".to_string(),
                 Some(38),
                 Some(0),
@@ -232,7 +231,7 @@ async fn get_columns_parses_show_columns_output() {
             ),
             (
                 "PRICE".to_string(),
-                Types::DECIMAL,
+                JdbcType::Decimal,
                 "NUMBER".to_string(),
                 Some(10),
                 Some(2),
@@ -240,7 +239,7 @@ async fn get_columns_parses_show_columns_output() {
             ),
             (
                 "NAME".to_string(),
-                Types::VARCHAR,
+                JdbcType::Varchar,
                 "VARCHAR".to_string(),
                 Some(100),
                 Some(0),
@@ -248,7 +247,7 @@ async fn get_columns_parses_show_columns_output() {
             ),
             (
                 "CREATED".to_string(),
-                Types::TIMESTAMP_WITH_TIMEZONE,
+                JdbcType::TimestampWithTimezone,
                 "TIMESTAMPTZ".to_string(),
                 Some(0),
                 Some(9),
@@ -285,7 +284,7 @@ async fn get_primary_keys_and_schemas_build_show_sql() {
 #[tokio::test]
 async fn show_commands_return_empty_for_missing_objects() {
     let executor = RecordingExecutor::new(Box::new(|_| {
-        Err(SqlException::new("Object does not exist").with_sql_state("02000"))
+        Err(SqlError::new("Object does not exist").with_sql_state("02000"))
     }));
     let connection = connection(&executor);
     let mut result = connection
@@ -335,19 +334,19 @@ async fn result_metadata_follows_the_jdbc_driver_type_map() {
         .await
         .unwrap();
     let metadata = result.metadata();
-    assert_eq!(Types::BIGINT, metadata.column_type(1).unwrap());
+    assert_eq!(JdbcType::BigInt, metadata.column_type(1).unwrap());
     assert_eq!(18, metadata.precision(1).unwrap());
     assert_eq!(19, metadata.column_display_size(1).unwrap());
-    assert_eq!(Types::DECIMAL, metadata.column_type(2).unwrap());
+    assert_eq!(JdbcType::Decimal, metadata.column_type(2).unwrap());
     assert_eq!(2, metadata.scale(2).unwrap());
     assert_eq!(12, metadata.column_display_size(2).unwrap());
-    assert_eq!(Types::DOUBLE, metadata.column_type(3).unwrap());
+    assert_eq!(JdbcType::Double, metadata.column_type(3).unwrap());
     assert_eq!(24, metadata.column_display_size(3).unwrap());
-    assert_eq!(Types::VARCHAR, metadata.column_type(4).unwrap());
+    assert_eq!(JdbcType::Varchar, metadata.column_type(4).unwrap());
     assert_eq!(50, metadata.precision(4).unwrap());
-    assert_eq!(Types::TIMESTAMP, metadata.column_type(5).unwrap());
+    assert_eq!(JdbcType::Timestamp, metadata.column_type(5).unwrap());
     assert_ne!(EXTRA_TYPES_TIMESTAMP_LTZ, metadata.column_type(5).unwrap());
-    assert_eq!(Types::VARCHAR, metadata.column_type(6).unwrap());
+    assert_eq!(JdbcType::Varchar, metadata.column_type(6).unwrap());
 }
 
 #[tokio::test]
@@ -371,7 +370,7 @@ async fn prepare_statement_describes_select_without_parameters() {
         .await
         .unwrap();
     assert_eq!(
-        Types::BOOLEAN,
+        JdbcType::Boolean,
         described.metadata().unwrap().column_type(1).unwrap()
     );
     let with_parameter = connection

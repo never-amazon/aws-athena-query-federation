@@ -12,7 +12,7 @@ use athena_jdbc::manager::{
     get_arrow_type_from_jdbc_type, jdbc_to_arrow_type, jdbc_util, ConnectionSource,
     JdbcRecordHandler, RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
+use athena_jdbc::sql::{JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData};
 
 use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
@@ -75,9 +75,9 @@ fn export_arrow_type(
     let column_type = metadata.column_type(column)?;
     let precision = metadata.precision(column)?;
     let scale = metadata.scale(column)?;
-    if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
+    if column_type == JdbcType::Numeric && precision == 0 && scale <= 0 {
         return Ok(
-            jdbc_to_arrow_type(Types::NUMERIC, 0, 0, config_options)?.unwrap_or(DataType::Utf8)
+            jdbc_to_arrow_type(JdbcType::Numeric, 0, 0, config_options)?.unwrap_or(DataType::Utf8)
         );
     }
     match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {

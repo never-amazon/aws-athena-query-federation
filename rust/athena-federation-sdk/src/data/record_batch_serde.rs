@@ -42,9 +42,9 @@ impl ArrowRecordBatch {
 
     fn from_message(metadata: Vec<u8>, body: Vec<u8>) -> Result<ArrowRecordBatch> {
         let message = root_as_message(&metadata)
-            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+            .map_err(|e| FederationError::io(format!("Unable to read IPC message: {e}")))?;
         if message.header_type() != MessageHeader::RecordBatch {
-            return Err(FederationError::Io(format!(
+            return Err(FederationError::io(format!(
                 "Expected RecordBatch but header was {:?}",
                 message.header_type()
             )));
@@ -80,10 +80,10 @@ impl ArrowRecordBatch {
 
     pub fn decode(&self, schema: SchemaRef) -> Result<RecordBatch> {
         let message = root_as_message(&self.metadata)
-            .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+            .map_err(|e| FederationError::io(format!("Unable to read IPC message: {e}")))?;
         let fb_batch = message
             .header_as_record_batch()
-            .ok_or_else(|| FederationError::Io("Message is not a record batch".into()))?;
+            .ok_or_else(|| FederationError::io("Message is not a record batch"))?;
         let dictionaries = HashMap::new();
         let batch = arrow::ipc::reader::read_record_batch(
             &self.body,
@@ -134,9 +134,9 @@ fn read_message(input: &mut dyn Read) -> Result<Option<(Vec<u8>, usize)>> {
     let mut meta = vec![0u8; len.unsigned_abs() as usize];
     input.read_exact(&mut meta)?;
     let message = root_as_message(&meta)
-        .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+        .map_err(|e| FederationError::io(format!("Unable to read IPC message: {e}")))?;
     let body_len = usize::try_from(message.bodyLength()).map_err(|_| {
-        FederationError::Io(format!(
+        FederationError::io(format!(
             "Invalid IPC message body length {}",
             message.bodyLength()
         ))
@@ -145,9 +145,8 @@ fn read_message(input: &mut dyn Read) -> Result<Option<(Vec<u8>, usize)>> {
 }
 
 pub fn deserialize_record_batch_message(input: &mut dyn Read) -> Result<ArrowRecordBatch> {
-    let (meta, body_len) = read_message(input)?.ok_or_else(|| {
-        FederationError::Io("Unexpected end of input reading record batch".into())
-    })?;
+    let (meta, body_len) = read_message(input)?
+        .ok_or_else(|| FederationError::io("Unexpected end of input reading record batch"))?;
     let mut body = vec![0u8; body_len];
     input.read_exact(&mut body)?;
     ArrowRecordBatch::from_message(meta, body)
@@ -192,15 +191,15 @@ pub fn serialize_schema(schema: &Schema, out: &mut dyn Write) -> Result<()> {
 
 pub fn deserialize_schema(input: &mut dyn Read) -> Result<Schema> {
     let (meta, body_len) = read_message(input)?
-        .ok_or_else(|| FederationError::Io("Unexpected end of input reading schema".into()))?;
+        .ok_or_else(|| FederationError::io("Unexpected end of input reading schema"))?;
     if body_len > 0 {
         let mut skip = vec![0u8; body_len];
         input.read_exact(&mut skip)?;
     }
     let message = root_as_message(&meta)
-        .map_err(|e| FederationError::Io(format!("Unable to read IPC message: {e}")))?;
+        .map_err(|e| FederationError::io(format!("Unable to read IPC message: {e}")))?;
     let fb = message.header_as_schema().ok_or_else(|| {
-        FederationError::Io(format!(
+        FederationError::io(format!(
             "Expected schema but header was {:?}",
             message.header_type()
         ))

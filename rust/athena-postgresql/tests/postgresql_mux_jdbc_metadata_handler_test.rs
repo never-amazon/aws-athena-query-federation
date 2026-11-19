@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SimpleBlockWriter};
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
@@ -205,7 +206,7 @@ impl MetadataDelegate for RecordingHandler {
     async fn close(&self) -> Result<()> {
         self.record("close", "", &[]);
         match &self.close_error {
-            Some(message) => Err(FederationError::Runtime(message.clone())),
+            Some(message) => Err(FederationError::runtime(message.clone())),
             None => Ok(()),
         }
     }
@@ -333,7 +334,7 @@ async fn get_partition_schema_for_unsupported_catalog() {
         .unwrap_err();
     assert!(error.is_runtime_exception());
     assert_eq!(
-        error.as_connector_exception().unwrap().message(),
+        error.as_connector_exception().unwrap().message,
         "Catalog is not supported in multiplexer. After registering the catalog in Athena, must set 'unsupportedCatalog_connection_string' environment variable in Lambda. See JDBC connector README for further details."
     );
     assert!(fixture.delegate.calls().is_empty());

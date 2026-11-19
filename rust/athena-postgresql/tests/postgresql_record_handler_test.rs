@@ -18,7 +18,7 @@ use athena_federation_sdk::handlers::HandlerContext;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{RecordDialect, SplitQuery};
 use athena_jdbc::sql::{
-    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError, SqlValue,
 };
 use athena_postgresql::{constants, PostGreSqlRecordDialect, PostGreSqlRecordHandler};
 use bigdecimal::BigDecimal;
@@ -356,7 +356,7 @@ async fn build_split_sql_rejects_timestamps_outside_the_postgre_sql_range() {
         .unwrap_err();
     assert_eq!(
         "Timestamp is outside the PostgreSQL range 4714-11-24 00:00:00 BC to 294276-12-31 23:59:59.999999",
-        error.as_connector_exception().unwrap().message()
+        error.as_connector_exception().unwrap().message
     );
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException),
@@ -369,7 +369,7 @@ async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static st
         if sql == CHAR_COLUMNS_QUERY {
             Ok(PreparedStatement::new(sql))
         } else {
-            Err(SqlException::new(message))
+            Err(SqlError::new(message))
         }
     });
     let schema = schema_with(&[("col1", DataType::Int32)]);
@@ -383,7 +383,7 @@ async fn assert_prepare_error(value: ValueSet, f: &Fixture, message: &'static st
         .await
         .unwrap_err();
     let connector = error.as_connector_exception().unwrap();
-    assert_eq!(message, connector.message());
+    assert_eq!(message, connector.message);
     assert_eq!(
         Some(FederationSourceErrorCode::InternalServiceException),
         error.error_code()
@@ -1076,13 +1076,13 @@ async fn test_prepare_export_statement_sets_fetch_size() {
 fn test_derive_export_schema_maps_postgres_types() {
     let f = setup();
     let columns = [
-        ("int4_col", Types::INTEGER, 10, 0),
-        ("numeric_col", Types::NUMERIC, 0, 0),
-        ("numeric_10_2_col", Types::NUMERIC, 10, 2),
-        ("timestamptz_col", Types::TIMESTAMP, 35, 6),
-        ("time_col", Types::TIME, 15, 6),
-        ("uuid_col", Types::OTHER, i32::MAX, 0),
-        ("array_col", Types::ARRAY, 10, 0),
+        ("int4_col", JdbcType::Integer, 10, 0),
+        ("numeric_col", JdbcType::Numeric, 0, 0),
+        ("numeric_10_2_col", JdbcType::Numeric, 10, 2),
+        ("timestamptz_col", JdbcType::Timestamp, 35, 6),
+        ("time_col", JdbcType::Time, 15, 6),
+        ("uuid_col", JdbcType::Other, i32::MAX, 0),
+        ("array_col", JdbcType::Array, 10, 0),
     ];
     let metadata = ResultSetMetaData::new(
         columns

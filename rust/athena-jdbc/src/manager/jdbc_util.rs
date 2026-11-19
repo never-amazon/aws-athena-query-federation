@@ -10,7 +10,7 @@ use athena_federation_sdk::{FederationError, Result};
 use crate::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use crate::sql::{JdbcConnection, PreparedStatement, ResultSet, SqlException};
+use crate::sql::{JdbcConnection, PreparedStatement, ResultSet, SqlError};
 use crate::validate::not_blank;
 
 const DEFAULT_CATALOG_PREFIX: &str = "lambda:";
@@ -114,7 +114,7 @@ pub fn handler_map<H: ?Sized, S: BuildHasher>(
 pub async fn tables(
     connection: &dyn JdbcConnection,
     database_name: &str,
-) -> std::result::Result<Vec<TableName>, SqlException> {
+) -> std::result::Result<Vec<TableName>, SqlError> {
     let sql = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?";
     let mut prepared_statement = connection.prepare_statement(sql).await?;
     prepared_statement.set_string(1, database_name)?;
@@ -130,7 +130,7 @@ pub async fn table_metadata(
     connection: &dyn JdbcConnection,
     prepared_statement: &PreparedStatement,
     table_type: &str,
-) -> std::result::Result<Vec<TableName>, SqlException> {
+) -> std::result::Result<Vec<TableName>, SqlError> {
     let listed = async {
         let mut result_set = connection.execute_query(prepared_statement).await?;
         let mut list = Vec::new();
@@ -154,7 +154,7 @@ pub fn schema_table_name(result_set: &ResultSet) -> Result<TableName> {
     Ok(read_schema_table_name(result_set)?)
 }
 
-fn read_schema_table_name(result_set: &ResultSet) -> std::result::Result<TableName, SqlException> {
+fn read_schema_table_name(result_set: &ResultSet) -> std::result::Result<TableName, SqlError> {
     Ok(TableName::new(
         result_set.get_string("TABLE_SCHEM")?.unwrap_or_default(),
         result_set.get_string("TABLE_NAME")?.unwrap_or_default(),

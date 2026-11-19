@@ -49,8 +49,8 @@ pub fn do_deserialize(jparser: &mut JsonParser<'_>) -> Result<Split> {
         match jparser.next_token()? {
             Some(JsonToken::EndObject) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for OBJECT".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for OBJECT",
                 ))
             }
             Some(_) => {

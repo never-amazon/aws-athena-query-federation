@@ -12,7 +12,7 @@ use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 use sha2::{Digest, Sha224, Sha256, Sha384, Sha512};
 
-use athena_jdbc::sql::SqlException;
+use athena_jdbc::sql::SqlError;
 
 use super::error::{psql, CONNECTION_FAILURE};
 use super::url::{ConnectSettings, SslFactory, SslNegotiation};
@@ -126,7 +126,7 @@ impl ServerCertVerifier for ChainOnly {
     }
 }
 
-fn ssl_error(message: impl Into<String>) -> SqlException {
+fn ssl_error(message: impl Into<String>) -> SqlError {
     psql(message, CONNECTION_FAILURE)
 }
 
@@ -135,7 +135,7 @@ pub(crate) fn default_root_cert() -> PathBuf {
     PathBuf::from(home).join(".postgresql").join("root.crt")
 }
 
-async fn root_file_store(path: &str) -> Result<RootCertStore, SqlException> {
+async fn root_file_store(path: &str) -> Result<RootCertStore, SqlError> {
     let bytes = tokio::fs::read(path).await.map_err(|e| {
         ssl_error(format!("Could not open SSL root certificate file {path}.")).with_cause(e)
     })?;
@@ -160,14 +160,14 @@ async fn root_file_store(path: &str) -> Result<RootCertStore, SqlException> {
 fn chain_verifier(
     roots: RootCertStore,
     provider: Arc<CryptoProvider>,
-) -> Result<Arc<dyn ServerCertVerifier>, SqlException> {
+) -> Result<Arc<dyn ServerCertVerifier>, SqlError> {
     let inner = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider)
         .build()
         .map_err(|e| ssl_error("Could not initialize SSL context.").with_cause(e))?;
     Ok(Arc::new(ChainOnly { inner }))
 }
 
-async fn verifier(settings: &ConnectSettings) -> Result<Arc<dyn ServerCertVerifier>, SqlException> {
+async fn verifier(settings: &ConnectSettings) -> Result<Arc<dyn ServerCertVerifier>, SqlError> {
     let provider = provider();
     match &settings.ssl_factory {
         SslFactory::Unsupported(name) => Err(ssl_error(format!(
@@ -195,7 +195,7 @@ async fn verifier(settings: &ConnectSettings) -> Result<Arc<dyn ServerCertVerifi
 
 pub(crate) async fn client_config(
     settings: &ConnectSettings,
-) -> Result<Arc<ClientConfig>, SqlException> {
+) -> Result<Arc<ClientConfig>, SqlError> {
     let verifier = verifier(settings).await?;
     let mut config = ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
@@ -209,7 +209,7 @@ pub(crate) async fn client_config(
     Ok(Arc::new(config))
 }
 
-pub(crate) fn server_name(host: &str) -> Result<ServerName<'static>, SqlException> {
+pub(crate) fn server_name(host: &str) -> Result<ServerName<'static>, SqlError> {
     let bare = host
         .strip_prefix('[')
         .and_then(|h| h.strip_suffix(']'))
@@ -222,7 +222,7 @@ pub(crate) fn server_name(host: &str) -> Result<ServerName<'static>, SqlExceptio
     })
 }
 
-pub(crate) fn verify_peer_name(host: &str, end_entity: Option<&[u8]>) -> Result<(), SqlException> {
+pub(crate) fn verify_peer_name(host: &str, end_entity: Option<&[u8]>) -> Result<(), SqlError> {
     let failed = || {
         ssl_error(format!(
             "The hostname {host} could not be verified by hostnameverifier {HOSTNAME_VERIFIER}."

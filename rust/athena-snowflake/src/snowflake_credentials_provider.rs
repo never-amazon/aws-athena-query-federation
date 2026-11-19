@@ -8,7 +8,7 @@ use athena_federation_sdk::credentials::{
     Credentials, CredentialsProvider, DefaultCredentials, HttpClient, HttpRequest,
     ReqwestHttpClient,
 };
-use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaExceptionKind};
+use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_federation_sdk::security::{
     AwsRequestOverrideConfiguration, CachableSecretsManager, SecretsManagerClient,
 };
@@ -247,8 +247,9 @@ impl SnowflakeCredentialsProvider {
         };
         if let Err(e) = save.await {
             tracing::error!("Failed to save updated secret: {e}");
-            return Err(FederationError::Runtime(
-                "Failed to save updated secret: ".to_string(),
+            return Err(FederationError::runtime_with_cause(
+                "Failed to save updated secret: ",
+                e,
             ));
         }
         Ok(access_token)
@@ -256,7 +257,7 @@ impl SnowflakeCredentialsProvider {
 }
 
 fn runtime_error(error: impl std::error::Error + Send + Sync + 'static) -> FederationError {
-    FederationError::wrapped(JavaExceptionKind::Runtime, error)
+    FederationError::other(error)
 }
 
 fn now_seconds() -> i64 {
@@ -445,6 +446,8 @@ impl CredentialsProvider for SnowflakeCredentialsProvider {
 mod tests {
     use std::error::Error;
 
+    use athena_federation_sdk::exceptions::JavaThrowable;
+
     use super::{runtime_error, FederationError};
 
     #[test]
@@ -457,7 +460,7 @@ mod tests {
         assert!(error.source().is_some());
         assert!(matches!(
             &error,
-            FederationError::Wrapped { source, .. } if source.downcast_ref::<serde_json::Error>().is_some()
+            FederationError::Other(source) if source.downcast_ref::<serde_json::Error>().is_some()
         ));
     }
 }

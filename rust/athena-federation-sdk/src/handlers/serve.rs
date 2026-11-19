@@ -8,7 +8,7 @@ use super::record_handler::{self, RecordHandler};
 use super::user_defined_function_handler::{self, UserDefinedFunctionHandler};
 use crate::data::{BlockAllocator, BlockAllocatorImpl};
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+    AthenaConnectorException, FederationError, FederationSourceErrorCode, JavaThrowable, Result,
 };
 use crate::lambda::{LambdaContext, RequestStreamHandler};
 use crate::request::{FederationRequest, PingRequest, PingResponse};
@@ -122,11 +122,13 @@ impl<H: MetadataHandler + ?Sized> Route for MetadataStreamHandler<H> {
             return error;
         }
         let message = error.to_string();
-        FederationError::AthenaConnector(AthenaConnectorException::with_response(
-            Arc::new(error),
-            message,
-            ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-        ))
+        FederationError::AthenaConnector(
+            AthenaConnectorException::new(
+                FederationSourceErrorCode::InternalServiceException,
+                message,
+            )
+            .with_response(error),
+        )
     }
 }
 

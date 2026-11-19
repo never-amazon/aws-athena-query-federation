@@ -74,7 +74,7 @@ pub fn assert_field_name(
 ) -> Result<()> {
     jparser.next_token()?;
     if jparser.current_token() != Some(JsonToken::FieldName) {
-        return Err(FederationError::IllegalState(format!(
+        return Err(FederationError::UnexpectedToken(format!(
             "Expected field name token but got {}",
             token_name(jparser.current_token())
         )));
@@ -82,7 +82,7 @@ pub fn assert_field_name(
     let field_name_token = jparser.current_name().unwrap_or_default();
     if let Some(expected) = expected_field_name {
         if expected != field_name_token {
-            return Err(FederationError::IllegalState(format!(
+            return Err(FederationError::UnexpectedToken(format!(
                 "Unexpected field[{field_name_token}] while expecting[{expected}]"
             )));
         }
@@ -140,8 +140,8 @@ pub fn get_next_string_array(
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for ARRAY",
                 ))
             }
             Some(_) => result.push(jparser.get_value_as_string()),
@@ -167,8 +167,8 @@ pub fn read_string_map_entries(
         match jparser.next_token()? {
             Some(JsonToken::EndObject) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for OBJECT".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for OBJECT",
                 ))
             }
             Some(_) => {
@@ -183,7 +183,7 @@ pub fn read_string_map_entries(
 pub fn validate_object_start_token(token: Option<JsonToken>) -> Result<()> {
     match token {
         Some(JsonToken::StartObject) => Ok(()),
-        Some(t) => Err(FederationError::IllegalState(format!(
+        Some(t) => Err(FederationError::UnexpectedToken(format!(
             "Expected {} found {}",
             JsonToken::StartObject,
             t.as_string().unwrap_or("null")
@@ -194,7 +194,7 @@ pub fn validate_object_start_token(token: Option<JsonToken>) -> Result<()> {
 
 pub fn validate_object_end(jparser: &mut JsonParser<'_>) -> Result<()> {
     if jparser.next_token()? != Some(JsonToken::EndObject) {
-        return Err(FederationError::IllegalState(format!(
+        return Err(FederationError::UnexpectedToken(format!(
             "Expected {} found {}",
             JsonToken::EndObject,
             jparser.text_or_null()
@@ -205,7 +205,7 @@ pub fn validate_object_end(jparser: &mut JsonParser<'_>) -> Result<()> {
 
 pub fn validate_array_start(jparser: &mut JsonParser<'_>) -> Result<()> {
     if jparser.next_token()? != Some(JsonToken::StartArray) {
-        return Err(FederationError::IllegalState(format!(
+        return Err(FederationError::UnexpectedToken(format!(
             "Expected {} found {}",
             JsonToken::StartArray,
             jparser.text_or_null()
@@ -216,7 +216,7 @@ pub fn validate_array_start(jparser: &mut JsonParser<'_>) -> Result<()> {
 
 pub fn validate_object_start(jparser: &mut JsonParser<'_>) -> Result<()> {
     if jparser.next_token()? != Some(JsonToken::StartObject) {
-        return Err(FederationError::IllegalState(format!(
+        return Err(FederationError::UnexpectedToken(format!(
             "Expected {} found {}",
             JsonToken::StartObject,
             jparser.text_or_null()
@@ -240,7 +240,7 @@ pub fn ignore_rest_of_object(jparser: &mut JsonParser<'_>) -> Result<()> {
         let t = jparser.next_token()?;
         match t {
             None => {
-                return Err(FederationError::IllegalState(format!(
+                return Err(FederationError::UnexpectedToken(format!(
                     "Expected {} found {}",
                     JsonToken::EndObject,
                     jparser.text_or_null()

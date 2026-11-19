@@ -10,6 +10,7 @@ use arrow::datatypes::Schema;
 use async_trait::async_trait;
 use athena_federation_sdk::data::SimpleBlockWriter;
 use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{
     HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
@@ -21,7 +22,7 @@ use athena_jdbc::manager::{
     RecordDialect, SplitQuery,
 };
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException};
+use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlError};
 use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes, ResultSetData};
 
 const CONNECTION_STRING1: &str = "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}";
@@ -287,7 +288,7 @@ async fn test_get_tables() {
 #[tokio::test]
 async fn test_get_table_metadata_with_sql_exception() {
     let connection = FakeConnection::new();
-    connection.on_query(|_| Err(SqlException::new("Test exception")));
+    connection.on_query(|_| Err(SqlError::new("Test exception")));
     let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables")
         .await
         .unwrap_err();
@@ -298,11 +299,11 @@ async fn test_get_table_metadata_with_sql_exception() {
 async fn test_get_table_metadata_with_no_warehouse_selected_propagates() {
     let connection = FakeConnection::new();
     connection.on_query(|_| {
-        Err(SqlException::new(
-            "No active warehouse selected in the current session.  Select an active warehouse with the 'use warehouse' command.",
-        )
-        .with_sql_state("57P03")
-        .with_error_code(606))
+        Err(SqlError::Jdbc {
+            message: "No active warehouse selected in the current session.  Select an active warehouse with the 'use warehouse' command.".to_string(),
+            sql_state: Some("57P03".to_string()),
+            code: Some(606),
+        })
     });
     let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables and Views")
         .await

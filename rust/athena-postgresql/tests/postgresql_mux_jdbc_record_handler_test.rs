@@ -15,6 +15,7 @@ use athena_federation_sdk::domain::predicate::{ConstraintEvaluator, Constraints}
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
@@ -100,7 +101,7 @@ impl RecordDelegate for FakeJdbcRecordHandler {
     async fn close(&self) -> Result<()> {
         self.calls.close.fetch_add(1, Ordering::SeqCst);
         match &self.close_error {
-            Some(message) => Err(FederationError::Runtime(message.clone())),
+            Some(message) => Err(FederationError::runtime(message.clone())),
             None => Ok(()),
         }
     }
@@ -234,7 +235,7 @@ async fn read_with_constraint_with_unsupported_catalog() {
     assert!(e.is_runtime_exception());
     assert_eq!(
         "Catalog is not supported in multiplexer. After registering the catalog in Athena, must set 'unsupportedCatalog_connection_string' environment variable in Lambda. See JDBC connector README for further details.",
-        e.as_connector_exception().unwrap().message()
+        e.as_connector_exception().unwrap().message
     );
     assert!(s.calls.read_with_constraint.lock().unwrap().is_empty());
 }

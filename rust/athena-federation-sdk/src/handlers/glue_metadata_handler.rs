@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error as _;
 use std::hash::BuildHasher;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -18,7 +19,8 @@ use super::metadata_handler::{require_identity, MetadataHandler};
 use crate::data::SchemaBuilder;
 use crate::domain::table_name::TableName;
 use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
+    AthenaConnectorException, FederationError, FederationSourceErrorCode, JavaCause, JavaThrowable,
+    Result,
 };
 use crate::metadata::glue::{self, GlueClient};
 use crate::metadata::{
@@ -80,8 +82,22 @@ fn glue_is_null(method: &str) -> FederationError {
     ))
 }
 
-fn build_error(e: impl std::error::Error + Send + Sync + 'static) -> FederationError {
-    FederationError::wrapped(crate::exceptions::JavaExceptionKind::IllegalArgument, e)
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+struct GlueBuildError(aws_smithy_types::error::operation::BuildError);
+
+impl JavaThrowable for GlueBuildError {
+    fn java_class_name(&self) -> String {
+        "java.lang.IllegalArgumentException".to_string()
+    }
+
+    fn java_cause(&self) -> Option<JavaCause<'_>> {
+        self.0.source().map(JavaCause::foreign)
+    }
+}
+
+fn build_error(e: aws_smithy_types::error::operation::BuildError) -> FederationError {
+    FederationError::external(GlueBuildError(e))
 }
 
 fn function_owner(function_arn: Option<&str>) -> Option<String> {
@@ -267,14 +283,16 @@ pub trait GlueMetadataHandler: MetadataHandler {
         };
         lexed.map_err(|ex| {
             if ex.is_runtime_exception() {
-                FederationError::AthenaConnector(AthenaConnectorException::with_response(
-                    Arc::new(ex),
-                    format!(
-                        "Error converting field[{name}] with type[{}]",
-                        glue_type.unwrap_or("null")
-                    ),
-                    ErrorDetails::of(FederationSourceErrorCode::OperationNotSupportedException),
-                ))
+                FederationError::AthenaConnector(
+                    AthenaConnectorException::new(
+                        FederationSourceErrorCode::OperationNotSupportedException,
+                        format!(
+                            "Error converting field[{name}] with type[{}]",
+                            glue_type.unwrap_or("null")
+                        ),
+                    )
+                    .with_response(ex),
+                )
             } else {
                 ex
             }

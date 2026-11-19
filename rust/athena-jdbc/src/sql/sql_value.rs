@@ -9,7 +9,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use super::sql_exception::{SqlException, SQL_EXCEPTION_CLASS};
+use super::sql_error::{Driver, SqlError};
 
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 
@@ -44,35 +44,27 @@ pub enum SqlValue {
     Rendered {
         value: Box<SqlValue>,
         text: String,
-        exception_class: &'static str,
+        driver: Driver,
         kind: RenderedKind,
     },
 }
 
-fn bad_value(type_name: &str, value: &SqlValue) -> SqlException {
-    let class_name = match value {
-        SqlValue::Rendered {
-            exception_class, ..
-        } => exception_class,
-        _ => SQL_EXCEPTION_CLASS,
+fn bad_value(type_name: &str, value: &SqlValue) -> SqlError {
+    let driver = match value {
+        SqlValue::Rendered { driver, .. } => *driver,
+        _ => Driver::Jdbc,
     };
-    SqlException::with_class_name(
-        class_name,
-        format!("Bad value for type {type_name} : {value}"),
-    )
+    driver.error(format!("Bad value for type {type_name} : {value}"))
 }
 
-fn invalid_date_time(value: &SqlValue) -> Option<SqlException> {
+fn invalid_date_time(value: &SqlValue) -> Option<SqlError> {
     match value {
         SqlValue::Rendered {
             text,
-            exception_class,
+            driver,
             kind: RenderedKind::InvalidDateTime,
             ..
-        } => Some(SqlException::with_class_name(
-            exception_class,
-            format!("Bad value for type timestamp/date/time: {text}"),
-        )),
+        } => Some(driver.error(format!("Bad value for type timestamp/date/time: {text}"))),
         _ => None,
     }
 }
@@ -134,7 +126,7 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(value),
             text: text.into(),
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::Typed,
         }
     }
@@ -148,7 +140,7 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(value),
             text: text.into(),
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::JavaTimestamp {
                 epoch_millis,
                 epoch_day,
@@ -161,7 +153,7 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(SqlValue::String(text.clone())),
             text,
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::JavaDateMillis { millis, epoch_day },
         }
     }
@@ -178,7 +170,7 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(SqlValue::Date(date)),
             text: text.into(),
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::JavaSqlDate { millis, epoch_day },
         }
     }
@@ -188,7 +180,7 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(SqlValue::String(text.clone())),
             text,
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::InvalidElement(java_type),
         }
     }
@@ -198,27 +190,27 @@ impl SqlValue {
         SqlValue::Rendered {
             value: Box::new(SqlValue::String(text.clone())),
             text,
-            exception_class: SQL_EXCEPTION_CLASS,
+            driver: Driver::Jdbc,
             kind: RenderedKind::InvalidDateTime,
         }
     }
 
     #[must_use]
-    pub fn with_exception_class(self, class_name: &'static str) -> SqlValue {
+    pub fn with_driver(self, driver: Driver) -> SqlValue {
         match self {
             SqlValue::Rendered {
                 value, text, kind, ..
             } => SqlValue::Rendered {
                 value,
                 text,
-                exception_class: class_name,
+                driver,
                 kind,
             },
             other => other,
         }
     }
 
-    pub fn to_timestamp_millis(&self) -> Result<Option<i64>, SqlException> {
+    pub fn to_timestamp_millis(&self) -> Result<Option<i64>, SqlError> {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
         }
@@ -235,7 +227,7 @@ impl SqlValue {
             .map(|ts| ts.and_utc().timestamp_millis()))
     }
 
-    pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlException> {
+    pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlError> {
         if let SqlValue::Rendered {
             kind:
                 RenderedKind::JavaTimestamp {
@@ -254,7 +246,7 @@ impl SqlValue {
         matches!(self, SqlValue::Null)
     }
 
-    fn to_integral(&self, type_name: &str) -> Result<Option<BigDecimal>, SqlException> {
+    fn to_integral(&self, type_name: &str) -> Result<Option<BigDecimal>, SqlError> {
         let decimal = match self {
             SqlValue::Null => return Ok(None),
             SqlValue::Boolean(b) => BigDecimal::from(i32::from(*b)),
@@ -277,7 +269,7 @@ impl SqlValue {
         Ok(Some(decimal))
     }
 
-    pub fn to_boolean(&self) -> Result<Option<bool>, SqlException> {
+    pub fn to_boolean(&self) -> Result<Option<bool>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_boolean().map_err(|_| bad_value("boolean", self));
         }
@@ -297,7 +289,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_byte(&self) -> Result<Option<i8>, SqlException> {
+    pub fn to_byte(&self) -> Result<Option<i8>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_byte().map_err(|_| bad_value("byte", self));
         }
@@ -306,7 +298,7 @@ impl SqlValue {
             .transpose()
     }
 
-    pub fn to_short(&self) -> Result<Option<i16>, SqlException> {
+    pub fn to_short(&self) -> Result<Option<i16>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_short().map_err(|_| bad_value("short", self));
         }
@@ -315,7 +307,7 @@ impl SqlValue {
             .transpose()
     }
 
-    pub fn to_int(&self) -> Result<Option<i32>, SqlException> {
+    pub fn to_int(&self) -> Result<Option<i32>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_int().map_err(|_| bad_value("int", self));
         }
@@ -324,7 +316,7 @@ impl SqlValue {
             .transpose()
     }
 
-    pub fn to_long(&self) -> Result<Option<i64>, SqlException> {
+    pub fn to_long(&self) -> Result<Option<i64>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_long().map_err(|_| bad_value("long", self));
         }
@@ -333,7 +325,7 @@ impl SqlValue {
             .transpose()
     }
 
-    pub fn to_double(&self) -> Result<Option<f64>, SqlException> {
+    pub fn to_double(&self) -> Result<Option<f64>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_double().map_err(|_| bad_value("double", self));
         }
@@ -356,7 +348,7 @@ impl SqlValue {
         Ok(Some(value))
     }
 
-    pub fn to_float(&self) -> Result<Option<f32>, SqlException> {
+    pub fn to_float(&self) -> Result<Option<f32>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_float().map_err(|_| bad_value("float", self));
         }
@@ -371,7 +363,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_big_decimal(&self) -> Result<Option<BigDecimal>, SqlException> {
+    pub fn to_big_decimal(&self) -> Result<Option<BigDecimal>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value
                 .to_big_decimal()
@@ -404,7 +396,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_bytes(&self) -> Result<Option<Vec<u8>>, SqlException> {
+    pub fn to_bytes(&self) -> Result<Option<Vec<u8>>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             return value.to_bytes().map_err(|_| bad_value("bytes", self));
         }
@@ -430,7 +422,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlException> {
+    pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlError> {
         if let SqlValue::Rendered {
             kind:
                 RenderedKind::JavaSqlDate { epoch_day, .. }
@@ -446,7 +438,7 @@ impl SqlValue {
             .map(|date| i64::from(date.num_days_from_ce()) - DAYS_FROM_CE_TO_EPOCH))
     }
 
-    pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlException> {
+    pub fn to_date(&self) -> Result<Option<NaiveDate>, SqlError> {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
         }
@@ -465,7 +457,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_timestamp(&self) -> Result<Option<NaiveDateTime>, SqlException> {
+    pub fn to_timestamp(&self) -> Result<Option<NaiveDateTime>, SqlError> {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
         }
@@ -486,7 +478,7 @@ impl SqlValue {
         }
     }
 
-    pub fn to_array(&self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+    pub fn to_array(&self) -> Result<Option<Vec<SqlValue>>, SqlError> {
         if let SqlValue::Rendered { value, .. } = self {
             let items = value.to_array().map_err(|_| bad_value("array", self))?;
             if let Some(

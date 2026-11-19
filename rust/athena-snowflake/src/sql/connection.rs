@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
+    ResultSetMetaData, SqlError, SqlValue,
 };
 use regex::Regex;
 use tokio::sync::OnceCell;
 
-use super::executor::{snowflake_exception, SnowflakeExecutor, SnowflakeQueryResult};
+use super::executor::{SnowflakeExecutor, SnowflakeQueryResult};
 use super::type_map::{result_column_metadata, show_column_type};
 use super::wildcard::{
     escape_single_quote_for_like_command, escape_sql_quotes, is_wildcard_pattern_str, matches,
@@ -37,15 +37,15 @@ pub(crate) fn positive_seconds(seconds: i32) -> Option<Duration> {
 }
 
 fn int_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::INTEGER).with_type_name("INTEGER")
+    ColumnMetadata::new(name, JdbcType::Integer).with_type_name("INTEGER")
 }
 
 fn text_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::VARCHAR).with_type_name("TEXT")
+    ColumnMetadata::new(name, JdbcType::Varchar).with_type_name("TEXT")
 }
 
 fn short_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, Types::SMALLINT).with_type_name("SHORT")
+    ColumnMetadata::new(name, JdbcType::SmallInt).with_type_name("SHORT")
 }
 
 fn schemas_metadata() -> ResultSetMetaData {
@@ -207,10 +207,10 @@ fn column_row(
     table_name: String,
     column_name: String,
     ordinal_position: i32,
-) -> Result<Vec<SqlValue>, SqlException> {
+) -> Result<Vec<SqlValue>, SqlError> {
     let data_type_text = text(row.get(3)).unwrap_or_default();
     let data_type: serde_json::Value = serde_json::from_str(&data_type_text)
-        .map_err(|_| snowflake_exception(format!("error parsing data type: {data_type_text}")))?;
+        .map_err(|_| SqlError::snowflake(format!("error parsing data type: {data_type_text}")))?;
     let column_type = show_column_type(&data_type);
     let default_value = text(row.get(5)).unwrap_or_default();
     let default_value = if default_value.is_empty() {
@@ -232,7 +232,7 @@ fn column_row(
         SqlValue::String(schema_name),
         SqlValue::String(table_name),
         SqlValue::String(column_name),
-        SqlValue::Integer(column_type.jdbc_type),
+        SqlValue::Integer(column_type.jdbc_type.code()),
         SqlValue::String(column_type.type_name.clone()),
         opt_int(column_type.column_size),
         SqlValue::Null,
@@ -245,7 +245,7 @@ fn column_row(
         }),
         opt_text(comment),
         opt_text(default_value),
-        SqlValue::Integer(column_type.jdbc_type),
+        SqlValue::Integer(column_type.jdbc_type.code()),
         SqlValue::Null,
         opt_int(column_type.char_octet_length),
         SqlValue::Integer(ordinal_position),
@@ -293,9 +293,9 @@ impl SnowflakeConnection {
         self
     }
 
-    fn check_open(&self) -> Result<(), SqlException> {
+    fn check_open(&self) -> Result<(), SqlError> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(snowflake_exception("Connection is closed"));
+            return Err(SqlError::snowflake("Connection is closed"));
         }
         Ok(())
     }
@@ -305,7 +305,7 @@ impl SnowflakeConnection {
         sql: &str,
         binds: &[SqlValue],
         timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException> {
+    ) -> Result<SnowflakeQueryResult, SqlError> {
         self.check_open()?;
         tracing::debug!("Snowflake query: {sql}");
         self.executor
@@ -313,7 +313,7 @@ impl SnowflakeConnection {
             .await
     }
 
-    async fn collect_rows(&self, sql: &str) -> Result<Vec<Vec<SqlValue>>, SqlException> {
+    async fn collect_rows(&self, sql: &str) -> Result<Vec<Vec<SqlValue>>, SqlError> {
         let mut result = self.run(sql, &[], None).await?;
         let mut rows = Vec::new();
         while let Some(row) = result.rows.next_row().await? {
@@ -322,7 +322,7 @@ impl SnowflakeConnection {
         Ok(rows)
     }
 
-    async fn show_rows_or_empty(&self, sql: &str) -> Result<Vec<Vec<SqlValue>>, SqlException> {
+    async fn show_rows_or_empty(&self, sql: &str) -> Result<Vec<Vec<SqlValue>>, SqlError> {
         match self.collect_rows(sql).await {
             Ok(rows) => Ok(rows),
             Err(e)
@@ -335,7 +335,7 @@ impl SnowflakeConnection {
         }
     }
 
-    async fn session_context(&self) -> Result<&(Option<String>, Option<String>), SqlException> {
+    async fn session_context(&self) -> Result<&(Option<String>, Option<String>), SqlError> {
         self.session_context
             .get_or_try_init(|| async {
                 let rows = self
@@ -347,7 +347,7 @@ impl SnowflakeConnection {
             .await
     }
 
-    async fn describe(&self, sql: &str) -> Result<Option<ResultSetMetaData>, SqlException> {
+    async fn describe(&self, sql: &str) -> Result<Option<ResultSetMetaData>, SqlError> {
         if !DESCRIBABLE.is_match(sql) || sql.contains('?') {
             return Ok(None);
         }
@@ -367,7 +367,7 @@ impl SnowflakeConnection {
 
 #[async_trait]
 impl DatabaseMetaData for SnowflakeConnection {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlException> {
+    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
         self.get_schemas_with_catalog(None, None).await
     }
 
@@ -375,7 +375,7 @@ impl DatabaseMetaData for SnowflakeConnection {
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.check_open()?;
         let compiled = to_regex_pattern(schema_pattern);
         let location = match catalog {
@@ -408,7 +408,7 @@ impl DatabaseMetaData for SnowflakeConnection {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.check_open()?;
         let valid_types: Vec<&str> = match types {
             Some(types) => types
@@ -490,7 +490,7 @@ impl DatabaseMetaData for SnowflakeConnection {
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.check_open()?;
         let compiled_schema = to_regex_pattern(schema_pattern);
         let compiled_table = to_regex_pattern(table_name_pattern);
@@ -544,7 +544,7 @@ impl DatabaseMetaData for SnowflakeConnection {
         catalog: Option<&str>,
         schema: Option<&str>,
         table: &str,
-    ) -> Result<ResultSet, SqlException> {
+    ) -> Result<ResultSet, SqlError> {
         self.check_open()?;
         let compiled_schema = to_regex_pattern(schema);
         let compiled_table = to_regex_pattern(Some(table));
@@ -588,19 +588,19 @@ impl DatabaseMetaData for SnowflakeConnection {
         Ok(ResultSet::from_rows(primary_keys_metadata(), rows))
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlException> {
+    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
         Ok(Some("\\".to_string()))
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlException> {
+    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
         Ok("\"".to_string())
     }
 
-    fn get_database_product_name(&self) -> Result<String, SqlException> {
+    fn get_database_product_name(&self) -> Result<String, SqlError> {
         Ok("Snowflake".to_string())
     }
 
-    async fn get_user_name(&self) -> Result<Option<String>, SqlException> {
+    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
         Ok(self.user.clone())
     }
 }
@@ -611,17 +611,17 @@ impl JdbcConnection for SnowflakeConnection {
         self
     }
 
-    async fn get_catalog(&self) -> Result<Option<String>, SqlException> {
+    async fn get_catalog(&self) -> Result<Option<String>, SqlError> {
         self.check_open()?;
         Ok(self.session_context().await?.0.clone())
     }
 
-    async fn get_schema(&self) -> Result<Option<String>, SqlException> {
+    async fn get_schema(&self) -> Result<Option<String>, SqlError> {
         self.check_open()?;
         Ok(self.session_context().await?.1.clone())
     }
 
-    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlException> {
+    async fn prepare_statement(&self, sql: &str) -> Result<PreparedStatement, SqlError> {
         self.check_open()?;
         let statement = PreparedStatement::new(sql);
         Ok(match self.describe(sql).await? {
@@ -630,10 +630,7 @@ impl JdbcConnection for SnowflakeConnection {
         })
     }
 
-    async fn execute_query(
-        &self,
-        statement: &PreparedStatement,
-    ) -> Result<ResultSet, SqlException> {
+    async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
         let timeout = positive_seconds(statement.query_timeout());
         let result = self
             .run(statement.sql(), statement.parameters(), timeout)
@@ -643,14 +640,14 @@ impl JdbcConnection for SnowflakeConnection {
         Ok(ResultSet::new(Arc::new(metadata), result.rows))
     }
 
-    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlException> {
+    async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlError> {
         let mut result_set = self.execute_query(statement).await?;
         let has_columns = result_set.metadata().column_count() > 0;
         while result_set.next().await? {}
         Ok(has_columns)
     }
 
-    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlException> {
+    async fn set_auto_commit(&self, auto_commit: bool) -> Result<(), SqlError> {
         self.check_open()?;
         if self.auto_commit.load(Ordering::SeqCst) != auto_commit {
             self.auto_commit.store(auto_commit, Ordering::SeqCst);
@@ -662,22 +659,22 @@ impl JdbcConnection for SnowflakeConnection {
         Ok(())
     }
 
-    async fn get_auto_commit(&self) -> Result<bool, SqlException> {
+    async fn get_auto_commit(&self) -> Result<bool, SqlError> {
         self.check_open()?;
         Ok(self.auto_commit.load(Ordering::SeqCst))
     }
 
-    async fn commit(&self) -> Result<(), SqlException> {
+    async fn commit(&self) -> Result<(), SqlError> {
         self.collect_rows("commit").await.map(|_| ())
     }
 
-    async fn rollback(&self) -> Result<(), SqlException> {
+    async fn rollback(&self) -> Result<(), SqlError> {
         self.collect_rows("rollback").await.map(|_| ())
     }
 
-    async fn is_valid(&self, timeout_seconds: i32) -> Result<bool, SqlException> {
+    async fn is_valid(&self, timeout_seconds: i32) -> Result<bool, SqlError> {
         if timeout_seconds < 0 {
-            return Err(SqlException::new("timeout is less than 0"));
+            return Err(SqlError::new("timeout is less than 0"));
         }
         if self.closed.load(Ordering::SeqCst) {
             return Ok(false);
@@ -686,7 +683,7 @@ impl JdbcConnection for SnowflakeConnection {
         Ok(self.run("select 1", &[], timeout).await.is_ok())
     }
 
-    async fn close(&self) -> Result<(), SqlException> {
+    async fn close(&self) -> Result<(), SqlError> {
         if !self.closed.swap(true, Ordering::SeqCst) {
             self.executor.close().await?;
         }

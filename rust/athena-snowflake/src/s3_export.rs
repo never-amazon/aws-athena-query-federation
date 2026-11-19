@@ -129,8 +129,8 @@ impl S3ParquetExportReader {
     }
 }
 
-fn parquet_error(error: impl std::fmt::Display) -> FederationError {
-    FederationError::Runtime(error.to_string())
+fn parquet_error(error: impl std::error::Error + Send + Sync + 'static) -> FederationError {
+    FederationError::runtime_from(error.to_string(), error)
 }
 
 #[async_trait]

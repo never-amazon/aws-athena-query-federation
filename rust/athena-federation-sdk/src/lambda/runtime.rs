@@ -6,7 +6,7 @@ use serde_json::value::RawValue;
 
 use super::lambda_context::LambdaContext;
 use super::lambda_error::LambdaError;
-use crate::exceptions::{FederationError, JavaExceptionKind, Result};
+use crate::exceptions::{FederationError, Result};
 
 #[async_trait]
 pub trait RequestStreamHandler: Send + Sync {
@@ -27,10 +27,7 @@ where
         async move { invoke(handler.as_ref(), &event).await }
     }))
     .await
-    .map_err(|e| FederationError::Wrapped {
-        kind: JavaExceptionKind::Runtime,
-        source: Arc::from(e),
-    })
+    .map_err(|e| FederationError::Other(Arc::from(e)))
 }
 
 async fn invoke<H>(

@@ -3,7 +3,7 @@ use std::io;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::Duration;
 
-use athena_jdbc::sql::{SqlException, SqlValue};
+use athena_jdbc::sql::{SqlError, SqlValue};
 use bytes::BytesMut;
 use fallible_iterator::FallibleIterator;
 use postgres_protocol::message::backend::{ErrorFields, Message, RowDescriptionBody};
@@ -37,7 +37,7 @@ pub(crate) struct Buffered {
     rows: VecDeque<Vec<SqlValue>>,
     done: bool,
     abandoned: bool,
-    error: Option<SqlException>,
+    error: Option<SqlError>,
 }
 
 pub(crate) type SharedBuffer = Arc<StdMutex<Buffered>>;
@@ -49,7 +49,7 @@ pub(crate) fn lock_buffer(buffer: &SharedBuffer) -> MutexGuard<'_, Buffered> {
 }
 
 impl Buffered {
-    pub(crate) fn pop(&mut self) -> Option<Result<Option<Vec<SqlValue>>, SqlException>> {
+    pub(crate) fn pop(&mut self) -> Option<Result<Option<Vec<SqlValue>>, SqlError>> {
         if let Some(row) = self.rows.pop_front() {
             return Some(Ok(Some(row)));
         }
@@ -64,7 +64,7 @@ impl Buffered {
         self.rows.clear();
     }
 
-    fn finish(&mut self, error: Option<SqlException>) {
+    fn finish(&mut self, error: Option<SqlError>) {
         self.done = true;
         if self.error.is_none() {
             self.error = error;
@@ -88,7 +88,7 @@ struct ActiveResult {
     id: u64,
     stream: ResultStream,
     suspended: bool,
-    error: Option<SqlException>,
+    error: Option<SqlError>,
 }
 
 pub(crate) struct Described {
@@ -134,7 +134,7 @@ fn error_fields(fields: ErrorFields<'_>) -> Vec<(u8, String)> {
     out
 }
 
-fn field_descriptions(body: &RowDescriptionBody) -> Result<Vec<FieldDescription>, SqlException> {
+fn field_descriptions(body: &RowDescriptionBody) -> Result<Vec<FieldDescription>, SqlError> {
     body.fields()
         .map(|f| {
             Ok(FieldDescription {
@@ -149,7 +149,7 @@ fn field_descriptions(body: &RowDescriptionBody) -> Result<Vec<FieldDescription>
         .map_err(|e| protocol_violation(format!("Invalid RowDescription message: {e}")))
 }
 
-fn encoding_error(message: &str) -> SqlException {
+fn encoding_error(message: &str) -> SqlError {
     io_failure(io::Error::new(
         io::ErrorKind::InvalidInput,
         message.to_string(),
@@ -173,7 +173,7 @@ impl Session {
         }
     }
 
-    pub(crate) fn wire_mut(&mut self) -> Result<&mut Wire, SqlException> {
+    pub(crate) fn wire_mut(&mut self) -> Result<&mut Wire, SqlError> {
         self.wire.as_mut().ok_or_else(connection_closed)
     }
 
@@ -193,7 +193,7 @@ impl Session {
         self.tx_status = status;
     }
 
-    pub(crate) fn server_error(&self, fields: ErrorFields<'_>) -> SqlException {
+    pub(crate) fn server_error(&self, fields: ErrorFields<'_>) -> SqlError {
         let fields = error_fields(fields);
         if self.options.log_server_error_detail {
             server_error(&fields)
@@ -222,24 +222,24 @@ impl Session {
         &self.types
     }
 
-    pub(crate) fn output(&mut self) -> Result<&mut BytesMut, SqlException> {
+    pub(crate) fn output(&mut self) -> Result<&mut BytesMut, SqlError> {
         Ok(self.wire_mut()?.output())
     }
 
-    fn queue_sync(&mut self) -> Result<(), SqlException> {
+    fn queue_sync(&mut self) -> Result<(), SqlError> {
         frontend::sync(self.output()?);
         self.pending_syncs += 1;
         self.unsynced = false;
         Ok(())
     }
 
-    fn queue_query(&mut self, sql: &str) -> Result<(), SqlException> {
+    fn queue_query(&mut self, sql: &str) -> Result<(), SqlError> {
         frontend::query(sql, self.output()?).map_err(io_failure)?;
         self.pending_syncs += 1;
         Ok(())
     }
 
-    pub(crate) async fn flush(&mut self) -> Result<(), SqlException> {
+    pub(crate) async fn flush(&mut self) -> Result<(), SqlError> {
         let result = self.wire_mut()?.flush().await;
         result.map_err(|e| self.broken(e))
     }
@@ -271,7 +271,7 @@ impl Session {
         }
     }
 
-    async fn receive(&mut self) -> Result<Message, SqlException> {
+    async fn receive(&mut self) -> Result<Message, SqlError> {
         self.receive_io().await.map_err(io_failure)
     }
 
@@ -284,13 +284,13 @@ impl Session {
         }
     }
 
-    fn broken(&mut self, cause: io::Error) -> SqlException {
+    fn broken(&mut self, cause: io::Error) -> SqlError {
         self.wire = None;
         self.abort_results();
         io_failure(cause)
     }
 
-    async fn read_until_idle(&mut self) -> Result<Option<SqlException>, SqlException> {
+    async fn read_until_idle(&mut self) -> Result<Option<SqlError>, SqlError> {
         let mut error = None;
         while self.pending_syncs > 0 {
             if let Message::ErrorResponse(body) = self.receive().await? {
@@ -302,7 +302,7 @@ impl Session {
         Ok(error)
     }
 
-    async fn resync(&mut self) -> Result<(), SqlException> {
+    async fn resync(&mut self) -> Result<(), SqlError> {
         if self.unsynced {
             self.queue_sync()?;
         }
@@ -321,7 +321,7 @@ impl Session {
         self.portals.contains_key(&id)
     }
 
-    pub(crate) async fn finish_active(&mut self) -> Result<(), SqlException> {
+    pub(crate) async fn finish_active(&mut self) -> Result<(), SqlError> {
         while let Some(active) = &self.active {
             let (id, buffer) = (active.id, Arc::clone(&active.stream.buffer));
             match self.next_row(id, false).await {
@@ -343,7 +343,7 @@ impl Session {
     fn decode_row(
         decoders: &[Decoder],
         body: &postgres_protocol::message::backend::DataRowBody,
-    ) -> Result<Vec<SqlValue>, SqlException> {
+    ) -> Result<Vec<SqlValue>, SqlError> {
         let buffer = body.buffer();
         body.ranges()
             .enumerate()
@@ -359,7 +359,7 @@ impl Session {
         &mut self,
         id: u64,
         fetch_more: bool,
-    ) -> Result<Option<Vec<SqlValue>>, SqlException> {
+    ) -> Result<Option<Vec<SqlValue>>, SqlError> {
         loop {
             let Some(decoders) = self
                 .active
@@ -408,7 +408,7 @@ impl Session {
         }
     }
 
-    fn fetch(&mut self, id: u64, stream: ResultStream) -> Result<(), SqlException> {
+    fn fetch(&mut self, id: u64, stream: ResultStream) -> Result<(), SqlError> {
         let portal = stream
             .portal
             .clone()
@@ -424,7 +424,7 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn resume(&mut self, id: u64) -> Result<(), SqlException> {
+    pub(crate) async fn resume(&mut self, id: u64) -> Result<(), SqlError> {
         self.prepare().await?;
         if let Some(stream) = self.portals.remove(&id) {
             self.fetch(id, stream)?;
@@ -433,7 +433,7 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn prepare(&mut self) -> Result<(), SqlException> {
+    pub(crate) async fn prepare(&mut self) -> Result<(), SqlError> {
         if self.wire.is_none() {
             return Err(connection_closed());
         }
@@ -441,7 +441,7 @@ impl Session {
         self.resync().await
     }
 
-    pub(crate) async fn simple_query(&mut self, sql: &str) -> Result<(), SqlException> {
+    pub(crate) async fn simple_query(&mut self, sql: &str) -> Result<(), SqlError> {
         self.prepare().await?;
         self.queue_query(sql)?;
         self.flush().await?;
@@ -451,7 +451,7 @@ impl Session {
         }
     }
 
-    pub(crate) async fn set_auto_commit(&mut self, auto_commit: bool) -> Result<(), SqlException> {
+    pub(crate) async fn set_auto_commit(&mut self, auto_commit: bool) -> Result<(), SqlError> {
         if auto_commit && !self.auto_commit && self.tx_status != STATUS_IDLE {
             self.simple_query("COMMIT").await?;
         }
@@ -459,11 +459,11 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn commit(&mut self) -> Result<(), SqlException> {
+    pub(crate) async fn commit(&mut self) -> Result<(), SqlError> {
         if self.auto_commit {
             return Err(super::error::psql(
                 "Cannot commit when autoCommit is enabled.",
-                "25000",
+                super::error::INVALID_TRANSACTION_STATE,
             ));
         }
         self.prepare().await?;
@@ -473,11 +473,11 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn rollback(&mut self) -> Result<(), SqlException> {
+    pub(crate) async fn rollback(&mut self) -> Result<(), SqlError> {
         if self.auto_commit {
             return Err(super::error::psql(
                 "Cannot rollback when autoCommit is enabled.",
-                "25000",
+                super::error::INVALID_TRANSACTION_STATE,
             ));
         }
         self.prepare().await?;
@@ -504,7 +504,7 @@ impl Session {
         self.abort_results();
     }
 
-    pub(crate) async fn describe(&mut self, sql: &str) -> Result<Described, SqlException> {
+    pub(crate) async fn describe(&mut self, sql: &str) -> Result<Described, SqlError> {
         self.prepare().await?;
         let out = self.output()?;
         frontend::parse("", sql, std::iter::empty(), out).map_err(io_failure)?;
@@ -547,7 +547,7 @@ impl Session {
         portal: &str,
         oids: &[u32],
         values: &[Option<String>],
-    ) -> Result<(), SqlException> {
+    ) -> Result<(), SqlError> {
         let out = self.output()?;
         frontend::parse("", sql, oids.iter().copied(), out).map_err(io_failure)?;
         frontend::bind(
@@ -578,7 +578,7 @@ impl Session {
         parameters: &[SqlValue],
         suppress_begin: bool,
         fetch_size: i32,
-    ) -> Result<Executed, SqlException> {
+    ) -> Result<Executed, SqlError> {
         let (oids, values): (Vec<u32>, Vec<Option<String>>) = parameters
             .iter()
             .map(|p| encode_parameter(p, self.options.string_type_unspecified))
@@ -674,7 +674,7 @@ impl Session {
         sql: &str,
         parameters: &[SqlValue],
         suppress_begin: bool,
-    ) -> Result<(Vec<FieldDescription>, Vec<Vec<SqlValue>>), SqlException> {
+    ) -> Result<(Vec<FieldDescription>, Vec<Vec<SqlValue>>), SqlError> {
         let executed = self.execute(sql, parameters, suppress_begin, 0).await?;
         let fields = executed.fields.unwrap_or_default();
         let mut rows = Vec::new();
@@ -686,7 +686,7 @@ impl Session {
         Ok((fields, rows))
     }
 
-    pub(crate) async fn resolve_types(&mut self, oids: Vec<u32>) -> Result<(), SqlException> {
+    pub(crate) async fn resolve_types(&mut self, oids: Vec<u32>) -> Result<(), SqlError> {
         let mut pending = self.types.missing(&oids);
         let mut rounds = 0;
         while !pending.is_empty() && rounds < 4 {

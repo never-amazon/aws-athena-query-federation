@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use athena_jdbc::sql::Types;
+use athena_jdbc::sql::JdbcType;
 
 pub(crate) mod oid {
     pub(crate) const BOOL: u32 = 16;
@@ -35,42 +35,42 @@ pub(crate) mod oid {
 
 const UNKNOWN_LENGTH: i32 = i32::MAX;
 
-const STATIC_TYPES: [(&str, u32, i32, u32); 26] = [
-    ("int2", oid::INT2, Types::SMALLINT, 1005),
-    ("int4", oid::INT4, Types::INTEGER, 1007),
-    ("oid", oid::OID, Types::BIGINT, 1028),
-    ("int8", oid::INT8, Types::BIGINT, 1016),
-    ("money", oid::MONEY, Types::DOUBLE, 791),
-    ("numeric", oid::NUMERIC, Types::NUMERIC, 1231),
-    ("float4", oid::FLOAT4, Types::REAL, 1021),
-    ("float8", oid::FLOAT8, Types::DOUBLE, 1022),
-    ("char", oid::CHAR, Types::CHAR, 1002),
-    ("bpchar", oid::BPCHAR, Types::CHAR, 1014),
-    ("varchar", oid::VARCHAR, Types::VARCHAR, 1015),
-    ("varbit", oid::VARBIT, Types::OTHER, 1563),
-    ("text", oid::TEXT, Types::VARCHAR, 1009),
-    ("name", oid::NAME, Types::VARCHAR, 1003),
-    ("bytea", oid::BYTEA, Types::BINARY, 1001),
-    ("bool", oid::BOOL, Types::BIT, 1000),
-    ("bit", oid::BIT, Types::BIT, 1561),
-    ("date", oid::DATE, Types::DATE, 1182),
-    ("time", oid::TIME, Types::TIME, 1183),
-    ("timetz", oid::TIMETZ, Types::TIME, 1270),
-    ("timestamp", oid::TIMESTAMP, Types::TIMESTAMP, 1115),
-    ("timestamptz", oid::TIMESTAMPTZ, Types::TIMESTAMP, 1185),
-    ("refcursor", oid::REFCURSOR, Types::REF_CURSOR, 2201),
-    ("json", oid::JSON, Types::OTHER, 199),
-    ("jsonb", oid::JSONB, Types::OTHER, 3807),
-    ("point", oid::POINT, Types::OTHER, 1017),
+const STATIC_TYPES: [(&str, u32, JdbcType, u32); 26] = [
+    ("int2", oid::INT2, JdbcType::SmallInt, 1005),
+    ("int4", oid::INT4, JdbcType::Integer, 1007),
+    ("oid", oid::OID, JdbcType::BigInt, 1028),
+    ("int8", oid::INT8, JdbcType::BigInt, 1016),
+    ("money", oid::MONEY, JdbcType::Double, 791),
+    ("numeric", oid::NUMERIC, JdbcType::Numeric, 1231),
+    ("float4", oid::FLOAT4, JdbcType::Real, 1021),
+    ("float8", oid::FLOAT8, JdbcType::Double, 1022),
+    ("char", oid::CHAR, JdbcType::Char, 1002),
+    ("bpchar", oid::BPCHAR, JdbcType::Char, 1014),
+    ("varchar", oid::VARCHAR, JdbcType::Varchar, 1015),
+    ("varbit", oid::VARBIT, JdbcType::Other, 1563),
+    ("text", oid::TEXT, JdbcType::Varchar, 1009),
+    ("name", oid::NAME, JdbcType::Varchar, 1003),
+    ("bytea", oid::BYTEA, JdbcType::Binary, 1001),
+    ("bool", oid::BOOL, JdbcType::Bit, 1000),
+    ("bit", oid::BIT, JdbcType::Bit, 1561),
+    ("date", oid::DATE, JdbcType::Date, 1182),
+    ("time", oid::TIME, JdbcType::Time, 1183),
+    ("timetz", oid::TIMETZ, JdbcType::Time, 1270),
+    ("timestamp", oid::TIMESTAMP, JdbcType::Timestamp, 1115),
+    ("timestamptz", oid::TIMESTAMPTZ, JdbcType::Timestamp, 1185),
+    ("refcursor", oid::REFCURSOR, JdbcType::RefCursor, 2201),
+    ("json", oid::JSON, JdbcType::Other, 199),
+    ("jsonb", oid::JSONB, JdbcType::Other, 3807),
+    ("point", oid::POINT, JdbcType::Other, 1017),
 ];
 
-const STATIC_BOX: (&str, u32, i32, u32) = ("box", oid::BOX, Types::OTHER, 1020);
+const STATIC_BOX: (&str, u32, JdbcType, u32) = ("box", oid::BOX, JdbcType::Other, 1020);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PgType {
     pub(crate) oid: u32,
     pub(crate) name: String,
-    pub(crate) sql_type: i32,
+    pub(crate) sql_type: JdbcType,
     pub(crate) element: Option<u32>,
     pub(crate) delimiter: u8,
 }
@@ -114,7 +114,7 @@ impl Default for TypeCache {
                 PgType {
                     oid: *array_oid,
                     name: format!("_{name}"),
-                    sql_type: Types::ARRAY,
+                    sql_type: JdbcType::Array,
                     element: Some(*type_oid),
                     delimiter,
                 },
@@ -158,13 +158,13 @@ impl TypeCache {
 
     pub(crate) fn insert(&mut self, looked_up: LookedUpType) {
         let sql_type = if looked_up.is_array {
-            Types::ARRAY
+            JdbcType::Array
         } else {
             match looked_up.type_type.as_str() {
-                "c" => Types::STRUCT,
-                "d" => Types::DISTINCT,
-                "e" => Types::VARCHAR,
-                _ => Types::OTHER,
+                "c" => JdbcType::Struct,
+                "d" => JdbcType::Distinct,
+                "e" => JdbcType::Varchar,
+                _ => JdbcType::Other,
             }
         };
         let name = if looked_up.on_path {
@@ -189,14 +189,14 @@ impl TypeCache {
         self.types.entry(type_oid).or_insert_with(|| PgType {
             oid: type_oid,
             name: type_oid.to_string(),
-            sql_type: Types::OTHER,
+            sql_type: JdbcType::Other,
             element: None,
             delimiter: b',',
         });
     }
 
-    pub(crate) fn sql_type(&self, type_oid: u32) -> i32 {
-        self.get(type_oid).map_or(Types::OTHER, |t| t.sql_type)
+    pub(crate) fn sql_type(&self, type_oid: u32) -> JdbcType {
+        self.get(type_oid).map_or(JdbcType::Other, |t| t.sql_type)
     }
 
     pub(crate) fn pg_type_name(&self, type_oid: u32) -> String {
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn arrays_use_the_element_type_sizes() {
         let cache = TypeCache::default();
-        assert_eq!(cache.sql_type(1007), Types::ARRAY);
+        assert_eq!(cache.sql_type(1007), JdbcType::Array);
         assert_eq!(cache.pg_type_name(1007), "_int4");
         assert_eq!(cache.precision(1007, -1), 10);
         assert_eq!(cache.display_size(1007, -1), 11);
@@ -394,8 +394,8 @@ mod tests {
             on_path: false,
             schema: "app".to_string(),
         });
-        assert_eq!(cache.sql_type(2950), Types::OTHER);
-        assert_eq!(cache.sql_type(70_000), Types::VARCHAR);
+        assert_eq!(cache.sql_type(2950), JdbcType::Other);
+        assert_eq!(cache.sql_type(70_000), JdbcType::Varchar);
         assert_eq!(cache.pg_type_name(70_000), "\"app\".\"mood\"");
         assert_eq!(cache.precision(2950, -1), i32::MAX);
     }

@@ -24,7 +24,7 @@ use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialec
 use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
 use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{
-    ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
+    ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError, SqlValue,
 };
 use jdbc_support::{
     FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetColumnsCall,
@@ -195,7 +195,7 @@ fn assert_connector_exception(error: &FederationError) {
 
 fn assert_sql_exception(error: &FederationError) {
     assert!(
-        SqlException::from_federation_error(error).is_some(),
+        SqlError::from_federation_error(error).is_some(),
         "{error:?}"
     );
 }
@@ -499,18 +499,39 @@ async fn do_list_tables_escaped_exception() {
 async fn do_get_table() {
     let fixture = setup();
     fixture.connection.meta.set_columns(Ok(columns_result(vec![
-        (Types::INTEGER, 12, "testCol1", 0, 0, Some("_int4")),
-        (Types::VARCHAR, 25, "testCol2", 0, 0, Some("VARCHAR")),
-        (Types::TIMESTAMP, 93, "testCol3", 0, 0, Some("_timestamp")),
         (
-            Types::TIMESTAMP_WITH_TIMEZONE,
+            JdbcType::Integer.code(),
+            12,
+            "testCol1",
+            0,
+            0,
+            Some("_int4"),
+        ),
+        (
+            JdbcType::Varchar.code(),
+            25,
+            "testCol2",
+            0,
+            0,
+            Some("VARCHAR"),
+        ),
+        (
+            JdbcType::Timestamp.code(),
+            93,
+            "testCol3",
+            0,
+            0,
+            Some("_timestamp"),
+        ),
+        (
+            JdbcType::TimestampWithTimezone.code(),
             93,
             "testCol4",
             0,
             0,
             Some("_timestamp"),
         ),
-        (Types::ARRAY, 0, "testCol5", 0, 0, Some("_array")),
+        (JdbcType::Array.code(), 0, "testCol5", 0, 0, Some("_array")),
     ])));
 
     let mut expected_builder = SchemaBuilder::new_builder();
@@ -544,7 +565,7 @@ async fn do_get_table() {
 async fn do_get_query_passthrough_schema() {
     let fixture = setup();
     let query = "select testCol1 from testTable";
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol1", Types::INTEGER)
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol1", JdbcType::Integer)
         .with_label("testCol1")
         .with_precision(0)
         .with_display_size(0)]);
@@ -582,7 +603,7 @@ async fn do_get_query_passthrough_schema() {
 async fn do_get_table_case_insensitive() {
     let fixture = setup();
     fixture.connection.meta.set_columns(Ok(columns_result(vec![(
-        Types::INTEGER,
+        JdbcType::Integer.code(),
         12,
         "testCol1",
         0,
@@ -626,10 +647,7 @@ async fn do_get_table_no_columns() {
 #[tokio::test]
 async fn do_get_table_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_columns(Err(SqlException::new("")));
+    fixture.connection.meta.set_columns(Err(SqlError::new("")));
     let input_table_name = TableName::new("testSchema", "testTable");
     let error = fixture
         .handler
@@ -642,10 +660,7 @@ async fn do_get_table_sql_exception() {
 #[tokio::test]
 async fn do_list_schema_names_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_schemas(Err(SqlException::new("")));
+    fixture.connection.meta.set_schemas(Err(SqlError::new("")));
     let error = fixture
         .handler
         .list_schema_names(&ListSchemasRequest::new(
@@ -661,10 +676,7 @@ async fn do_list_schema_names_sql_exception() {
 #[tokio::test]
 async fn do_list_tables_sql_exception() {
     let fixture = setup();
-    fixture
-        .connection
-        .meta
-        .set_tables(Err(SqlException::new("")));
+    fixture.connection.meta.set_tables(Err(SqlError::new("")));
     let error = fixture
         .handler
         .list_tables(&list_tables_request(

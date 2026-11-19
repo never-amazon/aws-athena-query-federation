@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use athena_federation_sdk::data::{BlockAllocatorImpl, RecordBatchSerDe};
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::FederationError;
 use base64::Engine;
 

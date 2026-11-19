@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use athena_jdbc::sql::{RowSource, SqlException, SqlValue};
+use athena_jdbc::sql::{RowSource, SqlError, SqlValue};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use snowflake_connector_rs::bind::{Binary, BindType, RawBind, Time, TimestampTz};
@@ -16,8 +16,6 @@ use snowflake_connector_rs::{
 use super::hybrid_calendar::{java_sql_date_label, java_sql_timestamp, DateLabel};
 use super::type_map::{SnowflakeColumn, SnowflakeColumnType};
 
-pub const SNOWFLAKE_SQL_EXCEPTION: &str =
-    "net.snowflake.client.api.exception.SnowflakeSQLException";
 const NOT_FOUND_ERROR_CODE: &str = "002003";
 const BASE_TABLE_OR_VIEW_NOT_FOUND: &str = "42S02";
 const MILLIS_PER_DAY: i64 = 86_400_000;
@@ -34,31 +32,24 @@ pub trait SnowflakeExecutor: Send + Sync {
         sql: &str,
         binds: &[SqlValue],
         timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException>;
+    ) -> Result<SnowflakeQueryResult, SqlError>;
 
-    async fn close(&self) -> Result<(), SqlException> {
+    async fn close(&self) -> Result<(), SqlError> {
         Ok(())
     }
 }
 
-pub(crate) fn snowflake_exception(message: impl Into<String>) -> SqlException {
-    SqlException::with_class_name(SNOWFLAKE_SQL_EXCEPTION, message)
-}
-
-pub(crate) fn from_connector_error(error: &snowflake_connector_rs::Error) -> SqlException {
+pub(crate) fn from_connector_error(error: &snowflake_connector_rs::Error) -> SqlError {
     let message = error
         .snowflake_message()
         .map_or_else(|| error.to_string(), ToString::to_string);
-    let mut exception = snowflake_exception(message);
-    if let Some(code) = error.snowflake_code() {
-        if let Ok(number) = code.parse::<i32>() {
-            exception = exception.with_error_code(number);
-        }
-        if code == NOT_FOUND_ERROR_CODE {
-            exception = exception.with_sql_state(BASE_TABLE_OR_VIEW_NOT_FOUND);
-        }
+    let code = error.snowflake_code();
+    SqlError::Snowflake {
+        message,
+        sql_state: (code == Some(NOT_FOUND_ERROR_CODE))
+            .then(|| BASE_TABLE_OR_VIEW_NOT_FOUND.to_string()),
+        code: code.and_then(|c| c.parse::<i32>().ok()),
     }
-    exception
 }
 
 pub(crate) fn column_type_of(ty: &ColumnType) -> SnowflakeColumnType {
@@ -171,18 +162,15 @@ impl FromRow for RawRow {
     }
 }
 
-fn decode_error(column: &SnowflakeColumn, raw: &str) -> SqlException {
-    snowflake_exception(format!(
+fn decode_error(column: &SnowflakeColumn, raw: &str) -> SqlError {
+    SqlError::snowflake(format!(
         "Cannot convert value in the driver from type:{} to type:{}, value={raw}.",
         column.column_type.wire_name().to_uppercase(),
         column.column_type.wire_name().to_uppercase()
     ))
 }
 
-pub(crate) fn decode_cell(
-    column: &SnowflakeColumn,
-    cell: RawCell,
-) -> Result<SqlValue, SqlException> {
+pub(crate) fn decode_cell(column: &SnowflakeColumn, cell: RawCell) -> Result<SqlValue, SqlError> {
     let raw = match cell {
         RawCell::Null => return Ok(SqlValue::Null),
         RawCell::Date(d) => return Ok(date_value(d)),
@@ -271,7 +259,7 @@ fn parse_real(raw: &str) -> Option<f64> {
 pub(crate) fn decode_row(
     columns: &[SnowflakeColumn],
     cells: Vec<RawCell>,
-) -> Result<Vec<SqlValue>, SqlException> {
+) -> Result<Vec<SqlValue>, SqlError> {
     columns
         .iter()
         .zip(cells)
@@ -287,7 +275,7 @@ struct CursorRowSource {
 
 #[async_trait]
 impl RowSource for CursorRowSource {
-    async fn next_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlException> {
+    async fn next_row(&mut self) -> Result<Option<Vec<SqlValue>>, SqlError> {
         loop {
             if let Some(cells) = self.buffered.next() {
                 return decode_row(&self.columns, cells).map(Some);
@@ -311,8 +299,8 @@ impl RowSource for CursorRowSource {
     }
 }
 
-fn bind_error(error: impl std::fmt::Display) -> SqlException {
-    snowflake_exception(error.to_string())
+fn bind_error(error: impl std::fmt::Display) -> SqlError {
+    SqlError::snowflake(error.to_string())
 }
 
 type PositionalStatement = Statement<snowflake_connector_rs::PositionalBinds>;
@@ -352,7 +340,7 @@ fn bind_statement(
     sql: &str,
     binds: &[SqlValue],
     mapping: TimestampTypeMapping,
-) -> Result<PositionalStatement, SqlException> {
+) -> Result<PositionalStatement, SqlError> {
     binds.iter().try_fold(
         Statement::new_positional(sql.to_string()),
         |statement, value| bind_value(statement, value, mapping),
@@ -363,7 +351,7 @@ fn bind_value(
     statement: PositionalStatement,
     value: &SqlValue,
     mapping: TimestampTypeMapping,
-) -> Result<PositionalStatement, SqlException> {
+) -> Result<PositionalStatement, SqlError> {
     let statement = match value {
         SqlValue::Rendered { value, .. } => return bind_value(statement, value, mapping),
         SqlValue::Null => statement.bind(Option::<String>::None),
@@ -382,7 +370,7 @@ fn bind_value(
         SqlValue::Timestamp(v) => statement.bind(mapping.bind(*v)),
         SqlValue::TimestampTz(v) => statement.bind(TimestampTz::try_from(*v).map_err(bind_error)?),
         SqlValue::Array(_) => {
-            return Err(snowflake_exception(
+            return Err(SqlError::snowflake(
                 "Data type ARRAY is not supported for binding",
             ))
         }
@@ -438,7 +426,7 @@ impl SnowflakeExecutor for ConnectorExecutor {
         sql: &str,
         binds: &[SqlValue],
         timeout: Option<Duration>,
-    ) -> Result<SnowflakeQueryResult, SqlException> {
+    ) -> Result<SnowflakeQueryResult, SqlError> {
         let statement = bind_statement(sql, binds, self.timestamp_type_mapping)?;
         let mut options = QueryOptions::new();
         if let Some(timeout) = timeout {

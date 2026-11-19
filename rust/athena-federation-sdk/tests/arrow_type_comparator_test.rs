@@ -205,7 +205,7 @@ fn test_compare_struct_both_null() {
 
 fn connector_message(err: FederationError) -> String {
     match err {
-        FederationError::AthenaConnector(e) => e.message().to_string(),
+        FederationError::AthenaConnector(e) => e.message,
         other => panic!("expected AthenaConnectorException but got {other:?}"),
     }
 }

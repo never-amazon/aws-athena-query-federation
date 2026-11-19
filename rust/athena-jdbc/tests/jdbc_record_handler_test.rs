@@ -31,7 +31,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::QUERY;
 use athena_jdbc::sql::{
-    ColumnMetadata, JdbcConnection, PreparedStatement, ResultSetMetaData, Row, SqlValue, Types,
+    ColumnMetadata, JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData, Row, SqlValue,
 };
 use chrono::{NaiveDate, NaiveDateTime};
 use indexmap::IndexMap;
@@ -202,8 +202,8 @@ async fn read_with_constraint() {
     s.connection.on_query(|_| {
         Ok(ResultSetData::of_columns(
             vec![
-                ColumnMetadata::new(TEST_COL1, Types::INTEGER),
-                ColumnMetadata::new(TEST_COL2, Types::VARCHAR),
+                ColumnMetadata::new(TEST_COL1, JdbcType::Integer),
+                ColumnMetadata::new(TEST_COL2, JdbcType::Varchar),
             ],
             vec![
                 vec![
@@ -273,9 +273,9 @@ async fn read_with_constraint() {
 #[tokio::test]
 async fn make_extractor() {
     let metadata = ResultSetMetaData::new(vec![
-        ColumnMetadata::new(TEST_COL1, Types::INTEGER),
-        ColumnMetadata::new(TEST_COL2, Types::VARCHAR),
-        ColumnMetadata::new("testCol10", Types::DOUBLE),
+        ColumnMetadata::new(TEST_COL1, JdbcType::Integer),
+        ColumnMetadata::new(TEST_COL2, JdbcType::Varchar),
+        ColumnMetadata::new("testCol10", JdbcType::Double),
     ]);
     let partition_map = partition_map();
     let make = |name: &str, data_type: DataType| {
@@ -323,18 +323,18 @@ async fn make_extractor() {
 
 fn extractor_metadata() -> ResultSetMetaData {
     ResultSetMetaData::new(vec![
-        ColumnMetadata::new("testCol1", Types::INTEGER),
-        ColumnMetadata::new("testCol2", Types::VARCHAR),
-        ColumnMetadata::new("varchar_col", Types::VARCHAR),
-        ColumnMetadata::new("testCol3", Types::BOOLEAN),
-        ColumnMetadata::new("testCol4", Types::TINYINT),
-        ColumnMetadata::new("testCol5", Types::SMALLINT),
-        ColumnMetadata::new("testCol6", Types::VARBINARY),
-        ColumnMetadata::new("testCol8", Types::BIGINT),
-        ColumnMetadata::new("testCol9", Types::REAL),
-        ColumnMetadata::new("testCol10", Types::DOUBLE),
-        ColumnMetadata::new("testCol11", Types::DATE),
-        ColumnMetadata::new("testCol12", Types::TIMESTAMP),
+        ColumnMetadata::new("testCol1", JdbcType::Integer),
+        ColumnMetadata::new("testCol2", JdbcType::Varchar),
+        ColumnMetadata::new("varchar_col", JdbcType::Varchar),
+        ColumnMetadata::new("testCol3", JdbcType::Boolean),
+        ColumnMetadata::new("testCol4", JdbcType::TinyInt),
+        ColumnMetadata::new("testCol5", JdbcType::SmallInt),
+        ColumnMetadata::new("testCol6", JdbcType::VarBinary),
+        ColumnMetadata::new("testCol8", JdbcType::BigInt),
+        ColumnMetadata::new("testCol9", JdbcType::Real),
+        ColumnMetadata::new("testCol10", JdbcType::Double),
+        ColumnMetadata::new("testCol11", JdbcType::Date),
+        ColumnMetadata::new("testCol12", JdbcType::Timestamp),
     ])
 }
 
@@ -497,7 +497,7 @@ async fn test_make_extractor_without_null_values() {
 
 #[tokio::test]
 async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol12", Types::DATE)]);
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol12", JdbcType::Date)]);
     let extractor = manager::make_extractor(
         &field("testCol12", DataType::Date64),
         &metadata,
@@ -518,7 +518,7 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
 
 #[tokio::test]
 async fn make_extractor_reads_dates_from_year_ten_thousand() {
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", JdbcType::Date)]);
     let extractor = |data_type| {
         manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
@@ -556,7 +556,7 @@ fn write_array(element: DataType, values: Vec<SqlValue>) -> Value {
     let mut schema_builder = SchemaBuilder::new_builder();
     schema_builder.add_list_field("values", element);
     let schema = Arc::new(schema_builder.build());
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("values", Types::ARRAY)]);
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("values", JdbcType::Array)]);
     let context = row(metadata, vec![SqlValue::Array(values)]);
     let mut block = BlockAllocatorImpl::new().create_block(Arc::clone(&schema));
     let vector = block.get_field_vector_mut("values").unwrap();
@@ -636,7 +636,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
             SqlValue::java_sql_date(1_745_280_000_000, 20_200, "2025-04-22"),
         ]
     };
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", JdbcType::Date)]);
     let extractor = |data_type| {
         manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
@@ -789,10 +789,10 @@ async fn test_make_extractor_with_unsupported_type() {
         panic!("Expected AthenaConnectorException for unsupported type LIST");
     };
     let connector = e.as_connector_exception().unwrap();
-    assert_eq!("Unhandled type LIST", connector.message());
+    assert_eq!("Unhandled type LIST", connector.message);
     assert_eq!(
-        Some(FederationSourceErrorCode::OperationNotSupportedException.as_str()),
-        connector.error_details().error_code()
+        FederationSourceErrorCode::OperationNotSupportedException,
+        connector.code
     );
 }
 
@@ -836,7 +836,7 @@ async fn test_build_query_passthrough_sql_with_exception() {
 
 #[tokio::test]
 async fn test_make_extractor_float8_with_sql_exception() {
-    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new(TEST_COL1, Types::DOUBLE)]);
+    let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new(TEST_COL1, JdbcType::Double)]);
     let extractor = manager::make_extractor(
         &field(TEST_COL1, DataType::Float64),
         &metadata,
@@ -967,8 +967,8 @@ async fn test_do_read_records_direct_query_uses_spiller_and_returns_locations() 
         NaiveDateTime::parse_from_str("2021-02-02 12:30:00", "%Y-%m-%d %H:%M:%S").unwrap();
     let data = ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("CREATED_ON", Types::TIMESTAMP),
-            ColumnMetadata::new("NAME", Types::VARCHAR),
+            ColumnMetadata::new("CREATED_ON", JdbcType::Timestamp),
+            ColumnMetadata::new("NAME", JdbcType::Varchar),
         ],
         vec![
             vec![
@@ -1037,8 +1037,8 @@ async fn test_do_read_records_direct_query_keeps_duplicate_column_labels() {
     let key = KeySource::Local.create(None).await.unwrap();
     let data = ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("ID", Types::INTEGER),
-            ColumnMetadata::new("ID", Types::INTEGER),
+            ColumnMetadata::new("ID", JdbcType::Integer),
+            ColumnMetadata::new("ID", JdbcType::Integer),
         ],
         vec![vec![SqlValue::Integer(1), SqlValue::Integer(2)]],
     );
@@ -1099,9 +1099,9 @@ async fn export_reads_pre1582_values_on_the_proleptic_calendar() {
     };
     let data = ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("D", Types::DATE),
-            ColumnMetadata::new("TS", Types::TIMESTAMP),
-            ColumnMetadata::new("TS", Types::TIMESTAMP),
+            ColumnMetadata::new("D", JdbcType::Date),
+            ColumnMetadata::new("TS", JdbcType::Timestamp),
+            ColumnMetadata::new("TS", JdbcType::Timestamp),
         ],
         (0..2)
             .map(|i| vec![java_date(i), timestamp(i), timestamp(i + 1)])
@@ -1148,7 +1148,7 @@ async fn test_do_read_records_direct_query_returns_every_block_with_async_spill(
     let key = KeySource::Local.create(None).await.unwrap();
     let row_count = 200;
     let data = ResultSetData::of_columns(
-        vec![ColumnMetadata::new("ID", Types::INTEGER)],
+        vec![ColumnMetadata::new("ID", JdbcType::Integer)],
         (1..=row_count)
             .map(|i| vec![SqlValue::Integer(i)])
             .collect(),

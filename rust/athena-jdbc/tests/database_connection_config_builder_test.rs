@@ -1,3 +1,4 @@
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_jdbc::connection::{DatabaseConnectionConfig, DatabaseConnectionConfigBuilder};
 
 const CONNECTION_STRING1: &str = "mysql://jdbc:mysql://hostname/${testSecret}";

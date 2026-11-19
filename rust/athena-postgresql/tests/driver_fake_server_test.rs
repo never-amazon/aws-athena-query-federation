@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 use athena_postgresql::PgConnection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -98,7 +98,7 @@ where
     Fake { port, events }
 }
 
-async fn connect(url: &str) -> Result<PgConnection, SqlException> {
+async fn connect(url: &str) -> Result<PgConnection, SqlError> {
     tokio::time::timeout(
         Duration::from_secs(20),
         PgConnection::connect(url, &HashMap::new()),
@@ -107,7 +107,7 @@ async fn connect(url: &str) -> Result<PgConnection, SqlException> {
     .expect("connect must not hang")
 }
 
-fn err(result: Result<PgConnection, SqlException>) -> SqlException {
+fn err(result: Result<PgConnection, SqlError>) -> SqlError {
     match result {
         Ok(_) => panic!("expected the connection to fail"),
         Err(e) => e,

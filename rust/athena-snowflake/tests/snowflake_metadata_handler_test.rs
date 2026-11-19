@@ -12,6 +12,7 @@ use athena_federation_sdk::data::{
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
+use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
@@ -25,9 +26,8 @@ use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
 use athena_snowflake::resolver::snowflake_case_resolver;
-use athena_snowflake::sql::SNOWFLAKE_SQL_EXCEPTION;
 use athena_snowflake::{
     create_credentials_provider, create_snowflake_credentials_provider, snowflake_constants,
     SnowflakeMetadataDialect, SnowflakeMetadataHandler,
@@ -207,11 +207,11 @@ fn column_row(data_type: i32, size: i32, name: &str) -> Vec<SqlValue> {
 fn columns(rows: Vec<Vec<SqlValue>>) -> ResultSetData {
     ResultSetData::of_columns(
         vec![
-            ColumnMetadata::new("DATA_TYPE", Types::INTEGER),
-            ColumnMetadata::new("COLUMN_SIZE", Types::INTEGER),
-            ColumnMetadata::new("COLUMN_NAME", Types::VARCHAR),
-            ColumnMetadata::new("DECIMAL_DIGITS", Types::INTEGER),
-            ColumnMetadata::new("NUM_PREC_RADIX", Types::INTEGER),
+            ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
+            ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
+            ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
+            ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
+            ColumnMetadata::new("NUM_PREC_RADIX", JdbcType::Integer),
         ],
         rows,
     )
@@ -219,10 +219,10 @@ fn columns(rows: Vec<Vec<SqlValue>>) -> ResultSetData {
 
 fn four_columns() -> ResultSetData {
     columns(vec![
-        column_row(Types::INTEGER, 12, "testCol1"),
-        column_row(Types::VARCHAR, 25, "testCol2"),
-        column_row(Types::TIMESTAMP, 93, "testCol3"),
-        column_row(Types::TIMESTAMP_WITH_TIMEZONE, 93, "testCol4"),
+        column_row(JdbcType::Integer.code(), 12, "testCol1"),
+        column_row(JdbcType::Varchar.code(), 25, "testCol2"),
+        column_row(JdbcType::Timestamp.code(), 93, "testCol3"),
+        column_row(JdbcType::TimestampWithTimezone.code(), 93, "testCol4"),
     ])
 }
 
@@ -242,14 +242,14 @@ fn strings(labels: &[&str], rows: &[&[&str]]) -> ResultSetData {
 
 fn count_rows(count: i64) -> ResultSetData {
     ResultSetData::of_columns(
-        vec![ColumnMetadata::new("row_count", Types::BIGINT)],
+        vec![ColumnMetadata::new("row_count", JdbcType::BigInt)],
         vec![vec![SqlValue::BigInt(count)]],
     )
 }
 
 fn counts_rows(count: i32) -> ResultSetData {
     ResultSetData::of_columns(
-        vec![ColumnMetadata::new("COUNTS", Types::INTEGER)],
+        vec![ColumnMetadata::new("COUNTS", JdbcType::Integer)],
         vec![vec![SqlValue::Integer(count)]],
     )
 }
@@ -323,15 +323,11 @@ fn splits_request(
     )
 }
 
-fn snowflake_error(message: &str) -> SqlException {
-    SqlException::with_class_name(SNOWFLAKE_SQL_EXCEPTION, message)
+fn snowflake_error(message: &str) -> SqlError {
+    SqlError::snowflake(message)
 }
 
-fn route_partitions(
-    connection: &FakeConnection,
-    count: i64,
-    uniqueness: Result<i32, SqlException>,
-) {
+fn route_partitions(connection: &FakeConnection, count: i64, uniqueness: Result<i32, SqlError>) {
     let uniqueness = Arc::new(uniqueness);
     connection.on_query(move |statement: &PreparedStatement| {
         let sql = statement.sql();
@@ -381,14 +377,14 @@ async fn do_get_table_sql_exception() {
     let f = fixture();
     f.connection
         .meta
-        .set_columns(Err(SqlException::new("columns failed")));
+        .set_columns(Err(SqlError::new("columns failed")));
     let error = f
         .handler
         .get_table(&table_request(TableName::new("testSchema", "testTable")))
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).unwrap();
-    assert_eq!("java.sql.SQLException", sql.class_name());
+    let sql = SqlError::from_federation_error(&error).unwrap();
+    assert_eq!("java.sql.SQLException", sql.java_class_name());
     assert_eq!("columns failed", sql.message());
 }
 
@@ -676,10 +672,10 @@ async fn test_list_database_names() {
 async fn test_get_schema_with_data_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(Types::INTEGER, 10, "intCol"),
-        column_row(Types::VARCHAR, 255, "varcharCol"),
-        column_row(Types::TIMESTAMP, 0, "timestampCol"),
-        column_row(Types::TIMESTAMP_WITH_TIMEZONE, 0, "timestampTzCol"),
+        column_row(JdbcType::Integer.code(), 10, "intCol"),
+        column_row(JdbcType::Varchar.code(), 255, "varcharCol"),
+        column_row(JdbcType::Timestamp.code(), 0, "timestampCol"),
+        column_row(JdbcType::TimestampWithTimezone.code(), 0, "timestampTzCol"),
     ])));
     let schema = f
         .handler
@@ -733,8 +729,8 @@ async fn test_get_schema_no_matching_columns() {
 async fn test_get_schema_unsupported_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(Types::ARRAY, 0, "arrayCol"),
-        column_row(Types::INTEGER, 10, "intCol"),
+        column_row(JdbcType::Array.code(), 0, "arrayCol"),
+        column_row(JdbcType::Integer.code(), 10, "intCol"),
     ])));
     let schema = f
         .handler
@@ -815,7 +811,7 @@ async fn test_getlist_exported_objects_s3_exception() {
         .get_list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap_err();
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert!(matches!(error, FederationError::Runtime { .. }));
     assert_eq!(
         "Failed to list objects in bucket test-bucket with prefix queryId123",
         error.to_string()
@@ -1192,7 +1188,7 @@ async fn test_get_storage_integration_properties_not_found() {
             "DESC STORAGE INTEGRATION \"NONEXISTENT_INTEGRATION\"",
             statement.sql()
         );
-        Err(SqlException::new(
+        Err(SqlError::new(
             "Integration does not exist or not authorized",
         ))
     });
@@ -1208,16 +1204,15 @@ async fn test_get_storage_integration_properties_not_found() {
 #[tokio::test]
 async fn test_get_storage_integration_properties_sql_exception() {
     let f = fixture();
-    f.connection.on_query(|_statement: &PreparedStatement| {
-        Err(SqlException::new("Database connection error"))
-    });
+    f.connection
+        .on_query(|_statement: &PreparedStatement| Err(SqlError::new("Database connection error")));
     let error = f
         .handler
         .dialect()
         .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
-    let sql = SqlException::from_federation_error(&error).unwrap();
+    let sql = SqlError::from_federation_error(&error).unwrap();
     assert_eq!("Database connection error", sql.message());
 }
 
@@ -1441,7 +1436,7 @@ async fn get_partitions_uniqueness_check_times_out_falls_back_to_single_partitio
     route_partitions(
         &f.connection,
         1_000_000,
-        Err(SqlException::new("statement timed out")),
+        Err(SqlError::new("statement timed out")),
     );
     let request = layout_request(
         identity(),
@@ -1569,7 +1564,7 @@ async fn export_split_error_mapping() {
         .connection
         .on_query(move |_statement: &PreparedStatement| {
             *counter.lock().unwrap() += 1;
-            Err(SqlException::new(
+            Err(SqlError::new(
                 "Integration TEST_INTEGRATION does not exist or not authorized",
             ))
         });

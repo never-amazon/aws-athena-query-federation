@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::connection::{JdbcDriver, JdbcProperties};
-use athena_jdbc::sql::{JdbcConnection, SqlException};
+use athena_jdbc::sql::{JdbcConnection, SqlError};
 use snowflake_connector_rs::{
     AuthConfig, Client, ClientConfig, EndpointConfig, KeyPairConfig, PasswordConfig, QueryConfig,
     SessionConfig,
@@ -12,9 +12,7 @@ use snowflake_connector_rs::{
 use url::Url;
 
 use super::connection::{positive_seconds, SnowflakeConnection};
-use super::executor::{
-    from_connector_error, snowflake_exception, ConnectorExecutor, TimestampTypeMapping,
-};
+use super::executor::{from_connector_error, ConnectorExecutor, TimestampTypeMapping};
 use crate::snowflake_constants;
 use crate::utils::SnowflakePrivateKey;
 
@@ -86,12 +84,12 @@ impl SnowflakeConnectionSettings {
         TimestampTypeMapping::from_parameter(self.get(CLIENT_TIMESTAMP_TYPE_MAPPING))
     }
 
-    pub fn query_timeout(&self) -> Result<Option<Duration>, SqlException> {
+    pub fn query_timeout(&self) -> Result<Option<Duration>, SqlError> {
         let Some(value) = self.get(QUERY_TIMEOUT) else {
             return Ok(None);
         };
         value.parse::<i32>().map(positive_seconds).map_err(|_| {
-            snowflake_exception(
+            SqlError::snowflake(
                 "Invalid parameter value java.lang.String for parameter type java.lang.Integer.",
             )
         })
@@ -121,11 +119,11 @@ impl SnowflakeConnectionSettings {
     pub fn auth_config(
         &self,
         private_key: Option<&SnowflakePrivateKey>,
-    ) -> Result<AuthConfig, SqlException> {
+    ) -> Result<AuthConfig, SqlError> {
         if let Some(private_key) = private_key {
             let pem = private_key
                 .to_pem()
-                .map_err(|e| snowflake_exception(e.to_string()))?;
+                .map_err(|e| SqlError::snowflake(e.to_string()))?;
             return Ok(AuthConfig::key_pair(KeyPairConfig::from_pem(pem)));
         }
         let authenticator = self.authenticator().unwrap_or("snowflake");
@@ -133,32 +131,32 @@ impl SnowflakeConnectionSettings {
             let token = self
                 .get("TOKEN")
                 .or_else(|| self.get("PASSWORD"))
-                .ok_or_else(|| snowflake_exception("Missing OAuth token."))?;
+                .ok_or_else(|| SqlError::snowflake("Missing OAuth token."))?;
             return Ok(AuthConfig::oauth(token));
         }
         if authenticator.eq_ignore_ascii_case("snowflake_jwt") {
-            return Err(snowflake_exception(
+            return Err(SqlError::snowflake(
                 "Private key provided is invalid or not supported: null",
             ));
         }
         if !authenticator.eq_ignore_ascii_case("snowflake") {
-            return Err(snowflake_exception(format!(
+            return Err(SqlError::snowflake(format!(
                 "Unsupported authenticator: {authenticator}"
             )));
         }
         let password = self
             .get("PASSWORD")
-            .ok_or_else(|| snowflake_exception("Missing password."))?;
+            .ok_or_else(|| SqlError::snowflake("Missing password."))?;
         Ok(AuthConfig::password(PasswordConfig::from(password)))
     }
 
     pub fn client_config(
         &self,
         private_key: Option<&SnowflakePrivateKey>,
-    ) -> Result<ClientConfig, SqlException> {
+    ) -> Result<ClientConfig, SqlError> {
         let user = self
             .user()
-            .ok_or_else(|| snowflake_exception("Missing user name."))?;
+            .ok_or_else(|| SqlError::snowflake("Missing user name."))?;
         Ok(
             ClientConfig::new(user, &self.account, self.auth_config(private_key)?)
                 .with_session(self.session_config())
@@ -168,7 +166,7 @@ impl SnowflakeConnectionSettings {
     }
 }
 
-pub fn url_decode(text: &str) -> Result<String, SqlException> {
+pub fn url_decode(text: &str) -> Result<String, SqlError> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -183,7 +181,7 @@ pub fn url_decode(text: &str) -> Result<String, SqlException> {
                     .get(i + 1..i + 3)
                     .and_then(|hex| u8::from_str_radix(hex, 16).ok())
                     .ok_or_else(|| {
-                        snowflake_exception(
+                        SqlError::snowflake(
                             "URLDecoder: Illegal hex characters in escape (%) pattern",
                         )
                     })?;
@@ -202,10 +200,10 @@ pub fn url_decode(text: &str) -> Result<String, SqlException> {
 pub fn parse_connection_settings(
     url: &str,
     properties: &JdbcProperties,
-) -> Result<SnowflakeConnectionSettings, SqlException> {
+) -> Result<SnowflakeConnectionSettings, SqlError> {
     let rest = url
         .strip_prefix(URL_PREFIX)
-        .ok_or_else(|| snowflake_exception(format!("Invalid Connect String: {url}.")))?;
+        .ok_or_else(|| SqlError::snowflake(format!("Invalid Connect String: {url}.")))?;
     let (authority_and_path, query) = rest.split_once('?').unwrap_or((rest, ""));
     let authority = authority_and_path.split('/').next().unwrap_or_default();
     let (host, port) = match authority.rsplit_once(':') {
@@ -214,7 +212,7 @@ pub fn parse_connection_settings(
         None => (authority, None),
     };
     if host.is_empty() {
-        return Err(snowflake_exception(format!(
+        return Err(SqlError::snowflake(format!(
             "Invalid Connect String: {url}."
         )));
     }
@@ -236,7 +234,7 @@ pub fn parse_connection_settings(
         None => format!("{scheme}://{host}"),
     };
     let base_url = Url::parse(&base)
-        .map_err(|e| snowflake_exception(format!("Invalid Connect String: {url}. {e}")))?;
+        .map_err(|e| SqlError::snowflake(format!("Invalid Connect String: {url}. {e}")))?;
     let account = parameters
         .get("ACCOUNT")
         .cloned()
@@ -255,7 +253,7 @@ pub trait SnowflakeDriver: JdbcDriver {
         url: &str,
         properties: &JdbcProperties,
         private_key: &SnowflakePrivateKey,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException>;
+    ) -> Result<Box<dyn JdbcConnection>, SqlError>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -271,7 +269,7 @@ impl SnowflakeJdbcDriver {
         url: &str,
         properties: &JdbcProperties,
         private_key: Option<&SnowflakePrivateKey>,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         let settings = parse_connection_settings(url, properties)?;
         let query_timeout = settings.query_timeout()?;
         let config = settings.client_config(private_key)?;
@@ -303,7 +301,7 @@ impl JdbcDriver for SnowflakeJdbcDriver {
         &self,
         url: &str,
         properties: &JdbcProperties,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         self.open(url, properties, None).await
     }
 }
@@ -315,7 +313,7 @@ impl SnowflakeDriver for SnowflakeJdbcDriver {
         url: &str,
         properties: &JdbcProperties,
         private_key: &SnowflakePrivateKey,
-    ) -> Result<Box<dyn JdbcConnection>, SqlException> {
+    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
         self.open(url, properties, Some(private_key)).await
     }
 }

@@ -31,7 +31,7 @@ fn test_write_rows_with_exception() {
     let mut block = new_block();
     let mut writer = SimpleBlockWriter::new(&mut block);
     let mut row_writer = |_: &mut Block, _: usize| -> athena_federation_sdk::Result<usize> {
-        Err(FederationError::Runtime("Simulated exception".into()))
+        Err(FederationError::runtime("Simulated exception"))
     };
     let err = writer.write_rows(&mut row_writer).unwrap_err();
     assert_eq!("Simulated exception", err.to_string());
