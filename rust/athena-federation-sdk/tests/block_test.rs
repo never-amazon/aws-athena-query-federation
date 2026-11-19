@@ -115,7 +115,7 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
     match vector.minor_type() {
         MinorType::INT => {
             for i in 0..actual_block.row_count() {
-                vector.set_position(i);
+                let vector = vector.at(i);
                 assert_eq!(
                     int(i * actual_field_count * 3),
                     vector.read_integer().unwrap()
@@ -124,14 +124,14 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
         }
         MinorType::FLOAT8 => {
             for i in 0..actual_block.row_count() {
-                vector.set_position(i);
+                let vector = vector.at(i);
                 let expected = double(i) * double(actual_field_count) * 1.1;
                 assert!((expected - vector.read_double().unwrap()).abs() <= 0.1);
             }
         }
         MinorType::VARCHAR => {
             for i in 0..actual_block.row_count() {
-                vector.set_position(i);
+                let vector = vector.at(i);
                 assert_eq!(
                     (i * actual_field_count).to_string(),
                     vector.read_text().unwrap()
@@ -143,9 +143,9 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
                 let effective_vector = if vector.field().name() == "structFieldNested28" {
                     vector.reader_named("nestedStruct").unwrap()
                 } else {
-                    vector.clone()
+                    *vector
                 };
-                effective_vector.set_position(i);
+                let effective_vector = effective_vector.at(i);
                 assert_eq!(
                     Some(long(i)),
                     effective_vector
@@ -175,10 +175,9 @@ fn assert_list_values(actual_block: &Block, vector: &FieldReader<'_>) {
     let child = get_children(vector.field())[0].clone();
     let child_type = minor_type_of(child.data_type());
     for i in 0..actual_block.row_count() {
-        vector.set_position(i);
+        let vector = vector.at(i);
         let mut entry_values = 0usize;
-        while vector.next() {
-            let reader = vector.reader().unwrap();
+        for reader in vector.elements() {
             match child_type {
                 MinorType::BIGINT => {
                     assert_eq!(Some(long(i + entry_values)), reader.read_long());
@@ -284,7 +283,7 @@ fn end_to_end_block_test() {
             | MinorType::BIT
             | MinorType::STRUCT
             | MinorType::MAP => {
-                vector.set_position(0);
+                let vector = vector.at(0);
                 assert!(
                     !vector.is_set(),
                     "Failed for {} {}",
@@ -620,18 +619,12 @@ fn list_of_lists_test() {
             MinorType::LIST => {
                 let mut actual = 0;
                 for i in 0..actual_block.row_count() {
-                    vector.set_position(i);
+                    let vector = vector.at(i);
                     let mut entry_values = 0;
-                    while vector.next() {
-                        let inner_reader = vector.reader().unwrap();
-                        let mut j = 0;
-                        while inner_reader.next() {
+                    for inner_reader in vector.elements() {
+                        for (j, element) in inner_reader.elements().enumerate() {
                             entry_values += 1;
-                            assert_eq!(
-                                (1000 + j).to_string(),
-                                inner_reader.reader().unwrap().read_text().unwrap()
-                            );
-                            j += 1;
+                            assert_eq!((1000 + j).to_string(), element.read_text().unwrap());
                         }
                     }
                     if entry_values > 0 {
@@ -715,11 +708,10 @@ fn list_of_structs_test() {
             MinorType::LIST => {
                 let mut actual = 0;
                 for i in 0..actual_block.row_count() {
-                    vector.set_position(i);
+                    let vector = vector.at(i);
                     let mut entry_values = 0;
-                    while vector.next() {
+                    for inner in vector.elements() {
                         entry_values += 1;
-                        let inner = vector.reader().unwrap();
                         assert_eq!(
                             "chars",
                             inner.reader_named("varchar").unwrap().read_text().unwrap()
@@ -795,18 +787,15 @@ fn struct_of_lists_test() {
         for i in 0..actual_block.row_count() {
             match vector.minor_type() {
                 MinorType::STRUCT => {
-                    vector.set_position(i);
+                    let vector = vector.at(i);
                     assert_eq!(
                         "chars",
                         vector.reader_named("varchar").unwrap().read_text().unwrap()
                     );
                     let list_reader = vector.reader_named("list").unwrap();
                     let mut found = 0;
-                    while list_reader.next() {
-                        assert_eq!(
-                            format!("value_{found}_{i}"),
-                            list_reader.reader().unwrap().read_text().unwrap()
-                        );
+                    for element in list_reader.elements() {
+                        assert_eq!(format!("value_{found}_{i}"), element.read_text().unwrap());
                         found += 1;
                         actual_list_values += 1;
                     }

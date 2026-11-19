@@ -14,8 +14,8 @@ fn opt<T: Into<Value>>(v: Option<T>) -> Value {
 
 pub fn create_value_projection(minor_type: MinorType) -> Result<Projection> {
     Ok(match minor_type {
-        MinorType::LIST => |r| ListArrowValueProjector::new(r.clone())?.do_project(),
-        MinorType::STRUCT => |r| StructArrowValueProjector::new(r.clone())?.do_project(),
+        MinorType::LIST => |r| ListArrowValueProjector::new(*r)?.do_project(),
+        MinorType::STRUCT => |r| StructArrowValueProjector::new(*r)?.do_project(),
         MinorType::DATEMILLI => |r| Ok(opt(r.read_local_date_time())),
         MinorType::TINYINT | MinorType::UINT1 => |r| Ok(opt(r.read_byte())),
         MinorType::UINT2 => |r| Ok(r.read_character().map_or(Value::Null, Value::Char)),

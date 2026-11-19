@@ -435,7 +435,7 @@ pub fn row_to_string(block: &Block, row: usize) -> Result<String> {
     }
     let mut sb = String::new();
     for reader in block.field_readers() {
-        reader.set_position(row);
+        let reader = reader.at(row);
         if !sb.is_empty() {
             sb.push_str(", ");
         }
@@ -513,11 +513,10 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         }
         MinorType::LIST => {
             let mut sb = String::from("{");
-            while reader.next() {
+            for child in reader.elements() {
                 if sb.len() > 1 {
                     sb.push(',');
                 }
-                let child = reader.reader().ok_or_else(npe)?;
                 sb.push_str(&field_to_string(&child)?);
             }
             sb.push('}');
@@ -525,8 +524,7 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         }
         MinorType::MAP => {
             let mut sb = String::new();
-            while reader.next() {
-                let child = reader.reader().ok_or_else(npe)?;
+            for child in reader.elements() {
                 sb.push_str(&field_to_string(&child)?);
             }
             sb
@@ -564,7 +562,7 @@ pub fn copy_rows(
             let dst = dst_block.get_field_vector_mut(&name).ok_or_else(|| {
                 FederationError::null_pointer(format!("No vector found for field {name}"))
             })?;
-            src.set_position(i);
+            let src = src.at(i);
             set_value(dst, dst_offset, &src.read_object())?;
         }
     }
@@ -583,7 +581,7 @@ pub fn is_null_row(block: &Block, row: usize) -> Result<bool> {
         )));
     }
     for src in block.field_readers() {
-        src.set_position(row);
+        let src = src.at(row);
         if src.is_set() {
             return Ok(false);
         }

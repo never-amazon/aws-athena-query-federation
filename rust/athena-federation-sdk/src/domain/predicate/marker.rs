@@ -80,7 +80,7 @@ impl Marker {
         let value = if null_value {
             Value::Null
         } else {
-            reader.set_position(value_position);
+            let reader = reader.at(value_position);
             reader.read_object()
         };
         Ok(Marker {

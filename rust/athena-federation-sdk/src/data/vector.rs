@@ -1,5 +1,3 @@
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, ListArray, MapArray, StructArray, UInt32Array};
@@ -775,34 +773,20 @@ fn checked_decimal(data_type: &DataType, d: &BigDecimal) -> Result<BigDecimal> {
     Ok(d.clone())
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct ListCursor {
-    initialized: bool,
-    for_pos: usize,
-    current: usize,
-    end: usize,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FieldReader<'a> {
     vector: &'a FieldVector,
-    pos: Rc<Cell<usize>>,
-    cursor: Rc<Cell<ListCursor>>,
-    child_pos: Rc<Cell<usize>>,
+    pos: usize,
 }
 
 impl<'a> FieldReader<'a> {
     pub fn new(vector: &'a FieldVector) -> FieldReader<'a> {
-        FieldReader::with_position(vector, Rc::new(Cell::new(0)))
+        FieldReader { vector, pos: 0 }
     }
 
-    fn with_position(vector: &'a FieldVector, pos: Rc<Cell<usize>>) -> FieldReader<'a> {
-        FieldReader {
-            vector,
-            pos,
-            cursor: Rc::new(Cell::new(ListCursor::default())),
-            child_pos: Rc::new(Cell::new(0)),
-        }
+    #[must_use]
+    pub fn at(self, pos: usize) -> FieldReader<'a> {
+        FieldReader { pos, ..self }
     }
 
     pub fn vector(&self) -> &'a FieldVector {
@@ -817,156 +801,112 @@ impl<'a> FieldReader<'a> {
         self.vector.minor_type()
     }
 
-    pub fn set_position(&self, index: usize) {
-        self.pos.set(index);
-        self.reset_cursor();
-    }
-
     pub fn position(&self) -> usize {
-        self.pos.get()
+        self.pos
     }
 
-    fn reset_cursor(&self) {
-        let p = self.pos.get();
-        let (start, end) = self.vector.list_slot(p).unwrap_or((0, 0));
-        self.cursor.set(ListCursor {
-            initialized: true,
-            for_pos: p,
-            current: start,
-            end,
-        });
+    pub fn elements(self) -> impl Iterator<Item = FieldReader<'a>> {
+        let (start, end) = self.vector.list_slot(self.pos).unwrap_or((0, 0));
+        let child = self.vector.data_vector();
+        (start..end).filter_map(move |i| child.map(|c| FieldReader::new(c).at(i)))
     }
 
     pub fn is_set(&self) -> bool {
-        self.vector.is_set(self.pos.get())
+        self.vector.is_set(self.pos)
     }
 
     pub fn read_object(&self) -> Value {
-        self.vector.get_object(self.pos.get())
-    }
-
-    pub fn next(&self) -> bool {
-        let c = self.cursor.get();
-        if !c.initialized || c.for_pos != self.pos.get() {
-            self.reset_cursor();
-        }
-        let mut c = self.cursor.get();
-        if c.current < c.end {
-            self.child_pos.set(c.current);
-            c.current += 1;
-            self.cursor.set(c);
-            true
-        } else {
-            false
-        }
+        self.vector.get_object(self.pos)
     }
 
     pub fn size(&self) -> usize {
-        self.vector
-            .list_slot(self.pos.get())
-            .map_or(0, |(s, e)| e - s)
-    }
-
-    pub fn reader(&self) -> Option<FieldReader<'a>> {
-        self.vector
-            .data_vector()
-            .map(|child| FieldReader::with_position(child, self.child_pos.clone()))
+        self.vector.list_slot(self.pos).map_or(0, |(s, e)| e - s)
     }
 
     pub fn reader_named(&self, name: &str) -> Option<FieldReader<'a>> {
         self.vector
             .get_child(name)
-            .map(|child| FieldReader::with_position(child, self.pos.clone()))
-    }
-
-    pub fn key(&self) -> Option<FieldReader<'a>> {
-        self.reader()
-            .and_then(|entries| entries.reader_named("key"))
-    }
-
-    pub fn value(&self) -> Option<FieldReader<'a>> {
-        self.reader()
-            .and_then(|entries| entries.reader_named("value"))
+            .map(|child| FieldReader::new(child).at(self.pos))
     }
 
     pub fn read_boolean(&self) -> Option<bool> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Boolean(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_byte(&self) -> Option<i8> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Byte(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_short(&self) -> Option<i16> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Short(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_character(&self) -> Option<u16> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Char(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_integer(&self) -> Option<i32> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Int(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_long(&self) -> Option<i64> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Long(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_float(&self) -> Option<f32> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Float(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_double(&self) -> Option<f64> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Double(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_big_decimal(&self) -> Option<BigDecimal> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Decimal(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_text(&self) -> Option<String> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::String(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_byte_array(&self) -> Option<Vec<u8>> {
-        match self.vector.get_raw(self.pos.get()) {
+        match self.vector.get_raw(self.pos) {
             Value::Bytes(v) => Some(v),
             _ => None,
         }
     }
 
     pub fn read_local_date_time(&self) -> Option<NaiveDateTime> {
-        self.vector.get_local_date_time(self.pos.get())
+        self.vector.get_local_date_time(self.pos)
     }
 }
