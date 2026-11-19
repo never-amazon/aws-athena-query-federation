@@ -182,7 +182,7 @@ pub struct S3BlockSpiller {
     allocator: Arc<dyn BlockAllocator>,
     schema: SchemaRef,
     max_rows_per_call: i64,
-    in_progress_block: Mutex<Option<Block>>,
+    in_progress_block: Mutex<Block>,
     async_spill_pool: Option<SpillPool>,
     spill_lock: Arc<RwLock<()>>,
     constraint_evaluator: Arc<ConstraintEvaluator>,
@@ -204,6 +204,8 @@ impl S3BlockSpiller {
         } else {
             Some(Self::make_async_spill_pool(&spill_config, &config_options)?)
         };
+        let mut in_progress_block = allocator.create_block(schema.clone());
+        in_progress_block.constrain(Some(constraint_evaluator.clone()));
         Ok(S3BlockSpiller {
             writer: Arc::new(SpillWriter {
                 amazon_s3,
@@ -218,7 +220,7 @@ impl S3BlockSpiller {
             allocator,
             schema,
             max_rows_per_call: i64::from(MAX_ROWS_PER_CALL),
-            in_progress_block: Mutex::new(None),
+            in_progress_block: Mutex::new(in_progress_block),
             async_spill_pool,
             spill_lock: Arc::new(RwLock::new(())),
             constraint_evaluator,
@@ -264,10 +266,6 @@ impl S3BlockSpiller {
         let mut block = self.allocator.create_block(self.schema.clone());
         block.constrain(Some(self.constraint_evaluator.clone()));
         block
-    }
-
-    fn ensure_init<'a>(&self, slot: &'a mut Option<Block>) -> &'a mut Block {
-        slot.get_or_insert_with(|| self.new_block())
     }
 
     pub async fn write(&self, block: Block) -> Result<SpillLocation> {
@@ -353,10 +351,9 @@ impl S3BlockSpiller {
 impl BlockSpiller for S3BlockSpiller {
     async fn write_rows(&self, row_writer: &mut RowWriter<'_>) -> Result<()> {
         let to_spill = {
-            let mut slot = lock(&self.in_progress_block);
-            let block = self.ensure_init(&mut slot);
+            let mut block = lock(&self.in_progress_block);
             let row_count = block.row_count();
-            let rows = row_writer(block, row_count)?;
+            let rows = row_writer(&mut block, row_count)?;
             if rows > 0 {
                 block.set_row_count(row_count + rows);
             }
@@ -367,7 +364,7 @@ impl BlockSpiller for S3BlockSpiller {
                     block.get_size(),
                     self.writer.spill_config.max_block_bytes()
                 );
-                Some(std::mem::replace(block, self.new_block()))
+                Some(std::mem::replace(&mut *block, self.new_block()))
             } else {
                 None
             }
@@ -387,8 +384,7 @@ impl BlockSpiller for S3BlockSpiller {
             return Err(ex);
         }
         let _write_guard = self.spill_lock.write().await;
-        let mut slot = lock(&self.in_progress_block);
-        let block = self.ensure_init(&mut slot);
+        let block = lock(&self.in_progress_block);
         Ok(!lock(&self.writer.spill_locations).is_empty()
             || len_to_long(block.get_size()) >= self.writer.spill_config.max_inline_block_size())
     }
@@ -399,14 +395,13 @@ impl BlockSpiller for S3BlockSpiller {
                 "Blocks have spilled, calls to getBlock not permitted. use getSpillLocations instead.",
             ));
         }
-        let mut slot = lock(&self.in_progress_block);
-        let block = self.ensure_init(&mut slot);
+        let block = lock(&self.in_progress_block);
         tracing::info!(
             "getBlock: Inline Block size[{}] bytes vs {}",
             block.get_size(),
             self.writer.spill_config.max_inline_block_size()
         );
-        Ok(block.clone())
+        Ok((*block).clone())
     }
 
     async fn get_spill_locations(&self) -> Result<Vec<SpillLocation>> {
@@ -416,8 +411,7 @@ impl BlockSpiller for S3BlockSpiller {
             ));
         }
         let final_block = {
-            let mut slot = lock(&self.in_progress_block);
-            let block = self.ensure_init(&mut slot);
+            let mut block = lock(&self.in_progress_block);
             if block.row_count() > 0 {
                 tracing::info!(
                     "getSpillLocations: Spilling final block with {} rows and {} bytes and config {} bytes",
@@ -425,7 +419,7 @@ impl BlockSpiller for S3BlockSpiller {
                     block.get_size(),
                     self.writer.spill_config.max_block_bytes()
                 );
-                Some(std::mem::replace(block, self.new_block()))
+                Some(std::mem::replace(&mut *block, self.new_block()))
             } else {
                 None
             }
