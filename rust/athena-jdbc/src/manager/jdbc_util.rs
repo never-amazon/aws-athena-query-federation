@@ -10,7 +10,7 @@ use athena_federation_sdk::{FederationError, Result};
 use crate::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use crate::sql::{JdbcConnection, PreparedStatement, ResultSet, SqlError};
+use crate::sql::{JdbcConnection, PreparedStatement, Row, SqlError};
 use crate::validate::not_blank;
 
 const DEFAULT_CATALOG_PREFIX: &str = "lambda:";
@@ -134,8 +134,8 @@ pub async fn table_metadata(
     let listed = async {
         let mut result_set = connection.execute_query(prepared_statement).await?;
         let mut list = Vec::new();
-        while result_set.next().await? {
-            list.push(read_schema_table_name(&result_set)?);
+        while let Some(row) = result_set.next_row().await? {
+            list.push(read_schema_table_name(&row)?);
         }
         Ok(list)
     }
@@ -150,13 +150,17 @@ pub async fn table_metadata(
     listed
 }
 
-pub fn schema_table_name(result_set: &ResultSet) -> Result<TableName> {
-    Ok(read_schema_table_name(result_set)?)
+pub fn schema_table_name(row: &Row) -> Result<TableName> {
+    Ok(read_schema_table_name(row)?)
 }
 
-fn read_schema_table_name(result_set: &ResultSet) -> std::result::Result<TableName, SqlError> {
+fn read_schema_table_name(row: &Row) -> std::result::Result<TableName, SqlError> {
     Ok(TableName::new(
-        result_set.get_string("TABLE_SCHEM")?.unwrap_or_default(),
-        result_set.get_string("TABLE_NAME")?.unwrap_or_default(),
+        row.by_label("TABLE_SCHEM")?
+            .to_java_string()
+            .unwrap_or_default(),
+        row.by_label("TABLE_NAME")?
+            .to_java_string()
+            .unwrap_or_default(),
     ))
 }

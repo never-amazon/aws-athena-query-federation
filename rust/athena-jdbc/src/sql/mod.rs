@@ -8,7 +8,7 @@ mod types;
 
 pub use connection::{ColumnInfo, DatabaseMetaData, JdbcConnection, SchemaEntry, TableEntry};
 pub use prepared_statement::PreparedStatement;
-pub use result_set::{ColumnIndex, ResultSet, Row, RowSource, VecRowSource};
+pub use result_set::{ResultSet, Row, RowSource, VecRowSource};
 pub use result_set_metadata::{ColumnMetadata, Nullability, ResultSetMetaData};
 pub use sql_error::{Driver, SqlError};
 pub use sql_value::SqlValue;

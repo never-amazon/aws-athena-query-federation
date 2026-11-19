@@ -370,14 +370,13 @@ impl RecordDialect for SnowflakeRecordDialect {
     ) -> Result<Schema> {
         let base_schema = jdbc_to_arrow_schema(metadata)?;
         let mut fields = Vec::with_capacity(base_schema.fields().len());
-        for (i, base_field) in base_schema.fields().iter().enumerate() {
-            let column = i + 1;
+        for (base_field, column) in base_schema.fields().iter().zip(metadata.columns()) {
             let is_arrow_integer = matches!(
                 base_field.data_type(),
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
             );
-            if is_arrow_integer && metadata.scale(column)? == 0 {
-                let precision = metadata.precision(column)?;
+            if is_arrow_integer && column.scale() == 0 {
+                let precision = column.precision();
                 if (1..=utils::DEFAULT_PRECISION).contains(&precision) {
                     let precision = u8::try_from(precision).unwrap_or(u8::MAX);
                     fields.push(Arc::new(

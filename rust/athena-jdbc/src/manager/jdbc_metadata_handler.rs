@@ -27,7 +27,7 @@ use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::JdbcCaseResolver;
-use crate::sql::{ColumnInfo, DatabaseMetaData, JdbcConnection, ResultSetMetaData};
+use crate::sql::{ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection};
 use crate::validate::close_after;
 
 pub const TABLES_AND_VIEWS: &str = "Tables and Views";
@@ -95,14 +95,15 @@ pub trait MetadataDialect: Send + Sync + Sized + 'static {
 
     fn convert_datasource_type(
         &self,
-        column_index: usize,
-        precision: i32,
+        column: &ColumnMetadata,
         config_options: &HashMap<String, String>,
-        metadata: &ResultSetMetaData,
     ) -> Result<Option<ArrowType>> {
-        let scale = metadata.scale(column_index)?;
-        let column_type = metadata.column_type(column_index)?;
-        jdbc_to_arrow_type(column_type, precision, scale, config_options)
+        jdbc_to_arrow_type(
+            column.jdbc_type(),
+            column.precision(),
+            column.scale(),
+            config_options,
+        )
     }
 
     fn array_element_type(
@@ -540,30 +541,20 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
             };
             let config_options = self.config_options();
             let mut schema_builder = SchemaBuilder::new_builder();
-            for column_index in 1..=metadata.column_count() {
-                let column_name = metadata.column_name(column_index)?;
-                let column_label = metadata.column_label(column_index)?;
-                let column_name = if column_name == column_label {
-                    column_name.to_string()
-                } else {
-                    column_label.to_string()
-                };
-                let precision = metadata.precision(column_index)?;
-                let column_type = self.dialect.convert_datasource_type(
-                    column_index,
-                    precision,
-                    config_options,
-                    metadata,
-                )?;
+            for column in metadata.columns() {
+                let column_name = column.label().to_string();
+                let precision = column.precision();
+                let column_type = self
+                    .dialect
+                    .convert_datasource_type(column, config_options)?;
                 match column_type {
                     Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
                         if matches!(arrow_type, DataType::List(_)) {
-                            let table_name = metadata.table_name(column_index)?.to_string();
                             schema_builder.add_list_field(
                                 &column_name,
                                 self.dialect.array_element_type(
-                                    Some(&table_name),
-                                    metadata.column_display_size(column_index)?,
+                                    Some(column.table_name()),
+                                    column.display_size(),
                                     precision,
                                 ),
                             );

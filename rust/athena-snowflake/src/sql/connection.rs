@@ -465,7 +465,7 @@ impl JdbcConnection for SnowflakeConnection {
     async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlError> {
         let mut result_set = self.execute_query(statement).await?;
         let has_columns = result_set.metadata().column_count() > 0;
-        while result_set.next().await? {}
+        while result_set.next_row().await?.is_some() {}
         Ok(has_columns)
     }
 

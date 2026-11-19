@@ -258,8 +258,8 @@ async fn query_without_timeout_returns_rows() {
         .execute_query(&PreparedStatement::new("select 1"))
         .await
         .unwrap();
-    assert!(result.next().await.unwrap());
-    assert_eq!(Some(1), result.get_long(1).unwrap());
+    let result = result.next_row().await.unwrap().unwrap();
+    assert_eq!(Some(1), result.value(0).unwrap().to_long().unwrap());
     assert!(!fake
         .requests()
         .iter()

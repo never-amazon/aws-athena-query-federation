@@ -167,8 +167,8 @@ pub async fn get_char_columns(
     statement.bind(table);
     let mut result_set = connection.execute_query(&statement).await?;
     let mut char_columns = Vec::new();
-    while result_set.next().await? {
-        char_columns.push(java_string(result_set.get_string("column_name")?));
+    while let Some(row) = result_set.next_row().await? {
+        char_columns.push(java_string(row.by_label("column_name")?.to_java_string()));
     }
     Ok(char_columns)
 }
@@ -239,8 +239,8 @@ async fn is_uuid_column(
         statement.bind(table_name.table_name());
         statement.bind(column_name);
         let mut result_set = connection.execute_query(&statement).await?;
-        if result_set.next().await? {
-            let data_type = result_set.get_string("data_type")?;
+        if let Some(row) = result_set.next_row().await? {
+            let data_type = row.by_label("data_type")?.to_java_string();
             tracing::debug!(
                 "Data type for Column: {}.{}.{} is: {:?}",
                 table_name.schema_name(),
@@ -309,9 +309,11 @@ async fn split_clauses_from(
     );
     let statement = connection.prepare_statement(&sql).await?;
     let mut min_max = connection.execute_query(&statement).await?;
-    min_max.next().await?;
-    let min = min_max.get_long(1usize)?.unwrap_or(0);
-    let max = min_max.get_long(2usize)?.unwrap_or(0);
+    let min_max = min_max.next_row().await?.ok_or_else(|| {
+        SqlError::new("ResultSet not positioned properly, perhaps you need to call next.")
+    })?;
+    let min = min_max.value(0)?.to_long()?.unwrap_or(0);
+    let max = min_max.value(1)?.to_long()?.unwrap_or(0);
     let splitter = splitter(&quoted_primary_key_column, &min_max, DEFAULT_NUM_SPLITS)?;
     if let Some(mut splitter) = splitter {
         if max - min < i64::from(DEFAULT_NUM_SPLITS) {
@@ -427,16 +429,16 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                 .build()
                 .await?;
             let mut result_set = connection.execute_query(&statement).await?;
-            if !result_set.next().await? {
+            let Some(mut row) = result_set.next_row().await? else {
                 return block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                     block.set_value(BLOCK_PARTITION_SCHEMA_COLUMN_NAME, row_num, ALL_PARTITIONS)?;
                     block.set_value(BLOCK_PARTITION_COLUMN_NAME, row_num, ALL_PARTITIONS)?;
                     Ok(1)
                 });
-            }
+            };
             loop {
-                let partition_schema_name = result_set.get_string(PARTITION_SCHEMA_NAME)?;
-                let partition_name = result_set.get_string(PARTITION_NAME)?;
+                let partition_schema_name = row.by_label(PARTITION_SCHEMA_NAME)?.to_java_string();
+                let partition_name = row.by_label(PARTITION_NAME)?.to_java_string();
                 block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                     block.set_value(
                         BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
@@ -450,8 +452,9 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                     )?;
                     Ok(1)
                 })?;
-                if !result_set.next().await? {
-                    return Ok(());
+                match result_set.next_row().await? {
+                    Some(next) => row = next,
+                    None => return Ok(()),
                 }
             }
         }

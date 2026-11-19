@@ -313,19 +313,22 @@ async fn result_metadata_follows_the_jdbc_driver_type_map() {
         .await
         .unwrap();
     let metadata = result.metadata();
-    assert_eq!(JdbcType::BigInt, metadata.column_type(1).unwrap());
-    assert_eq!(18, metadata.precision(1).unwrap());
-    assert_eq!(19, metadata.column_display_size(1).unwrap());
-    assert_eq!(JdbcType::Decimal, metadata.column_type(2).unwrap());
-    assert_eq!(2, metadata.scale(2).unwrap());
-    assert_eq!(12, metadata.column_display_size(2).unwrap());
-    assert_eq!(JdbcType::Double, metadata.column_type(3).unwrap());
-    assert_eq!(24, metadata.column_display_size(3).unwrap());
-    assert_eq!(JdbcType::Varchar, metadata.column_type(4).unwrap());
-    assert_eq!(50, metadata.precision(4).unwrap());
-    assert_eq!(JdbcType::Timestamp, metadata.column_type(5).unwrap());
-    assert_ne!(EXTRA_TYPES_TIMESTAMP_LTZ, metadata.column_type(5).unwrap());
-    assert_eq!(JdbcType::Varchar, metadata.column_type(6).unwrap());
+    assert_eq!(JdbcType::BigInt, metadata.column(0).unwrap().jdbc_type());
+    assert_eq!(18, metadata.column(0).unwrap().precision());
+    assert_eq!(19, metadata.column(0).unwrap().display_size());
+    assert_eq!(JdbcType::Decimal, metadata.column(1).unwrap().jdbc_type());
+    assert_eq!(2, metadata.column(1).unwrap().scale());
+    assert_eq!(12, metadata.column(1).unwrap().display_size());
+    assert_eq!(JdbcType::Double, metadata.column(2).unwrap().jdbc_type());
+    assert_eq!(24, metadata.column(2).unwrap().display_size());
+    assert_eq!(JdbcType::Varchar, metadata.column(3).unwrap().jdbc_type());
+    assert_eq!(50, metadata.column(3).unwrap().precision());
+    assert_eq!(JdbcType::Timestamp, metadata.column(4).unwrap().jdbc_type());
+    assert_ne!(
+        EXTRA_TYPES_TIMESTAMP_LTZ,
+        metadata.column(4).unwrap().jdbc_type()
+    );
+    assert_eq!(JdbcType::Varchar, metadata.column(5).unwrap().jdbc_type());
 }
 
 #[tokio::test]
@@ -350,7 +353,7 @@ async fn prepare_statement_describes_select_without_parameters() {
         .unwrap();
     assert_eq!(
         JdbcType::Boolean,
-        described.metadata().unwrap().column_type(1).unwrap()
+        described.metadata().unwrap().column(0).unwrap().jdbc_type()
     );
     let with_parameter = connection
         .prepare_statement("SELECT a FROM t WHERE b = ?")

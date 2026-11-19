@@ -333,8 +333,8 @@ async fn test_get_schema_table_name() {
         &[&[TEST_SCHEMA, TEST_TABLE]],
     )
     .to_result_set();
-    assert!(result_set.next().await.unwrap());
-    let table_name = jdbc_util::schema_table_name(&result_set).unwrap();
+    let row = result_set.next_row().await.unwrap().unwrap();
+    let table_name = jdbc_util::schema_table_name(&row).unwrap();
     assert_eq!(TEST_SCHEMA, table_name.schema_name());
     assert_eq!(TEST_TABLE, table_name.table_name());
 }

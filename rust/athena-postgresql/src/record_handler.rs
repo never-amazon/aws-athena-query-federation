@@ -12,7 +12,9 @@ use athena_jdbc::manager::{
     get_arrow_type_from_jdbc_type, jdbc_to_arrow_type, jdbc_util, ConnectionSource,
     JdbcRecordHandler, RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData};
+use athena_jdbc::sql::{
+    ColumnMetadata, JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData,
+};
 
 use crate::constants;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
@@ -69,12 +71,11 @@ impl PostGreSqlRecordDialect {
 
 fn export_arrow_type(
     config_options: &HashMap<String, String>,
-    metadata: &ResultSetMetaData,
-    column: usize,
+    column: &ColumnMetadata,
 ) -> Result<ArrowType> {
-    let column_type = metadata.column_type(column)?;
-    let precision = metadata.precision(column)?;
-    let scale = metadata.scale(column)?;
+    let column_type = column.jdbc_type();
+    let precision = column.precision();
+    let scale = column.scale();
     if column_type == JdbcType::Numeric && precision == 0 && scale <= 0 {
         return Ok(
             jdbc_to_arrow_type(JdbcType::Numeric, 0, 0, config_options)?.unwrap_or(DataType::Utf8)
@@ -131,10 +132,10 @@ impl RecordDialect for PostGreSqlRecordDialect {
         metadata: &ResultSetMetaData,
     ) -> Result<Schema> {
         let mut fields = Vec::with_capacity(metadata.column_count());
-        for column in 1..=metadata.column_count() {
+        for column in metadata.columns() {
             fields.push(Field::new(
-                metadata.column_label(column)?,
-                export_arrow_type(handler.config_options(), metadata, column)?,
+                column.label(),
+                export_arrow_type(handler.config_options(), column)?,
                 true,
             ));
         }

@@ -41,7 +41,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlError};
+use athena_jdbc::sql::{ColumnMetadata, JdbcConnection, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
@@ -285,13 +285,13 @@ impl SnowflakeMetadataDialect {
                 .execute_query_with_sql(&check_integration_query)
                 .await?;
             let mut storage_integration_row = HashMap::new();
-            while result_set.next().await? {
+            while let Some(row) = result_set.next_row().await? {
                 storage_integration_row.insert(
-                    result_set
-                        .get_string(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
+                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
+                        .to_java_string()
                         .unwrap_or_else(|| "null".to_string()),
-                    result_set
-                        .get_string(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
+                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
+                        .to_java_string()
                         .unwrap_or_else(|| "null".to_string()),
                 );
             }
@@ -594,7 +594,7 @@ impl SnowflakeMetadataDialect {
             .build()
             .await?;
         let mut result_set = connection.execute_query(&statement).await?;
-        let view_flag = result_set.next().await?;
+        let view_flag = result_set.next_row().await?.is_some();
         tracing::info!("viewFlag: {}", view_flag);
         Ok(view_flag)
     }
@@ -613,9 +613,10 @@ impl SnowflakeMetadataDialect {
         let statement = connection.prepare_statement(&sql).await?;
         let mut result_set = connection.execute_query(&statement).await?;
         let mut primary_keys = Vec::new();
-        while result_set.next().await? {
-            let key = result_set
-                .get_string(PRIMARY_KEY_COLUMN_NAME)?
+        while let Some(row) = result_set.next_row().await? {
+            let key = row
+                .by_label(PRIMARY_KEY_COLUMN_NAME)?
+                .to_java_string()
                 .unwrap_or_else(|| "null".to_string());
             primary_keys.push(self.snowflake_query_string_builder.quote(&key));
         }
@@ -654,8 +655,10 @@ impl SnowflakeMetadataDialect {
             let mut statement = connection.prepare_statement(&sql).await?;
             statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT);
             let mut result_set = connection.execute_query(&statement).await?;
-            Ok(result_set.next().await?
-                && result_set.get_int(COUNTS_COLUMN_NAME)?.unwrap_or(0) == 1)
+            Ok(match result_set.next_row().await? {
+                Some(row) => row.by_label(COUNTS_COLUMN_NAME)?.to_int()?.unwrap_or(0) == 1,
+                None => false,
+            })
         }
         .await;
         match checked {
@@ -711,8 +714,8 @@ impl SnowflakeMetadataDialect {
             .await?;
         let mut result_set = connection.execute_query(&statement).await?;
         let mut total_record_count = 0_i64;
-        while result_set.next().await? {
-            total_record_count = result_set.get_long(1usize)?.unwrap_or(0);
+        while let Some(row) = result_set.next_row().await? {
+            total_record_count = row.value(0)?.to_long()?.unwrap_or(0);
         }
         if total_record_count <= 0 {
             tracing::info!("No Records Found for table {}", table_name);
@@ -1036,14 +1039,15 @@ impl MetadataDialect for SnowflakeMetadataDialect {
 
     fn convert_datasource_type(
         &self,
-        column_index: usize,
-        precision: i32,
+        column: &ColumnMetadata,
         config_options: &HashMap<String, String>,
-        metadata: &ResultSetMetaData,
     ) -> Result<Option<ArrowType>> {
-        let scale = metadata.scale(column_index)?;
-        let column_type = metadata.column_type(column_index)?;
-        utils::to_arrow_type(column_type, precision, scale, config_options)
+        utils::to_arrow_type(
+            column.jdbc_type(),
+            column.precision(),
+            column.scale(),
+            config_options,
+        )
     }
 
     async fn get_schema(

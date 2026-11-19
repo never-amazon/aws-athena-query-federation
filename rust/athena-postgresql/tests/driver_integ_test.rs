@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use athena_jdbc::sql::{JdbcConnection, SqlError};
+use athena_jdbc::sql::{JdbcConnection, SqlError, SqlValue};
 use athena_postgresql::PgConnection;
 
 const URL_VARIABLE: &str = "ATHENA_POSTGRESQL_IT_JDBC_URL";
@@ -40,8 +40,8 @@ async fn connect(url: &str) -> Result<PgConnection, SqlError> {
 async fn scalar(connection: &PgConnection, sql: &str) -> Option<String> {
     let statement = connection.prepare_statement(sql).await.unwrap();
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    assert!(rows.next().await.unwrap());
-    rows.current_row().unwrap().get_string(1usize).unwrap()
+    let row = rows.next_row().await.unwrap().unwrap();
+    row.value(0).map(SqlValue::to_java_string).unwrap()
 }
 
 #[tokio::test]
@@ -57,7 +57,7 @@ async fn fetch_size_partial_read_of_two_million_rows_commits_without_buffering()
         .unwrap();
     statement.set_fetch_size(1000);
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    assert!(rows.next().await.unwrap());
+    assert!(rows.next_row().await.unwrap().is_some());
     let before = rss_kb();
     let started = Instant::now();
     connection.commit().await.unwrap();
@@ -88,13 +88,8 @@ async fn full_read_through_a_portal_returns_every_row() {
     let mut rows = connection.execute_query(&statement).await.unwrap();
     let mut last = 0;
     let mut count = 0;
-    while rows.next().await.unwrap() {
-        last = rows
-            .current_row()
-            .unwrap()
-            .get_int(1usize)
-            .unwrap()
-            .unwrap();
+    while let Some(row) = rows.next_row().await.unwrap() {
+        last = row.value(0).and_then(SqlValue::to_int).unwrap().unwrap();
         count += 1;
     }
     assert_eq!((count, last), (2500, 2500));
@@ -115,7 +110,7 @@ async fn query_timeout_cancels_the_running_statement() {
     let started = Instant::now();
     let result = async {
         let mut rows = connection.execute_query(&statement).await?;
-        rows.next().await
+        rows.next_row().await
     }
     .await;
     let error = result.unwrap_err();
@@ -135,7 +130,7 @@ async fn dropped_reads_do_not_desynchronise_a_real_server() {
         .await
         .unwrap();
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    let first = tokio::time::timeout(Duration::from_millis(50), rows.next()).await;
+    let first = tokio::time::timeout(Duration::from_millis(50), rows.next_row()).await;
     assert!(first.is_err());
     drop(rows);
     assert_eq!(

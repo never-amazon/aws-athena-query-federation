@@ -1359,9 +1359,21 @@ mod tests {
             ResultSetMetaData::of_labels(["int_col", "bool_col"]),
             vec![h2_row],
         );
-        assert!(rs.next().await.unwrap(), "Should find matching record");
-        assert_eq!(Some(1000), rs.get_int("int_col").unwrap());
-        assert_eq!(Some(true), rs.get_boolean("bool_col").unwrap());
+        let rs = rs
+            .next_row()
+            .await
+            .unwrap()
+            .expect("Should find matching record");
+        assert_eq!(
+            Some(1000),
+            rs.by_label("int_col").and_then(SqlValue::to_int).unwrap()
+        );
+        assert_eq!(
+            Some(true),
+            rs.by_label("bool_col")
+                .and_then(SqlValue::to_boolean)
+                .unwrap()
+        );
     }
 
     #[test]
