@@ -115,7 +115,7 @@ impl SnowflakeMetadataDialect {
 }
 
 impl SnowflakeMetadataDialect {
-    pub fn get_sf_storage_integration_name_from_config(
+    pub fn configured_storage_integration_name(
         config_options: &HashMap<String, String>,
     ) -> Option<&str> {
         config_options
@@ -125,7 +125,7 @@ impl SnowflakeMetadataDialect {
 }
 
 fn storage_integration_name(config_options: &HashMap<String, String>) -> Result<String> {
-    SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(config_options)
+    SnowflakeMetadataDialect::configured_storage_integration_name(config_options)
         .map(ToString::to_string)
         .ok_or_else(|| {
             FederationError::connector(
@@ -232,7 +232,7 @@ impl SnowflakeMetadataDialect {
         )
     }
 
-    pub async fn get_paginated_tables(
+    pub async fn paginated_tables(
         &self,
         connection: &dyn JdbcConnection,
         database_name: &str,
@@ -248,7 +248,7 @@ impl SnowflakeMetadataDialect {
         jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
     }
 
-    pub async fn get_list_exported_objects(
+    pub async fn list_exported_objects(
         &self,
         s3_export_bucket_name: &str,
         prefix: &str,
@@ -269,18 +269,16 @@ impl SnowflakeMetadataDialect {
             })
     }
 
-    pub async fn get_storage_integration_properties(
+    pub async fn storage_integration_properties(
         &self,
         connection: &dyn JdbcConnection,
         integration_name: &str,
     ) -> Result<Option<HashMap<String, String>>> {
-        let check_integration_query = snowflake_constants::DESCRIBE_STORAGE_INTEGRATION_TEMPLATE
-            .replace(
-                "%s",
-                &self
-                    .snowflake_query_string_builder
-                    .quote(&integration_name.to_uppercase()),
-            );
+        let check_integration_query = snowflake_constants::describe_storage_integration_query(
+            &self
+                .snowflake_query_string_builder
+                .quote(&integration_name.to_uppercase()),
+        );
         let described: std::result::Result<HashMap<String, String>, SqlError> = async {
             let mut result_set = connection
                 .execute_query_with_sql(&check_integration_query)
@@ -349,13 +347,13 @@ impl SnowflakeMetadataDialect {
         Ok(())
     }
 
-    pub async fn get_storage_integration_s3_path_from_snow_flake(
+    pub async fn storage_integration_s3_path(
         &self,
         connection: &dyn JdbcConnection,
         integration_name: &str,
     ) -> Result<String> {
         let Some(properties) = self
-            .get_storage_integration_properties(connection, integration_name)
+            .storage_integration_properties(connection, integration_name)
             .await?
         else {
             return Err(FederationError::illegal_argument(format!(
@@ -373,7 +371,7 @@ impl SnowflakeMetadataDialect {
         Ok(bucket_path)
     }
 
-    fn get_snow_flake_copy_into_base_sql(&self, request: &GetSplitsRequest) -> Result<String> {
+    fn copy_into_base_sql(&self, request: &GetSplitsRequest) -> Result<String> {
         let constraints = request.constraints();
         if constraints.is_query_pass_through() {
             JDBC_QUERY_PASSTHROUGH.verify(constraints.query_passthrough_arguments())?;
@@ -484,25 +482,19 @@ impl SnowflakeMetadataDialect {
         let result = async {
             let sf_integration_name = storage_integration_name(handler.config_options())?;
             let sf_s3_export_path_prefix = self
-                .get_storage_integration_s3_path_from_snow_flake(
-                    connection.as_ref(),
-                    &sf_integration_name,
-                )
+                .storage_integration_s3_path(connection.as_ref(), &sf_integration_name)
                 .await?;
-            let snowflake_export_sql = self.get_snow_flake_copy_into_base_sql(request)?;
+            let snowflake_export_sql = self.copy_into_base_sql(request)?;
             let s3_path = format!(
                 "{sf_s3_export_path_prefix}/{query_id}/{}/",
                 uuid::Uuid::new_v4()
             );
-            let snowflake_export_query = fill_template(
-                snowflake_constants::COPY_INTO_QUERY_TEMPLATE,
-                &[
-                    &single_quote(&s3_path),
-                    &snowflake_export_sql,
-                    &self
-                        .snowflake_query_string_builder
-                        .quote(&sf_integration_name),
-                ],
+            let snowflake_export_query = snowflake_constants::copy_into_query(
+                &single_quote(&s3_path),
+                &snowflake_export_sql,
+                &self
+                    .snowflake_query_string_builder
+                    .quote(&sf_integration_name),
             );
             tracing::info!(
                 "Snowflake Copy Statement: {} for queryId: {}",
@@ -559,7 +551,7 @@ impl SnowflakeMetadataDialect {
         let no_value = || FederationError::runtime("No value present");
         let bucket = s3_uri.bucket().ok_or_else(no_value)?;
         let key = s3_uri.key().ok_or_else(no_value)?;
-        let s3_object_summaries = self.get_list_exported_objects(bucket, key).await?;
+        let s3_object_summaries = self.list_exported_objects(bucket, key).await?;
         tracing::debug!(
             "{} s3ObjectSummaries returned after executing on SnowFlake for queryId {}",
             s3_object_summaries.len(),
@@ -600,7 +592,7 @@ impl SnowflakeMetadataDialect {
         Ok(view_flag)
     }
 
-    async fn get_primary_key(
+    async fn primary_key(
         &self,
         table_name: &TableName,
         connection: &dyn JdbcConnection,
@@ -731,7 +723,7 @@ impl SnowflakeMetadataDialect {
             );
             None
         } else {
-            self.get_primary_key(table_name, connection).await?
+            self.primary_key(table_name, connection).await?
         };
         for partition_val in partition_values(total_record_count, primary_key.as_deref()) {
             tracing::info!("partitionVal {} ", partition_val);
@@ -800,16 +792,6 @@ pub fn partition_values(total_record_count: i64, primary_key: Option<&str>) -> V
         offset += partition_record_count;
     }
     values
-}
-
-fn fill_template(template: &str, args: &[&str]) -> String {
-    let mut parts = template.split("%s");
-    let mut filled = parts.next().unwrap_or_default().to_string();
-    for (arg, part) in args.iter().zip(parts) {
-        filled.push_str(arg);
-        filled.push_str(part);
-    }
-    filled
 }
 
 fn java_split_count(text: &str, separator: &str) -> usize {
@@ -1023,7 +1005,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
             page_size
         );
         let paginated_tables = self
-            .get_paginated_tables(connection, &adjusted_schema_name, token, page_size)
+            .paginated_tables(connection, &adjusted_schema_name, token, page_size)
             .await?;
         let next_token = calculate_next_token(token, page_size, &paginated_tables);
         tracing::info!(

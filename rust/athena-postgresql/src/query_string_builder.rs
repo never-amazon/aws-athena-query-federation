@@ -8,8 +8,7 @@ use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 use crate::constants;
 use crate::driver::validate_parameters;
 use crate::metadata_handler::{
-    get_char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME,
-    BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+    char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
 };
 use crate::sql_dialect::PostgresqlSqlDialect;
 
@@ -26,7 +25,7 @@ pub async fn build_sql(
     jdbc_connection: &dyn JdbcConnection,
     query: &SplitQuery<'_>,
 ) -> Result<PreparedStatement> {
-    let char_columns = get_char_columns(
+    let char_columns = char_columns(
         jdbc_connection,
         query.table_name.schema_name(),
         query.table_name.table_name(),

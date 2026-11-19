@@ -29,7 +29,7 @@ use athena_jdbc::sql::{
     ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue,
 };
 use athena_postgresql::{
-    get_char_columns, get_split_clauses, is_valid_split_column, wrap_name_with_escaped_character,
+    char_columns, is_valid_split_column, split_clauses, wrap_name_with_escaped_character,
     PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
 };
 use indexmap::IndexMap;
@@ -894,7 +894,7 @@ async fn test_get_char_columns_with_empty_result_set() {
         &connection,
         vec![(CHAR_COLUMNS_SQL, ResultSetData::empty(&[COLUMN_NAME]))],
     );
-    let char_columns = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
+    let char_columns = char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
         .await
         .unwrap();
     let executed = connection.executed();
@@ -913,7 +913,7 @@ async fn test_get_char_columns_with_empty_result_set() {
 async fn test_get_char_columns_with_sql_exception() {
     let connection = FakeConnection::new();
     connection.on_query(|_| Err(SqlError::new("Database connection error")));
-    let result = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
+    let result = char_columns(&connection, TEST_SCHEMA, TEST_TABLE).await;
     assert_eq!("Database connection error", result.unwrap_err().message());
 }
 
@@ -1049,7 +1049,7 @@ async fn test_get_char_columns_with_character_columns() {
             single_column(COLUMN_NAME, &["col1", "col2"]),
         )],
     );
-    let char_columns = get_char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
+    let char_columns = char_columns(&connection, TEST_SCHEMA, TEST_TABLE)
         .await
         .unwrap();
     let executed = connection.executed();
@@ -1144,8 +1144,7 @@ async fn test_get_partition_schema() {
 async fn get_split_clauses_no_primary_key_returns_empty_list() {
     let f = setup();
     split_clause_routes(&f.connection, None, None, None);
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1154,8 +1153,7 @@ async fn get_split_clauses_no_primary_key_returns_empty_list() {
 async fn get_split_clauses_uuid_primary_key_returns_empty_list() {
     let f = setup();
     split_clause_routes(&f.connection, Some("id"), Some("uuid"), None);
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
     assert_eq!(f.connection.prepared_sql(), [DATA_TYPE_SQL]);
@@ -1170,8 +1168,7 @@ async fn get_split_clauses_integer_primary_key_returns_split_clauses() {
         Some("integer"),
         Some((1, 100)),
     );
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1182,8 +1179,7 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
     f.connection
         .meta
         .set_primary_keys(Err(SqlError::new("Database connection error")));
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, "errorTable"), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, "errorTable"), None).await;
     assert!(result.is_empty());
     assert_primary_keys_lookup(&f.connection, "errorTable");
 }
@@ -1192,8 +1188,7 @@ async fn get_split_clauses_exception_during_processing_returns_empty_list() {
 async fn get_split_clauses_uuid_check_returns_false_generates_splits() {
     let f = setup();
     split_clause_routes(&f.connection, Some("product_id"), None, Some((1, 50)));
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1209,8 +1204,7 @@ async fn get_split_clauses_uuid_check_throws_exception_generates_splits() {
             Ok(PreparedStatement::new(sql))
         }
     });
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     assert!(!result.is_empty());
     assert_primary_keys_lookup(&f.connection, TEST_TABLE);
 }
@@ -1221,8 +1215,7 @@ async fn get_split_clauses_malicious_primary_key_column_name_is_quoted_and_escap
     let malicious_column = "id\");GRANT rds_superuser TO report_user;--";
     let wrapped_column = format!("\"{}\"", malicious_column.replace('"', "\"\""));
     split_clause_routes(&f.connection, Some(malicious_column), None, Some((1, 100)));
-    let result =
-        get_split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
+    let result = split_clauses(&f.handler, &TableName::new(TEST_SCHEMA, TEST_TABLE), None).await;
     let prepared = f.connection.prepared_sql();
     let bounds_sql = prepared
         .iter()

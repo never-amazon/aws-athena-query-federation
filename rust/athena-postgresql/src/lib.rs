@@ -17,7 +17,7 @@ pub use environment_properties::{
     connection_properties_to_environment, POSTGRESQL_CONNECTION_STRING,
 };
 pub use metadata_handler::{
-    escape_identifier, get_char_columns, get_split_clauses, is_valid_split_column,
+    char_columns, escape_identifier, is_valid_split_column, split_clauses,
     wrap_name_with_escaped_character, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
     ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
     DEFAULT_NUM_SPLITS, GET_PARTITIONS_QUERY, LIST_PAGINATED_TABLES_QUERY, NON_DEFAULT_COLLATE,

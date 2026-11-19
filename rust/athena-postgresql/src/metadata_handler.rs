@@ -149,7 +149,7 @@ impl PostGreSqlMetadataDialect {
     }
 }
 
-pub async fn get_char_columns(
+pub async fn char_columns(
     connection: &dyn JdbcConnection,
     schema: &str,
     table: &str,
@@ -182,7 +182,7 @@ pub fn wrap_name_with_escaped_character(input: &str) -> String {
     format!("\"{}\"", input.replace('"', "\"\""))
 }
 
-async fn get_materialized_views(
+async fn materialized_views(
     connection: &dyn JdbcConnection,
     database_name: &str,
 ) -> std::result::Result<Vec<TableName>, SqlError> {
@@ -198,7 +198,7 @@ async fn get_materialized_views(
     jdbc_util::table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
 }
 
-async fn get_paginated_results(
+async fn paginated_results(
     connection: &dyn JdbcConnection,
     database_name: Option<&str>,
     token: i32,
@@ -325,7 +325,7 @@ async fn split_clauses_from(
     Ok(split_clauses)
 }
 
-pub async fn get_split_clauses(
+pub async fn split_clauses(
     handler: &PostGreSqlMetadataHandler,
     table_name: &TableName,
     request: Option<&GetSplitsRequest>,
@@ -489,7 +489,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
             let all = ALL_PARTITIONS;
             if schema_text == all && partition == all {
                 for split_clause in
-                    get_split_clauses(handler, request.table_name(), Some(request)).await
+                    split_clauses(handler, request.table_name(), Some(request)).await
                 {
                     splits.push(
                         make_split(handler, request, schema_text.clone(), split_clause).await?,
@@ -556,8 +556,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
             page_size
         );
         let paginated_tables =
-            get_paginated_results(connection, list_tables_request.schema_name(), t, page_size)
-                .await?;
+            paginated_results(connection, list_tables_request.schema_name(), t, page_size).await?;
         let next = t.wrapping_add(page_size);
         tracing::info!(
             "{} tables returned. Next token is {}",
@@ -585,7 +584,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
         database_name: &str,
     ) -> Result<Vec<TableName>> {
         let mut list = jdbc_util::tables(connection, database_name).await?;
-        list.extend(get_materialized_views(connection, database_name).await?);
+        list.extend(materialized_views(connection, database_name).await?);
         Ok(list)
     }
 
