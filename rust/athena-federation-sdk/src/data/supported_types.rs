@@ -1,106 +1,46 @@
 use arrow::datatypes::Field;
 
-use super::types::{arrow_type_to_string, get_children, minor_type_of, ArrowType, MinorType};
+use super::types::{arrow_type_to_string, get_children, minor_type_of, MinorType};
 use crate::exceptions::{FederationError, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SupportedTypes {
-    BIT,
-    DATEMILLI,
-    DATEDAY,
-    TIMESTAMPMILLITZ,
-    TIMESTAMPMICROTZ,
-    FLOAT8,
-    FLOAT4,
-    INT,
-    TINYINT,
-    SMALLINT,
-    BIGINT,
-    VARBINARY,
-    DECIMAL,
-    VARCHAR,
-    STRUCT,
-    LIST,
-    MAP,
+impl MinorType {
+    pub fn is_supported(self) -> bool {
+        matches!(
+            self,
+            MinorType::Bit
+                | MinorType::DateMilli
+                | MinorType::DateDay
+                | MinorType::TimestampMilliTz
+                | MinorType::TimestampMicroTz
+                | MinorType::Float8
+                | MinorType::Float4
+                | MinorType::Int
+                | MinorType::TinyInt
+                | MinorType::SmallInt
+                | MinorType::BigInt
+                | MinorType::VarBinary
+                | MinorType::Decimal
+                | MinorType::VarChar
+                | MinorType::Struct
+                | MinorType::List
+                | MinorType::Map
+        )
+    }
 }
 
-impl SupportedTypes {
-    pub fn values() -> &'static [SupportedTypes] {
-        use SupportedTypes::{
-            BIGINT, BIT, DATEDAY, DATEMILLI, DECIMAL, FLOAT4, FLOAT8, INT, LIST, MAP, SMALLINT,
-            STRUCT, TIMESTAMPMICROTZ, TIMESTAMPMILLITZ, TINYINT, VARBINARY, VARCHAR,
-        };
-        &[
-            BIT,
-            DATEMILLI,
-            DATEDAY,
-            TIMESTAMPMILLITZ,
-            TIMESTAMPMICROTZ,
-            FLOAT8,
-            FLOAT4,
-            INT,
-            TINYINT,
-            SMALLINT,
-            BIGINT,
-            VARBINARY,
-            DECIMAL,
-            VARCHAR,
-            STRUCT,
-            LIST,
-            MAP,
-        ]
-    }
+fn is_supported_field(field: &Field) -> bool {
+    minor_type_of(field.data_type()).is_supported()
+        && get_children(field).iter().all(|c| is_supported_field(c))
+}
 
-    pub fn arrow_minor_type(&self) -> MinorType {
-        match self {
-            SupportedTypes::BIT => MinorType::BIT,
-            SupportedTypes::DATEMILLI => MinorType::DATEMILLI,
-            SupportedTypes::DATEDAY => MinorType::DATEDAY,
-            SupportedTypes::TIMESTAMPMILLITZ => MinorType::TIMESTAMPMILLITZ,
-            SupportedTypes::TIMESTAMPMICROTZ => MinorType::TIMESTAMPMICROTZ,
-            SupportedTypes::FLOAT8 => MinorType::FLOAT8,
-            SupportedTypes::FLOAT4 => MinorType::FLOAT4,
-            SupportedTypes::INT => MinorType::INT,
-            SupportedTypes::TINYINT => MinorType::TINYINT,
-            SupportedTypes::SMALLINT => MinorType::SMALLINT,
-            SupportedTypes::BIGINT => MinorType::BIGINT,
-            SupportedTypes::VARBINARY => MinorType::VARBINARY,
-            SupportedTypes::DECIMAL => MinorType::DECIMAL,
-            SupportedTypes::VARCHAR => MinorType::VARCHAR,
-            SupportedTypes::STRUCT => MinorType::STRUCT,
-            SupportedTypes::LIST => MinorType::LIST,
-            SupportedTypes::MAP => MinorType::MAP,
-        }
+pub fn assert_supported(field: &Field) -> Result<()> {
+    if !is_supported_field(field) {
+        return Err(FederationError::not_supported(format!(
+            "Detected unsupported type[{} / {} for column[{}]",
+            arrow_type_to_string(field.data_type()),
+            minor_type_of(field.data_type()),
+            field.name()
+        )));
     }
-
-    pub fn is_supported_minor_type(minor_type: MinorType) -> bool {
-        SupportedTypes::values()
-            .iter()
-            .any(|t| t.arrow_minor_type() == minor_type)
-    }
-
-    pub fn is_supported_arrow_type(arrow_type: &ArrowType) -> bool {
-        SupportedTypes::is_supported_minor_type(minor_type_of(arrow_type))
-    }
-
-    pub fn is_supported(field: &Field) -> bool {
-        if !SupportedTypes::is_supported_minor_type(minor_type_of(field.data_type())) {
-            return false;
-        }
-        get_children(field)
-            .iter()
-            .all(|c| SupportedTypes::is_supported(c))
-    }
-
-    pub fn assert_supported(field: &Field) -> Result<()> {
-        if !SupportedTypes::is_supported(field) {
-            return Err(FederationError::not_supported(format!(
-                "Detected unsupported type[{} / {} for column[{}]",
-                arrow_type_to_string(field.data_type()),
-                minor_type_of(field.data_type()),
-                field.name()
-            )));
-        }
-        Ok(())
-    }
+    Ok(())
 }

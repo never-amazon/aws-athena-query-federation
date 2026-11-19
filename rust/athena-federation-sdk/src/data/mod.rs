@@ -54,7 +54,7 @@ pub use s3_client::{
 };
 pub use schema_builder::SchemaBuilder;
 pub use simple_block_writer::SimpleBlockWriter;
-pub use supported_types::SupportedTypes;
+pub use supported_types::assert_supported;
 pub use time_zone_key::TimeZoneKey;
 pub use types::{
     arrow_type_to_string, decimal, decimal_precision_scale, get_children, map_type, minor_type_of,

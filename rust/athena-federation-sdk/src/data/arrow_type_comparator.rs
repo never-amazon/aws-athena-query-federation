@@ -42,21 +42,21 @@ pub fn compare_unsigned_bytes(a: &[u8], b: &[u8]) -> i32 {
 
 fn cast_err(type_name: MinorType, lhs: &Value, rhs: &Value) -> FederationError {
     let target = match type_name {
-        MinorType::TINYINT | MinorType::UINT1 => "java.lang.Byte",
-        MinorType::SMALLINT => "java.lang.Short",
-        MinorType::UINT2 => "java.lang.Character",
-        MinorType::BIGINT | MinorType::UINT8 => "java.lang.Long",
-        MinorType::FLOAT8 => "java.lang.Double",
-        MinorType::FLOAT4 => "java.lang.Float",
-        MinorType::VARBINARY => "[B",
-        MinorType::DECIMAL => "java.math.BigDecimal",
-        MinorType::BIT => "java.lang.Boolean",
-        MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ
+        MinorType::TinyInt | MinorType::UInt1 => "java.lang.Byte",
+        MinorType::SmallInt => "java.lang.Short",
+        MinorType::UInt2 => "java.lang.Character",
+        MinorType::BigInt | MinorType::UInt8 => "java.lang.Long",
+        MinorType::Float8 => "java.lang.Double",
+        MinorType::Float4 => "java.lang.Float",
+        MinorType::VarBinary => "[B",
+        MinorType::Decimal => "java.math.BigDecimal",
+        MinorType::Bit => "java.lang.Boolean",
+        MinorType::TimestampMicroTz | MinorType::TimestampMilliTz
             if matches!(lhs, Value::Long(_)) =>
         {
             "java.lang.Long"
         }
-        MinorType::DATEMILLI | MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => {
+        MinorType::DateMilli | MinorType::TimestampMicroTz | MinorType::TimestampMilliTz => {
             "java.time.LocalDateTime"
         }
         _ => "java.lang.Integer",
@@ -98,39 +98,39 @@ fn compare_encoded(
     }
     let minor = minor_type_of(arrow_type);
     match (minor, lhs, rhs) {
-        (MinorType::INT | MinorType::UINT4 | MinorType::DATEDAY, Value::Int(a), Value::Int(b)) => {
+        (MinorType::Int | MinorType::UInt4 | MinorType::DateDay, Value::Int(a), Value::Int(b)) => {
             Ok(ord(a.cmp(b)))
         }
-        (MinorType::TINYINT | MinorType::UINT1, Value::Byte(a), Value::Byte(b)) => {
+        (MinorType::TinyInt | MinorType::UInt1, Value::Byte(a), Value::Byte(b)) => {
             Ok(i32::from(*a) - i32::from(*b))
         }
-        (MinorType::SMALLINT, Value::Short(a), Value::Short(b)) => {
+        (MinorType::SmallInt, Value::Short(a), Value::Short(b)) => {
             Ok(i32::from(*a) - i32::from(*b))
         }
-        (MinorType::UINT2, Value::Char(a), Value::Char(b)) => Ok(i32::from(*a) - i32::from(*b)),
-        (MinorType::BIGINT | MinorType::UINT8, Value::Long(a), Value::Long(b)) => Ok(ord(a.cmp(b))),
-        (MinorType::FLOAT8, Value::Double(a), Value::Double(b)) => {
+        (MinorType::UInt2, Value::Char(a), Value::Char(b)) => Ok(i32::from(*a) - i32::from(*b)),
+        (MinorType::BigInt | MinorType::UInt8, Value::Long(a), Value::Long(b)) => Ok(ord(a.cmp(b))),
+        (MinorType::Float8, Value::Double(a), Value::Double(b)) => {
             Ok(ord(java_double_compare(*a, *b)))
         }
-        (MinorType::FLOAT4, Value::Float(a), Value::Float(b)) => {
+        (MinorType::Float4, Value::Float(a), Value::Float(b)) => {
             Ok(ord(java_float_compare(*a, *b)))
         }
-        (MinorType::VARCHAR, _, _) => Ok(java_string_compare(
+        (MinorType::VarChar, _, _) => Ok(java_string_compare(
             &lhs.java_to_string(),
             &rhs.java_to_string(),
         )),
-        (MinorType::VARBINARY, Value::Bytes(a), Value::Bytes(b)) => {
+        (MinorType::VarBinary, Value::Bytes(a), Value::Bytes(b)) => {
             Ok(compare_unsigned_bytes(a, b))
         }
-        (MinorType::DECIMAL, Value::Decimal(a), Value::Decimal(b)) => Ok(ord(a.cmp(b))),
-        (MinorType::BIT, Value::Boolean(a), Value::Boolean(b)) => Ok(ord(a.cmp(b))),
+        (MinorType::Decimal, Value::Decimal(a), Value::Decimal(b)) => Ok(ord(a.cmp(b))),
+        (MinorType::Bit, Value::Boolean(a), Value::Boolean(b)) => Ok(ord(a.cmp(b))),
         (
-            MinorType::DATEMILLI | MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ,
+            MinorType::DateMilli | MinorType::TimestampMicroTz | MinorType::TimestampMilliTz,
             Value::LocalDateTime(a),
             Value::LocalDateTime(b),
         ) => Ok(ord(a.cmp(b))),
         (
-            MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ,
+            MinorType::TimestampMicroTz | MinorType::TimestampMilliTz,
             Value::Long(a),
             Value::Long(b),
         ) => {
@@ -139,27 +139,27 @@ fn compare_encoded(
             Ok(ord(l.compare_to(&r)))
         }
         (
-            MinorType::INT
-            | MinorType::UINT4
-            | MinorType::DATEDAY
-            | MinorType::TINYINT
-            | MinorType::UINT1
-            | MinorType::SMALLINT
-            | MinorType::UINT2
-            | MinorType::BIGINT
-            | MinorType::UINT8
-            | MinorType::FLOAT8
-            | MinorType::FLOAT4
-            | MinorType::VARBINARY
-            | MinorType::DECIMAL
-            | MinorType::BIT
-            | MinorType::DATEMILLI
-            | MinorType::TIMESTAMPMICROTZ
-            | MinorType::TIMESTAMPMILLITZ,
+            MinorType::Int
+            | MinorType::UInt4
+            | MinorType::DateDay
+            | MinorType::TinyInt
+            | MinorType::UInt1
+            | MinorType::SmallInt
+            | MinorType::UInt2
+            | MinorType::BigInt
+            | MinorType::UInt8
+            | MinorType::Float8
+            | MinorType::Float4
+            | MinorType::VarBinary
+            | MinorType::Decimal
+            | MinorType::Bit
+            | MinorType::DateMilli
+            | MinorType::TimestampMicroTz
+            | MinorType::TimestampMilliTz,
             _,
             _,
         ) => Err(cast_err(minor, lhs, rhs)),
-        (MinorType::MAP | MinorType::LIST | MinorType::STRUCT, _, _) => {
+        (MinorType::Map | MinorType::List | MinorType::Struct, _, _) => {
             if lhs == rhs {
                 Ok(0)
             } else if lhs.java_hash_code() < rhs.java_hash_code() {

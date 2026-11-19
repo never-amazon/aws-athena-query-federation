@@ -121,24 +121,24 @@ pub fn to_exact_byte(value: &Value) -> Result<i8> {
 fn is_simple_minor_type(minor: MinorType) -> bool {
     matches!(
         minor,
-        MinorType::TIMESTAMPMILLITZ
-            | MinorType::TIMESTAMPMICROTZ
-            | MinorType::DATEMILLI
-            | MinorType::DATEDAY
-            | MinorType::FLOAT8
-            | MinorType::FLOAT4
-            | MinorType::INT
-            | MinorType::TINYINT
-            | MinorType::SMALLINT
-            | MinorType::UINT1
-            | MinorType::UINT2
-            | MinorType::UINT4
-            | MinorType::UINT8
-            | MinorType::BIGINT
-            | MinorType::VARBINARY
-            | MinorType::DECIMAL
-            | MinorType::VARCHAR
-            | MinorType::BIT
+        MinorType::TimestampMilliTz
+            | MinorType::TimestampMicroTz
+            | MinorType::DateMilli
+            | MinorType::DateDay
+            | MinorType::Float8
+            | MinorType::Float4
+            | MinorType::Int
+            | MinorType::TinyInt
+            | MinorType::SmallInt
+            | MinorType::UInt1
+            | MinorType::UInt2
+            | MinorType::UInt4
+            | MinorType::UInt8
+            | MinorType::BigInt
+            | MinorType::VarBinary
+            | MinorType::Decimal
+            | MinorType::VarChar
+            | MinorType::Bit
     )
 }
 
@@ -256,9 +256,9 @@ pub fn set_complex_value(
 ) -> Result<()> {
     let field = vector.field().clone();
     match vector.minor_type() {
-        MinorType::MAP => write_map(vector, &field, pos, value, resolver),
-        MinorType::LIST => write_list(vector, &field, pos, value, resolver).map(|_| ()),
-        MinorType::STRUCT => write_struct(vector, &field, pos, value, resolver),
+        MinorType::Map => write_map(vector, &field, pos, value, resolver),
+        MinorType::List => write_list(vector, &field, pos, value, resolver).map(|_| ()),
+        MinorType::Struct => write_struct(vector, &field, pos, value, resolver),
         other => Err(FederationError::not_supported(format!(
             "Unsupported 'Complex' vector {} for field {}",
             other,
@@ -286,7 +286,7 @@ fn tz_timestamp_value(
     encoding: TzEncoding,
 ) -> Result<i64> {
     let tz = timestamp_timezone(field.data_type());
-    if minor == MinorType::TIMESTAMPMILLITZ {
+    if minor == MinorType::TimestampMilliTz {
         Ok(
             date_time_formatter_util::timestamp_milli_tz_holder_from_object(value, tz, encoding)?
                 .value,
@@ -306,7 +306,7 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
     let minor = vector.minor_type();
     let field = vector.field();
     let canonical = match minor {
-        MinorType::TIMESTAMPMILLITZ | MinorType::TIMESTAMPMICROTZ => {
+        MinorType::TimestampMilliTz | MinorType::TimestampMicroTz => {
             if let Value::Long(v) = value {
                 Value::Long(*v)
             } else {
@@ -318,7 +318,7 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
                 )?)
             }
         }
-        MinorType::DATEMILLI => {
+        MinorType::DateMilli => {
             let ms = match value {
                 Value::Date(ms) => *ms,
                 Value::LocalDateTime(ldt) => ZoneId::utc().instant_of_local(ldt).timestamp_millis(),
@@ -328,7 +328,7 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
             };
             Value::Long(ms)
         }
-        MinorType::DATEDAY => {
+        MinorType::DateDay => {
             let days = match value {
                 Value::Date(ms) => java_date_to_days(*ms),
                 Value::LocalDate(d) => long_to_int(local_date_to_epoch_day(d)),
@@ -338,51 +338,51 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
             };
             Value::Int(days)
         }
-        MinorType::FLOAT8 => Value::Double(number_double_value(value)?),
-        MinorType::FLOAT4 => Value::Float(number_float_value(value)?),
-        MinorType::INT => Value::Int(to_exact_int(value)?),
-        MinorType::TINYINT => match value {
+        MinorType::Float8 => Value::Double(number_double_value(value)?),
+        MinorType::Float4 => Value::Float(number_float_value(value)?),
+        MinorType::Int => Value::Int(to_exact_int(value)?),
+        MinorType::TinyInt => match value {
             Value::Byte(b) => Value::Byte(*b),
             other => Value::Byte(to_exact_byte(other)?),
         },
-        MinorType::SMALLINT => match value {
+        MinorType::SmallInt => match value {
             Value::Short(s) => Value::Short(*s),
             other => Value::Short(to_exact_short(other)?),
         },
-        MinorType::UINT1 => match value {
+        MinorType::UInt1 => match value {
             Value::Byte(b) => Value::Byte(*b),
             Value::Int(i) => Value::Byte(long_to_byte(i64::from(*i))),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::UINT2 => match value {
+        MinorType::UInt2 => match value {
             Value::Char(c) => Value::Char(*c),
             Value::Int(i) => Value::Char(long_to_char(i64::from(*i))),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::UINT4 => match value {
+        MinorType::UInt4 => match value {
             Value::Int(i) => Value::Int(*i),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::UINT8 => match value {
+        MinorType::UInt8 => match value {
             Value::Long(l) => Value::Long(*l),
             Value::Int(i) => Value::Long(i64::from(*i)),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::BIGINT => Value::Long(to_exact_long(value)?),
-        MinorType::VARBINARY => match value {
+        MinorType::BigInt => Value::Long(to_exact_long(value)?),
+        MinorType::VarBinary => match value {
             Value::Bytes(b) => Value::Bytes(b.clone()),
             other => return Err(class_cast(other, "[B")),
         },
-        MinorType::DECIMAL => {
+        MinorType::Decimal => {
             let (_, scale) = decimal_precision_scale(field.data_type()).unwrap_or((38, 0));
             let d = set_scale_half_up(&to_big_decimal(value)?, scale);
             Value::Decimal(d)
         }
-        MinorType::VARCHAR => match value {
+        MinorType::VarChar => match value {
             Value::String(s) => Value::String(s.clone()),
             other => Value::String(other.java_to_string()),
         },
-        MinorType::BIT => {
+        MinorType::Bit => {
             let bit =
                 matches!(value, Value::Int(i) if *i > 0) || matches!(value, Value::Boolean(true));
             Value::Boolean(bit)
@@ -398,24 +398,24 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
 
 fn set_null_value(vector: &mut FieldVector, pos: usize) -> Result<()> {
     match vector.minor_type() {
-        MinorType::TIMESTAMPMICROTZ
-        | MinorType::TIMESTAMPMILLITZ
-        | MinorType::DATEMILLI
-        | MinorType::DATEDAY
-        | MinorType::FLOAT8
-        | MinorType::FLOAT4
-        | MinorType::INT
-        | MinorType::TINYINT
-        | MinorType::SMALLINT
-        | MinorType::UINT1
-        | MinorType::UINT2
-        | MinorType::UINT4
-        | MinorType::UINT8
-        | MinorType::BIGINT
-        | MinorType::VARBINARY
-        | MinorType::DECIMAL
-        | MinorType::VARCHAR
-        | MinorType::BIT => {
+        MinorType::TimestampMicroTz
+        | MinorType::TimestampMilliTz
+        | MinorType::DateMilli
+        | MinorType::DateDay
+        | MinorType::Float8
+        | MinorType::Float4
+        | MinorType::Int
+        | MinorType::TinyInt
+        | MinorType::SmallInt
+        | MinorType::UInt1
+        | MinorType::UInt2
+        | MinorType::UInt4
+        | MinorType::UInt8
+        | MinorType::BigInt
+        | MinorType::VarBinary
+        | MinorType::Decimal
+        | MinorType::VarChar
+        | MinorType::Bit => {
             vector.set_null(pos);
             Ok(())
         }
@@ -461,12 +461,12 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
     let npe = || FederationError::null_pointer("null value");
     let minor = reader.minor_type();
     Ok(match minor {
-        MinorType::DATEDAY => {
+        MinorType::DateDay => {
             let days = reader.read_integer().ok_or_else(npe)?;
             let d = local_date_of_epoch_day(i64::from(days)).ok_or_else(npe)?;
             local_date_to_string(&d)
         }
-        MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => {
+        MinorType::TimestampMicroTz | MinorType::TimestampMilliTz => {
             let v = reader.read_long().ok_or_else(npe)?;
             date_time_formatter_util::construct_zoned_date_time(
                 v,
@@ -475,27 +475,27 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
             )?
             .to_string()
         }
-        MinorType::DATEMILLI
-        | MinorType::FLOAT8
-        | MinorType::FLOAT4
-        | MinorType::UINT4
-        | MinorType::UINT8
-        | MinorType::INT
-        | MinorType::BIGINT
-        | MinorType::VARCHAR
-        | MinorType::BIT => reader.read_object().java_to_string(),
-        MinorType::DECIMAL => match reader.read_big_decimal() {
+        MinorType::DateMilli
+        | MinorType::Float8
+        | MinorType::Float4
+        | MinorType::UInt4
+        | MinorType::UInt8
+        | MinorType::Int
+        | MinorType::BigInt
+        | MinorType::VarChar
+        | MinorType::Bit => reader.read_object().java_to_string(),
+        MinorType::Decimal => match reader.read_big_decimal() {
             Some(d) => big_decimal_to_string(&d),
             None => "null".to_string(),
         },
-        MinorType::SMALLINT => match reader.read_short() {
+        MinorType::SmallInt => match reader.read_short() {
             Some(s) => s.to_string(),
             None => "null".to_string(),
         },
-        MinorType::TINYINT | MinorType::UINT1 => reader.read_byte().ok_or_else(npe)?.to_string(),
-        MinorType::UINT2 => reader.read_character().ok_or_else(npe)?.to_string(),
-        MinorType::VARBINARY => bytes_to_hex(&reader.read_byte_array().ok_or_else(npe)?),
-        MinorType::STRUCT => {
+        MinorType::TinyInt | MinorType::UInt1 => reader.read_byte().ok_or_else(npe)?.to_string(),
+        MinorType::UInt2 => reader.read_character().ok_or_else(npe)?.to_string(),
+        MinorType::VarBinary => bytes_to_hex(&reader.read_byte_array().ok_or_else(npe)?),
+        MinorType::Struct => {
             let mut sb = String::from("{");
             for child in get_children(reader.field()) {
                 if sb.len() > 3 {
@@ -511,7 +511,7 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
             sb.push('}');
             sb
         }
-        MinorType::LIST => {
+        MinorType::List => {
             let mut sb = String::from("{");
             for child in reader.elements() {
                 if sb.len() > 1 {
@@ -522,7 +522,7 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
             sb.push('}');
             sb
         }
-        MinorType::MAP => {
+        MinorType::Map => {
             let mut sb = String::new();
             for child in reader.elements() {
                 sb.push_str(&field_to_string(&child)?);
@@ -703,7 +703,7 @@ pub fn write_map(
             .ok_or_else(|| FederationError::illegal_state("map vector has no entries vector"))?;
         for (k, v) in entries {
             entries_vector.set_index_defined(idx);
-            let key = if minor_type_of(key_field.data_type()) == MinorType::STRUCT {
+            let key = if minor_type_of(key_field.data_type()) == MinorType::Struct {
                 k.clone()
             } else {
                 resolver.get_map_key(&key_field, k)?
@@ -713,7 +713,7 @@ pub fn write_map(
                 .ok_or_else(|| invalid_map_schema(field))?;
             write_all_value(key_vector, &key_field, idx, resolver, &key, true)?;
             if !v.is_null() {
-                let val = if minor_type_of(value_field.data_type()) == MinorType::STRUCT {
+                let val = if minor_type_of(value_field.data_type()) == MinorType::Struct {
                     v.clone()
                 } else {
                     resolver.get_map_value(&value_field, v)?
@@ -740,9 +740,9 @@ pub fn write_all_value(
     from_map_or_struct: bool,
 ) -> Result<bool> {
     match minor_type_of(field.data_type()) {
-        MinorType::LIST => write_list(vector, field, pos, value, resolver),
-        MinorType::STRUCT => write_struct(vector, field, pos, value, resolver).map(|()| true),
-        MinorType::MAP => write_map(vector, field, pos, value, resolver).map(|()| true),
+        MinorType::List => write_list(vector, field, pos, value, resolver),
+        MinorType::Struct => write_struct(vector, field, pos, value, resolver).map(|()| true),
+        MinorType::Map => write_map(vector, field, pos, value, resolver).map(|()| true),
         _ => write_simple_value(vector, field, pos, value, from_map_or_struct),
     }
 }
@@ -798,10 +798,10 @@ fn simple_stored_value(
     encoding: TzEncoding,
 ) -> Result<Option<Value>> {
     Ok(Some(match minor {
-        MinorType::TIMESTAMPMILLITZ | MinorType::TIMESTAMPMICROTZ => {
+        MinorType::TimestampMilliTz | MinorType::TimestampMicroTz => {
             Value::Long(tz_timestamp_value(field, minor, value, encoding)?)
         }
-        MinorType::DATEMILLI => match value {
+        MinorType::DateMilli => match value {
             Value::Date(ms) => Value::Long(*ms),
             Value::LocalDateTime(ldt) => {
                 Value::Long(ZoneId::utc().instant_of_local(ldt).timestamp_millis())
@@ -809,52 +809,52 @@ fn simple_stored_value(
             Value::Long(v) => Value::Long(*v),
             other => return Err(class_cast(other, "java.lang.Long")),
         },
-        MinorType::DATEDAY => match value {
+        MinorType::DateDay => match value {
             Value::Date(ms) => Value::Int(java_date_to_days(*ms)),
             Value::LocalDate(d) => Value::Int(long_to_int(local_date_to_epoch_day(d))),
             Value::Long(v) => Value::Int(long_to_int(*v)),
             Value::Int(v) => Value::Int(*v),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::FLOAT8 => match value {
+        MinorType::Float8 => match value {
             Value::Int(i) => Value::Double(f64::from(*i)),
             Value::Double(d) => Value::Double(*d),
             other => return Err(class_cast(other, "java.lang.Double")),
         },
-        MinorType::FLOAT4 => match value {
+        MinorType::Float4 => match value {
             Value::Float(f) => Value::Float(*f),
             other => return Err(class_cast(other, "java.lang.Float")),
         },
-        MinorType::INT => match value {
+        MinorType::Int => match value {
             Value::Long(l) => Value::Int(long_to_int(*l)),
             Value::Int(i) => Value::Int(*i),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::TINYINT | MinorType::UINT1 => match value {
+        MinorType::TinyInt | MinorType::UInt1 => match value {
             Value::Byte(b) => Value::Byte(*b),
             other => return Err(class_cast(other, "java.lang.Byte")),
         },
-        MinorType::SMALLINT => match value {
+        MinorType::SmallInt => match value {
             Value::Short(s) => Value::Short(*s),
             other => return Err(class_cast(other, "java.lang.Short")),
         },
-        MinorType::UINT2 => match value {
+        MinorType::UInt2 => match value {
             Value::Char(c) => Value::Char(*c),
             other => return Err(class_cast(other, "java.lang.Character")),
         },
-        MinorType::UINT4 => match value {
+        MinorType::UInt4 => match value {
             Value::Int(i) => Value::Int(*i),
             other => return Err(class_cast(other, "java.lang.Integer")),
         },
-        MinorType::UINT8 | MinorType::BIGINT => match value {
+        MinorType::UInt8 | MinorType::BigInt => match value {
             Value::Long(l) => Value::Long(*l),
             other => return Err(class_cast(other, "java.lang.Long")),
         },
-        MinorType::VARBINARY => match value {
+        MinorType::VarBinary => match value {
             Value::Bytes(b) => Value::Bytes(b.clone()),
             _ => return Ok(None),
         },
-        MinorType::DECIMAL => {
+        MinorType::Decimal => {
             let (_, scale) = decimal_precision_scale(field.data_type()).unwrap_or((38, 0));
             match value {
                 Value::Double(d) => {
@@ -867,12 +867,12 @@ fn simple_stored_value(
                 other => return Err(class_cast(other, "java.math.BigDecimal")),
             }
         }
-        MinorType::VARCHAR => match value {
+        MinorType::VarChar => match value {
             Value::String(s) => Value::String(s.clone()),
             Value::Bytes(b) => Value::String(String::from_utf8_lossy(b).into_owned()),
             _ => return Ok(None),
         },
-        MinorType::BIT => {
+        MinorType::Bit => {
             let bit =
                 matches!(value, Value::Int(i) if *i > 0) || matches!(value, Value::Boolean(true));
             Value::Boolean(bit)
@@ -884,27 +884,27 @@ fn simple_stored_value(
 pub fn unset_row(row: usize, block: &mut Block) -> Result<()> {
     for vector in block.field_vectors_mut() {
         match vector.minor_type() {
-            MinorType::TIMESTAMPMICROTZ
-            | MinorType::TIMESTAMPMILLITZ
-            | MinorType::DATEDAY
-            | MinorType::DATEMILLI
-            | MinorType::TINYINT
-            | MinorType::UINT1
-            | MinorType::SMALLINT
-            | MinorType::UINT2
-            | MinorType::UINT4
-            | MinorType::INT
-            | MinorType::UINT8
-            | MinorType::BIGINT
-            | MinorType::FLOAT4
-            | MinorType::FLOAT8
-            | MinorType::DECIMAL
-            | MinorType::VARBINARY
-            | MinorType::VARCHAR
-            | MinorType::BIT
-            | MinorType::STRUCT
-            | MinorType::MAP => vector.set_null(row),
-            MinorType::LIST => {
+            MinorType::TimestampMicroTz
+            | MinorType::TimestampMilliTz
+            | MinorType::DateDay
+            | MinorType::DateMilli
+            | MinorType::TinyInt
+            | MinorType::UInt1
+            | MinorType::SmallInt
+            | MinorType::UInt2
+            | MinorType::UInt4
+            | MinorType::Int
+            | MinorType::UInt8
+            | MinorType::BigInt
+            | MinorType::Float4
+            | MinorType::Float8
+            | MinorType::Decimal
+            | MinorType::VarBinary
+            | MinorType::VarChar
+            | MinorType::Bit
+            | MinorType::Struct
+            | MinorType::Map => vector.set_null(row),
+            MinorType::List => {
                 vector.start_list(row)?;
                 let start = vector.list_slot(row).map_or(0, |(s, _)| s);
                 vector.end_list(row, start)?;

@@ -220,16 +220,16 @@ impl FieldVector {
             VectorData::Scalar(column) => {
                 let raw = column.get(index);
                 match (self.minor_type, &raw) {
-                    (MinorType::DATEMILLI | MinorType::TIMESTAMPMILLI, Value::Long(ms)) => {
+                    (MinorType::DateMilli | MinorType::TimestampMilli, Value::Long(ms)) => {
                         Value::LocalDateTime(local_date_time_of_epoch_milli_utc(*ms))
                     }
-                    (MinorType::TIMESTAMPSEC, Value::Long(s)) => Value::LocalDateTime(
+                    (MinorType::TimestampSec, Value::Long(s)) => Value::LocalDateTime(
                         local_date_time_of_epoch_milli_utc(s.saturating_mul(1000)),
                     ),
-                    (MinorType::TIMESTAMPMICRO, Value::Long(us)) => {
+                    (MinorType::TimestampMicro, Value::Long(us)) => {
                         Value::LocalDateTime(local_date_time_of_epoch_micro_utc(*us))
                     }
-                    (MinorType::TIMESTAMPNANO, Value::Long(ns)) => Value::LocalDateTime(
+                    (MinorType::TimestampNano, Value::Long(ns)) => Value::LocalDateTime(
                         chrono::DateTime::from_timestamp_nanos(*ns).naive_utc(),
                     ),
                     _ => raw.clone(),
@@ -336,66 +336,66 @@ impl FieldVector {
         let field = self.field.clone();
         let integral = || integral_bits(value).ok_or_else(|| class_cast(self, value));
         let canonical = match minor {
-            MinorType::BIT => match value {
+            MinorType::Bit => match value {
                 Value::Boolean(b) => Value::Boolean(*b),
                 Value::Int(i) => Value::Boolean(*i != 0),
                 Value::Long(i) => Value::Boolean(*i != 0),
                 _ => return Err(class_cast(self, value)),
             },
-            MinorType::TINYINT | MinorType::UINT1 => Value::Byte(long_to_byte(integral()?)),
-            MinorType::SMALLINT => Value::Short(long_to_short(integral()?)),
-            MinorType::UINT2 => Value::Char(long_to_char(integral()?)),
-            MinorType::INT
-            | MinorType::UINT4
-            | MinorType::DATEDAY
-            | MinorType::TIMESEC
-            | MinorType::TIMEMILLI => Value::Int(long_to_int(integral()?)),
-            MinorType::BIGINT
-            | MinorType::UINT8
-            | MinorType::DATEMILLI
-            | MinorType::TIMEMICRO
-            | MinorType::TIMENANO
-            | MinorType::TIMESTAMPSEC
-            | MinorType::TIMESTAMPMILLI
-            | MinorType::TIMESTAMPMICRO
-            | MinorType::TIMESTAMPNANO
-            | MinorType::TIMESTAMPSECTZ
-            | MinorType::TIMESTAMPMILLITZ
-            | MinorType::TIMESTAMPMICROTZ
-            | MinorType::TIMESTAMPNANOTZ => match integral_bits(value) {
+            MinorType::TinyInt | MinorType::UInt1 => Value::Byte(long_to_byte(integral()?)),
+            MinorType::SmallInt => Value::Short(long_to_short(integral()?)),
+            MinorType::UInt2 => Value::Char(long_to_char(integral()?)),
+            MinorType::Int
+            | MinorType::UInt4
+            | MinorType::DateDay
+            | MinorType::TimeSec
+            | MinorType::TimeMilli => Value::Int(long_to_int(integral()?)),
+            MinorType::BigInt
+            | MinorType::UInt8
+            | MinorType::DateMilli
+            | MinorType::TimeMicro
+            | MinorType::TimeNano
+            | MinorType::TimestampSec
+            | MinorType::TimestampMilli
+            | MinorType::TimestampMicro
+            | MinorType::TimestampNano
+            | MinorType::TimestampSecTz
+            | MinorType::TimestampMilliTz
+            | MinorType::TimestampMicroTz
+            | MinorType::TimestampNanoTz => match integral_bits(value) {
                 Some(v) => Value::Long(v),
                 None => match value {
                     Value::LocalDateTime(dt)
-                        if minor == MinorType::DATEMILLI || minor == MinorType::TIMESTAMPMILLI =>
+                        if minor == MinorType::DateMilli || minor == MinorType::TimestampMilli =>
                     {
                         Value::Long(dt.and_utc().timestamp_millis())
                     }
                     _ => return Err(class_cast(self, value)),
                 },
             },
-            MinorType::FLOAT4 => match value {
+            MinorType::Float4 => match value {
                 Value::Float(v) => Value::Float(*v),
                 Value::Double(v) => Value::Float(double_to_float(*v)),
                 _ => Value::Float(long_to_float(integral()?)),
             },
-            MinorType::FLOAT8 => match value {
+            MinorType::Float8 => match value {
                 Value::Float(v) => Value::Double(f64::from(*v)),
                 Value::Double(v) => Value::Double(*v),
                 _ => Value::Double(long_to_double(integral()?)),
             },
-            MinorType::DECIMAL | MinorType::DECIMAL256 => match value {
+            MinorType::Decimal | MinorType::Decimal256 => match value {
                 Value::Decimal(d) => Value::Decimal(checked_decimal(field.data_type(), d)?),
                 _ => return Err(class_cast(self, value)),
             },
-            MinorType::VARCHAR | MinorType::LARGEVARCHAR | MinorType::VIEWVARCHAR => match value {
+            MinorType::VarChar | MinorType::LargeVarChar | MinorType::ViewVarChar => match value {
                 Value::String(s) => Value::String(s.clone()),
                 Value::Bytes(b) => Value::String(String::from_utf8_lossy(b).into_owned()),
                 _ => return Err(class_cast(self, value)),
             },
-            MinorType::VARBINARY
-            | MinorType::LARGEVARBINARY
-            | MinorType::VIEWVARBINARY
-            | MinorType::FIXEDSIZEBINARY => match value {
+            MinorType::VarBinary
+            | MinorType::LargeVarBinary
+            | MinorType::ViewVarBinary
+            | MinorType::FixedSizeBinary => match value {
                 Value::Bytes(b) => Value::Bytes(b.clone()),
                 _ => return Err(class_cast(self, value)),
             },
@@ -533,27 +533,27 @@ impl FieldVector {
         match &self.data {
             VectorData::Scalar(column) => {
                 let width = match self.minor_type {
-                    MinorType::BIT => 0,
-                    MinorType::TINYINT | MinorType::UINT1 => 1,
-                    MinorType::SMALLINT | MinorType::UINT2 => 2,
-                    MinorType::INT
-                    | MinorType::UINT4
-                    | MinorType::FLOAT4
-                    | MinorType::DATEDAY
-                    | MinorType::VARCHAR
-                    | MinorType::VARBINARY => 4,
-                    MinorType::DECIMAL => 16,
-                    MinorType::DECIMAL256 => 32,
+                    MinorType::Bit => 0,
+                    MinorType::TinyInt | MinorType::UInt1 => 1,
+                    MinorType::SmallInt | MinorType::UInt2 => 2,
+                    MinorType::Int
+                    | MinorType::UInt4
+                    | MinorType::Float4
+                    | MinorType::DateDay
+                    | MinorType::VarChar
+                    | MinorType::VarBinary => 4,
+                    MinorType::Decimal => 16,
+                    MinorType::Decimal256 => 32,
                     _ => 8,
                 };
                 let var = column.variable_width_bytes(n);
-                let bits = if self.minor_type == MinorType::BIT {
+                let bits = if self.minor_type == MinorType::Bit {
                     validity
                 } else {
                     0
                 };
                 let offsets =
-                    if matches!(self.minor_type, MinorType::VARCHAR | MinorType::VARBINARY) {
+                    if matches!(self.minor_type, MinorType::VarChar | MinorType::VarBinary) {
                         4
                     } else {
                         0

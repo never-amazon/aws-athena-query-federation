@@ -29,36 +29,36 @@ pub enum Extractor<C> {
 impl<C> Extractor<C> {
     pub fn null(minor_type: MinorType) -> Option<Extractor<C>> {
         Some(match minor_type {
-            MinorType::BIGINT => Extractor::BigInt(Arc::new(|_: &C| Ok(None))),
-            MinorType::BIT => Extractor::Bit(Arc::new(|_: &C| Ok(None))),
-            MinorType::DATEDAY => Extractor::DateDay(Arc::new(|_: &C| Ok(None))),
-            MinorType::DATEMILLI => Extractor::DateMilli(Arc::new(|_: &C| Ok(None))),
-            MinorType::DECIMAL => Extractor::Decimal(Arc::new(|_: &C| Ok(None))),
-            MinorType::FLOAT4 => Extractor::Float4(Arc::new(|_: &C| Ok(None))),
-            MinorType::FLOAT8 => Extractor::Float8(Arc::new(|_: &C| Ok(None))),
-            MinorType::INT => Extractor::Int(Arc::new(|_: &C| Ok(None))),
-            MinorType::SMALLINT => Extractor::SmallInt(Arc::new(|_: &C| Ok(None))),
-            MinorType::TINYINT => Extractor::TinyInt(Arc::new(|_: &C| Ok(None))),
-            MinorType::VARBINARY => Extractor::VarBinary(Arc::new(|_: &C| Ok(None))),
-            MinorType::VARCHAR => Extractor::VarChar(Arc::new(|_: &C| Ok(None))),
+            MinorType::BigInt => Extractor::BigInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::Bit => Extractor::Bit(Arc::new(|_: &C| Ok(None))),
+            MinorType::DateDay => Extractor::DateDay(Arc::new(|_: &C| Ok(None))),
+            MinorType::DateMilli => Extractor::DateMilli(Arc::new(|_: &C| Ok(None))),
+            MinorType::Decimal => Extractor::Decimal(Arc::new(|_: &C| Ok(None))),
+            MinorType::Float4 => Extractor::Float4(Arc::new(|_: &C| Ok(None))),
+            MinorType::Float8 => Extractor::Float8(Arc::new(|_: &C| Ok(None))),
+            MinorType::Int => Extractor::Int(Arc::new(|_: &C| Ok(None))),
+            MinorType::SmallInt => Extractor::SmallInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::TinyInt => Extractor::TinyInt(Arc::new(|_: &C| Ok(None))),
+            MinorType::VarBinary => Extractor::VarBinary(Arc::new(|_: &C| Ok(None))),
+            MinorType::VarChar => Extractor::VarChar(Arc::new(|_: &C| Ok(None))),
             _ => return None,
         })
     }
 
     pub fn minor_type(&self) -> MinorType {
         match self {
-            Extractor::BigInt(_) => MinorType::BIGINT,
-            Extractor::Bit(_) => MinorType::BIT,
-            Extractor::DateDay(_) => MinorType::DATEDAY,
-            Extractor::DateMilli(_) => MinorType::DATEMILLI,
-            Extractor::Decimal(_) => MinorType::DECIMAL,
-            Extractor::Float4(_) => MinorType::FLOAT4,
-            Extractor::Float8(_) => MinorType::FLOAT8,
-            Extractor::Int(_) => MinorType::INT,
-            Extractor::SmallInt(_) => MinorType::SMALLINT,
-            Extractor::TinyInt(_) => MinorType::TINYINT,
-            Extractor::VarBinary(_) => MinorType::VARBINARY,
-            Extractor::VarChar(_) => MinorType::VARCHAR,
+            Extractor::BigInt(_) => MinorType::BigInt,
+            Extractor::Bit(_) => MinorType::Bit,
+            Extractor::DateDay(_) => MinorType::DateDay,
+            Extractor::DateMilli(_) => MinorType::DateMilli,
+            Extractor::Decimal(_) => MinorType::Decimal,
+            Extractor::Float4(_) => MinorType::Float4,
+            Extractor::Float8(_) => MinorType::Float8,
+            Extractor::Int(_) => MinorType::Int,
+            Extractor::SmallInt(_) => MinorType::SmallInt,
+            Extractor::TinyInt(_) => MinorType::TinyInt,
+            Extractor::VarBinary(_) => MinorType::VarBinary,
+            Extractor::VarChar(_) => MinorType::VarChar,
         }
     }
 

@@ -113,7 +113,7 @@ fn constrained_block_test() {
 
 fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: &FieldReader<'_>) {
     match vector.minor_type() {
-        MinorType::INT => {
+        MinorType::Int => {
             for i in 0..actual_block.row_count() {
                 let vector = vector.at(i);
                 assert_eq!(
@@ -122,14 +122,14 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
                 );
             }
         }
-        MinorType::FLOAT8 => {
+        MinorType::Float8 => {
             for i in 0..actual_block.row_count() {
                 let vector = vector.at(i);
                 let expected = double(i) * double(actual_field_count) * 1.1;
                 assert!((expected - vector.read_double().unwrap()).abs() <= 0.1);
             }
         }
-        MinorType::VARCHAR => {
+        MinorType::VarChar => {
             for i in 0..actual_block.row_count() {
                 let vector = vector.at(i);
                 assert_eq!(
@@ -138,7 +138,7 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
                 );
             }
         }
-        MinorType::STRUCT => {
+        MinorType::Struct => {
             for i in 0..actual_block.row_count() {
                 let effective_vector = if vector.field().name() == "structFieldNested28" {
                     vector.reader_named("nestedStruct").unwrap()
@@ -165,7 +165,7 @@ fn assert_field_values(actual_block: &Block, actual_field_count: usize, vector: 
                 );
             }
         }
-        MinorType::LIST => assert_list_values(actual_block, vector),
+        MinorType::List => assert_list_values(actual_block, vector),
         _ => {}
     }
 }
@@ -179,47 +179,47 @@ fn assert_list_values(actual_block: &Block, vector: &FieldReader<'_>) {
         let mut entry_values = 0usize;
         for reader in vector.elements() {
             match child_type {
-                MinorType::BIGINT => {
+                MinorType::BigInt => {
                     assert_eq!(Some(long(i + entry_values)), reader.read_long());
                     entry_values += 1;
                 }
-                MinorType::VARCHAR => {
+                MinorType::VarChar => {
                     assert_eq!(
                         (1000 + i + entry_values).to_string(),
                         reader.read_text().unwrap()
                     );
                     entry_values += 1;
                 }
-                MinorType::SMALLINT => {
+                MinorType::SmallInt => {
                     entry_values += 1;
                     assert_eq!(short(i + 1), reader.read_short().unwrap());
                 }
-                MinorType::INT => {
+                MinorType::Int => {
                     entry_values += 1;
                     assert_eq!(int(i), reader.read_integer().unwrap());
                 }
-                MinorType::TINYINT => {
+                MinorType::TinyInt => {
                     entry_values += 1;
                     assert_eq!(byte(i), reader.read_byte().unwrap());
                 }
-                MinorType::FLOAT4 => {
+                MinorType::Float4 => {
                     entry_values += 1;
                     assert_eq!(float(i).to_bits(), reader.read_float().unwrap().to_bits());
                 }
-                MinorType::FLOAT8 => {
+                MinorType::Float8 => {
                     entry_values += 1;
                     assert_eq!(double(i).to_bits(), reader.read_double().unwrap().to_bits());
                 }
-                MinorType::DECIMAL => {
+                MinorType::Decimal => {
                     entry_values += 1;
                     let d = reader.read_big_decimal().unwrap();
                     let (unscaled, _) = d.as_bigint_and_exponent();
                     assert_eq!(num_bigint::BigInt::from(long(i) * 100), unscaled);
                 }
-                MinorType::VARBINARY => {
+                MinorType::VarBinary => {
                     entry_values += 1;
                 }
-                MinorType::BIT => {
+                MinorType::Bit => {
                     entry_values += 1;
                     assert_eq!(i % 2 == 1, reader.read_boolean().unwrap());
                 }
@@ -265,24 +265,24 @@ fn end_to_end_block_test() {
     for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
-            MinorType::DATEDAY
-            | MinorType::DATEMILLI
-            | MinorType::TINYINT
-            | MinorType::UINT1
-            | MinorType::SMALLINT
-            | MinorType::UINT2
-            | MinorType::UINT4
-            | MinorType::INT
-            | MinorType::UINT8
-            | MinorType::BIGINT
-            | MinorType::FLOAT4
-            | MinorType::FLOAT8
-            | MinorType::DECIMAL
-            | MinorType::VARBINARY
-            | MinorType::VARCHAR
-            | MinorType::BIT
-            | MinorType::STRUCT
-            | MinorType::MAP => {
+            MinorType::DateDay
+            | MinorType::DateMilli
+            | MinorType::TinyInt
+            | MinorType::UInt1
+            | MinorType::SmallInt
+            | MinorType::UInt2
+            | MinorType::UInt4
+            | MinorType::Int
+            | MinorType::UInt8
+            | MinorType::BigInt
+            | MinorType::Float4
+            | MinorType::Float8
+            | MinorType::Decimal
+            | MinorType::VarBinary
+            | MinorType::VarChar
+            | MinorType::Bit
+            | MinorType::Struct
+            | MinorType::Map => {
                 let vector = vector.at(0);
                 assert!(
                     !vector.is_set(),
@@ -291,7 +291,7 @@ fn end_to_end_block_test() {
                     next.name()
                 );
             }
-            MinorType::LIST => {}
+            MinorType::List => {}
             other => panic!("{other} is not supported"),
         }
     }
@@ -403,46 +403,46 @@ fn struct_resolver(seed: usize) -> impl Fn(&Field, &Value) -> Result<Value> {
 
 fn int_multiplier(minor: MinorType) -> Option<usize> {
     match minor {
-        MinorType::DATEDAY => Some(1),
-        MinorType::UINT4 => Some(2),
-        MinorType::INT => Some(3),
-        MinorType::TINYINT => Some(5),
-        MinorType::UINT1 => Some(6),
-        MinorType::SMALLINT => Some(7),
-        MinorType::UINT2 => Some(8),
-        MinorType::FLOAT4 => Some(9),
+        MinorType::DateDay => Some(1),
+        MinorType::UInt4 => Some(2),
+        MinorType::Int => Some(3),
+        MinorType::TinyInt => Some(5),
+        MinorType::UInt1 => Some(6),
+        MinorType::SmallInt => Some(7),
+        MinorType::UInt2 => Some(8),
+        MinorType::Float4 => Some(9),
         _ => None,
     }
 }
 
 fn long_multiplier(minor: MinorType) -> Option<usize> {
     match minor {
-        MinorType::DATEMILLI => Some(4),
-        MinorType::UINT8 => Some(9),
-        MinorType::BIGINT => Some(10),
+        MinorType::DateMilli => Some(4),
+        MinorType::UInt8 => Some(9),
+        MinorType::BigInt => Some(10),
         _ => None,
     }
 }
 
 fn list_values(child_type: MinorType, i: usize) -> Option<Vec<Value>> {
     Some(match child_type {
-        MinorType::BIGINT => vec![
+        MinorType::BigInt => vec![
             Value::Long(long(i)),
             Value::Long(long(i) + 1),
             Value::Long(long(i) + 2),
         ],
-        MinorType::VARCHAR => vec![
+        MinorType::VarChar => vec![
             Value::String((1000 + i).to_string()),
             Value::String((1000 + i + 1).to_string()),
             Value::String((1000 + i + 2).to_string()),
         ],
-        MinorType::SMALLINT => vec![Value::Short(short(i + 1))],
-        MinorType::INT => vec![Value::Int(int(i))],
-        MinorType::TINYINT => vec![Value::Byte(byte(i))],
-        MinorType::FLOAT4 => vec![Value::Float(float(i))],
-        MinorType::FLOAT8 | MinorType::DECIMAL => vec![Value::Double(double(i))],
-        MinorType::VARBINARY => vec![Value::Bytes(i.to_string().into_bytes())],
-        MinorType::BIT => vec![Value::Boolean(i % 2 == 1)],
+        MinorType::SmallInt => vec![Value::Short(short(i + 1))],
+        MinorType::Int => vec![Value::Int(int(i))],
+        MinorType::TinyInt => vec![Value::Byte(byte(i))],
+        MinorType::Float4 => vec![Value::Float(float(i))],
+        MinorType::Float8 | MinorType::Decimal => vec![Value::Double(double(i))],
+        MinorType::VarBinary => vec![Value::Bytes(i.to_string().into_bytes())],
+        MinorType::Bit => vec![Value::Boolean(i % 2 == 1)],
         _ => return None,
     })
 }
@@ -479,33 +479,33 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
         return;
     }
     match minor {
-        MinorType::FLOAT8 => {
+        MinorType::Float8 => {
             for i in 0..expected_rows {
                 vector
                     .set_safe(i, double(i) * double(field_count) * 1.1)
                     .unwrap();
             }
         }
-        MinorType::VARCHAR | MinorType::VARBINARY => {
+        MinorType::VarChar | MinorType::VarBinary => {
             for i in 0..expected_rows {
                 vector
                     .set_safe(i, (i * field_count).to_string().into_bytes())
                     .unwrap();
             }
         }
-        MinorType::DECIMAL => {
+        MinorType::Decimal => {
             for i in 0..expected_rows {
                 let big_decimal = BigDecimal::from_f64(double(i * field_count) * 1.01).unwrap();
                 let big_decimal = big_decimal.with_scale_round(2, RoundingMode::HalfUp);
                 vector.set_safe(i, big_decimal).unwrap();
             }
         }
-        MinorType::BIT => {
+        MinorType::Bit => {
             for i in 0..expected_rows {
                 vector.set_safe(i, int(i % 2)).unwrap();
             }
         }
-        MinorType::STRUCT => {
+        MinorType::Struct => {
             for i in 0..expected_rows {
                 let resolver = struct_resolver(i);
                 block_utils::set_complex_value(
@@ -517,7 +517,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
                 .unwrap();
             }
         }
-        MinorType::LIST => {
+        MinorType::List => {
             let child = get_children(vector.field())[0].clone();
             for i in 0..expected_rows {
                 let Some(values) = list_values(minor_type_of(child.data_type()), i) else {
@@ -532,7 +532,7 @@ fn fill_vector(vector: &mut FieldVector, field_count: usize, expected_rows: usiz
                 .unwrap();
             }
         }
-        MinorType::MAP => {
+        MinorType::Map => {
             for i in 0..expected_rows {
                 let resolver = struct_resolver(i);
                 block_utils::set_complex_value(vector, i, &resolver, &Value::Map(Vec::new()))
@@ -576,12 +576,12 @@ fn list_of_lists_test() {
     for next in orig_schema.fields() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
         match vector.minor_type() {
-            MinorType::LIST => {
+            MinorType::List => {
                 let child = get_children(vector.field())[0].clone();
                 for i in 0..expected_rows {
                     let mut value = Vec::new();
                     match minor_type_of(child.data_type()) {
-                        MinorType::LIST => {
+                        MinorType::List => {
                             value.push(Value::List(vec![
                                 "1000".into(),
                                 "1001".into(),
@@ -616,7 +616,7 @@ fn list_of_lists_test() {
     for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
-            MinorType::LIST => {
+            MinorType::List => {
                 let mut actual = 0;
                 for i in 0..actual_block.row_count() {
                     let vector = vector.at(i);
@@ -666,12 +666,12 @@ fn list_of_structs_test() {
     for next in orig_schema.fields() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
         match vector.minor_type() {
-            MinorType::LIST => {
+            MinorType::List => {
                 let child = get_children(vector.field())[0].clone();
                 for i in 0..expected_rows {
                     let mut value = Vec::new();
                     match minor_type_of(child.data_type()) {
-                        MinorType::STRUCT => {
+                        MinorType::Struct => {
                             value.push(Value::struct_of([
                                 ("varchar", Value::from("chars")),
                                 ("bigint", Value::Long(100)),
@@ -705,7 +705,7 @@ fn list_of_structs_test() {
     for next in actual_block.schema().fields() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         match vector.minor_type() {
-            MinorType::LIST => {
+            MinorType::List => {
                 let mut actual = 0;
                 for i in 0..actual_block.row_count() {
                     let vector = vector.at(i);
@@ -751,7 +751,7 @@ fn struct_of_lists_test() {
         let vector = expected_block.get_field_vector_mut(next.name()).unwrap();
         for i in 0..expected_rows {
             match vector.minor_type() {
-                MinorType::STRUCT => {
+                MinorType::Struct => {
                     let list = if i % 2 == 0 {
                         Value::List(vec![
                             Value::String(format!("value_0_{i}")),
@@ -786,7 +786,7 @@ fn struct_of_lists_test() {
         let vector = actual_block.get_field_reader(next.name()).unwrap();
         for i in 0..actual_block.row_count() {
             match vector.minor_type() {
-                MinorType::STRUCT => {
+                MinorType::Struct => {
                     let vector = vector.at(i);
                     assert_eq!(
                         "chars",

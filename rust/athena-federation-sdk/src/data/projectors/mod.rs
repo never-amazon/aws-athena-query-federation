@@ -22,10 +22,10 @@ pub enum ArrowValueProjector<'a> {
 impl<'a> ArrowValueProjector<'a> {
     pub fn new(field_reader: FieldReader<'a>) -> Result<ArrowValueProjector<'a>> {
         Ok(match field_reader.minor_type() {
-            MinorType::LIST => {
+            MinorType::List => {
                 ArrowValueProjector::List(ListArrowValueProjector::new(field_reader)?)
             }
-            MinorType::STRUCT => {
+            MinorType::Struct => {
                 ArrowValueProjector::Struct(StructArrowValueProjector::new(field_reader)?)
             }
             _ => ArrowValueProjector::Simple(SimpleArrowValueProjector::new(field_reader)?),

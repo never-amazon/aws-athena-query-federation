@@ -42,15 +42,15 @@ fn java_field_to_string(field: &Field) -> String {
 fn basic_lex_test() {
     let field = lex("testField", "ARRAY<STRING>");
     assert_eq!("testField", field.name());
-    assert_eq!(MinorType::LIST, minor(&field));
-    assert_eq!(MinorType::VARCHAR, minor(&children(&field)[0]));
+    assert_eq!(MinorType::List, minor(&field));
+    assert_eq!(MinorType::VarChar, minor(&children(&field)[0]));
 }
 
 #[test]
 fn base_lex_test() {
     let field = lex("testField", "INT");
     assert_eq!("testField", field.name());
-    assert_eq!(MinorType::INT, minor(&field));
+    assert_eq!(MinorType::Int, minor(&field));
     assert_eq!(0, children(&field).len());
 }
 
@@ -59,29 +59,29 @@ fn lex_test() {
     let input = "STRUCT <  street_address: STRUCT <    street_number: INT,    street_name: STRING,    street_type: STRING  >,  country: STRING,  postal_code: ARRAY<STRING>>";
     let field = lex("testField", input);
     assert_eq!("testField", field.name());
-    assert_eq!(MinorType::STRUCT, minor(&field));
+    assert_eq!(MinorType::Struct, minor(&field));
     let level1 = children(&field);
     assert_eq!(3, level1.len());
     assert_eq!("street_address", level1[0].name());
-    assert_eq!(MinorType::STRUCT, minor(&level1[0]));
+    assert_eq!(MinorType::Struct, minor(&level1[0]));
     let level2 = children(&level1[0]);
     assert_eq!(3, level2.len());
     assert_eq!("street_number", level2[0].name());
-    assert_eq!(MinorType::INT, minor(&level2[0]));
+    assert_eq!(MinorType::Int, minor(&level2[0]));
     assert_eq!(0, children(&level2[0]).len());
     assert_eq!("street_name", level2[1].name());
-    assert_eq!(MinorType::VARCHAR, minor(&level2[1]));
+    assert_eq!(MinorType::VarChar, minor(&level2[1]));
     assert_eq!(0, children(&level2[1]).len());
     assert_eq!("street_type", level2[2].name());
-    assert_eq!(MinorType::VARCHAR, minor(&level2[2]));
+    assert_eq!(MinorType::VarChar, minor(&level2[2]));
     assert_eq!(0, children(&level2[2]).len());
     assert_eq!("country", level1[1].name());
-    assert_eq!(MinorType::VARCHAR, minor(&level1[1]));
+    assert_eq!(MinorType::VarChar, minor(&level1[1]));
     assert_eq!(0, children(&level1[1]).len());
     assert_eq!("postal_code", level1[2].name());
-    assert_eq!(MinorType::LIST, minor(&level1[2]));
+    assert_eq!(MinorType::List, minor(&level1[2]));
     assert_eq!(1, children(&level1[2]).len());
-    assert_eq!(MinorType::VARCHAR, minor(&children(&level1[2])[0]));
+    assert_eq!(MinorType::VarChar, minor(&children(&level1[2])[0]));
 }
 
 #[test]
@@ -91,14 +91,14 @@ fn array_of_struct_lex_complex_test() {
         "ARRAY<STRUCT<last:STRING,mi:STRING,first:STRING>>",
     );
     assert_eq!("namelist", field.name());
-    assert_eq!(MinorType::LIST, minor(&field));
+    assert_eq!(MinorType::List, minor(&field));
     let child = &children(&field)[0];
-    assert_eq!(MinorType::STRUCT, minor(child));
+    assert_eq!(MinorType::Struct, minor(child));
     let kids = children(child);
     assert_eq!(3, kids.len());
     for (kid, name) in kids.iter().zip(["last", "mi", "first"]) {
         assert_eq!(name, kid.name());
-        assert_eq!(MinorType::VARCHAR, minor(kid));
+        assert_eq!(MinorType::VarChar, minor(kid));
     }
 }
 
@@ -109,22 +109,22 @@ fn nested_array_lex_complex_test() {
         "ARRAY<ARRAY<STRUCT<last:STRING,mi:STRING,first:STRING, aliases:ARRAY<STRING>>>>",
     );
     assert_eq!("namelist", field.name());
-    assert_eq!(MinorType::LIST, minor(&field));
+    assert_eq!(MinorType::List, minor(&field));
     let level1 = &children(&field)[0];
-    assert_eq!(MinorType::LIST, minor(level1));
+    assert_eq!(MinorType::List, minor(level1));
     let level2 = &children(level1)[0];
-    assert_eq!(MinorType::STRUCT, minor(level2));
+    assert_eq!(MinorType::Struct, minor(level2));
     let kids = children(level2);
     assert_eq!(4, kids.len());
     for (kid, name) in kids.iter().zip(["last", "mi", "first"]) {
         assert_eq!(name, kid.name());
-        assert_eq!(MinorType::VARCHAR, minor(kid));
+        assert_eq!(MinorType::VarChar, minor(kid));
     }
     assert_eq!("aliases", kids[3].name());
     let level3 = &kids[3];
-    assert_eq!(MinorType::LIST, minor(level3));
+    assert_eq!(MinorType::List, minor(level3));
     assert_eq!("aliases", children(level3)[0].name());
-    assert_eq!(MinorType::VARCHAR, minor(&children(level3)[0]));
+    assert_eq!(MinorType::VarChar, minor(&children(level3)[0]));
 }
 
 #[test]
@@ -133,13 +133,13 @@ fn multi_array_struct_lex_complex_test() {
         "movie_info",
         "STRUCT<actors:ARRAY<STRING>,genre:ARRAY<STRING>>",
     );
-    assert_eq!(MinorType::STRUCT, minor(&field));
+    assert_eq!(MinorType::Struct, minor(&field));
     assert_eq!("movie_info", field.name());
     let kids = children(&field);
     assert_eq!(2, kids.len());
-    assert_eq!(MinorType::LIST, minor(&kids[0]));
+    assert_eq!(MinorType::List, minor(&kids[0]));
     assert_eq!("actors", children(&kids[0])[0].name());
-    assert_eq!(MinorType::LIST, minor(&kids[1]));
+    assert_eq!(MinorType::List, minor(&kids[1]));
     assert_eq!("genre", children(&kids[1])[0].name());
 }
 
@@ -150,18 +150,18 @@ fn lex_list_of_struct_test() {
         "ARRAY<STRUCT<time:timestamp, measure_value\\:\\:double:double>>",
     );
     assert_eq!("testField", field.name());
-    assert_eq!(MinorType::LIST, minor(&field));
+    assert_eq!(MinorType::List, minor(&field));
     let level1 = children(&field);
     assert_eq!(1, level1.len());
     assert_eq!("testField", level1[0].name());
-    assert_eq!(MinorType::STRUCT, minor(&level1[0]));
+    assert_eq!(MinorType::Struct, minor(&level1[0]));
     let level2 = children(&level1[0]);
     assert_eq!(2, level2.len());
     assert_eq!("time", level2[0].name());
-    assert_eq!(MinorType::DATEMILLI, minor(&level2[0]));
+    assert_eq!(MinorType::DateMilli, minor(&level2[0]));
     assert_eq!(0, children(&level2[0]).len());
     assert_eq!("measure_value::double", level2[1].name());
-    assert_eq!(MinorType::FLOAT8, minor(&level2[1]));
+    assert_eq!(MinorType::Float8, minor(&level2[1]));
 }
 
 #[test]
@@ -170,19 +170,19 @@ fn lex_struct_list_child_and_struct_child_test() {
         "struct<somearrfield:array<set<string>>,mapinner:struct<numberset_deep:set<bigint>>>";
     let field = lex("testAsdf", input);
     assert_eq!("testAsdf", field.name());
-    assert_eq!(MinorType::STRUCT, minor(&field));
+    assert_eq!(MinorType::Struct, minor(&field));
     let level1 = children(&field);
     assert_eq!(2, level1.len());
     assert_eq!("somearrfield", level1[0].name());
-    assert_eq!(MinorType::LIST, minor(&level1[0]));
+    assert_eq!(MinorType::List, minor(&level1[0]));
     let inner = &children(&level1[0])[0];
-    assert_eq!(MinorType::LIST, minor(inner));
-    assert_eq!(MinorType::VARCHAR, minor(&children(inner)[0]));
+    assert_eq!(MinorType::List, minor(inner));
+    assert_eq!(MinorType::VarChar, minor(&children(inner)[0]));
     assert_eq!("mapinner", level1[1].name());
-    assert_eq!(MinorType::STRUCT, minor(&level1[1]));
+    assert_eq!(MinorType::Struct, minor(&level1[1]));
     let deep = &children(&level1[1])[0];
-    assert_eq!(MinorType::LIST, minor(deep));
-    assert_eq!(MinorType::BIGINT, minor(&children(deep)[0]));
+    assert_eq!(MinorType::List, minor(deep));
+    assert_eq!(MinorType::BigInt, minor(&children(deep)[0]));
 }
 
 #[test]
@@ -198,27 +198,27 @@ fn lex_extra_inner_closing_fields_test() {
     );
     let field = lex("testAsdf2", input);
     assert_eq!("testAsdf2", field.name());
-    assert_eq!(MinorType::STRUCT, minor(&field));
+    assert_eq!(MinorType::Struct, minor(&field));
     let level1 = children(&field);
     assert_eq!(6, level1.len());
     for i in 0..3 {
         let somearr_field = &level1[i * 2];
         assert_eq!(format!("somearrfield{i}"), *somearr_field.name());
-        assert_eq!(MinorType::LIST, minor(somearr_field));
+        assert_eq!(MinorType::List, minor(somearr_field));
         let set = &children(somearr_field)[0];
-        assert_eq!(MinorType::LIST, minor(set));
+        assert_eq!(MinorType::List, minor(set));
         let inner_struct = &children(set)[0];
-        assert_eq!(MinorType::STRUCT, minor(inner_struct));
+        assert_eq!(MinorType::Struct, minor(inner_struct));
         let inner = children(inner_struct);
-        assert_eq!(MinorType::VARCHAR, minor(&inner[0]));
-        assert_eq!(MinorType::LIST, minor(&inner[1]));
-        assert_eq!(MinorType::VARCHAR, minor(&children(&inner[1])[0]));
+        assert_eq!(MinorType::VarChar, minor(&inner[0]));
+        assert_eq!(MinorType::List, minor(&inner[1]));
+        assert_eq!(MinorType::VarChar, minor(&children(&inner[1])[0]));
         let mapinner_field = &level1[i * 2 + 1];
         assert_eq!(format!("mapinner{i}"), *mapinner_field.name());
-        assert_eq!(MinorType::STRUCT, minor(mapinner_field));
+        assert_eq!(MinorType::Struct, minor(mapinner_field));
         let deep = &children(mapinner_field)[0];
-        assert_eq!(MinorType::LIST, minor(deep));
-        assert_eq!(MinorType::BIGINT, minor(&children(deep)[0]));
+        assert_eq!(MinorType::List, minor(deep));
+        assert_eq!(MinorType::BigInt, minor(&children(deep)[0]));
     }
 }
 

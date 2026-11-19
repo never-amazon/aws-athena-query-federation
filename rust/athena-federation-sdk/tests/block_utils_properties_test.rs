@@ -82,7 +82,7 @@ fn get_value(
     match variant {
         Variant::DefaultResolver => Ok(custom.obj_list.get(pos).cloned().unwrap_or(Value::Null)),
         Variant::ArrowToArrow => {
-            if vector.minor_type() == MinorType::MAP {
+            if vector.minor_type() == MinorType::Map {
                 resolver.get_field_value(vector.field(), &vector.get_object(pos))
             } else {
                 Ok(vector.get_object(pos))
@@ -100,7 +100,7 @@ fn vectors_equal(a: &FieldVector, b: &FieldVector) -> bool {
 fn is_complex(field: &Field) -> bool {
     matches!(
         minor_type_of(field.data_type()),
-        MinorType::LIST | MinorType::STRUCT | MinorType::MAP
+        MinorType::List | MinorType::Struct | MinorType::Map
     )
 }
 

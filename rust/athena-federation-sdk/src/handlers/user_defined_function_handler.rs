@@ -9,8 +9,8 @@ use crate::data::writers::extractors::Extractor;
 use crate::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use crate::data::writers::GeneratedRowWriter;
 use crate::data::{
-    local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, Block, BlockAllocator,
-    DefaultFieldResolver, FieldVector, MinorType, Value,
+    local_date_time_to_epoch_milli_utc, local_date_to_epoch_day, minor_type_of, Block,
+    BlockAllocator, DefaultFieldResolver, FieldVector, MinorType, Value,
 };
 use crate::domain::predicate::ConstraintProjector;
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
@@ -46,22 +46,22 @@ impl TryFrom<MinorType> for JavaType {
 
     fn try_from(minor_type: MinorType) -> Result<JavaType> {
         Ok(match minor_type {
-            MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => JavaType::ZonedDateTime,
-            MinorType::DATEMILLI => JavaType::LocalDateTime,
-            MinorType::TINYINT | MinorType::UINT1 => JavaType::Byte,
-            MinorType::SMALLINT => JavaType::Short,
-            MinorType::UINT2 => JavaType::Character,
-            MinorType::DATEDAY => JavaType::LocalDate,
-            MinorType::INT | MinorType::UINT4 => JavaType::Integer,
-            MinorType::UINT8 | MinorType::BIGINT => JavaType::Long,
-            MinorType::DECIMAL => JavaType::BigDecimal,
-            MinorType::FLOAT4 => JavaType::Float,
-            MinorType::FLOAT8 => JavaType::Double,
-            MinorType::VARCHAR => JavaType::String,
-            MinorType::VARBINARY => JavaType::ByteArray,
-            MinorType::BIT => JavaType::Boolean,
-            MinorType::LIST => JavaType::List,
-            MinorType::STRUCT => JavaType::Map,
+            MinorType::TimestampMicroTz | MinorType::TimestampMilliTz => JavaType::ZonedDateTime,
+            MinorType::DateMilli => JavaType::LocalDateTime,
+            MinorType::TinyInt | MinorType::UInt1 => JavaType::Byte,
+            MinorType::SmallInt => JavaType::Short,
+            MinorType::UInt2 => JavaType::Character,
+            MinorType::DateDay => JavaType::LocalDate,
+            MinorType::Int | MinorType::UInt4 => JavaType::Integer,
+            MinorType::UInt8 | MinorType::BigInt => JavaType::Long,
+            MinorType::Decimal => JavaType::BigDecimal,
+            MinorType::Float4 => JavaType::Float,
+            MinorType::Float8 => JavaType::Double,
+            MinorType::VarChar => JavaType::String,
+            MinorType::VarBinary => JavaType::ByteArray,
+            MinorType::Bit => JavaType::Boolean,
+            MinorType::List => JavaType::List,
+            MinorType::Struct => JavaType::Map,
             other => {
                 return Err(FederationError::invalid_input(format!(
                     "Unknown type {other}"
@@ -298,7 +298,7 @@ fn extract_java_types(schema: &Schema) -> Result<Vec<JavaType>> {
     schema
         .fields()
         .iter()
-        .map(|f| JavaType::try_from(MinorType::get_minor_type_for_arrow_type(f.data_type())))
+        .map(|f| JavaType::try_from(minor_type_of(f.data_type())))
         .collect()
 }
 
@@ -342,7 +342,7 @@ fn create_output_row_writer(
     arrow_type: &crate::data::ArrowType,
 ) -> Result<GeneratedRowWriter<Value>> {
     let builder = GeneratedRowWriter::new_builder();
-    let minor_type = MinorType::get_minor_type_for_arrow_type(arrow_type);
+    let minor_type = minor_type_of(arrow_type);
     Ok(match make_extractor(minor_type) {
         Some(extractor) => builder.with_extractor(field_name, extractor),
         None => builder.with_field_writer_factory(field_name, make_factory(minor_type)?),
@@ -363,55 +363,55 @@ macro_rules! extractor {
 
 fn make_extractor(minor_type: MinorType) -> Option<Extractor<Value>> {
     Some(match minor_type {
-        MinorType::INT => extractor!(Int, |v| match v {
+        MinorType::Int => extractor!(Int, |v| match v {
             Value::Int(i) => *i,
             other => return Err(class_cast(other, "java.lang.Integer")),
         }),
-        MinorType::DATEMILLI => {
+        MinorType::DateMilli => {
             extractor!(DateMilli, |v| match v {
                 Value::LocalDateTime(dt) => local_date_time_to_epoch_milli_utc(dt),
                 other => return Err(class_cast(other, "java.time.LocalDateTime")),
             })
         }
-        MinorType::DATEDAY => extractor!(DateDay, |v| match v {
+        MinorType::DateDay => extractor!(DateDay, |v| match v {
             Value::LocalDate(d) => i32::try_from(local_date_to_epoch_day(d)).unwrap_or(i32::MIN),
             other => return Err(class_cast(other, "java.time.LocalDate")),
         }),
-        MinorType::TINYINT => extractor!(TinyInt, |v| match v {
+        MinorType::TinyInt => extractor!(TinyInt, |v| match v {
             Value::Byte(b) => *b,
             other => return Err(class_cast(other, "java.lang.Byte")),
         }),
-        MinorType::SMALLINT => {
+        MinorType::SmallInt => {
             extractor!(SmallInt, |v| match v {
                 Value::Short(s) => *s,
                 other => return Err(class_cast(other, "java.lang.Short")),
             })
         }
-        MinorType::FLOAT4 => extractor!(Float4, |v| match v {
+        MinorType::Float4 => extractor!(Float4, |v| match v {
             Value::Float(f) => *f,
             other => return Err(class_cast(other, "java.lang.Float")),
         }),
-        MinorType::FLOAT8 => extractor!(Float8, |v| match v {
+        MinorType::Float8 => extractor!(Float8, |v| match v {
             Value::Double(d) => *d,
             other => return Err(class_cast(other, "java.lang.Double")),
         }),
-        MinorType::DECIMAL => extractor!(Decimal, |v| match v {
+        MinorType::Decimal => extractor!(Decimal, |v| match v {
             Value::Decimal(d) => d.clone(),
             other => return Err(class_cast(other, "java.math.BigDecimal")),
         }),
-        MinorType::BIT => extractor!(Bit, |v| match v {
+        MinorType::Bit => extractor!(Bit, |v| match v {
             Value::Boolean(b) => i32::from(*b),
             other => return Err(class_cast(other, "java.lang.Boolean")),
         }),
-        MinorType::BIGINT => extractor!(BigInt, |v| match v {
+        MinorType::BigInt => extractor!(BigInt, |v| match v {
             Value::Long(l) => *l,
             other => return Err(class_cast(other, "java.lang.Long")),
         }),
-        MinorType::VARCHAR => extractor!(VarChar, |v| match v {
+        MinorType::VarChar => extractor!(VarChar, |v| match v {
             Value::String(s) => s.clone(),
             other => return Err(class_cast(other, "java.lang.String")),
         }),
-        MinorType::VARBINARY => {
+        MinorType::VarBinary => {
             extractor!(VarBinary, |v| match v {
                 Value::Bytes(b) => b.clone(),
                 other => return Err(class_cast(other, "[B")),
@@ -432,7 +432,7 @@ impl FieldWriter<Value> for ComplexValueWriter {
 
 fn make_factory(minor_type: MinorType) -> Result<FieldWriterFactory<Value>> {
     match minor_type {
-        MinorType::LIST | MinorType::STRUCT => Ok(Arc::new(
+        MinorType::List | MinorType::Struct => Ok(Arc::new(
             |_: &FieldVector,
              _: Option<&Extractor<Value>>,
              _: Option<ConstraintProjector>|

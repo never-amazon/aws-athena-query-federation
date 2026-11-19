@@ -151,18 +151,18 @@ impl<C: 'static> GeneratedRowWriter<C> {
                 extractor.clone(),
                 constraint,
             ))),
-            MinorType::INT
-            | MinorType::BIGINT
-            | MinorType::DATEMILLI
-            | MinorType::DATEDAY
-            | MinorType::TINYINT
-            | MinorType::SMALLINT
-            | MinorType::FLOAT4
-            | MinorType::FLOAT8
-            | MinorType::DECIMAL
-            | MinorType::BIT
-            | MinorType::VARCHAR
-            | MinorType::VARBINARY => Err(FederationError::ClassCast(format!(
+            MinorType::Int
+            | MinorType::BigInt
+            | MinorType::DateMilli
+            | MinorType::DateDay
+            | MinorType::TinyInt
+            | MinorType::SmallInt
+            | MinorType::Float4
+            | MinorType::Float8
+            | MinorType::Decimal
+            | MinorType::Bit
+            | MinorType::VarChar
+            | MinorType::VarBinary => Err(FederationError::ClassCast(format!(
                 "{} cannot be used for field {} of type {}",
                 extractor.type_name(),
                 field_name,

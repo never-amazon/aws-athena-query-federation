@@ -13,8 +13,8 @@ use athena_federation_sdk::data::writers::extractors::Extractor;
 use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWriterFactory};
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
-    Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector, MinorType,
-    PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
+    minor_type_of, Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector,
+    MinorType, PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -80,7 +80,7 @@ pub(crate) fn make_extractor_with_column_name_remapping<S: BuildHasher>(
     partition_values: &HashMap<String, String, S>,
     column_name_remapping: &HashMap<String, String>,
 ) -> Result<Extractor<Row>> {
-    let field_type = MinorType::get_minor_type_for_arrow_type(field.data_type());
+    let field_type = minor_type_of(field.data_type());
     let field_name = column_name_remapping
         .get(field.name())
         .cloned()
@@ -121,34 +121,34 @@ fn date_day(epoch_day: i64) -> i32 {
 
 fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor<Row>> {
     let extractor = match field_type {
-        MinorType::BIT => Extractor::Bit(Arc::new(move |row: &Row| {
+        MinorType::Bit => Extractor::Bit(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_boolean()?.map(i32::from))
         })),
-        MinorType::TINYINT => Extractor::TinyInt(Arc::new(move |row: &Row| {
+        MinorType::TinyInt => Extractor::TinyInt(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_byte()?)
         })),
-        MinorType::SMALLINT => Extractor::SmallInt(Arc::new(move |row: &Row| {
+        MinorType::SmallInt => Extractor::SmallInt(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_short()?)
         })),
-        MinorType::INT => {
+        MinorType::Int => {
             Extractor::Int(Arc::new(move |row: &Row| Ok(row.value(index)?.to_int()?)))
         }
-        MinorType::BIGINT => Extractor::BigInt(Arc::new(move |row: &Row| {
+        MinorType::BigInt => Extractor::BigInt(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_long()?)
         })),
-        MinorType::FLOAT4 => Extractor::Float4(Arc::new(move |row: &Row| {
+        MinorType::Float4 => Extractor::Float4(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_float()?)
         })),
-        MinorType::FLOAT8 => {
+        MinorType::Float8 => {
             Extractor::Float8(Arc::new(move |row: &Row| extract_float8(row, index)))
         }
-        MinorType::DECIMAL => Extractor::Decimal(Arc::new(move |row: &Row| {
+        MinorType::Decimal => Extractor::Decimal(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_big_decimal()?)
         })),
-        MinorType::DATEDAY => Extractor::DateDay(Arc::new(move |row: &Row| {
+        MinorType::DateDay => Extractor::DateDay(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_epoch_day()?.map(date_day))
         })),
-        MinorType::DATEMILLI => Extractor::DateMilli(Arc::new(move |row: &Row| {
+        MinorType::DateMilli => Extractor::DateMilli(Arc::new(move |row: &Row| {
             if row.metadata().column(index)?.jdbc_type() == JdbcType::Date {
                 Ok(row
                     .value(index)?
@@ -158,10 +158,10 @@ fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor<Row>
                 Ok(row.value(index)?.to_epoch_millis()?)
             }
         })),
-        MinorType::VARCHAR => Extractor::VarChar(Arc::new(move |row: &Row| {
+        MinorType::VarChar => Extractor::VarChar(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_java_string())
         })),
-        MinorType::VARBINARY => Extractor::VarBinary(Arc::new(move |row: &Row| {
+        MinorType::VarBinary => Extractor::VarBinary(Arc::new(move |row: &Row| {
             Ok(row.value(index)?.to_bytes()?)
         })),
         other => {
@@ -181,18 +181,18 @@ fn calendar_value(value: &SqlValue, minor_type: MinorType) -> Result<Value> {
     match (inner, minor_type) {
         (
             SqlValue::Timestamp(_) | SqlValue::TimestampTz(_),
-            MinorType::DATEMILLI | MinorType::TIMESTAMPMILLITZ,
+            MinorType::DateMilli | MinorType::TimestampMilliTz,
         ) => {
             if let Some(millis) = value.to_epoch_millis()? {
                 return Ok(Value::Long(millis));
             }
         }
-        (_, MinorType::DATEDAY) if value.is_date_time() => {
+        (_, MinorType::DateDay) if value.is_date_time() => {
             if let Some(day) = value.to_epoch_day()? {
                 return Ok(Value::Int(date_day(day)));
             }
         }
-        (SqlValue::Date(_), MinorType::DATEMILLI) => {
+        (SqlValue::Date(_), MinorType::DateMilli) => {
             if let Some(day) = value.to_epoch_day()? {
                 return Ok(Value::Long(day.saturating_mul(MILLIS_PER_DAY)));
             }
@@ -205,7 +205,7 @@ fn calendar_value(value: &SqlValue, minor_type: MinorType) -> Result<Value> {
 fn array_element_value(value: &SqlValue, element_type: MinorType) -> Result<Value> {
     match (value, element_type) {
         (SqlValue::Array(_), _) => Ok(value.to_value()),
-        (_, MinorType::DATEMILLI | MinorType::DATEDAY) => calendar_value(value, element_type),
+        (_, MinorType::DateMilli | MinorType::DateDay) => calendar_value(value, element_type),
         _ => Ok(value.to_value()),
     }
 }
@@ -254,8 +254,8 @@ pub fn make_extractor<S: BuildHasher>(
 pub fn make_field_writer_factory(field: &Field) -> FieldWriterFactory<Row> {
     let field_name = field.name().clone();
     let element_type = match field.data_type() {
-        DataType::List(child) => MinorType::get_minor_type_for_arrow_type(child.data_type()),
-        other => MinorType::get_minor_type_for_arrow_type(other),
+        DataType::List(child) => minor_type_of(child.data_type()),
+        other => minor_type_of(other),
     };
     Arc::new(
         move |_vector: &FieldVector,

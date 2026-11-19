@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::data::{ArrowType, SupportedTypes};
+use athena_federation_sdk::data::{minor_type_of, ArrowType};
 use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
@@ -83,7 +83,7 @@ fn export_arrow_type(
     }
     match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {
         Ok(arrow_type)
-            if SupportedTypes::is_supported_arrow_type(&arrow_type)
+            if minor_type_of(&arrow_type).is_supported()
                 && !matches!(arrow_type, DataType::List(_)) =>
         {
             Ok(arrow_type)

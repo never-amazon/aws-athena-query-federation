@@ -608,19 +608,19 @@ mod lambda_function_exception_ser_de_test {
 }
 
 mod arrow_ser_de_test {
-    use athena_federation_sdk::data::SupportedTypes;
+    use athena_federation_sdk::data::MinorType;
     use athena_federation_sdk::serde::v2::arrow_type_serde::{
         get_delegate_ser_de_map, java_type_name,
     };
 
-    fn arrow_type_class(supported_type: SupportedTypes) -> String {
-        match supported_type.arrow_minor_type().get_type() {
+    fn arrow_type_class(supported_type: MinorType) -> String {
+        match supported_type.get_type() {
             Ok(arrow_type) => java_type_name(&arrow_type).to_string(),
             Err(_) => match supported_type {
-                SupportedTypes::TIMESTAMPMILLITZ | SupportedTypes::TIMESTAMPMICROTZ => {
+                MinorType::TimestampMilliTz | MinorType::TimestampMicroTz => {
                     "Timestamp".to_string()
                 }
-                other => format!("{other:?}"),
+                other => other.as_str().to_string(),
             },
         }
     }
@@ -630,11 +630,11 @@ mod arrow_ser_de_test {
             .iter()
             .map(|s| s.to_lowercase())
             .collect();
-        for supported_type in SupportedTypes::values() {
-            let class = arrow_type_class(*supported_type);
+        for supported_type in MinorType::ALL.into_iter().filter(|t| t.is_supported()) {
+            let class = arrow_type_class(supported_type);
             assert!(
                 delegates.contains(&class.to_lowercase()),
-                "No {kind} for supported type {supported_type:?} with ArrowType {class}"
+                "No {kind} for supported type {supported_type} with ArrowType {class}"
             );
         }
     }
