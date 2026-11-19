@@ -175,52 +175,14 @@ impl ResultSetMetaData {
         self.columns.len()
     }
 
-    pub fn column(&self, column: usize) -> Result<&ColumnMetadata, SqlError> {
-        column
-            .checked_sub(1)
-            .and_then(|i| self.columns.get(i))
-            .ok_or_else(|| {
-                SqlError::new(format!(
-                    "The column index is out of range: {column}, number of columns: {}.",
-                    self.columns.len()
-                ))
-            })
-    }
-
-    pub fn column_name(&self, column: usize) -> Result<&str, SqlError> {
-        self.column(column).map(ColumnMetadata::name)
-    }
-
-    pub fn column_label(&self, column: usize) -> Result<&str, SqlError> {
-        self.column(column).map(ColumnMetadata::label)
-    }
-
-    pub fn column_type(&self, column: usize) -> Result<JdbcType, SqlError> {
-        self.column(column).map(ColumnMetadata::jdbc_type)
-    }
-
-    pub fn column_type_name(&self, column: usize) -> Result<&str, SqlError> {
-        self.column(column).map(ColumnMetadata::type_name)
-    }
-
-    pub fn precision(&self, column: usize) -> Result<i32, SqlError> {
-        self.column(column).map(ColumnMetadata::precision)
-    }
-
-    pub fn scale(&self, column: usize) -> Result<i32, SqlError> {
-        self.column(column).map(ColumnMetadata::scale)
-    }
-
-    pub fn column_display_size(&self, column: usize) -> Result<i32, SqlError> {
-        self.column(column).map(ColumnMetadata::display_size)
-    }
-
-    pub fn table_name(&self, column: usize) -> Result<&str, SqlError> {
-        self.column(column).map(ColumnMetadata::table_name)
-    }
-
-    pub fn is_nullable(&self, column: usize) -> Result<Nullability, SqlError> {
-        self.column(column).map(ColumnMetadata::nullability)
+    pub fn column(&self, index: usize) -> Result<&ColumnMetadata, SqlError> {
+        self.columns.get(index).ok_or_else(|| {
+            SqlError::new(format!(
+                "The column index is out of range: {}, number of columns: {}.",
+                index + 1,
+                self.columns.len()
+            ))
+        })
     }
 
     pub fn find_column(&self, label: &str) -> Result<usize, SqlError> {
@@ -232,7 +194,6 @@ impl ResultSetMetaData {
                     .iter()
                     .position(|c| c.label.eq_ignore_ascii_case(label))
             })
-            .map(|i| i + 1)
             .ok_or_else(|| {
                 SqlError::new(format!(
                     "The column name {label} was not found in this ResultSet."

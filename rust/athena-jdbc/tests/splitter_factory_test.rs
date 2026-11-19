@@ -1,30 +1,29 @@
 use athena_jdbc::splits::splitter;
-use athena_jdbc::sql::{ColumnMetadata, JdbcType, ResultSet, ResultSetMetaData, SqlValue};
+use athena_jdbc::sql::{ColumnMetadata, JdbcType, ResultSet, ResultSetMetaData, Row, SqlValue};
 
 const TEST_COLUMN_NAME: &str = "testColumn";
 const MAX_SPLITS: i32 = 10;
 
-async fn result_set_of_type(column_type: JdbcType) -> ResultSet {
+async fn row_of_type(column_type: JdbcType) -> Row {
     let metadata = ResultSetMetaData::new(vec![
         ColumnMetadata::new("low", column_type),
         ColumnMetadata::new("high", column_type),
     ]);
     let mut result_set = ResultSet::from_rows(metadata, vec![vec![SqlValue::Null, SqlValue::Null]]);
-    assert!(result_set.next().await.unwrap());
-    result_set
+    result_set.next_row().await.unwrap().unwrap()
 }
 
 async fn splitter_present(column_type: JdbcType) -> bool {
-    let result_set = result_set_of_type(column_type).await;
-    splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
+    let row = row_of_type(column_type).await;
+    splitter(TEST_COLUMN_NAME, &row, MAX_SPLITS)
         .unwrap()
         .is_some()
 }
 
 #[tokio::test]
 async fn get_integer_splitter() {
-    let result_set = result_set_of_type(JdbcType::Integer).await;
-    let mut splitter = splitter(TEST_COLUMN_NAME, &result_set, MAX_SPLITS)
+    let row = row_of_type(JdbcType::Integer).await;
+    let mut splitter = splitter(TEST_COLUMN_NAME, &row, MAX_SPLITS)
         .unwrap()
         .unwrap();
     assert!(splitter.has_next());

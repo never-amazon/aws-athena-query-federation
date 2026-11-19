@@ -26,7 +26,9 @@ use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{ColumnMetadata, JdbcType, PreparedStatement, SqlError, SqlValue};
+use athena_jdbc::sql::{
+    ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, SchemaEntry, SqlError, SqlValue,
+};
 use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::{
     create_credentials_provider, create_snowflake_credentials_provider, snowflake_constants,
@@ -194,35 +196,36 @@ fn table_request(table: TableName) -> GetTableRequest {
     )
 }
 
-fn column_row(data_type: i32, size: i32, name: &str) -> Vec<SqlValue> {
-    vec![
-        SqlValue::Integer(data_type),
-        SqlValue::Integer(size),
-        SqlValue::String(name.to_string()),
-        SqlValue::Integer(0),
-        SqlValue::Integer(0),
-    ]
+fn column_row(data_type: JdbcType, size: i32, name: &str) -> ColumnInfo {
+    ColumnInfo {
+        name: Some(name.to_string()),
+        data_type,
+        type_name: None,
+        column_size: Some(size),
+        decimal_digits: Some(0),
+        ordinal_position: 0,
+    }
 }
 
-fn columns(rows: Vec<Vec<SqlValue>>) -> ResultSetData {
-    ResultSetData::of_columns(
-        vec![
-            ColumnMetadata::new("DATA_TYPE", JdbcType::Integer),
-            ColumnMetadata::new("COLUMN_SIZE", JdbcType::Integer),
-            ColumnMetadata::new("COLUMN_NAME", JdbcType::Varchar),
-            ColumnMetadata::new("DECIMAL_DIGITS", JdbcType::Integer),
-            ColumnMetadata::new("NUM_PREC_RADIX", JdbcType::Integer),
-        ],
-        rows,
-    )
+fn columns(rows: Vec<ColumnInfo>) -> Vec<ColumnInfo> {
+    rows
 }
 
-fn four_columns() -> ResultSetData {
+fn schemas(rows: &[(&str, &str)]) -> Vec<SchemaEntry> {
+    rows.iter()
+        .map(|(schema, catalog)| SchemaEntry {
+            schema: Some((*schema).to_string()),
+            catalog: Some((*catalog).to_string()),
+        })
+        .collect()
+}
+
+fn four_columns() -> Vec<ColumnInfo> {
     columns(vec![
-        column_row(JdbcType::Integer.code(), 12, "testCol1"),
-        column_row(JdbcType::Varchar.code(), 25, "testCol2"),
-        column_row(JdbcType::Timestamp.code(), 93, "testCol3"),
-        column_row(JdbcType::TimestampWithTimezone.code(), 93, "testCol4"),
+        column_row(JdbcType::Integer, 12, "testCol1"),
+        column_row(JdbcType::Varchar, 25, "testCol2"),
+        column_row(JdbcType::Timestamp, 93, "testCol3"),
+        column_row(JdbcType::TimestampWithTimezone, 93, "testCol4"),
     ])
 }
 
@@ -438,10 +441,10 @@ async fn do_get_table() {
 #[tokio::test]
 async fn do_list_schema_names() {
     let f = fixture();
-    f.connection.meta.set_schemas(Ok(strings(
-        &["TABLE_SCHEM", "TABLE_CATALOG"],
-        &[&["TESTSCHEMA", CATALOG], &["TESTSCHEMA2", CATALOG]],
-    )));
+    f.connection.meta.set_schemas(Ok(schemas(&[
+        ("TESTSCHEMA", CATALOG),
+        ("TESTSCHEMA2", CATALOG),
+    ])));
     f.connection.set_catalog(Some(CATALOG));
     let request = ListSchemasRequest::new(Some(identity()), Some("queryId".to_string()), CATALOG);
     let response = f.handler.list_schema_names(&request).await.unwrap();
@@ -655,14 +658,11 @@ async fn test_get_partition_schema() {
 #[tokio::test]
 async fn test_list_database_names() {
     let f = fixture();
-    f.connection.meta.set_schemas(Ok(strings(
-        &["TABLE_SCHEM", "TABLE_CATALOG"],
-        &[
-            &["schema1", CATALOG],
-            &["information_schema", CATALOG],
-            &["schema2", CATALOG],
-        ],
-    )));
+    f.connection.meta.set_schemas(Ok(schemas(&[
+        ("schema1", CATALOG),
+        ("information_schema", CATALOG),
+        ("schema2", CATALOG),
+    ])));
     f.connection.set_catalog(Some(CATALOG));
     let names = f.handler.list_database_names(&f.connection).await.unwrap();
     assert_eq!(vec!["schema1".to_string(), "schema2".to_string()], names);
@@ -672,10 +672,10 @@ async fn test_list_database_names() {
 async fn test_get_schema_with_data_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(JdbcType::Integer.code(), 10, "intCol"),
-        column_row(JdbcType::Varchar.code(), 255, "varcharCol"),
-        column_row(JdbcType::Timestamp.code(), 0, "timestampCol"),
-        column_row(JdbcType::TimestampWithTimezone.code(), 0, "timestampTzCol"),
+        column_row(JdbcType::Integer, 10, "intCol"),
+        column_row(JdbcType::Varchar, 255, "varcharCol"),
+        column_row(JdbcType::Timestamp, 0, "timestampCol"),
+        column_row(JdbcType::TimestampWithTimezone, 0, "timestampTzCol"),
     ])));
     let schema = f
         .handler
@@ -729,8 +729,8 @@ async fn test_get_schema_no_matching_columns() {
 async fn test_get_schema_unsupported_types() {
     let f = fixture();
     f.connection.meta.set_columns(Ok(columns(vec![
-        column_row(JdbcType::Array.code(), 0, "arrayCol"),
-        column_row(JdbcType::Integer.code(), 10, "intCol"),
+        column_row(JdbcType::Array, 0, "arrayCol"),
+        column_row(JdbcType::Integer, 10, "intCol"),
     ])));
     let schema = f
         .handler
@@ -1411,7 +1411,7 @@ async fn get_partitions_table_below_threshold_applies_uniqueness_check_timeout()
         .find(|statement| statement.sql().contains("GROUP BY"))
         .unwrap();
     assert_eq!(
-        snowflake_constants::UNIQUENESS_CHECK_TIMEOUT_SECONDS,
+        Some(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT),
         uniqueness.query_timeout()
     );
     assert_eq!(

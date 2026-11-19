@@ -64,8 +64,7 @@ fn decimal_type(precision: i32, scale: i32) -> ArrowType {
 
 pub fn jdbc_to_arrow_schema(metadata: &ResultSetMetaData) -> Result<Schema> {
     let mut fields = Vec::with_capacity(metadata.column_count());
-    for index in 1..=metadata.column_count() {
-        let column = metadata.column(index)?;
+    for (index, column) in metadata.columns().iter().enumerate() {
         let arrow_type = get_arrow_type_from_jdbc_type(
             column.jdbc_type(),
             column.precision(),
@@ -74,7 +73,8 @@ pub fn jdbc_to_arrow_schema(metadata: &ResultSetMetaData) -> Result<Schema> {
         )?;
         if matches!(arrow_type, DataType::List(_)) {
             return Err(FederationError::IllegalArgument(format!(
-                "Configuration does not provide a mapping for array column {index}"
+                "Configuration does not provide a mapping for array column {}",
+                index + 1
             )));
         }
         let nullable = column.nullability() != Nullability::NoNulls;

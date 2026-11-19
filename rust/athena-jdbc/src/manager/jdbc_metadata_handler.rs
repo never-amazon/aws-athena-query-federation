@@ -25,10 +25,10 @@ use indexmap::IndexMap;
 
 use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};
-use super::jdbc_util;
+use crate::java_null::OrJavaNull;
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::JdbcCaseResolver;
-use crate::sql::{DatabaseMetaData, JdbcConnection, JdbcType, ResultSet, ResultSetMetaData};
+use crate::sql::{ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection};
 use crate::validate::close_after;
 
 pub const TABLES_AND_VIEWS: &str = "Tables and Views";
@@ -96,14 +96,15 @@ pub trait MetadataDialect: Send + Sync + Sized + 'static {
 
     fn convert_datasource_type(
         &self,
-        column_index: usize,
-        precision: i32,
+        column: &ColumnMetadata,
         config_options: &HashMap<String, String>,
-        metadata: &ResultSetMetaData,
     ) -> Result<Option<ArrowType>> {
-        let scale = metadata.scale(column_index)?;
-        let column_type = metadata.column_type(column_index)?;
-        jdbc_to_arrow_type(column_type, precision, scale, config_options)
+        jdbc_to_arrow_type(
+            column.jdbc_type(),
+            column.precision(),
+            column.scale(),
+            config_options,
+        )
     }
 
     fn array_element_type(
@@ -303,22 +304,20 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
     ) -> Result<Vec<TableName>> {
         tracing::debug!("listTables, schemaName:{}", database_name);
         let metadata = jdbc_connection.metadata();
-        let escape = metadata.get_search_string_escape()?;
+        let escape = metadata.search_string_escape();
         let catalog = jdbc_connection.get_catalog().await?;
         let schema_pattern = escape_name_pattern(Some(database_name), escape.as_deref())?;
-        let mut result_set = metadata
-            .get_tables(
+        Ok(metadata
+            .tables(
                 catalog.as_deref(),
                 schema_pattern.as_deref(),
                 None,
                 Some(&TABLE_TYPES),
             )
-            .await?;
-        let mut list = Vec::new();
-        while result_set.next().await? {
-            list.push(jdbc_util::schema_table_name(&result_set)?);
-        }
-        Ok(list)
+            .await?
+            .into_iter()
+            .map(|table| TableName::new(table.schema.unwrap_or_default(), table.name))
+            .collect())
     }
 
     pub async fn schema_from_columns(
@@ -330,29 +329,27 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
         let config_options = self.config_options();
         let mut schema_builder = SchemaBuilder::new_builder();
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set =
-            columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
-        let mut found = false;
-        while result_set.next().await? {
+        let columns = columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
+        let found = !columns.is_empty();
+        for column in columns {
+            let column_size = column.column_size.unwrap_or(0);
+            let decimal_digits = column.decimal_digits.unwrap_or(0);
             let column_type = jdbc_to_arrow_type(
-                JdbcType::from_code(result_set.get_int("DATA_TYPE")?.unwrap_or(0)),
-                result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
-                result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
+                column.data_type,
+                column_size,
+                decimal_digits,
                 config_options,
             )?;
-            let column_name = result_set
-                .get_string("COLUMN_NAME")?
-                .unwrap_or_else(|| "null".to_string());
+            let column_name = column.name.or_java_null();
             match column_type {
                 Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
                     if matches!(arrow_type, DataType::List(_)) {
-                        let type_name = result_set.get_string("TYPE_NAME")?;
                         schema_builder.add_list_field(
                             &column_name,
                             self.dialect.array_element_type(
-                                type_name.as_deref(),
-                                result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
-                                result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
+                                column.type_name.as_deref(),
+                                column_size,
+                                decimal_digits,
                             ),
                         );
                     } else {
@@ -370,7 +367,6 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
                         .add_field(FieldBuilder::new_builder(&column_name, DataType::Utf8).build());
                 }
             }
-            found = true;
         }
 
         if found {
@@ -408,10 +404,10 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
 }
 
 pub async fn list_database_names(jdbc_connection: &dyn JdbcConnection) -> Result<Vec<String>> {
-    let mut result_set = jdbc_connection.metadata().get_schemas().await?;
+    let schemas = jdbc_connection.metadata().schemas(None, None).await?;
     let mut schema_names = IndexSet::new();
-    while result_set.next().await? {
-        let Some(schema_name) = result_set.get_string("TABLE_SCHEM")? else {
+    for entry in schemas {
+        let Some(schema_name) = entry.schema else {
             return Err(FederationError::connector(
                 FederationSourceErrorCode::InvalidCredentialsException,
                 "Invalid credentials was specified",
@@ -449,17 +445,17 @@ pub async fn columns(
     catalog_name: Option<&str>,
     table_handle: &TableName,
     metadata: &dyn DatabaseMetaData,
-) -> Result<ResultSet> {
+) -> Result<Vec<ColumnInfo>> {
     tracing::debug!(
         "getColumns, catalogName:{:?}, tableHandle: {}",
         catalog_name,
         table_handle
     );
-    let escape = metadata.get_search_string_escape()?;
+    let escape = metadata.search_string_escape();
     let schema_pattern = escape_name_pattern(Some(table_handle.schema_name()), escape.as_deref())?;
     let table_pattern = escape_name_pattern(Some(table_handle.table_name()), escape.as_deref())?;
     Ok(metadata
-        .get_columns(
+        .columns(
             catalog_name,
             schema_pattern.as_deref(),
             table_pattern.as_deref(),
@@ -478,7 +474,7 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
         let connection = self.connect(request.identity()).await?;
         tracing::info!(
             "{}: List schema names for Catalog {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.catalog_name()
         );
         let result = self
@@ -492,9 +488,9 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
         let connection = self.connect(request.identity()).await?;
         tracing::info!(
             "{}: List table names for Catalog {}, Schema {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.catalog_name(),
-            request.schema_name().unwrap_or("null")
+            request.schema_name().or_java_null()
         );
         let result = async {
             if request.page_size() == UNLIMITED_PAGE_SIZE_VALUE && request.next_token().is_none() {
@@ -546,30 +542,20 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
             };
             let config_options = self.config_options();
             let mut schema_builder = SchemaBuilder::new_builder();
-            for column_index in 1..=metadata.column_count() {
-                let column_name = metadata.column_name(column_index)?;
-                let column_label = metadata.column_label(column_index)?;
-                let column_name = if column_name == column_label {
-                    column_name.to_string()
-                } else {
-                    column_label.to_string()
-                };
-                let precision = metadata.precision(column_index)?;
-                let column_type = self.dialect.convert_datasource_type(
-                    column_index,
-                    precision,
-                    config_options,
-                    metadata,
-                )?;
+            for column in metadata.columns() {
+                let column_name = column.label().to_string();
+                let precision = column.precision();
+                let column_type = self
+                    .dialect
+                    .convert_datasource_type(column, config_options)?;
                 match column_type {
                     Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
                         if matches!(arrow_type, DataType::List(_)) {
-                            let table_name = metadata.table_name(column_index)?.to_string();
                             schema_builder.add_list_field(
                                 &column_name,
                                 self.dialect.array_element_type(
-                                    Some(&table_name),
-                                    metadata.column_display_size(column_index)?,
+                                    Some(column.table_name()),
+                                    column.display_size(),
                                     precision,
                                 ),
                             );

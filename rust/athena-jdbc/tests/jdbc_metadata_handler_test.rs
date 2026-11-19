@@ -24,11 +24,11 @@ use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialec
 use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
 use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{
-    ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SqlError, SqlValue,
+    ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SchemaEntry,
+    SqlError, TableEntry,
 };
 use jdbc_support::{
-    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetColumnsCall,
-    GetTablesCall, ResultSetData,
+    FakeConnection, FakeConnectionFactory, FakeSecretsManager, Fakes, GetColumnsCall, GetTablesCall,
 };
 
 const TABLE_TYPES: [&str; 4] = ["TABLE", "VIEW", "EXTERNAL TABLE", "MATERIALIZED VIEW"];
@@ -149,13 +149,17 @@ fn get_table_request(table: &TableName, qpt: HashMap<String, Option<String>>) ->
     )
 }
 
-fn tables(rows: &[(&str, &str)]) -> ResultSetData {
-    let rows: Vec<[&str; 2]> = rows.iter().map(|(s, t)| [*s, *t]).collect();
-    let refs: Vec<&[&str]> = rows.iter().map(<[&str; 2]>::as_slice).collect();
-    ResultSetData::of_strings(&["TABLE_SCHEM", "TABLE_NAME"], &refs)
+fn tables(rows: &[(&str, &str)]) -> Vec<TableEntry> {
+    rows.iter()
+        .map(|(schema, name)| TableEntry {
+            schema: Some((*schema).to_string()),
+            name: (*name).to_string(),
+            ..TableEntry::default()
+        })
+        .collect()
 }
 
-fn five_tables() -> ResultSetData {
+fn five_tables() -> Vec<TableEntry> {
     tables(&[
         ("testSchema", "testTable"),
         ("testSchema", "testTable2"),
@@ -200,38 +204,22 @@ fn assert_sql_exception(error: &FederationError) {
     );
 }
 
-type ColumnRow<'a> = (i32, i32, &'a str, i32, i32, Option<&'a str>);
+type ColumnRow<'a> = (JdbcType, i32, &'a str, i32, i32, Option<&'a str>);
 
-fn columns_result(rows: Vec<ColumnRow<'_>>) -> ResultSetData {
-    let mut labels = vec![
-        "DATA_TYPE",
-        "COLUMN_SIZE",
-        "COLUMN_NAME",
-        "DECIMAL_DIGITS",
-        "NUM_PREC_RADIX",
-    ];
+fn columns_result(rows: Vec<ColumnRow<'_>>) -> Vec<ColumnInfo> {
     let with_type_name = rows.iter().any(|r| r.5.is_some());
-    if with_type_name {
-        labels.push("TYPE_NAME");
-    }
-    let metadata = ResultSetMetaData::of_labels(labels.iter().copied());
-    let rows = rows
-        .into_iter()
-        .map(|(data_type, size, name, digits, radix, type_name)| {
-            let mut row = vec![
-                SqlValue::Integer(data_type),
-                SqlValue::Integer(size),
-                SqlValue::String(name.to_string()),
-                SqlValue::Integer(digits),
-                SqlValue::Integer(radix),
-            ];
-            if with_type_name {
-                row.push(SqlValue::String(type_name.unwrap_or_default().to_string()));
-            }
-            row
-        })
-        .collect();
-    ResultSetData::new(metadata, rows)
+    rows.into_iter()
+        .map(
+            |(data_type, size, name, digits, _radix, type_name)| ColumnInfo {
+                name: Some(name.to_string()),
+                data_type,
+                type_name: with_type_name.then(|| type_name.unwrap_or_default().to_string()),
+                column_size: Some(size),
+                decimal_digits: Some(digits),
+                ordinal_position: 0,
+            },
+        )
+        .collect()
 }
 
 #[tokio::test]
@@ -276,10 +264,13 @@ async fn do_list_schema_names() {
     fixture
         .connection
         .meta
-        .set_schemas(Ok(ResultSetData::of_strings(
-            &["TABLE_SCHEM"],
-            &[&["testDB"], &["testdb2"], &["information_schema"]],
-        )));
+        .set_schemas(Ok(["testDB", "testdb2", "information_schema"]
+            .iter()
+            .map(|schema| SchemaEntry {
+                schema: Some((*schema).to_string()),
+                catalog: None,
+            })
+            .collect()));
     let response = fixture
         .handler
         .list_schema_names(&ListSchemasRequest::new(
@@ -499,24 +490,10 @@ async fn do_list_tables_escaped_exception() {
 async fn do_get_table() {
     let fixture = setup();
     fixture.connection.meta.set_columns(Ok(columns_result(vec![
+        (JdbcType::Integer, 12, "testCol1", 0, 0, Some("_int4")),
+        (JdbcType::Varchar, 25, "testCol2", 0, 0, Some("VARCHAR")),
         (
-            JdbcType::Integer.code(),
-            12,
-            "testCol1",
-            0,
-            0,
-            Some("_int4"),
-        ),
-        (
-            JdbcType::Varchar.code(),
-            25,
-            "testCol2",
-            0,
-            0,
-            Some("VARCHAR"),
-        ),
-        (
-            JdbcType::Timestamp.code(),
+            JdbcType::Timestamp,
             93,
             "testCol3",
             0,
@@ -524,14 +501,14 @@ async fn do_get_table() {
             Some("_timestamp"),
         ),
         (
-            JdbcType::TimestampWithTimezone.code(),
+            JdbcType::TimestampWithTimezone,
             93,
             "testCol4",
             0,
             0,
             Some("_timestamp"),
         ),
-        (JdbcType::Array.code(), 0, "testCol5", 0, 0, Some("_array")),
+        (JdbcType::Array, 0, "testCol5", 0, 0, Some("_array")),
     ])));
 
     let mut expected_builder = SchemaBuilder::new_builder();
@@ -603,7 +580,7 @@ async fn do_get_query_passthrough_schema() {
 async fn do_get_table_case_insensitive() {
     let fixture = setup();
     fixture.connection.meta.set_columns(Ok(columns_result(vec![(
-        JdbcType::Integer.code(),
+        JdbcType::Integer,
         12,
         "testCol1",
         0,

@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, PreparedStatement, ResultSet,
-    ResultSetMetaData, SqlError, SqlValue,
+    ColumnInfo, DatabaseMetaData, JdbcConnection, PreparedStatement, ResultSet, ResultSetMetaData,
+    SchemaEntry, SqlError, SqlValue, TableEntry,
 };
 use regex::Regex;
 use tokio::sync::OnceCell;
@@ -20,8 +20,6 @@ use super::wildcard::{
 const NO_DATA: &str = "02000";
 const BASE_TABLE_OR_VIEW_NOT_FOUND: &str = "42S02";
 const READER_ACCOUNT_MESSAGE: &str = "Operation is not supported in reader account";
-const COLUMN_NULLABLE: i32 = 1;
-const COLUMN_NO_NULLS: i32 = 0;
 const SUPPORTED_TABLE_TYPES: [&str; 2] = ["TABLE", "VIEW"];
 
 static DESCRIBABLE: LazyLock<Regex> = LazyLock::new(|| {
@@ -36,99 +34,12 @@ pub(crate) fn positive_seconds(seconds: i32) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-fn int_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, JdbcType::Integer).with_type_name("INTEGER")
-}
-
-fn text_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, JdbcType::Varchar).with_type_name("TEXT")
-}
-
-fn short_column(name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, JdbcType::SmallInt).with_type_name("SHORT")
-}
-
-fn schemas_metadata() -> ResultSetMetaData {
-    ResultSetMetaData::new(vec![
-        text_column("TABLE_SCHEM"),
-        text_column("TABLE_CATALOG"),
-    ])
-}
-
-fn tables_metadata() -> ResultSetMetaData {
-    ResultSetMetaData::new(
-        [
-            "TABLE_CAT",
-            "TABLE_SCHEM",
-            "TABLE_NAME",
-            "TABLE_TYPE",
-            "REMARKS",
-            "TYPE_CAT",
-            "TYPE_SCHEM",
-            "TYPE_NAME",
-            "SELF_REFERENCING_COL_NAME",
-            "REF_GENERATION",
-        ]
-        .into_iter()
-        .map(text_column)
-        .collect(),
-    )
-}
-
-fn columns_metadata() -> ResultSetMetaData {
-    ResultSetMetaData::new(vec![
-        text_column("TABLE_CAT"),
-        text_column("TABLE_SCHEM"),
-        text_column("TABLE_NAME"),
-        text_column("COLUMN_NAME"),
-        int_column("DATA_TYPE"),
-        text_column("TYPE_NAME"),
-        int_column("COLUMN_SIZE"),
-        int_column("BUFFER_LENGTH"),
-        int_column("DECIMAL_DIGITS"),
-        int_column("NUM_PREC_RADIX"),
-        int_column("NULLABLE"),
-        text_column("REMARKS"),
-        text_column("COLUMN_DEF"),
-        int_column("SQL_DATA_TYPE"),
-        int_column("SQL_DATETIME_SUB"),
-        int_column("CHAR_OCTET_LENGTH"),
-        int_column("ORDINAL_POSITION"),
-        text_column("IS_NULLABLE"),
-        text_column("SCOPE_CATALOG"),
-        text_column("SCOPE_SCHEMA"),
-        text_column("SCOPE_TABLE"),
-        short_column("SOURCE_DATA_TYPE"),
-        text_column("IS_AUTOINCREMENT"),
-        text_column("IS_GENERATEDCOLUMN"),
-    ])
-}
-
-fn primary_keys_metadata() -> ResultSetMetaData {
-    ResultSetMetaData::new(vec![
-        text_column("TABLE_CAT"),
-        text_column("TABLE_SCHEM"),
-        text_column("TABLE_NAME"),
-        text_column("COLUMN_NAME"),
-        short_column("KEY_SEQ"),
-        text_column("PK_NAME"),
-    ])
-}
-
 fn text(value: Option<&SqlValue>) -> Option<String> {
     match value? {
         SqlValue::Null => None,
         SqlValue::String(s) => Some(s.clone()),
         other => Some(other.to_string()),
     }
-}
-
-fn opt_text(value: Option<String>) -> SqlValue {
-    value.map_or(SqlValue::Null, SqlValue::String)
-}
-
-fn opt_int(value: Option<i32>) -> SqlValue {
-    value.map_or(SqlValue::Null, SqlValue::Integer)
 }
 
 fn show_like(pattern: Option<&str>) -> String {
@@ -201,74 +112,27 @@ fn location(
     Some(Location::Table(catalog_escaped, schema, table))
 }
 
-fn column_row(
+fn column_info(
     row: &[SqlValue],
-    schema_name: String,
-    table_name: String,
     column_name: String,
     ordinal_position: i32,
-) -> Result<Vec<SqlValue>, SqlError> {
+) -> Result<ColumnInfo, SqlError> {
     let data_type_text = text(row.get(3)).unwrap_or_default();
     let data_type: serde_json::Value = serde_json::from_str(&data_type_text)
         .map_err(|_| SqlError::snowflake(format!("error parsing data type: {data_type_text}")))?;
     let column_type = show_column_type(&data_type);
-    let default_value = text(row.get(5)).unwrap_or_default();
-    let default_value = if default_value.is_empty() {
-        None
-    } else if default_value.len() >= 2
-        && default_value.starts_with('\'')
-        && default_value.ends_with('\'')
-    {
-        Some(default_value[1..default_value.len() - 1].replace("''", "'"))
-    } else {
-        Some(default_value)
-    };
-    let comment = text(row.get(8));
-    let catalog_name = text(row.get(9));
-    let auto_increment = text(row.get(10)).unwrap_or_default();
-    let nullable = column_type.nullable;
-    Ok(vec![
-        opt_text(catalog_name),
-        SqlValue::String(schema_name),
-        SqlValue::String(table_name),
-        SqlValue::String(column_name),
-        SqlValue::Integer(column_type.jdbc_type.code()),
-        SqlValue::String(column_type.type_name.clone()),
-        opt_int(column_type.column_size),
-        SqlValue::Null,
-        SqlValue::Integer(column_type.scale),
-        SqlValue::Null,
-        SqlValue::Integer(if nullable {
-            COLUMN_NULLABLE
-        } else {
-            COLUMN_NO_NULLS
-        }),
-        opt_text(comment),
-        opt_text(default_value),
-        SqlValue::Integer(column_type.jdbc_type.code()),
-        SqlValue::Null,
-        opt_int(column_type.char_octet_length),
-        SqlValue::Integer(ordinal_position),
-        SqlValue::String(if nullable { "YES" } else { "NO" }.to_string()),
-        SqlValue::Null,
-        SqlValue::Null,
-        SqlValue::Null,
-        SqlValue::Null,
-        SqlValue::String(
-            if auto_increment.is_empty() {
-                "NO"
-            } else {
-                "YES"
-            }
-            .to_string(),
-        ),
-        SqlValue::String("NO".to_string()),
-    ])
+    Ok(ColumnInfo {
+        name: Some(column_name),
+        data_type: column_type.jdbc_type,
+        type_name: Some(column_type.type_name),
+        column_size: column_type.column_size,
+        decimal_digits: Some(column_type.scale),
+        ordinal_position,
+    })
 }
 
 pub struct SnowflakeConnection {
     executor: Arc<dyn SnowflakeExecutor>,
-    user: Option<String>,
     session_context: OnceCell<(Option<String>, Option<String>)>,
     auto_commit: AtomicBool,
     closed: AtomicBool,
@@ -276,10 +140,9 @@ pub struct SnowflakeConnection {
 }
 
 impl SnowflakeConnection {
-    pub fn new(executor: Arc<dyn SnowflakeExecutor>, user: Option<String>) -> SnowflakeConnection {
+    pub fn new(executor: Arc<dyn SnowflakeExecutor>) -> SnowflakeConnection {
         SnowflakeConnection {
             executor,
-            user,
             session_context: OnceCell::new(),
             auto_commit: AtomicBool::new(true),
             closed: AtomicBool::new(false),
@@ -367,20 +230,16 @@ impl SnowflakeConnection {
 
 #[async_trait]
 impl DatabaseMetaData for SnowflakeConnection {
-    async fn get_schemas(&self) -> Result<ResultSet, SqlError> {
-        self.get_schemas_with_catalog(None, None).await
-    }
-
-    async fn get_schemas_with_catalog(
+    async fn schemas(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<SchemaEntry>, SqlError> {
         self.check_open()?;
         let compiled = to_regex_pattern(schema_pattern);
         let location = match catalog {
             None => " in account".to_string(),
-            Some("") => return Ok(ResultSet::empty(schemas_metadata())),
+            Some("") => return Ok(Vec::new()),
             Some(catalog) => format!(" in database \"{}\"", escape_sql_quotes(catalog)),
         };
         let sql = format!(
@@ -388,27 +247,27 @@ impl DatabaseMetaData for SnowflakeConnection {
             show_like(schema_pattern)
         );
         tracing::debug!("Sql command to get schemas metadata: {sql}");
-        let rows = self
+        Ok(self
             .show_rows_or_empty(&sql)
             .await?
             .into_iter()
             .filter_map(|row| {
                 let schema_name = text(row.get(1)).unwrap_or_default();
-                let db_name = text(row.get(4));
-                matches(compiled.as_ref(), &schema_name)
-                    .then(|| vec![SqlValue::String(schema_name), opt_text(db_name)])
+                matches(compiled.as_ref(), &schema_name).then(|| SchemaEntry {
+                    schema: Some(schema_name),
+                    catalog: text(row.get(4)),
+                })
             })
-            .collect();
-        Ok(ResultSet::from_rows(schemas_metadata(), rows))
+            .collect())
     }
 
-    async fn get_tables(
+    async fn tables(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         types: Option<&[&str]>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<TableEntry>, SqlError> {
         self.check_open()?;
         let valid_types: Vec<&str> = match types {
             Some(types) => types
@@ -419,7 +278,7 @@ impl DatabaseMetaData for SnowflakeConnection {
             None => SUPPORTED_TABLE_TYPES.to_vec(),
         };
         if valid_types.is_empty() {
-            return Ok(ResultSet::empty(tables_metadata()));
+            return Ok(Vec::new());
         }
         let compiled_schema = to_regex_pattern(schema_pattern);
         let compiled_table = to_regex_pattern(table_name_pattern);
@@ -433,7 +292,7 @@ impl DatabaseMetaData for SnowflakeConnection {
             "objects"
         };
         let Some(location) = location(catalog, schema_pattern, None, TableScope::None) else {
-            return Ok(ResultSet::empty(tables_metadata()));
+            return Ok(Vec::new());
         };
         let sql = format!(
             "show /* JDBC:DatabaseMetaData.getTables() */ {command}{} in {}",
@@ -441,7 +300,7 @@ impl DatabaseMetaData for SnowflakeConnection {
             location.render()
         );
         tracing::debug!("Sql command to get table metadata: {sql}");
-        let rows = self
+        Ok(self
             .show_rows_or_empty(&sql)
             .await?
             .into_iter()
@@ -465,32 +324,24 @@ impl DatabaseMetaData for SnowflakeConnection {
                 let schema_text = schema_name.clone().unwrap_or_default();
                 (matches(compiled_table.as_ref(), &table_name)
                     && matches(compiled_schema.as_ref(), &schema_text))
-                .then(|| {
-                    vec![
-                        opt_text(db_name),
-                        opt_text(schema_name),
-                        SqlValue::String(table_name),
-                        opt_text(kind),
-                        opt_text(comment),
-                        SqlValue::Null,
-                        SqlValue::Null,
-                        SqlValue::Null,
-                        SqlValue::Null,
-                        SqlValue::Null,
-                    ]
+                .then_some(TableEntry {
+                    catalog: db_name,
+                    schema: schema_name,
+                    name: table_name,
+                    kind,
+                    remarks: comment,
                 })
             })
-            .collect();
-        Ok(ResultSet::from_rows(tables_metadata(), rows))
+            .collect())
     }
 
-    async fn get_columns(
+    async fn columns(
         &self,
         catalog: Option<&str>,
         schema_pattern: Option<&str>,
         table_name_pattern: Option<&str>,
         column_name_pattern: Option<&str>,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<ColumnInfo>, SqlError> {
         self.check_open()?;
         let compiled_schema = to_regex_pattern(schema_pattern);
         let compiled_table = to_regex_pattern(table_name_pattern);
@@ -501,7 +352,7 @@ impl DatabaseMetaData for SnowflakeConnection {
             table_name_pattern,
             TableScope::WildcardToSchema,
         ) else {
-            return Ok(ResultSet::empty(columns_metadata()));
+            return Ok(Vec::new());
         };
         let sql = format!(
             "show /* JDBC:DatabaseMetaData.getColumns() */ columns{} in {}",
@@ -528,35 +379,29 @@ impl DatabaseMetaData for SnowflakeConnection {
                 ordinal_position = 1;
                 current_table = Some(table_name.clone());
             }
-            rows.push(column_row(
-                &row,
-                schema_name,
-                table_name,
-                column_name,
-                ordinal_position,
-            )?);
+            rows.push(column_info(&row, column_name, ordinal_position)?);
         }
-        Ok(ResultSet::from_rows(columns_metadata(), rows))
+        Ok(rows)
     }
 
-    async fn get_primary_keys(
+    async fn primary_key_columns(
         &self,
         catalog: Option<&str>,
         schema: Option<&str>,
         table: &str,
-    ) -> Result<ResultSet, SqlError> {
+    ) -> Result<Vec<Option<String>>, SqlError> {
         self.check_open()?;
         let compiled_schema = to_regex_pattern(schema);
         let compiled_table = to_regex_pattern(Some(table));
         let Some(location) = location(catalog, schema, Some(table), TableScope::Always) else {
-            return Ok(ResultSet::empty(primary_keys_metadata()));
+            return Ok(Vec::new());
         };
         let sql = format!(
             "show /* JDBC:DatabaseMetaData.getPrimaryKeys() */ primary keys in {}",
             location.render()
         );
         tracing::debug!("Sql command to get primary key metadata: {sql}");
-        let rows = self
+        Ok(self
             .show_rows_or_empty(&sql)
             .await?
             .into_iter()
@@ -564,44 +409,21 @@ impl DatabaseMetaData for SnowflakeConnection {
                 let table_cat = text(row.get(1));
                 let table_schem = text(row.get(2)).unwrap_or_default();
                 let table_name = text(row.get(3)).unwrap_or_default();
-                let column_name = text(row.get(4));
-                let key_seq = text(row.get(5))
-                    .and_then(|k| k.trim().parse::<i16>().ok())
-                    .unwrap_or_default();
-                let pk_name = text(row.get(6));
                 let catalog_matches = catalog.is_none_or(|c| table_cat.as_deref() == Some(c));
                 (catalog_matches
                     && matches(compiled_schema.as_ref(), &table_schem)
                     && matches(compiled_table.as_ref(), &table_name))
-                .then(|| {
-                    vec![
-                        opt_text(table_cat),
-                        SqlValue::String(table_schem),
-                        SqlValue::String(table_name),
-                        opt_text(column_name),
-                        SqlValue::SmallInt(key_seq),
-                        opt_text(pk_name),
-                    ]
-                })
+                .then(|| text(row.get(4)))
             })
-            .collect();
-        Ok(ResultSet::from_rows(primary_keys_metadata(), rows))
+            .collect())
     }
 
-    fn get_search_string_escape(&self) -> Result<Option<String>, SqlError> {
-        Ok(Some("\\".to_string()))
+    fn search_string_escape(&self) -> Option<String> {
+        Some("\\".to_string())
     }
 
-    fn get_identifier_quote_string(&self) -> Result<String, SqlError> {
-        Ok("\"".to_string())
-    }
-
-    fn get_database_product_name(&self) -> Result<String, SqlError> {
-        Ok("Snowflake".to_string())
-    }
-
-    async fn get_user_name(&self) -> Result<Option<String>, SqlError> {
-        Ok(self.user.clone())
+    fn database_product_name(&self) -> String {
+        "Snowflake".to_string()
     }
 }
 
@@ -631,7 +453,7 @@ impl JdbcConnection for SnowflakeConnection {
     }
 
     async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
-        let timeout = positive_seconds(statement.query_timeout());
+        let timeout = statement.query_timeout();
         let result = self
             .run(statement.sql(), statement.parameters(), timeout)
             .await?;
@@ -643,7 +465,7 @@ impl JdbcConnection for SnowflakeConnection {
     async fn execute(&self, statement: &PreparedStatement) -> Result<bool, SqlError> {
         let mut result_set = self.execute_query(statement).await?;
         let has_columns = result_set.metadata().column_count() > 0;
-        while result_set.next().await? {}
+        while result_set.next_row().await?.is_some() {}
         Ok(has_columns)
     }
 

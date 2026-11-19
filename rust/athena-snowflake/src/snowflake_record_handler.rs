@@ -30,8 +30,9 @@ use crate::snowflake_metadata_handler::{
 };
 use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
 use crate::utils;
+use athena_jdbc::java_null::OrJavaNull;
 
-const FETCH_SIZE: i32 = 1000;
+const FETCH_SIZE: u32 = 1000;
 const UTC: &str = "UTC";
 
 pub struct SnowflakeRecordDialect {
@@ -168,7 +169,7 @@ impl SnowflakeRecordDialect {
         let split = records_request.split();
         let export_bucket = split
             .get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
-            .unwrap_or("null");
+            .or_java_null();
         let s3_object_key = split
             .get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY)
             .ok_or_else(|| {
@@ -330,7 +331,7 @@ impl RecordDialect for SnowflakeRecordDialect {
                     allocator,
                     spill_locations,
                     query_status_checker,
-                    &construct_s3_uri(export_bucket.unwrap_or("null"), key),
+                    &construct_s3_uri(export_bucket.or_java_null(), key),
                 )
                 .await
             }
@@ -356,7 +357,7 @@ impl RecordDialect for SnowflakeRecordDialect {
             } else {
                 self.query_builder.build_sql(connection, query).await?
             };
-            prepared_statement.set_fetch_size(FETCH_SIZE)?;
+            prepared_statement.set_fetch_size(FETCH_SIZE);
             Ok(prepared_statement)
         }
         .await;
@@ -370,14 +371,13 @@ impl RecordDialect for SnowflakeRecordDialect {
     ) -> Result<Schema> {
         let base_schema = jdbc_to_arrow_schema(metadata)?;
         let mut fields = Vec::with_capacity(base_schema.fields().len());
-        for (i, base_field) in base_schema.fields().iter().enumerate() {
-            let column = i + 1;
+        for (base_field, column) in base_schema.fields().iter().zip(metadata.columns()) {
             let is_arrow_integer = matches!(
                 base_field.data_type(),
                 DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
             );
-            if is_arrow_integer && metadata.scale(column)? == 0 {
-                let precision = metadata.precision(column)?;
+            if is_arrow_integer && column.scale() == 0 {
+                let precision = column.precision();
                 if (1..=utils::DEFAULT_PRECISION).contains(&precision) {
                     let precision = u8::try_from(precision).unwrap_or(u8::MAX);
                     fields.push(Arc::new(

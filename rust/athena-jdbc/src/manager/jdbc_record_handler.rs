@@ -105,10 +105,10 @@ pub(crate) fn make_extractor_with_column_name_remapping<S: BuildHasher>(
 }
 
 fn extract_float8(row: &Row, index: usize) -> Result<Option<f64>> {
-    if let Ok(value) = row.get_double(index) {
+    if let Ok(value) = row.value(index).and_then(SqlValue::to_double) {
         return Ok(value);
     }
-    let text = row.get_string(index)?.ok_or_else(|| {
+    let text = row.value(index)?.to_java_string().ok_or_else(|| {
         null_pointer("Cannot invoke \"String.replaceAll(String, String)\" because the return value of \"java.sql.ResultSet.getString(String)\" is null")
     })?;
     parse_java_double(&text.replace([',', '$'], "")).map(Some)
@@ -122,44 +122,48 @@ fn date_day(epoch_day: i64) -> i32 {
 fn typed_extractor(field_type: MinorType, index: usize) -> Result<Extractor<Row>> {
     let extractor = match field_type {
         MinorType::BIT => Extractor::Bit(Arc::new(move |row: &Row| {
-            Ok(row.get_boolean(index)?.map(i32::from))
+            Ok(row.value(index)?.to_boolean()?.map(i32::from))
         })),
-        MinorType::TINYINT => {
-            Extractor::TinyInt(Arc::new(move |row: &Row| Ok(row.get_byte(index)?)))
+        MinorType::TINYINT => Extractor::TinyInt(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_byte()?)
+        })),
+        MinorType::SMALLINT => Extractor::SmallInt(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_short()?)
+        })),
+        MinorType::INT => {
+            Extractor::Int(Arc::new(move |row: &Row| Ok(row.value(index)?.to_int()?)))
         }
-        MinorType::SMALLINT => {
-            Extractor::SmallInt(Arc::new(move |row: &Row| Ok(row.get_short(index)?)))
-        }
-        MinorType::INT => Extractor::Int(Arc::new(move |row: &Row| Ok(row.get_int(index)?))),
-        MinorType::BIGINT => Extractor::BigInt(Arc::new(move |row: &Row| Ok(row.get_long(index)?))),
-        MinorType::FLOAT4 => {
-            Extractor::Float4(Arc::new(move |row: &Row| Ok(row.get_float(index)?)))
-        }
+        MinorType::BIGINT => Extractor::BigInt(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_long()?)
+        })),
+        MinorType::FLOAT4 => Extractor::Float4(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_float()?)
+        })),
         MinorType::FLOAT8 => {
             Extractor::Float8(Arc::new(move |row: &Row| extract_float8(row, index)))
         }
-        MinorType::DECIMAL => {
-            Extractor::Decimal(Arc::new(move |row: &Row| Ok(row.get_big_decimal(index)?)))
-        }
+        MinorType::DECIMAL => Extractor::Decimal(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_big_decimal()?)
+        })),
         MinorType::DATEDAY => Extractor::DateDay(Arc::new(move |row: &Row| {
-            Ok(row.get_object(index)?.to_epoch_day()?.map(date_day))
+            Ok(row.value(index)?.to_epoch_day()?.map(date_day))
         })),
         MinorType::DATEMILLI => Extractor::DateMilli(Arc::new(move |row: &Row| {
-            if row.metadata().column_type(index)? == JdbcType::Date {
+            if row.metadata().column(index)?.jdbc_type() == JdbcType::Date {
                 Ok(row
-                    .get_object(index)?
+                    .value(index)?
                     .to_epoch_day()?
                     .map(|day| day.saturating_mul(MILLIS_PER_DAY)))
             } else {
-                Ok(row.get_object(index)?.to_epoch_millis()?)
+                Ok(row.value(index)?.to_epoch_millis()?)
             }
         })),
-        MinorType::VARCHAR => {
-            Extractor::VarChar(Arc::new(move |row: &Row| Ok(row.get_string(index)?)))
-        }
-        MinorType::VARBINARY => {
-            Extractor::VarBinary(Arc::new(move |row: &Row| Ok(row.get_bytes(index)?)))
-        }
+        MinorType::VARCHAR => Extractor::VarChar(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_java_string())
+        })),
+        MinorType::VARBINARY => Extractor::VarBinary(Arc::new(move |row: &Row| {
+            Ok(row.value(index)?.to_bytes()?)
+        })),
         other => {
             return Err(FederationError::not_supported(format!(
                 "Unhandled type {other}"
@@ -213,7 +217,7 @@ struct ArrayFieldWriter {
 
 impl FieldWriter<Row> for ArrayFieldWriter {
     fn write(&mut self, vector: &mut FieldVector, row: &Row, row_num: usize) -> Result<bool> {
-        if let Some(values) = row.get_array(self.field_name.as_str())? {
+        if let Some(values) = row.by_label(self.field_name.as_str())?.to_array()? {
             let list = Value::List(
                 values
                     .iter()
@@ -552,8 +556,10 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
             let written = async {
                 let column_count = derived_schema.fields().len();
                 let mut rows_returned_from_database: u64 = 0;
-                while result_set.next().await? && query_status_checker.is_query_running() {
-                    let row = result_set.take_current_row()?;
+                while let Some(row) = result_set.next_row().await? {
+                    if !query_status_checker.is_query_running() {
+                        break;
+                    }
                     spiller
                         .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
                             block.set_tz_encoding(TzEncoding::Unpacked);
@@ -598,7 +604,7 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
         );
         let connection = self.connect(read_records_request.identity()).await?;
         let result = async {
-            let database_product_name = connection.metadata().get_database_product_name()?;
+            let database_product_name = connection.metadata().database_product_name();
             let is_clickhouse = CLICKHOUSE_DB.eq_ignore_ascii_case(&database_product_name);
             if !is_clickhouse {
                 connection.set_auto_commit(false).await?;
@@ -640,11 +646,10 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
             }
             let mut row_writer = row_writer_builder.build();
             let mut rows_returned_from_database: u64 = 0;
-            while result_set.next().await? {
+            while let Some(row) = result_set.next_row().await? {
                 if !query_status_checker.is_query_running() {
                     return Ok(());
                 }
-                let row = result_set.take_current_row()?;
                 block_spiller
                     .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
                         Ok(usize::from(row_writer.write_row(block, row_num, &row)?))
@@ -674,7 +679,7 @@ fn write_export_row(
 ) -> Result<usize> {
     let vectors = block.field_vectors_mut();
     for (i, vector) in vectors.iter_mut().enumerate().take(column_count) {
-        let value = calendar_value(row.get_object(i + 1)?, vector.minor_type())?;
+        let value = calendar_value(row.value(i)?, vector.minor_type())?;
         block_utils::set_value(vector, row_num, &value)?;
     }
     Ok(1)

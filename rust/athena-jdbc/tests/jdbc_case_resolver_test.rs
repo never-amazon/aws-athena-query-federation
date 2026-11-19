@@ -47,7 +47,7 @@ struct TestJdbcCaseResolver {
 }
 
 fn parameter(statement: &PreparedStatement, index: usize) -> String {
-    match statement.parameter(index) {
+    match statement.parameters().get(index - 1) {
         Some(SqlValue::String(value)) => value.clone(),
         other => panic!("unexpected parameter {other:?}"),
     }

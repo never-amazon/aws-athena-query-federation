@@ -10,15 +10,40 @@ use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTim
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use super::sql_error::{Driver, SqlError};
+use crate::java_null::JAVA_NULL;
 
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaTemporal {
+    DateMillis { millis: i64, epoch_day: i64 },
+    SqlDate { millis: i64, epoch_day: i64 },
+    Timestamp { epoch_millis: i64, epoch_day: i64 },
+}
+
+impl JavaTemporal {
+    fn epoch_day(self) -> i64 {
+        match self {
+            JavaTemporal::DateMillis { epoch_day, .. }
+            | JavaTemporal::SqlDate { epoch_day, .. }
+            | JavaTemporal::Timestamp { epoch_day, .. } => epoch_day,
+        }
+    }
+
+    fn date_millis(self) -> Option<i64> {
+        match self {
+            JavaTemporal::DateMillis { millis, .. } | JavaTemporal::SqlDate { millis, .. } => {
+                Some(millis)
+            }
+            JavaTemporal::Timestamp { .. } => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderedKind {
     Typed,
-    JavaDateMillis { millis: i64, epoch_day: i64 },
-    JavaSqlDate { millis: i64, epoch_day: i64 },
-    JavaTimestamp { epoch_millis: i64, epoch_day: i64 },
+    Temporal(JavaTemporal),
     InvalidElement(&'static str),
     InvalidDateTime,
 }
@@ -141,10 +166,10 @@ impl SqlValue {
             value: Box::new(value),
             text: text.into(),
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaTimestamp {
+            kind: RenderedKind::Temporal(JavaTemporal::Timestamp {
                 epoch_millis,
                 epoch_day,
-            },
+            }),
         }
     }
 
@@ -154,7 +179,7 @@ impl SqlValue {
             value: Box::new(SqlValue::String(text.clone())),
             text,
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaDateMillis { millis, epoch_day },
+            kind: RenderedKind::Temporal(JavaTemporal::DateMillis { millis, epoch_day }),
         }
     }
 
@@ -171,7 +196,7 @@ impl SqlValue {
             value: Box::new(SqlValue::Date(date)),
             text: text.into(),
             driver: Driver::Jdbc,
-            kind: RenderedKind::JavaSqlDate { millis, epoch_day },
+            kind: RenderedKind::Temporal(JavaTemporal::SqlDate { millis, epoch_day }),
         }
     }
 
@@ -214,13 +239,8 @@ impl SqlValue {
         if let Some(error) = invalid_date_time(self) {
             return Err(error);
         }
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaDateMillis { millis, .. } | RenderedKind::JavaSqlDate { millis, .. },
-            ..
-        } = self
-        {
-            return Ok(Some(*millis));
+        if let Some(millis) = self.temporal().and_then(JavaTemporal::date_millis) {
+            return Ok(Some(millis));
         }
         Ok(self
             .to_timestamp()?
@@ -228,18 +248,20 @@ impl SqlValue {
     }
 
     pub fn to_epoch_millis(&self) -> Result<Option<i64>, SqlError> {
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaTimestamp {
-                    epoch_millis: millis,
-                    ..
-                },
-            ..
-        } = self
-        {
-            return Ok(Some(*millis));
+        if let Some(JavaTemporal::Timestamp { epoch_millis, .. }) = self.temporal() {
+            return Ok(Some(epoch_millis));
         }
         self.to_timestamp_millis()
+    }
+
+    fn temporal(&self) -> Option<JavaTemporal> {
+        match self {
+            SqlValue::Rendered {
+                kind: RenderedKind::Temporal(temporal),
+                ..
+            } => Some(*temporal),
+            _ => None,
+        }
     }
 
     pub fn is_null(&self) -> bool {
@@ -411,7 +433,7 @@ impl SqlValue {
     pub fn is_date_time(&self) -> bool {
         match self {
             SqlValue::Rendered {
-                kind: RenderedKind::JavaDateMillis { .. },
+                kind: RenderedKind::Temporal(JavaTemporal::DateMillis { .. }),
                 ..
             } => true,
             SqlValue::Rendered { value, .. } => value.is_date_time(),
@@ -423,15 +445,8 @@ impl SqlValue {
     }
 
     pub fn to_epoch_day(&self) -> Result<Option<i64>, SqlError> {
-        if let SqlValue::Rendered {
-            kind:
-                RenderedKind::JavaSqlDate { epoch_day, .. }
-                | RenderedKind::JavaTimestamp { epoch_day, .. }
-                | RenderedKind::JavaDateMillis { epoch_day, .. },
-            ..
-        } = self
-        {
-            return Ok(Some(*epoch_day));
+        if let Some(temporal) = self.temporal() {
+            return Ok(Some(temporal.epoch_day()));
         }
         Ok(self
             .to_date()?
@@ -519,8 +534,10 @@ impl SqlValue {
             SqlValue::Array(items) => Value::List(items.iter().map(SqlValue::to_value).collect()),
             SqlValue::Rendered {
                 kind:
-                    RenderedKind::JavaDateMillis { millis, .. }
-                    | RenderedKind::JavaSqlDate { millis, .. },
+                    RenderedKind::Temporal(
+                        JavaTemporal::DateMillis { millis, .. }
+                        | JavaTemporal::SqlDate { millis, .. },
+                    ),
                 ..
             } => Value::Date(*millis),
             SqlValue::Rendered { value, text, .. } => match value.as_ref() {
@@ -534,7 +551,7 @@ impl SqlValue {
 impl fmt::Display for SqlValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValue::Null => f.write_str("null"),
+            SqlValue::Null => f.write_str(JAVA_NULL),
             SqlValue::Boolean(b) => write!(f, "{b}"),
             SqlValue::TinyInt(v) => write!(f, "{v}"),
             SqlValue::SmallInt(v) => write!(f, "{v}"),
@@ -564,5 +581,89 @@ impl fmt::Display for SqlValue {
             }
             SqlValue::Rendered { text, .. } => f.write_str(text),
         }
+    }
+}
+
+impl From<bool> for SqlValue {
+    fn from(value: bool) -> SqlValue {
+        SqlValue::Boolean(value)
+    }
+}
+
+impl From<i8> for SqlValue {
+    fn from(value: i8) -> SqlValue {
+        SqlValue::TinyInt(value)
+    }
+}
+
+impl From<i16> for SqlValue {
+    fn from(value: i16) -> SqlValue {
+        SqlValue::SmallInt(value)
+    }
+}
+
+impl From<i32> for SqlValue {
+    fn from(value: i32) -> SqlValue {
+        SqlValue::Integer(value)
+    }
+}
+
+impl From<i64> for SqlValue {
+    fn from(value: i64) -> SqlValue {
+        SqlValue::BigInt(value)
+    }
+}
+
+impl From<f32> for SqlValue {
+    fn from(value: f32) -> SqlValue {
+        SqlValue::Real(value)
+    }
+}
+
+impl From<f64> for SqlValue {
+    fn from(value: f64) -> SqlValue {
+        SqlValue::Double(value)
+    }
+}
+
+impl From<BigDecimal> for SqlValue {
+    fn from(value: BigDecimal) -> SqlValue {
+        SqlValue::Decimal(value)
+    }
+}
+
+impl From<String> for SqlValue {
+    fn from(value: String) -> SqlValue {
+        SqlValue::String(value)
+    }
+}
+
+impl From<Vec<u8>> for SqlValue {
+    fn from(value: Vec<u8>) -> SqlValue {
+        SqlValue::Bytes(value)
+    }
+}
+
+impl From<NaiveDate> for SqlValue {
+    fn from(value: NaiveDate) -> SqlValue {
+        SqlValue::Date(value)
+    }
+}
+
+impl From<NaiveDateTime> for SqlValue {
+    fn from(value: NaiveDateTime) -> SqlValue {
+        SqlValue::Timestamp(value)
+    }
+}
+
+impl From<&str> for SqlValue {
+    fn from(value: &str) -> SqlValue {
+        SqlValue::String(value.to_string())
+    }
+}
+
+impl<T: Into<SqlValue>> From<Option<T>> for SqlValue {
+    fn from(value: Option<T>) -> SqlValue {
+        value.map_or(SqlValue::Null, Into::into)
     }
 }

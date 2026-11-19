@@ -16,17 +16,14 @@ use athena_federation_sdk::handlers::{
 use athena_federation_sdk::metadata::{GetSplitsRequest, GetTableLayoutRequest, GetTableRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
-use athena_jdbc::connection::{
-    DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcDriver, JdbcProperties,
-};
+use athena_jdbc::connection::{DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcProperties};
 use athena_jdbc::sql::{JdbcConnection, RowSource, SqlError, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
 use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::sql::{
-    SnowflakeColumn, SnowflakeColumnType, SnowflakeConnection, SnowflakeDriver, SnowflakeExecutor,
-    SnowflakeQueryResult,
+    SnowflakeAuth, SnowflakeColumn, SnowflakeColumnType, SnowflakeConnection, SnowflakeDriver,
+    SnowflakeExecutor, SnowflakeQueryResult,
 };
-use athena_snowflake::utils::SnowflakePrivateKey;
 use athena_snowflake::{
     snowflake_constants, S3ParquetExportReader, SnowflakeMetadataDialect, SnowflakeMetadataHandler,
     SnowflakeRecordDialect, SnowflakeRecordHandler,
@@ -300,7 +297,7 @@ struct FakeDriver {
 }
 
 #[async_trait]
-impl JdbcDriver for FakeDriver {
+impl SnowflakeDriver for FakeDriver {
     fn driver_class_name(&self) -> &str {
         snowflake_constants::SNOWFLAKE_DRIVER_CLASS
     }
@@ -308,24 +305,12 @@ impl JdbcDriver for FakeDriver {
     async fn connect(
         &self,
         _url: &str,
-        properties: &JdbcProperties,
+        _properties: &JdbcProperties,
+        _auth: SnowflakeAuth<'_>,
     ) -> Result<Box<dyn JdbcConnection>, SqlError> {
-        Ok(Box::new(SnowflakeConnection::new(
-            Arc::new(self.database.clone()),
-            properties.get("user").cloned(),
-        )))
-    }
-}
-
-#[async_trait]
-impl SnowflakeDriver for FakeDriver {
-    async fn connect_with_private_key(
-        &self,
-        url: &str,
-        properties: &JdbcProperties,
-        _private_key: &SnowflakePrivateKey,
-    ) -> Result<Box<dyn JdbcConnection>, SqlError> {
-        self.connect(url, properties).await
+        Ok(Box::new(SnowflakeConnection::new(Arc::new(
+            self.database.clone(),
+        ))))
     }
 }
 

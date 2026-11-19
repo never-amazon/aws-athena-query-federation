@@ -41,7 +41,7 @@ use athena_jdbc::manager::{
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use athena_jdbc::resolver::JdbcCaseResolver;
-use athena_jdbc::sql::{JdbcConnection, JdbcType, ResultSetMetaData, SqlError};
+use athena_jdbc::sql::{ColumnMetadata, JdbcConnection, SqlError};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
@@ -55,9 +55,9 @@ use crate::snowflake_query_string_builder::{
     base_export_sql, query_string_builder, single_quote, SnowflakeQueryStringBuilder,
 };
 use crate::utils;
+use athena_jdbc::java_null::OrJavaNull;
 
 const MAX_SPLITS_PER_REQUEST: usize = 1_000_000;
-const COLUMN_NAME: &str = "COLUMN_NAME";
 const COUNTS_COLUMN_NAME: &str = "COUNTS";
 const PRIMARY_KEY_COLUMN_NAME: &str = "column_name";
 const ALL_PARTITIONS: &str = "*";
@@ -74,7 +74,7 @@ pub struct SnowflakeMetadataDialect {
 pub type SnowflakeMetadataHandler = JdbcMetadataHandler<SnowflakeMetadataDialect>;
 
 pub(crate) fn java_text(error: &FederationError) -> String {
-    error.java_message().unwrap_or_else(|| "null".to_string())
+    error.java_message().or_java_null()
 }
 
 fn snowflake_sql_exception(error: &FederationError) -> Option<&SqlError> {
@@ -242,9 +242,9 @@ impl SnowflakeMetadataDialect {
         let mut statement = connection
             .prepare_statement(snowflake_constants::LIST_PAGINATED_TABLES_QUERY)
             .await?;
-        statement.set_string(1, database_name)?;
-        statement.set_int(2, limit)?;
-        statement.set_int(3, offset)?;
+        statement.bind(database_name);
+        statement.bind(limit);
+        statement.bind(offset);
         jdbc_util::table_metadata(connection, &statement, TABLES_AND_VIEWS).await
     }
 
@@ -286,14 +286,14 @@ impl SnowflakeMetadataDialect {
                 .execute_query_with_sql(&check_integration_query)
                 .await?;
             let mut storage_integration_row = HashMap::new();
-            while result_set.next().await? {
+            while let Some(row) = result_set.next_row().await? {
                 storage_integration_row.insert(
-                    result_set
-                        .get_string(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
-                        .unwrap_or_else(|| "null".to_string()),
-                    result_set
-                        .get_string(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
-                        .unwrap_or_else(|| "null".to_string()),
+                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_KEY)?
+                        .to_java_string()
+                        .or_java_null(),
+                    row.by_label(snowflake_constants::STORAGE_INTEGRATION_PROPERTY_VALUE_KEY)?
+                        .to_java_string()
+                        .or_java_null(),
                 );
             }
             Ok(storage_integration_row)
@@ -382,7 +382,7 @@ impl SnowflakeMetadataDialect {
                 .get(QUERY)
                 .cloned()
                 .flatten()
-                .unwrap_or_else(|| "null".to_string()));
+                .or_java_null());
         }
         let reader = request
             .partitions()
@@ -404,7 +404,7 @@ impl SnowflakeMetadataDialect {
             &schema,
             constraints,
         )?;
-        Ok(generated.unwrap_or_else(|| "null".to_string()))
+        Ok(generated.or_java_null())
     }
 
     async fn handle_direct_query_splits(
@@ -414,7 +414,7 @@ impl SnowflakeMetadataDialect {
     ) -> Result<GetSplitsResponse> {
         tracing::info!(
             "doGetSplits: {}: Catalog {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.table_name().schema_name(),
             request.table_name().table_name()
         );
@@ -444,12 +444,12 @@ impl SnowflakeMetadataDialect {
             let mut builder = handler.context().split_builder(request).await?;
             tracing::info!(
                 "{}: Input partition is {:?}",
-                request.query_id().unwrap_or("null"),
+                request.query_id().or_java_null(),
                 partition
             );
             builder = builder.add(
                 snowflake_constants::BLOCK_PARTITION_COLUMN_NAME,
-                partition.unwrap_or_else(|| "null".to_string()),
+                partition.or_java_null(),
             );
             if let Some(filter) = identity_option(
                 request.identity(),
@@ -458,7 +458,7 @@ impl SnowflakeMetadataDialect {
                 tracing::info!("Catalog Casing Filter found: {:?}", filter);
                 builder = builder.add(
                     environment_constants::CATALOG_CASING_FILTER,
-                    filter.clone().unwrap_or_else(|| "null".to_string()),
+                    filter.clone().or_java_null(),
                 );
             }
             splits.push(builder.build());
@@ -479,7 +479,7 @@ impl SnowflakeMetadataDialect {
         request: &GetSplitsRequest,
         s3_uri: &mut Option<S3Uri>,
     ) -> Result<()> {
-        let query_id = request.query_id().unwrap_or("null");
+        let query_id = request.query_id().or_java_null();
         let connection = handler.connect(request.identity()).await?;
         let result = async {
             let sf_integration_name = storage_integration_name(handler.config_options())?;
@@ -528,7 +528,7 @@ impl SnowflakeMetadataDialect {
         handler: &SnowflakeMetadataHandler,
         request: &GetSplitsRequest,
     ) -> Result<GetSplitsResponse> {
-        let query_id = request.query_id().unwrap_or("null");
+        let query_id = request.query_id().or_java_null();
         let mut s3_uri = None;
         if let Err(error) = self.run_export(handler, request, &mut s3_uri).await {
             match snowflake_sql_exception(&error) {
@@ -595,7 +595,7 @@ impl SnowflakeMetadataDialect {
             .build()
             .await?;
         let mut result_set = connection.execute_query(&statement).await?;
-        let view_flag = result_set.next().await?;
+        let view_flag = result_set.next_row().await?.is_some();
         tracing::info!("viewFlag: {}", view_flag);
         Ok(view_flag)
     }
@@ -614,10 +614,11 @@ impl SnowflakeMetadataDialect {
         let statement = connection.prepare_statement(&sql).await?;
         let mut result_set = connection.execute_query(&statement).await?;
         let mut primary_keys = Vec::new();
-        while result_set.next().await? {
-            let key = result_set
-                .get_string(PRIMARY_KEY_COLUMN_NAME)?
-                .unwrap_or_else(|| "null".to_string());
+        while let Some(row) = result_set.next_row().await? {
+            let key = row
+                .by_label(PRIMARY_KEY_COLUMN_NAME)?
+                .to_java_string()
+                .or_java_null();
             primary_keys.push(self.snowflake_query_string_builder.quote(&key));
         }
         let primary_key_string = primary_keys.join(",");
@@ -653,10 +654,12 @@ impl SnowflakeMetadataDialect {
         );
         let checked: std::result::Result<bool, SqlError> = async {
             let mut statement = connection.prepare_statement(&sql).await?;
-            statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT_SECONDS)?;
+            statement.set_query_timeout(snowflake_constants::UNIQUENESS_CHECK_TIMEOUT);
             let mut result_set = connection.execute_query(&statement).await?;
-            Ok(result_set.next().await?
-                && result_set.get_int(COUNTS_COLUMN_NAME)?.unwrap_or(0) == 1)
+            Ok(match result_set.next_row().await? {
+                Some(row) => row.by_label(COUNTS_COLUMN_NAME)?.to_int()?.unwrap_or(0) == 1,
+                None => false,
+            })
         }
         .await;
         match checked {
@@ -712,8 +715,8 @@ impl SnowflakeMetadataDialect {
             .await?;
         let mut result_set = connection.execute_query(&statement).await?;
         let mut total_record_count = 0_i64;
-        while result_set.next().await? {
-            total_record_count = result_set.get_long(1usize)?.unwrap_or(0);
+        while let Some(row) = result_set.next_row().await? {
+            total_record_count = row.value(0)?.to_long()?.unwrap_or(0);
         }
         if total_record_count <= 0 {
             tracing::info!("No Records Found for table {}", table_name);
@@ -757,7 +760,7 @@ async fn export_split(
         .await?
         .add(
             snowflake_constants::SNOWFLAKE_SPLIT_QUERY_ID,
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
         )
         .add(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET, bucket)
         .add(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY, key)
@@ -858,7 +861,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         {
             tracing::info!(
                 "enhancePartitionSchema for S3 export {}: Catalog {}, table {}",
-                request.query_id().unwrap_or("null"),
+                request.query_id().or_java_null(),
                 request.table_name().schema_name(),
                 request.table_name()
             );
@@ -898,7 +901,7 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         }
         tracing::debug!(
             "getPartitions: {}: Schema {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             table_name.schema_name(),
             table_name.table_name()
         );
@@ -962,20 +965,20 @@ impl MetadataDialect for SnowflakeMetadataDialect {
         jdbc_connection: &dyn JdbcConnection,
     ) -> Result<Vec<String>> {
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set = jdbc_connection
+        let schemas = jdbc_connection
             .metadata()
-            .get_schemas_with_catalog(catalog.as_deref(), None)
+            .schemas(catalog.as_deref(), None)
             .await?;
         let input_catalog_name = jdbc_connection.get_catalog().await?;
         let input_schema_name = jdbc_connection.get_schema().await?;
         let mut schema_names: Vec<String> = Vec::new();
-        while result_set.next().await? {
-            let schema_name = result_set.get_string("TABLE_SCHEM")?.ok_or_else(|| {
+        for entry in schemas {
+            let schema_name = entry.schema.ok_or_else(|| {
                 FederationError::null_pointer(
                     "Cannot invoke \"String.equals(Object)\" because \"schemaName\" is null",
                 )
             })?;
-            let catalog_name = result_set.get_string("TABLE_CATALOG")?;
+            let catalog_name = entry.catalog;
             let schema_matches = input_schema_name
                 .as_deref()
                 .is_none_or(|input| schema_name == input);
@@ -1037,14 +1040,15 @@ impl MetadataDialect for SnowflakeMetadataDialect {
 
     fn convert_datasource_type(
         &self,
-        column_index: usize,
-        precision: i32,
+        column: &ColumnMetadata,
         config_options: &HashMap<String, String>,
-        metadata: &ResultSetMetaData,
     ) -> Result<Option<ArrowType>> {
-        let scale = metadata.scale(column_index)?;
-        let column_type = metadata.column_type(column_index)?;
-        utils::to_arrow_type(column_type, precision, scale, config_options)
+        utils::to_arrow_type(
+            column.jdbc_type(),
+            column.precision(),
+            column.scale(),
+            config_options,
+        )
     }
 
     async fn get_schema(
@@ -1099,20 +1103,16 @@ impl SnowflakeMetadataDialect {
     ) -> Result<Schema> {
         let mut schema_builder = SchemaBuilder::new_builder();
         let catalog = jdbc_connection.get_catalog().await?;
-        let mut result_set =
-            columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
-        let mut found = false;
-        while result_set.next().await? {
-            found = true;
+        let columns = columns(catalog.as_deref(), table_name, jdbc_connection.metadata()).await?;
+        let found = !columns.is_empty();
+        for column in columns {
             let column_type = utils::to_arrow_type(
-                JdbcType::from_code(result_set.get_int("DATA_TYPE")?.unwrap_or(0)),
-                result_set.get_int("COLUMN_SIZE")?.unwrap_or(0),
-                result_set.get_int("DECIMAL_DIGITS")?.unwrap_or(0),
+                column.data_type,
+                column.column_size.unwrap_or(0),
+                column.decimal_digits.unwrap_or(0),
                 handler.config_options(),
             )?;
-            let column_name = result_set
-                .get_string(COLUMN_NAME)?
-                .unwrap_or_else(|| "null".to_string());
+            let column_name = column.name.or_java_null();
             let column_type = match column_type {
                 None => DataType::Utf8,
                 Some(arrow_type) if !SupportedTypes::is_supported_arrow_type(&arrow_type) => {

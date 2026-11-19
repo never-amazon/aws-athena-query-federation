@@ -73,8 +73,8 @@ impl<'a> PreparedStatementBuilder<'a> {
         tracing::info!("Parameters {:?}", parameters);
         let prepared = async {
             let mut statement = connection.prepare_statement(query).await?;
-            for (i, parameter) in parameters.iter().enumerate() {
-                statement.set_string(i + 1, parameter.as_str())?;
+            for parameter in parameters {
+                statement.bind(parameter.as_str());
             }
             Ok(statement)
         }

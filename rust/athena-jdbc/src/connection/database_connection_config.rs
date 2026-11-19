@@ -2,6 +2,7 @@ use std::fmt;
 
 use athena_federation_sdk::Result;
 
+use crate::java_null::OrJavaNull;
 use crate::validate::not_blank;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -66,7 +67,7 @@ impl fmt::Display for DatabaseConnectionConfig {
             self.catalog,
             self.engine,
             self.jdbc_connection_string,
-            self.secret.as_deref().unwrap_or("null")
+            self.secret.as_deref().or_java_null()
         )
     }
 }

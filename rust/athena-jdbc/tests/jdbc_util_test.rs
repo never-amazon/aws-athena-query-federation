@@ -279,7 +279,8 @@ async fn test_get_tables() {
     assert_eq!(
         Some(TEST_SCHEMA),
         connection.executed()[0]
-            .parameter(1)
+            .parameters()
+            .first()
             .and_then(athena_jdbc::sql::SqlValue::to_java_string)
             .as_deref()
     );
@@ -303,6 +304,7 @@ async fn test_get_table_metadata_with_no_warehouse_selected_propagates() {
             message: "No active warehouse selected in the current session.  Select an active warehouse with the 'use warehouse' command.".to_string(),
             sql_state: Some("57P03".to_string()),
             code: Some(606),
+            cause: None,
         })
     });
     let thrown = jdbc_util::table_metadata(&connection, &statement(), "Tables and Views")
@@ -331,8 +333,8 @@ async fn test_get_schema_table_name() {
         &[&[TEST_SCHEMA, TEST_TABLE]],
     )
     .to_result_set();
-    assert!(result_set.next().await.unwrap());
-    let table_name = jdbc_util::schema_table_name(&result_set).unwrap();
+    let row = result_set.next_row().await.unwrap().unwrap();
+    let table_name = jdbc_util::schema_table_name(&row).unwrap();
     assert_eq!(TEST_SCHEMA, table_name.schema_name());
     assert_eq!(TEST_TABLE, table_name.table_name());
 }

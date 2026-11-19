@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use athena_jdbc::connection::{JdbcDriver, JdbcProperties};
 use athena_jdbc::sql::{
-    ColumnMetadata, DatabaseMetaData, JdbcConnection, JdbcType, Nullability, PreparedStatement,
-    ResultSet, ResultSetMetaData, RowSource, SqlError, SqlValue, StatementHandle,
+    ColumnMetadata, DatabaseMetaData, JdbcConnection, Nullability, PreparedStatement, ResultSet,
+    ResultSetMetaData, RowSource, SqlError, SqlValue,
 };
 use tokio::sync::Mutex;
 
@@ -153,11 +153,7 @@ impl Drop for PgRowSource {
 }
 
 fn native_sql(statement: &PreparedStatement) -> NativeSql {
-    statement
-        .handle()
-        .and_then(|h| h.downcast_ref::<NativeSql>())
-        .cloned()
-        .unwrap_or_else(|| to_native_sql(statement.sql()))
+    to_native_sql(statement.sql())
 }
 
 fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result<(), SqlError> {
@@ -182,8 +178,7 @@ fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result
 
 impl PgConnection {
     pub async fn connect(url: &str, properties: &JdbcProperties) -> Result<PgConnection, SqlError> {
-        let info: HashMap<String, String> = properties.clone();
-        let settings = parse_url(url, &info)?;
+        let settings = parse_url(url, properties)?;
         let (session, host) = connect(&settings).await?;
         let cancel = session.backend_key().map(|key| CancelTarget {
             host,
@@ -212,11 +207,9 @@ impl PgConnection {
     }
 
     fn query_timer(&self, statement: &PreparedStatement) -> QueryTimer {
-        let seconds = statement.query_timeout();
-        let Some(target) = self.cancel.clone().filter(|_| seconds > 0) else {
+        let (Some(limit), Some(target)) = (statement.query_timeout(), self.cancel.clone()) else {
             return QueryTimer(None);
         };
-        let limit = std::time::Duration::from_secs(u64::from(seconds.unsigned_abs()));
         QueryTimer(Some(tokio::spawn(async move {
             tokio::time::sleep(limit).await;
             if let Err(e) = send_cancel(&target).await {
@@ -318,8 +311,7 @@ impl JdbcConnection for PgConnection {
         if self.session.lock().await.is_closed() {
             return Err(super::error::connection_closed());
         }
-        let native = to_native_sql(sql);
-        Ok(PreparedStatement::new(sql).with_handle(StatementHandle::new(native)))
+        Ok(PreparedStatement::new(sql))
     }
 
     async fn execute_query(&self, statement: &PreparedStatement) -> Result<ResultSet, SqlError> {
@@ -332,7 +324,7 @@ impl JdbcConnection for PgConnection {
                 &native.sql,
                 statement.parameters(),
                 false,
-                statement.fetch_size(),
+                i32::try_from(statement.fetch_size()).unwrap_or(i32::MAX),
             )
             .await?;
         let (Some(fields), Some((id, buffer))) = (executed.fields, executed.result) else {
@@ -436,12 +428,4 @@ impl JdbcConnection for PgConnection {
         self.session.lock().await.close().await;
         Ok(())
     }
-}
-
-pub(crate) fn driver_column(name: &str, jdbc_type: JdbcType, type_name: &str) -> ColumnMetadata {
-    ColumnMetadata::new(name, jdbc_type).with_type_name(type_name)
-}
-
-pub(crate) fn varchar_column(name: &str) -> ColumnMetadata {
-    driver_column(name, JdbcType::Varchar, "varchar")
 }

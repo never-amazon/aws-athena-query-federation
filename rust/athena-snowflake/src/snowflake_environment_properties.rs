@@ -5,12 +5,12 @@ use athena_federation_sdk::connection::environment_constants;
 use athena_jdbc::ConnectionStringFormat;
 
 use crate::snowflake_constants::java_trim;
+use athena_jdbc::java_null::{OrJavaNull, JAVA_NULL};
 
 const WAREHOUSE_PROPERTY_KEY: &str = "warehouse";
 const DB_PROPERTY_KEY: &str = "db";
 const SCHEMA_PROPERTY_KEY: &str = "schema";
 const SNOWFLAKE_ESCAPE_CHARACTER: &str = "\"";
-const NULL_LITERAL: &str = "null";
 const SNOWFLAKE_JDBC_PARAMETER_PREFIX: &str = "/?";
 
 pub const SNOWFLAKE_CONNECTION_STRING: ConnectionStringFormat = ConnectionStringFormat {
@@ -84,7 +84,7 @@ fn copy_usable(
 
 fn is_usable_value(value: &str) -> bool {
     let trimmed = java_trim(value);
-    !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case(NULL_LITERAL)
+    !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case(JAVA_NULL)
 }
 
 fn is_valid_port(port_value: &str) -> bool {
@@ -112,7 +112,7 @@ pub fn connection_properties_to_environment<S: BuildHasher>(
     connection_string.push_str(
         connection_properties
             .get(environment_constants::HOST)
-            .map_or("null", String::as_str),
+            .or_java_null(),
     );
     if let Some(raw_port) = connection_properties.get(environment_constants::PORT) {
         let port_value = java_trim(raw_port);

@@ -6,15 +6,15 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::{Credentials, CredentialsProvider};
+use athena_federation_sdk::lambda::LambdaError;
 use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{
-    DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcDriver,
-    JdbcProperties,
+    DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::sql::{JdbcConnection, SqlError};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
 use athena_snowflake::snowflake_constants;
-use athena_snowflake::sql::SnowflakeDriver;
+use athena_snowflake::sql::{SnowflakeAuth, SnowflakeDriver};
 use athena_snowflake::utils::{SnowflakeAuthUtils, SnowflakePrivateKey};
 use snowflake_support::FakeConnection;
 
@@ -125,13 +125,8 @@ impl RecordingDriver {
     }
 }
 
-#[async_trait]
-impl JdbcDriver for RecordingDriver {
-    fn driver_class_name(&self) -> &str {
-        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
-    }
-
-    async fn connect(
+impl RecordingDriver {
+    fn connect_pooled(
         &self,
         url: &str,
         properties: &JdbcProperties,
@@ -149,12 +144,19 @@ impl JdbcDriver for RecordingDriver {
 
 #[async_trait]
 impl SnowflakeDriver for RecordingDriver {
-    async fn connect_with_private_key(
+    fn driver_class_name(&self) -> &str {
+        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
+    }
+
+    async fn connect(
         &self,
         url: &str,
         properties: &JdbcProperties,
-        private_key: &SnowflakePrivateKey,
+        auth: SnowflakeAuth<'_>,
     ) -> std::result::Result<Box<dyn JdbcConnection>, SqlError> {
+        let SnowflakeAuth::KeyPair(private_key) = auth else {
+            return self.connect_pooled(url, properties);
+        };
         self.key_pair_calls.lock().unwrap().push(KeyPairCall {
             url: url.to_string(),
             properties: properties.clone(),
@@ -586,5 +588,76 @@ async fn get_connection_key_pair_after_password_does_not_send_earlier_password()
     assert_eq!(
         Some(&"test.value".to_string()),
         properties.get("test.property")
+    );
+}
+
+fn key_pair_causes(error: &FederationError) -> Vec<(String, Option<String>)> {
+    let lambda_error = LambdaError::new(error);
+    assert_eq!("java.sql.SQLException", lambda_error.error_type());
+    lambda_error
+        .causes()
+        .iter()
+        .map(|cause| {
+            (
+                cause.error_type().to_string(),
+                cause.error_message().map(ToString::to_string),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn key_pair_failure_keeps_the_java_cause() {
+    let driver = RecordingDriver::new();
+    *driver.key_pair_error.lock().unwrap() = Some(SqlError::snowflake("Generic error"));
+    let provider = MapCredentialsProvider::new(&[
+        (snowflake_constants::USER, TESTUSER),
+        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+    ]);
+    let error = factory(&driver)
+        .get_connection(Some(&provider))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        vec![(
+            "net.snowflake.client.api.exception.SnowflakeSQLException".to_string(),
+            Some("Generic error".to_string())
+        )],
+        key_pair_causes(&error)
+    );
+
+    let provider = MapCredentialsProvider::new(&[(
+        snowflake_constants::PEM_PRIVATE_KEY,
+        VALID_PRIVATE_KEY_PEM,
+    )]);
+    let error = factory(&driver)
+        .get_connection(Some(&provider))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        vec![("java.lang.NullPointerException".to_string(), None)],
+        key_pair_causes(&error)
+    );
+
+    let provider = MapCredentialsProvider::new(&[
+        (snowflake_constants::USER, TESTUSER),
+        (
+            snowflake_constants::PEM_PRIVATE_KEY,
+            "-----BEGIN PRIVATE KEY-----\nnot-a-private-key\n-----END PRIVATE KEY-----",
+        ),
+    ]);
+    let error = factory(&driver)
+        .get_connection(Some(&provider))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        vec![(
+            "com.amazonaws.athena.connector.lambda.exceptions.AthenaConnectorException".to_string(),
+            Some("Invalid private key format".to_string())
+        )],
+        key_pair_causes(&error)
     );
 }

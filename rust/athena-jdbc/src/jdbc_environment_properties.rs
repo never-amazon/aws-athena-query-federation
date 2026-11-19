@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
+use crate::java_null::OrJavaNull;
 use athena_federation_sdk::connection::environment_constants;
 
 fn java_get<'a, S: BuildHasher>(properties: &'a HashMap<String, String, S>, key: &str) -> &'a str {
-    properties.get(key).map_or("null", String::as_str)
+    properties.get(key).or_java_null()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

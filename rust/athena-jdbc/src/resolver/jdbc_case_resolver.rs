@@ -4,6 +4,7 @@ use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
 use athena_federation_sdk::{FederationError, Result};
 
+use crate::java_null::OrJavaNull;
 use crate::manager::PreparedStatementBuilder;
 use crate::sql::{JdbcConnection, SqlError};
 use crate::validate::runtime_with_cause;
@@ -61,14 +62,14 @@ async fn query_column(
         .map_err(QueryFailure::Other)?;
     let mut results = Vec::new();
     let mut result_set = connection.execute_query(&statement).await?;
-    while result_set.next().await? {
-        let candidate = result_set.get_string(column_key)?;
+    while let Some(row) = result_set.next_row().await? {
+        let candidate = row.by_label(column_key)?.to_java_string();
         tracing::debug!(
             "Case insensitive search on columLabel: {}, schema name: {:?}",
             column_key,
             candidate
         );
-        results.push(candidate.unwrap_or_else(|| "null".to_string()));
+        results.push(candidate.or_java_null());
     }
     Ok(results)
 }

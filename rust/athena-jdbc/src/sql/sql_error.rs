@@ -34,6 +34,8 @@ pub enum SqlError {
         message: String,
         sql_state: Option<String>,
         code: Option<i32>,
+        #[source]
+        cause: Option<Arc<dyn JavaThrowable>>,
     },
     #[error("{message}")]
     Postgres {
@@ -56,6 +58,16 @@ impl SqlError {
             message: message.into(),
             sql_state: None,
             code: None,
+            cause: None,
+        }
+    }
+
+    pub fn with_java_cause(message: impl Into<String>, cause: impl JavaThrowable) -> SqlError {
+        SqlError::Jdbc {
+            message: message.into(),
+            sql_state: None,
+            code: None,
+            cause: Some(Arc::new(cause)),
         }
     }
 
@@ -153,6 +165,9 @@ impl JavaThrowable for SqlError {
             SqlError::Postgres {
                 cause: Some(cause), ..
             } => Some(JavaCause::foreign(cause.as_ref())),
+            SqlError::Jdbc {
+                cause: Some(cause), ..
+            } => Some(JavaCause::Throwable(cause.as_ref())),
             _ => None,
         }
     }

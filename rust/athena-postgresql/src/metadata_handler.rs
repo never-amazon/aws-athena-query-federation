@@ -32,6 +32,7 @@ use indexmap::IndexMap;
 use crate::constants;
 use crate::driver::PgDriver;
 use crate::resolver::postgresql_case_resolver;
+use athena_jdbc::java_null::OrJavaNull;
 
 const MATERIALIZED_VIEWS: &str = "Materialized Views";
 const PARTITION_SCHEMA_NAME: &str = "child_schema";
@@ -74,16 +75,12 @@ fn partition_text(partitions: &Block, field: &str, row: usize) -> Result<Option<
     Ok(reader.read_text())
 }
 
-fn java_string(value: Option<String>) -> String {
-    value.unwrap_or_else(|| "null".to_string())
-}
-
 fn catalog_casing_filter(identity: Option<&FederatedIdentity>) -> Option<String> {
     let value = identity?
         .config_options()
         .get(environment_constants::CATALOG_CASING_FILTER)?;
     tracing::info!("Catalog Casing Filter found: {:?}", value);
-    Some(java_string(value.clone()))
+    Some(value.clone().or_java_null())
 }
 
 pub struct PostGreSqlMetadataDialect;
@@ -163,12 +160,12 @@ pub async fn get_char_columns(
     table: &str,
 ) -> std::result::Result<Vec<String>, SqlError> {
     let mut statement = connection.prepare_statement(CHAR_COLUMNS_QUERY).await?;
-    statement.set_string(1, schema)?;
-    statement.set_string(2, table)?;
+    statement.bind(schema);
+    statement.bind(table);
     let mut result_set = connection.execute_query(&statement).await?;
     let mut char_columns = Vec::new();
-    while result_set.next().await? {
-        char_columns.push(java_string(result_set.get_string("column_name")?));
+    while let Some(row) = result_set.next_row().await? {
+        char_columns.push(row.by_label("column_name")?.to_java_string().or_java_null());
     }
     Ok(char_columns)
 }
@@ -197,7 +194,7 @@ async fn get_materialized_views(
     let mut statement = connection
         .prepare_statement(MATERIALIZED_VIEWS_QUERY)
         .await?;
-    statement.set_string(1, database_name)?;
+    statement.bind(database_name);
     tracing::debug!(
         "Prepared Statement for getting Materialized View in schema {} : {}",
         database_name,
@@ -216,10 +213,10 @@ async fn get_paginated_results(
         .prepare_statement(LIST_PAGINATED_TABLES_QUERY)
         .await?;
     let name = database_name.map_or(SqlValue::Null, |n| SqlValue::String(n.to_string()));
-    statement.set_object(1, name.clone())?;
-    statement.set_object(2, name)?;
-    statement.set_int(3, limit)?;
-    statement.set_int(4, token)?;
+    statement.bind(name.clone());
+    statement.bind(name);
+    statement.bind(limit);
+    statement.bind(token);
     tracing::debug!(
         "Prepared Statement for getting tables in schema {:?} : {}",
         database_name,
@@ -235,12 +232,12 @@ async fn is_uuid_column(
 ) -> bool {
     let result: std::result::Result<bool, SqlError> = async {
         let mut statement = connection.prepare_statement(GET_DATA_TYPE_QUERY).await?;
-        statement.set_string(1, table_name.schema_name())?;
-        statement.set_string(2, table_name.table_name())?;
-        statement.set_string(3, column_name)?;
+        statement.bind(table_name.schema_name());
+        statement.bind(table_name.table_name());
+        statement.bind(column_name);
         let mut result_set = connection.execute_query(&statement).await?;
-        if result_set.next().await? {
-            let data_type = result_set.get_string("data_type")?;
+        if let Some(row) = result_set.next_row().await? {
+            let data_type = row.by_label("data_type")?.to_java_string();
             tracing::debug!(
                 "Data type for Column: {}.{}.{} is: {:?}",
                 table_name.schema_name(),
@@ -270,19 +267,17 @@ async fn split_clauses_from(
     table_name: &TableName,
 ) -> Result<Vec<String>> {
     let mut split_clauses = Vec::new();
-    let mut result_set = connection
+    let primary_key_column = connection
         .metadata()
-        .get_primary_keys(
+        .primary_key_columns(
             None,
             Some(table_name.schema_name()),
             table_name.table_name(),
         )
-        .await?;
-    let primary_key_column = if result_set.next().await? {
-        result_set.get_string("COLUMN_NAME")?
-    } else {
-        None
-    };
+        .await?
+        .into_iter()
+        .next()
+        .flatten();
     let Some(primary_key_column) = primary_key_column else {
         return Ok(split_clauses);
     };
@@ -311,9 +306,11 @@ async fn split_clauses_from(
     );
     let statement = connection.prepare_statement(&sql).await?;
     let mut min_max = connection.execute_query(&statement).await?;
-    min_max.next().await?;
-    let min = min_max.get_long(1usize)?.unwrap_or(0);
-    let max = min_max.get_long(2usize)?.unwrap_or(0);
+    let min_max = min_max.next_row().await?.ok_or_else(|| {
+        SqlError::new("ResultSet not positioned properly, perhaps you need to call next.")
+    })?;
+    let min = min_max.value(0)?.to_long()?.unwrap_or(0);
+    let max = min_max.value(1)?.to_long()?.unwrap_or(0);
     let splitter = splitter(&quoted_primary_key_column, &min_max, DEFAULT_NUM_SPLITS)?;
     if let Some(mut splitter) = splitter {
         if max - min < i64::from(DEFAULT_NUM_SPLITS) {
@@ -413,7 +410,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
     ) -> Result<()> {
         tracing::info!(
             "{}: Catalog {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.table_name().schema_name(),
             request.table_name().table_name()
         );
@@ -429,16 +426,16 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                 .build()
                 .await?;
             let mut result_set = connection.execute_query(&statement).await?;
-            if !result_set.next().await? {
+            let Some(mut row) = result_set.next_row().await? else {
                 return block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                     block.set_value(BLOCK_PARTITION_SCHEMA_COLUMN_NAME, row_num, ALL_PARTITIONS)?;
                     block.set_value(BLOCK_PARTITION_COLUMN_NAME, row_num, ALL_PARTITIONS)?;
                     Ok(1)
                 });
-            }
+            };
             loop {
-                let partition_schema_name = result_set.get_string(PARTITION_SCHEMA_NAME)?;
-                let partition_name = result_set.get_string(PARTITION_NAME)?;
+                let partition_schema_name = row.by_label(PARTITION_SCHEMA_NAME)?.to_java_string();
+                let partition_name = row.by_label(PARTITION_NAME)?.to_java_string();
                 block_writer.write_rows(&mut |block: &mut Block, row_num: usize| {
                     block.set_value(
                         BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
@@ -452,8 +449,9 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                     )?;
                     Ok(1)
                 })?;
-                if !result_set.next().await? {
-                    return Ok(());
+                match result_set.next_row().await? {
+                    Some(next) => row = next,
+                    None => return Ok(()),
                 }
             }
         }
@@ -468,7 +466,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
     ) -> Result<GetSplitsResponse> {
         tracing::info!(
             "doGetSplits, QueryId:{}: Catalog {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.table_name().schema_name(),
             request.table_name().table_name()
         );
@@ -521,15 +519,15 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                     partition_text(partitions, BLOCK_PARTITION_COLUMN_NAME, cur_partition)?;
                 tracing::info!(
                     "{}: Input partition is {:?}",
-                    request.query_id().unwrap_or("null"),
+                    request.query_id().or_java_null(),
                     partition
                 );
                 splits.push(
                     make_split(
                         handler,
                         request,
-                        java_string(schema_text),
-                        java_string(partition),
+                        schema_text.or_java_null(),
+                        partition.or_java_null(),
                     )
                     .await?,
                 );

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use athena_jdbc::sql::{JdbcConnection, SqlError};
+use athena_jdbc::sql::{JdbcConnection, SqlError, SqlValue};
 use athena_postgresql::PgConnection;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -314,18 +314,13 @@ async fn deeply_nested_arrays_do_not_overflow_the_stack() {
     let connection = connect(&server.url("sslmode=disable")).await.unwrap();
     let statement = connection.prepare_statement("select x").await.unwrap();
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    assert!(rows.next().await.unwrap());
-    assert!(rows
-        .current_row()
-        .unwrap()
-        .get_array(1usize)
-        .unwrap()
-        .is_some());
-    assert!(rows.next().await.unwrap());
-    assert!(rows.current_row().unwrap().get_array(1usize).is_err());
-    assert!(rows.next().await.unwrap());
-    assert!(rows.current_row().unwrap().get_array(1usize).is_err());
-    assert!(!rows.next().await.unwrap());
+    let row = rows.next_row().await.unwrap().unwrap();
+    assert!(row.value(0).and_then(SqlValue::to_array).unwrap().is_some());
+    let row = rows.next_row().await.unwrap().unwrap();
+    assert!(row.value(0).and_then(SqlValue::to_array).is_err());
+    let row = rows.next_row().await.unwrap().unwrap();
+    assert!(row.value(0).and_then(SqlValue::to_array).is_err());
+    assert!(rows.next_row().await.unwrap().is_none());
 }
 
 fn sasl_mechanisms(names: &[&str]) -> Vec<u8> {
@@ -554,9 +549,9 @@ async fn fetch_size_reads_through_a_portal_and_commit_does_not_drain_it() {
     let connection = connect(&server.url("sslmode=disable")).await.unwrap();
     connection.set_auto_commit(false).await.unwrap();
     let mut statement = connection.prepare_statement("select x").await.unwrap();
-    statement.set_fetch_size(5).unwrap();
+    statement.set_fetch_size(5);
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    assert!(rows.next().await.unwrap());
+    assert!(rows.next_row().await.unwrap().is_some());
     connection.commit().await.unwrap();
     let seen = events(&server.events);
     assert!(seen.contains(&"execute max_rows 5".to_string()), "{seen:?}");
@@ -592,7 +587,7 @@ async fn dropping_a_read_mid_row_keeps_the_connection_in_sync() {
     let connection = connect(&server.url("sslmode=disable")).await.unwrap();
     let statement = connection.prepare_statement("select x").await.unwrap();
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    let first = tokio::time::timeout(Duration::from_millis(100), rows.next()).await;
+    let first = tokio::time::timeout(Duration::from_millis(100), rows.next_row()).await;
     assert!(first.is_err());
     drop(rows);
     let second = connection.prepare_statement("select 42").await.unwrap();
@@ -600,11 +595,10 @@ async fn dropping_a_read_mid_row_keeps_the_connection_in_sync() {
         .await
         .unwrap()
         .unwrap();
-    assert!(rows.next().await.unwrap());
+    let row = rows.next_row().await.unwrap().unwrap();
     assert_eq!(
-        rows.current_row()
-            .unwrap()
-            .get_string(1usize)
+        row.value(0)
+            .map(SqlValue::to_java_string)
             .unwrap()
             .as_deref(),
         Some("42")
@@ -646,9 +640,9 @@ async fn query_timeout_sends_a_cancel_request_with_the_backend_key() {
         .prepare_statement("select pg_sleep(5)")
         .await
         .unwrap();
-    statement.set_query_timeout(1).unwrap();
+    statement.set_query_timeout(std::time::Duration::from_secs(1));
     let mut rows = connection.execute_query(&statement).await.unwrap();
-    let error = rows.next().await.unwrap_err();
+    let error = rows.next_row().await.unwrap_err();
     assert_eq!(error.sql_state(), Some("57014"));
     let seen = events(&server.events);
     assert!(

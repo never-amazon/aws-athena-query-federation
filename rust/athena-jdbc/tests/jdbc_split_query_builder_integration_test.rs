@@ -280,7 +280,7 @@ async fn test_real_prepared_statement_with_calcite_sql() {
     let java = java_statement(&java_run(&["testRealPreparedStatementWithCalciteSql"]));
     let (connection, statement) = prepare_like_java("SELECT * FROM test_table", &java).await;
     let mut result_set = connection.execute_query(&statement).await.unwrap();
-    while result_set.next().await.unwrap() {}
+    while result_set.next_row().await.unwrap().is_some() {}
 }
 
 #[tokio::test]
@@ -297,7 +297,7 @@ async fn test_real_prepared_statement_with_calcite_sql_parameterized() {
         let (connection, statement) = prepare_like_java(sql_query, &java).await;
         let mut result_set = connection.execute_query(&statement).await.unwrap();
         let mut row_count = 0;
-        while result_set.next().await.unwrap() {
+        while result_set.next_row().await.unwrap().is_some() {
             row_count += 1;
         }
         assert_eq!(
