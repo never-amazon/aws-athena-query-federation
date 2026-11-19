@@ -4,6 +4,7 @@ use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::resolver::{CaseResolver, FederationSdkCasingMode};
 use athena_federation_sdk::{FederationError, Result};
 
+use crate::java_null::OrJavaNull;
 use crate::manager::PreparedStatementBuilder;
 use crate::sql::{JdbcConnection, SqlError};
 use crate::validate::runtime_with_cause;
@@ -68,7 +69,7 @@ async fn query_column(
             column_key,
             candidate
         );
-        results.push(candidate.unwrap_or_else(|| "null".to_string()));
+        results.push(candidate.or_java_null());
     }
     Ok(results)
 }

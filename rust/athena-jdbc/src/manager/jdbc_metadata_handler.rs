@@ -25,6 +25,7 @@ use indexmap::IndexMap;
 
 use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};
+use crate::java_null::OrJavaNull;
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
 use crate::resolver::JdbcCaseResolver;
 use crate::sql::{ColumnInfo, ColumnMetadata, DatabaseMetaData, JdbcConnection};
@@ -339,7 +340,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
                 decimal_digits,
                 config_options,
             )?;
-            let column_name = column.name.unwrap_or_else(|| "null".to_string());
+            let column_name = column.name.or_java_null();
             match column_type {
                 Some(arrow_type) if SupportedTypes::is_supported_arrow_type(&arrow_type) => {
                     if matches!(arrow_type, DataType::List(_)) {
@@ -473,7 +474,7 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
         let connection = self.connect(request.identity()).await?;
         tracing::info!(
             "{}: List schema names for Catalog {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.catalog_name()
         );
         let result = self
@@ -487,9 +488,9 @@ impl<D: MetadataDialect> MetadataHandler for JdbcMetadataHandler<D> {
         let connection = self.connect(request.identity()).await?;
         tracing::info!(
             "{}: List table names for Catalog {}, Schema {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.catalog_name(),
-            request.schema_name().unwrap_or("null")
+            request.schema_name().or_java_null()
         );
         let result = async {
             if request.page_size() == UNLIMITED_PAGE_SIZE_VALUE && request.next_token().is_none() {

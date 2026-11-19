@@ -18,6 +18,7 @@ use serde_json::{Map, Value};
 
 use crate::snowflake_constants::{self, is_blank};
 use crate::utils::{SnowflakeAuthType, SnowflakeAuthUtils};
+use athena_jdbc::java_null::JAVA_NULL;
 
 pub struct SnowflakeCredentialsProvider {
     oauth_secret_name: String,
@@ -305,7 +306,7 @@ fn node_text(node: &Map<String, Value>, key: &str) -> Result<String> {
     match node.get(key) {
         None => Err(missing_node(key)),
         Some(Value::String(text)) => Ok(text.clone()),
-        Some(Value::Null) => Ok("null".to_string()),
+        Some(Value::Null) => Ok(JAVA_NULL.to_string()),
         Some(Value::Object(_) | Value::Array(_)) => Ok(String::new()),
         Some(other) => Ok(other.to_string()),
     }

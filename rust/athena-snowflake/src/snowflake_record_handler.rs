@@ -30,6 +30,7 @@ use crate::snowflake_metadata_handler::{
 };
 use crate::snowflake_query_string_builder::{query_string_builder, SnowflakeQueryStringBuilder};
 use crate::utils;
+use athena_jdbc::java_null::OrJavaNull;
 
 const FETCH_SIZE: u32 = 1000;
 const UTC: &str = "UTC";
@@ -168,7 +169,7 @@ impl SnowflakeRecordDialect {
         let split = records_request.split();
         let export_bucket = split
             .get_property(snowflake_constants::SNOWFLAKE_SPLIT_EXPORT_BUCKET)
-            .unwrap_or("null");
+            .or_java_null();
         let s3_object_key = split
             .get_property(snowflake_constants::SNOWFLAKE_SPLIT_OBJECT_KEY)
             .ok_or_else(|| {
@@ -330,7 +331,7 @@ impl RecordDialect for SnowflakeRecordDialect {
                     allocator,
                     spill_locations,
                     query_status_checker,
-                    &construct_s3_uri(export_bucket.unwrap_or("null"), key),
+                    &construct_s3_uri(export_bucket.or_java_null(), key),
                 )
                 .await
             }

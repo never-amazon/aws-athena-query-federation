@@ -10,6 +10,7 @@ use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTim
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
 use super::sql_error::{Driver, SqlError};
+use crate::java_null::JAVA_NULL;
 
 const DAYS_FROM_CE_TO_EPOCH: i64 = 719_163;
 
@@ -550,7 +551,7 @@ impl SqlValue {
 impl fmt::Display for SqlValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SqlValue::Null => f.write_str("null"),
+            SqlValue::Null => f.write_str(JAVA_NULL),
             SqlValue::Boolean(b) => write!(f, "{b}"),
             SqlValue::TinyInt(v) => write!(f, "{v}"),
             SqlValue::SmallInt(v) => write!(f, "{v}"),

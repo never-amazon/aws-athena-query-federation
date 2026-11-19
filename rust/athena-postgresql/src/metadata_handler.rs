@@ -32,6 +32,7 @@ use indexmap::IndexMap;
 use crate::constants;
 use crate::driver::PgDriver;
 use crate::resolver::postgresql_case_resolver;
+use athena_jdbc::java_null::OrJavaNull;
 
 const MATERIALIZED_VIEWS: &str = "Materialized Views";
 const PARTITION_SCHEMA_NAME: &str = "child_schema";
@@ -74,16 +75,12 @@ fn partition_text(partitions: &Block, field: &str, row: usize) -> Result<Option<
     Ok(reader.read_text())
 }
 
-fn java_string(value: Option<String>) -> String {
-    value.unwrap_or_else(|| "null".to_string())
-}
-
 fn catalog_casing_filter(identity: Option<&FederatedIdentity>) -> Option<String> {
     let value = identity?
         .config_options()
         .get(environment_constants::CATALOG_CASING_FILTER)?;
     tracing::info!("Catalog Casing Filter found: {:?}", value);
-    Some(java_string(value.clone()))
+    Some(value.clone().or_java_null())
 }
 
 pub struct PostGreSqlMetadataDialect;
@@ -168,7 +165,7 @@ pub async fn get_char_columns(
     let mut result_set = connection.execute_query(&statement).await?;
     let mut char_columns = Vec::new();
     while let Some(row) = result_set.next_row().await? {
-        char_columns.push(java_string(row.by_label("column_name")?.to_java_string()));
+        char_columns.push(row.by_label("column_name")?.to_java_string().or_java_null());
     }
     Ok(char_columns)
 }
@@ -413,7 +410,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
     ) -> Result<()> {
         tracing::info!(
             "{}: Catalog {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.table_name().schema_name(),
             request.table_name().table_name()
         );
@@ -469,7 +466,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
     ) -> Result<GetSplitsResponse> {
         tracing::info!(
             "doGetSplits, QueryId:{}: Catalog {}, table {}",
-            request.query_id().unwrap_or("null"),
+            request.query_id().or_java_null(),
             request.table_name().schema_name(),
             request.table_name().table_name()
         );
@@ -522,15 +519,15 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                     partition_text(partitions, BLOCK_PARTITION_COLUMN_NAME, cur_partition)?;
                 tracing::info!(
                     "{}: Input partition is {:?}",
-                    request.query_id().unwrap_or("null"),
+                    request.query_id().or_java_null(),
                     partition
                 );
                 splits.push(
                     make_split(
                         handler,
                         request,
-                        java_string(schema_text),
-                        java_string(partition),
+                        schema_text.or_java_null(),
+                        partition.or_java_null(),
                     )
                     .await?,
                 );

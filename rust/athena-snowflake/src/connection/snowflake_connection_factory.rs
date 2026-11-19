@@ -11,6 +11,7 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, GenericJdbcConnectionFactory,
     JdbcConnectionFactory, JdbcDriver, JdbcProperties,
 };
+use athena_jdbc::java_null::JAVA_NULL;
 use athena_jdbc::sql::{JdbcConnection, SqlError};
 
 use crate::snowflake_constants;
@@ -27,7 +28,7 @@ enum KeyPairError {
     Key(#[source] FederationError),
     #[error("{}", .0.message())]
     Url(#[source] SqlError),
-    #[error("null")]
+    #[error("{}", JAVA_NULL)]
     MissingUser,
     #[error("{0}")]
     DriverNotFound(String),

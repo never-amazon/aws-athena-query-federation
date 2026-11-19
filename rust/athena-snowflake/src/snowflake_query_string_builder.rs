@@ -13,6 +13,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Timelike};
 use crate::partition_page::PartitionPage;
 use crate::snowflake_constants;
 use crate::snowflake_dialect::SnowflakeDialect;
+use athena_jdbc::java_null::OrJavaNull;
 
 pub struct SnowflakeSplitDialect;
 
@@ -56,7 +57,7 @@ pub fn base_export_sql(
     let expanded = expand_sql(&sql_base_string, &accumulator)?;
     tracing::info!(
         "Expanded Generated SQL : {}",
-        expanded.as_deref().unwrap_or("null")
+        expanded.as_deref().or_java_null()
     );
     Ok(expanded)
 }
