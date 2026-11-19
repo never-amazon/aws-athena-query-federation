@@ -20,6 +20,8 @@ pub enum FederationError {
     #[error("{0}")]
     IllegalState(String),
     #[error("{0}")]
+    UnexpectedToken(String),
+    #[error("{0}")]
     UnsupportedOperation(String),
     #[error("{0}")]
     ClassCast(String),

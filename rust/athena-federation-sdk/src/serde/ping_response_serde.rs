@@ -32,7 +32,7 @@ pub fn do_typed_deserialize(jparser: &mut JsonParser<'_>) -> Result<PingResponse
     let capabilities = get_next_int_field(jparser, CAPABILITIES_FIELD)?;
     let ser_de_version = match get_next_int_field(jparser, SERDE_VERSION_FIELD) {
         Ok(v) => v,
-        Err(FederationError::IllegalState(_)) => 1,
+        Err(FederationError::UnexpectedToken(_)) => 1,
         Err(e) => return Err(e),
     };
     Ok(PingResponse::new(

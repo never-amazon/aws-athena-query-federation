@@ -69,7 +69,9 @@ impl JavaThrowable for FederationError {
             FederationError::AthenaConnector(_) => ATHENA_CONNECTOR_EXCEPTION,
             FederationError::Throttle(_) => FEDERATION_THROTTLE_EXCEPTION,
             FederationError::IllegalArgument(_) => "java.lang.IllegalArgumentException",
-            FederationError::IllegalState(_) => "java.lang.IllegalStateException",
+            FederationError::IllegalState(_) | FederationError::UnexpectedToken(_) => {
+                "java.lang.IllegalStateException"
+            }
             FederationError::UnsupportedOperation(_) => "java.lang.UnsupportedOperationException",
             FederationError::ClassCast(_) => "java.lang.ClassCastException",
             FederationError::NullPointer(_) => "java.lang.NullPointerException",

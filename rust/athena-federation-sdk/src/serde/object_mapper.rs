@@ -65,7 +65,7 @@ impl ObjectMapper {
                     );
                     return Ok((mapper, request));
                 }
-                Err(FederationError::IllegalState(_)) => {
+                Err(FederationError::UnexpectedToken(_)) => {
                     candidate = version.lower();
                     tracing::debug!(
                         "Client's SerDe mis-matched with connector version:, attempt with lower version: '{}'",
