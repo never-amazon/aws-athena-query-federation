@@ -15,7 +15,22 @@ use super::error::{connection_closed, io_failure, protocol_violation, server_err
 use super::types::{LookedUpType, TypeCache, TYPE_LOOKUP_QUERY};
 use super::wire::Wire;
 
-const STATUS_IDLE: u8 = b'I';
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TxStatus {
+    Idle,
+    InTransaction,
+    Failed,
+}
+
+impl TxStatus {
+    pub(crate) fn from_wire(status: u8) -> TxStatus {
+        match status {
+            b'I' => TxStatus::Idle,
+            b'E' => TxStatus::Failed,
+            _ => TxStatus::InTransaction,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FieldDescription {
@@ -109,7 +124,7 @@ pub(crate) struct SessionOptions {
 
 pub(crate) struct Session {
     wire: Option<Wire>,
-    tx_status: u8,
+    tx_status: TxStatus,
     auto_commit: bool,
     types: TypeCache,
     active: Option<ActiveResult>,
@@ -159,7 +174,7 @@ impl Session {
     pub(crate) fn new(wire: Wire, options: SessionOptions) -> Session {
         Session {
             wire: Some(wire),
-            tx_status: STATUS_IDLE,
+            tx_status: TxStatus::Idle,
             auto_commit: true,
             types: TypeCache::default(),
             active: None,
@@ -188,7 +203,7 @@ impl Session {
         self.backend_key
     }
 
-    pub(crate) fn set_tx_status(&mut self, status: u8) {
+    pub(crate) fn set_tx_status(&mut self, status: TxStatus) {
         self.tx_status = status;
     }
 
@@ -254,7 +269,7 @@ impl Session {
         match message {
             Ok(Message::ReadyForQuery(body)) => {
                 self.pending_syncs = self.pending_syncs.saturating_sub(1);
-                self.tx_status = body.status();
+                self.tx_status = TxStatus::from_wire(body.status());
                 Ok(Message::ReadyForQuery(body))
             }
             Ok(other) => Ok(other),
@@ -447,7 +462,7 @@ impl Session {
     }
 
     pub(crate) async fn set_auto_commit(&mut self, auto_commit: bool) -> Result<(), SqlError> {
-        if auto_commit && !self.auto_commit && self.tx_status != STATUS_IDLE {
+        if auto_commit && !self.auto_commit && self.tx_status != TxStatus::Idle {
             self.simple_query("COMMIT").await?;
         }
         self.auto_commit = auto_commit;
@@ -462,7 +477,7 @@ impl Session {
             ));
         }
         self.prepare().await?;
-        if self.tx_status != STATUS_IDLE {
+        if self.tx_status != TxStatus::Idle {
             self.simple_query("COMMIT").await?;
         }
         Ok(())
@@ -476,7 +491,7 @@ impl Session {
             ));
         }
         self.prepare().await?;
-        if self.tx_status != STATUS_IDLE {
+        if self.tx_status != TxStatus::Idle {
             self.simple_query("ROLLBACK").await?;
         }
         Ok(())
@@ -584,7 +599,7 @@ impl Session {
         let use_portal = fetch_size > 0 && !self.auto_commit;
         let mut retried = false;
         loop {
-            let begin = !suppress_begin && !self.auto_commit && self.tx_status == STATUS_IDLE;
+            let begin = !suppress_begin && !self.auto_commit && self.tx_status == TxStatus::Idle;
             if begin {
                 self.queue_query("BEGIN")?;
             }

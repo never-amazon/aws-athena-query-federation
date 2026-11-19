@@ -13,41 +13,71 @@ use super::error::{
     io_failure, protocol_violation, psql, CONNECTION_REJECTED, INVALID_PARAMETER_VALUE,
     PROTOCOL_VIOLATION,
 };
-use super::session::{BackendKey, Session};
+use super::session::{BackendKey, Session, TxStatus};
 use super::tls::tls_server_end_point;
 use super::url::{AuthMethod, ChannelBinding, ConnectSettings};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum StartupError {
-    Sql(SqlError),
-    Io(io::Error),
+    #[error(transparent)]
+    Sql(#[from] SqlError),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
-impl From<SqlError> for StartupError {
-    fn from(error: SqlError) -> StartupError {
-        StartupError::Sql(error)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthRequest {
+    Ok,
+    Kerberos,
+    Cleartext,
+    Md5,
+    ScmCredential,
+    Gss,
+    GssContinue,
+    Sspi,
+    Sasl,
+    SaslContinue,
+    SaslFinal,
+}
+
+impl AuthRequest {
+    fn code(self) -> i32 {
+        match self {
+            AuthRequest::Ok => 0,
+            AuthRequest::Kerberos => 2,
+            AuthRequest::Cleartext => 3,
+            AuthRequest::Md5 => 5,
+            AuthRequest::ScmCredential => 6,
+            AuthRequest::Gss => 7,
+            AuthRequest::GssContinue => 8,
+            AuthRequest::Sspi => 9,
+            AuthRequest::Sasl => 10,
+            AuthRequest::SaslContinue => 11,
+            AuthRequest::SaslFinal => 12,
+        }
     }
-}
 
-impl From<io::Error> for StartupError {
-    fn from(error: io::Error) -> StartupError {
-        StartupError::Io(error)
+    fn is_sasl(self) -> bool {
+        matches!(
+            self,
+            AuthRequest::Sasl | AuthRequest::SaslContinue | AuthRequest::SaslFinal
+        )
+    }
+
+    fn method_name(self) -> String {
+        match self {
+            AuthRequest::Ok => "none".to_string(),
+            AuthRequest::Cleartext => "password".to_string(),
+            AuthRequest::Md5 => "md5".to_string(),
+            AuthRequest::Gss => "gss".to_string(),
+            AuthRequest::Sspi => "sspi".to_string(),
+            other => other.code().to_string(),
+        }
     }
 }
 
 fn rejected(message: impl Into<String>) -> StartupError {
     StartupError::Sql(psql(message, CONNECTION_REJECTED))
-}
-
-fn method_name(code: i32) -> String {
-    match code {
-        0 => "none".to_string(),
-        3 => "password".to_string(),
-        5 => "md5".to_string(),
-        7 => "gss".to_string(),
-        9 => "sspi".to_string(),
-        other => other.to_string(),
-    }
 }
 
 fn check_auth(allowed: Option<&[AuthMethod]>, method: AuthMethod) -> Result<(), StartupError> {
@@ -59,7 +89,8 @@ fn check_auth(allowed: Option<&[AuthMethod]>, method: AuthMethod) -> Result<(), 
     }
 }
 
-fn unsupported(code: i32) -> StartupError {
+fn unsupported(request: AuthRequest) -> StartupError {
+    let code = request.code();
     rejected(format!(
         "The authentication type {code} is not supported. Check that you have configured the pg_hba.conf file to include the client's IP address or subnet, and that it is using an authentication scheme supported by the driver."
     ))
@@ -202,19 +233,19 @@ async fn flush(session: &mut Session) -> Result<(), StartupError> {
     session.wire_mut()?.flush().await.map_err(StartupError::Io)
 }
 
-fn auth_code(session: &Session, message: &Message) -> Result<i32, StartupError> {
+fn auth_request(session: &Session, message: &Message) -> Result<AuthRequest, StartupError> {
     Ok(match message {
-        Message::AuthenticationOk => 0,
-        Message::AuthenticationKerberosV5 => 2,
-        Message::AuthenticationCleartextPassword => 3,
-        Message::AuthenticationMd5Password(_) => 5,
-        Message::AuthenticationScmCredential => 6,
-        Message::AuthenticationGss => 7,
-        Message::AuthenticationGssContinue(_) => 8,
-        Message::AuthenticationSspi => 9,
-        Message::AuthenticationSasl(_) => 10,
-        Message::AuthenticationSaslContinue(_) => 11,
-        Message::AuthenticationSaslFinal(_) => 12,
+        Message::AuthenticationOk => AuthRequest::Ok,
+        Message::AuthenticationKerberosV5 => AuthRequest::Kerberos,
+        Message::AuthenticationCleartextPassword => AuthRequest::Cleartext,
+        Message::AuthenticationMd5Password(_) => AuthRequest::Md5,
+        Message::AuthenticationScmCredential => AuthRequest::ScmCredential,
+        Message::AuthenticationGss => AuthRequest::Gss,
+        Message::AuthenticationGssContinue(_) => AuthRequest::GssContinue,
+        Message::AuthenticationSspi => AuthRequest::Sspi,
+        Message::AuthenticationSasl(_) => AuthRequest::Sasl,
+        Message::AuthenticationSaslContinue(_) => AuthRequest::SaslContinue,
+        Message::AuthenticationSaslFinal(_) => AuthRequest::SaslFinal,
         Message::ErrorResponse(body) => {
             return Err(StartupError::Sql(session.server_error(body.fields())))
         }
@@ -238,19 +269,19 @@ impl Authenticator<'_> {
         self.scram.as_ref().is_some_and(|s| s.finished)
     }
 
-    fn check_channel_binding(&self, code: i32) -> Result<(), StartupError> {
+    fn check_channel_binding(&self, request: AuthRequest) -> Result<(), StartupError> {
         if self.settings.channel_binding != ChannelBinding::Require {
             return Ok(());
         }
-        if code == 0 && !self.scram_finished() {
+        if request == AuthRequest::Ok && !self.scram_finished() {
             return Err(rejected(
                 "Channel binding is required, but server skipped authentication. Channel binding is only supported with SCRAM authentication over encrypted connections.",
             ));
         }
-        if code != 0 && !(10..=12).contains(&code) {
+        if request != AuthRequest::Ok && !request.is_sasl() {
             return Err(rejected(format!(
                 "Channel binding is required, but server requested '{}' authentication. Channel binding is only supported with SCRAM authentication over encrypted connections.",
-                method_name(code)
+                request.method_name()
             )));
         }
         Ok(())
@@ -352,7 +383,7 @@ impl Authenticator<'_> {
         &mut self,
         session: &mut Session,
         message: Message,
-        code: i32,
+        request: AuthRequest,
     ) -> Result<bool, StartupError> {
         let user = self.settings.user.as_deref().unwrap_or_default();
         let password = self.settings.password.as_deref();
@@ -381,11 +412,11 @@ impl Authenticator<'_> {
             }
             Message::AuthenticationGss => {
                 check_auth(self.allowed(), AuthMethod::Gss)?;
-                return Err(unsupported(code));
+                return Err(unsupported(request));
             }
             Message::AuthenticationSspi => {
                 check_auth(self.allowed(), AuthMethod::Sspi)?;
-                return Err(unsupported(code));
+                return Err(unsupported(request));
             }
             Message::AuthenticationSasl(body) => {
                 let mechanisms: Vec<String> = body
@@ -401,7 +432,7 @@ impl Authenticator<'_> {
                 self.sasl_continue(session, body.data()).await?;
             }
             Message::AuthenticationSaslFinal(body) => self.sasl_final(body.data())?,
-            _ => return Err(unsupported(code)),
+            _ => return Err(unsupported(request)),
         }
         Ok(false)
     }
@@ -418,9 +449,9 @@ pub(crate) async fn authenticate(
     };
     loop {
         let message = session.receive_io().await?;
-        let code = auth_code(session, &message)?;
-        authenticator.check_channel_binding(code)?;
-        if authenticator.handle(session, message, code).await? {
+        let request = auth_request(session, &message)?;
+        authenticator.check_channel_binding(request)?;
+        if authenticator.handle(session, message, request).await? {
             break;
         }
     }
@@ -438,7 +469,7 @@ async fn read_startup_messages(session: &mut Session) -> Result<(), StartupError
                 return Err(StartupError::Sql(session.server_error(body.fields())))
             }
             Message::ReadyForQuery(body) => {
-                session.set_tx_status(body.status());
+                session.set_tx_status(TxStatus::from_wire(body.status()));
                 return Ok(());
             }
             Message::ParameterStatus(_) | Message::NoticeResponse(_) => {}

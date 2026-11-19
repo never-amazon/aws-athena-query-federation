@@ -2,7 +2,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use postgres_protocol::message::backend::Message;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
@@ -116,13 +116,7 @@ impl Wire {
     }
 
     pub(crate) async fn flush(&mut self) -> io::Result<()> {
-        while !self.output.is_empty() {
-            let written = self.socket.write(&self.output).await?;
-            if written == 0 {
-                return Err(io::Error::from(io::ErrorKind::WriteZero));
-            }
-            self.output.advance(written);
-        }
+        self.socket.write_all_buf(&mut self.output).await?;
         self.socket.flush().await
     }
 
