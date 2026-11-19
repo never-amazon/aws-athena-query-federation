@@ -202,16 +202,18 @@ impl HandlerContext {
                 FederationError::NumberFormat(format!("For input string: \"{value}\""))
             })?;
         }
-        let mut builder = SpillConfig::new_builder()
-            .with_max_block_bytes(max_block_size)
-            .with_max_inline_block_bytes(request.max_inline_block_size())
-            .with_request_id(request.query_id())
-            .with_encryption_key(request.split().encryption_key().cloned())
-            .with_num_spill_threads(NUM_SPILL_THREADS);
-        if let Some(location) = request.split().spill_location() {
-            builder = builder.with_spill_location(location.clone());
-        }
-        builder.build()
+        let spill_location = request
+            .split()
+            .spill_location()
+            .cloned()
+            .ok_or_else(|| FederationError::null_pointer("spillLocation was null"))?;
+        Ok(SpillConfig {
+            encryption_key: request.split().encryption_key().cloned(),
+            max_block_bytes: max_block_size,
+            max_inline_block_bytes: request.max_inline_block_size(),
+            num_spill_threads: NUM_SPILL_THREADS,
+            ..SpillConfig::new(spill_location, request.query_id())
+        })
     }
 }
 

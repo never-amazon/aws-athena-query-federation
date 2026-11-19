@@ -192,7 +192,6 @@ async fn read_with_constraint() {
         .with_prefix("prefix")
         .with_query_id(TEST_QUERY_ID)
         .with_split_id("split")
-        .with_is_directory(true)
         .build();
     let split = Split::new_builder(Some(spill_location.clone().into()), None)
         .add(TEST_PARTITION_COL, TEST_PARTITION_VALUE)
@@ -218,14 +217,12 @@ async fn read_with_constraint() {
         ))
     });
 
-    let spill_config = SpillConfig::new_builder()
-        .with_spill_location(spill_location.into())
-        .with_request_id(TEST_QUERY_ID)
-        .with_max_block_bytes(1)
-        .with_max_inline_block_bytes(0)
-        .with_num_spill_threads(0)
-        .build()
-        .unwrap();
+    let spill_config = SpillConfig {
+        max_block_bytes: 1,
+        max_inline_block_bytes: 0,
+        num_spill_threads: 0,
+        ..SpillConfig::new(spill_location.into(), TEST_QUERY_ID)
+    };
     let spiller = S3BlockSpiller::new(
         Arc::new(s.fakes.s3.clone()),
         spill_config,
@@ -893,7 +890,6 @@ fn export_spill_location() -> S3SpillLocation {
         .with_prefix("prefix")
         .with_query_id("q1")
         .with_split_id("split1")
-        .with_is_directory(true)
         .build()
 }
 

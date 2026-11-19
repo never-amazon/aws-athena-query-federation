@@ -216,7 +216,6 @@ async fn do_read_records() {
                     .with_prefix("lambda-spill")
                     .with_query_id(uuid::Uuid::new_v4().to_string())
                     .with_split_id(uuid::Uuid::new_v4().to_string())
-                    .with_is_directory(true)
                     .build()
                     .into(),
             ),

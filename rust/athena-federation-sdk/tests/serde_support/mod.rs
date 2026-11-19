@@ -185,7 +185,6 @@ pub fn spill_location(split_id: &str) -> SpillLocation {
             .with_prefix("lambda-spill")
             .with_query_id("test-query-id")
             .with_split_id(split_id)
-            .with_is_directory(true)
             .build(),
     )
 }

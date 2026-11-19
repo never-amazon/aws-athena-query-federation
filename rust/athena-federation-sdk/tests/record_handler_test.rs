@@ -138,7 +138,6 @@ async fn do_read_records_spill() {
         .with_bucket(uuid::Uuid::new_v4().to_string())
         .with_split_id(uuid::Uuid::new_v4().to_string())
         .with_query_id(uuid::Uuid::new_v4().to_string())
-        .with_is_directory(true)
         .build();
     let split = Split::new_builder(
         Some(spill_location.into()),

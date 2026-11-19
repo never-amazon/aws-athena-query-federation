@@ -446,17 +446,11 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
     }
 
     pub fn build_export_spill_config(&self, request: &ReadRecordsRequest) -> Result<SpillConfig> {
-        let mut builder = SpillConfig::new_builder();
-        if let Some(location) = request.split().spill_location() {
-            builder = builder.with_spill_location(location.clone());
-        }
-        builder
-            .with_max_block_bytes(self.context.spill_config(request)?.max_block_bytes())
-            .with_max_inline_block_bytes(0)
-            .with_request_id(request.query_id())
-            .with_encryption_key(request.split().encryption_key().cloned())
-            .with_num_spill_threads(2)
-            .build()
+        Ok(SpillConfig {
+            max_inline_block_bytes: 0,
+            num_spill_threads: 2,
+            ..self.context.spill_config(request)?
+        })
     }
 
     pub async fn resolve_scoped_s3_client(

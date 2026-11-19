@@ -55,25 +55,12 @@ impl fmt::Display for S3SpillLocation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct S3SpillLocationBuilder {
     bucket: Option<String>,
     prefix: Option<String>,
     query_id: Option<String>,
     split_id: Option<String>,
-    is_directory: bool,
-}
-
-impl Default for S3SpillLocationBuilder {
-    fn default() -> Self {
-        S3SpillLocationBuilder {
-            bucket: None,
-            prefix: None,
-            query_id: None,
-            split_id: None,
-            is_directory: true,
-        }
-    }
 }
 
 fn or_null(v: Option<&str>) -> &str {
@@ -94,12 +81,6 @@ impl S3SpillLocationBuilder {
     }
 
     #[must_use]
-    pub fn with_is_directory(mut self, is_directory: bool) -> Self {
-        self.is_directory = is_directory;
-        self
-    }
-
-    #[must_use]
     pub fn with_query_id(mut self, query_id: impl Into<String>) -> Self {
         self.query_id = Some(query_id.into());
         self
@@ -109,10 +90,6 @@ impl S3SpillLocationBuilder {
     pub fn with_split_id(mut self, split_id: impl Into<String>) -> Self {
         self.split_id = Some(split_id.into());
         self
-    }
-
-    pub fn is_directory(&self) -> bool {
-        self.is_directory
     }
 
     pub fn build(&self) -> S3SpillLocation {

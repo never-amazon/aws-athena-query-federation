@@ -105,7 +105,7 @@ impl SpillWriter {
     }
 
     fn make_spill_location(&self) -> Result<S3SpillLocation> {
-        let SpillLocation::S3(split_spill_location) = self.spill_config.spill_location();
+        let SpillLocation::S3(split_spill_location) = &self.spill_config.spill_location;
         if !split_spill_location.is_directory() {
             return Err(FederationError::internal(
                 "Split's SpillLocation must be a directory because multiple blocks may be spilled.",
@@ -198,8 +198,8 @@ impl S3BlockSpiller {
         constraint_evaluator: Arc<ConstraintEvaluator>,
         config_options: HashMap<String, String>,
     ) -> Result<S3BlockSpiller> {
-        let block_crypto = BlockCrypto::for_key(spill_config.encryption_key().cloned());
-        let async_spill_pool = if spill_config.num_spill_threads() <= 0 {
+        let block_crypto = BlockCrypto::for_key(spill_config.encryption_key.clone());
+        let async_spill_pool = if spill_config.num_spill_threads <= 0 {
             None
         } else {
             Some(Self::make_async_spill_pool(&spill_config, &config_options)?)
@@ -236,7 +236,7 @@ impl S3BlockSpiller {
         config: &SpillConfig,
         config_options: &HashMap<String, String>,
     ) -> Result<SpillPool> {
-        let threads = usize::try_from(config.num_spill_threads()).unwrap_or_default();
+        let threads = usize::try_from(config.num_spill_threads).unwrap_or_default();
         let mut spill_queue_capacity = threads;
         let capacity = config_options
             .get(SPILL_QUEUE_CAPACITY)
@@ -357,12 +357,12 @@ impl BlockSpiller for S3BlockSpiller {
             if rows > 0 {
                 block.set_row_count(row_count + rows);
             }
-            if len_to_long(block.get_size()) > self.writer.spill_config.max_block_bytes() {
+            if len_to_long(block.get_size()) > self.writer.spill_config.max_block_bytes {
                 tracing::info!(
                     "writeRow: Spilling block with {} rows and {} bytes and config {} bytes",
                     block.row_count(),
                     block.get_size(),
-                    self.writer.spill_config.max_block_bytes()
+                    self.writer.spill_config.max_block_bytes
                 );
                 Some(std::mem::replace(&mut *block, self.new_block()))
             } else {
@@ -386,7 +386,7 @@ impl BlockSpiller for S3BlockSpiller {
         let _write_guard = self.spill_lock.write().await;
         let block = lock(&self.in_progress_block);
         Ok(!lock(&self.writer.spill_locations).is_empty()
-            || len_to_long(block.get_size()) >= self.writer.spill_config.max_inline_block_size())
+            || len_to_long(block.get_size()) >= self.writer.spill_config.max_inline_block_bytes)
     }
 
     async fn get_block(&self) -> Result<Block> {
@@ -399,7 +399,7 @@ impl BlockSpiller for S3BlockSpiller {
         tracing::info!(
             "getBlock: Inline Block size[{}] bytes vs {}",
             block.get_size(),
-            self.writer.spill_config.max_inline_block_size()
+            self.writer.spill_config.max_inline_block_bytes
         );
         Ok((*block).clone())
     }
@@ -417,7 +417,7 @@ impl BlockSpiller for S3BlockSpiller {
                     "getSpillLocations: Spilling final block with {} rows and {} bytes and config {} bytes",
                     block.row_count(),
                     block.get_size(),
-                    self.writer.spill_config.max_block_bytes()
+                    self.writer.spill_config.max_block_bytes
                 );
                 Some(std::mem::replace(&mut *block, self.new_block()))
             } else {

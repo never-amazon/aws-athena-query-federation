@@ -76,7 +76,7 @@ pub async fn read_records<H: RecordHandler + ?Sized>(
                 request.catalog_name(),
                 request.schema().clone(),
                 spiller.get_spill_locations().await?,
-                spill_config.encryption_key().cloned(),
+                spill_config.encryption_key.clone(),
             )))
         } else {
             Ok(FederationResponse::from(ReadRecordsResponse::new(
