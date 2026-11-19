@@ -30,5 +30,5 @@ pub use query_string_builder::{
     build_sql, query_string_builder, PostGreSqlQueryStringBuilder, PostGreSqlSplitDialect,
 };
 pub use record_handler::{PostGreSqlRecordDialect, PostGreSqlRecordHandler};
-pub use resolver::PostGreSqlJdbcCaseResolver;
+pub use resolver::{postgresql_case_resolver, POSTGRESQL_CASE_LOOKUP};
 pub use sql_dialect::PostgresqlSqlDialect;

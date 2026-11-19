@@ -6,9 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::resolver::{FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY};
 use athena_federation_sdk::FederationError;
-use athena_jdbc::resolver::JdbcCaseResolverExt;
 use athena_jdbc::sql::SqlValue;
-use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
+use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::snowflake_constants;
 use snowflake_support::{FakeConnection, ResultSetData};
 
@@ -37,7 +36,10 @@ fn strings(values: &[SqlValue]) -> Vec<String> {
 async fn test_annotation_override_case() {
     let schema_name = "oRaNgE";
     let table_name = "ApPlE";
-    let snowflake = SnowflakeJdbcCaseResolver::new(snowflake_constants::SNOWFLAKE_NAME);
+    let snowflake = snowflake_case_resolver(
+        snowflake_constants::SNOWFLAKE_NAME,
+        FederationSdkCasingMode::None,
+    );
     let connection = FakeConnection::new();
     let annotation = casing(FederationSdkCasingMode::Annotation);
 
@@ -85,7 +87,10 @@ async fn test_annotation_override_case() {
 async fn test_case_insensitive_case_on_name() {
     let schema_name = "oRaNgE";
     let table_name = "ApPlE";
-    let snowflake = SnowflakeJdbcCaseResolver::new(snowflake_constants::SNOWFLAKE_NAME);
+    let snowflake = snowflake_case_resolver(
+        snowflake_constants::SNOWFLAKE_NAME,
+        FederationSdkCasingMode::None,
+    );
     let connection = FakeConnection::new();
     let search = casing(FederationSdkCasingMode::CaseInsensitiveSearch);
 
@@ -125,7 +130,10 @@ async fn test_case_insensitive_case_on_name() {
 async fn test_case_insensitive_case_on_object() {
     let schema_name = "oRaNgE";
     let table_name = "ApPlE";
-    let snowflake = SnowflakeJdbcCaseResolver::new(snowflake_constants::SNOWFLAKE_NAME);
+    let snowflake = snowflake_case_resolver(
+        snowflake_constants::SNOWFLAKE_NAME,
+        FederationSdkCasingMode::None,
+    );
     let connection = FakeConnection::new();
     let search = casing(FederationSdkCasingMode::CaseInsensitiveSearch);
 

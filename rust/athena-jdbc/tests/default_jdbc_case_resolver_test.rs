@@ -4,17 +4,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::resolver::{
-    CaseResolver, FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY, DEFAULT_GLUE_CONNECTION,
+    FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY, DEFAULT_GLUE_CONNECTION,
 };
 use athena_federation_sdk::{FederationError, Result};
-use athena_jdbc::resolver::{
-    default_do_get_schema_name_case_insensitively, default_do_get_table_name_case_insensitively,
-    DefaultJdbcCaseResolver, JdbcCaseResolver, JdbcCaseResolverExt,
-};
-use athena_jdbc::sql::{JdbcConnection, SqlException, SqlValue};
+use athena_jdbc::resolver::{CaseLookup, JdbcCaseResolver};
+use athena_jdbc::sql::{SqlException, SqlValue};
 use jdbc_support::{FakeConnection, ResultSetData};
 
 const TEST_SCHEMA_NAME: &str = "oRaNgE";
@@ -33,78 +29,21 @@ const TEST_EXPECTED_TABLE: &str = "table1";
 const TEST_INVALID_SCHEMA: &str = "InvalidSchema";
 const TEST_INVALID_TABLE: &str = "InvalidTable";
 
-struct TestableHelper {
-    base: CaseResolver,
+const TEST_LOOKUP: CaseLookup = CaseLookup {
+    schema_query: "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?",
+    schema_column: "schema_name",
+    table_queries: &[
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?",
+    ],
+    table_column: "table_name",
+};
+
+fn testable_helper(source_type: &str) -> JdbcCaseResolver {
+    resolver(source_type).with_lookup(TEST_LOOKUP)
 }
 
-impl TestableHelper {
-    fn new(source_type: &str) -> TestableHelper {
-        TestableHelper {
-            base: CaseResolver::new(
-                source_type,
-                FederationSdkCasingMode::Upper,
-                FederationSdkCasingMode::Lower,
-            ),
-        }
-    }
-}
-
-#[async_trait]
-impl JdbcCaseResolver for TestableHelper {
-    fn case_resolver(&self) -> &CaseResolver {
-        &self.base
-    }
-
-    async fn do_get_schema_name_case_insensitively(
-        &self,
-        connection: &dyn JdbcConnection,
-        schema_name_input: &str,
-        _config_options: &HashMap<String, String>,
-    ) -> Result<Vec<String>> {
-        default_do_get_schema_name_case_insensitively(self, connection, schema_name_input).await
-    }
-
-    async fn do_get_table_name_case_insensitively(
-        &self,
-        connection: &dyn JdbcConnection,
-        schema_name_in_correct_case: &str,
-        table_name_input: &str,
-        _config_options: &HashMap<String, String>,
-    ) -> Result<Vec<String>> {
-        default_do_get_table_name_case_insensitively(
-            self,
-            connection,
-            schema_name_in_correct_case,
-            table_name_input,
-        )
-        .await
-    }
-
-    fn get_case_insensitively_schema_name_query_template(&self) -> Result<String> {
-        Ok(
-            "SELECT schema_name FROM information_schema.schemata WHERE lower(schema_name) = ?"
-                .to_string(),
-        )
-    }
-
-    fn get_case_insensitively_schema_name_column_key(&self) -> Result<String> {
-        Ok("schema_name".to_string())
-    }
-
-    fn get_case_insensitively_table_name_query_template(&self) -> Result<Vec<String>> {
-        Ok(vec![
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = ?"
-                .to_string(),
-        ])
-    }
-
-    fn get_case_insensitively_table_name_column_key(&self) -> Result<String> {
-        Ok("table_name".to_string())
-    }
-}
-
-fn resolver(source_type: &str) -> DefaultJdbcCaseResolver {
-    DefaultJdbcCaseResolver::new_with_casing_modes(
+fn resolver(source_type: &str) -> JdbcCaseResolver {
+    JdbcCaseResolver::new(
         source_type,
         FederationSdkCasingMode::Upper,
         FederationSdkCasingMode::Lower,
@@ -320,7 +259,7 @@ async fn test_case_insensitively_override_case() {
 
 #[tokio::test]
 async fn test_schema_name_case_insensitively() {
-    let helper = TestableHelper::new(TEST_SOURCE_TYPE);
+    let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
     counting_query(&connection, "schema_name", TEST_EXPECTED_SCHEMA);
     let config = mode(FederationSdkCasingMode::CaseInsensitiveSearch);
@@ -345,11 +284,11 @@ async fn test_schema_name_case_insensitively() {
 
 #[tokio::test]
 async fn test_do_get_schema_name_case_insensitively_sql_exception_thrown() {
-    let helper = TestableHelper::new(TEST_SOURCE_TYPE);
+    let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
     connection.on_query(|_| Err(SqlException::new("DB error")));
     let error = helper
-        .do_get_schema_name_case_insensitively(&connection, TEST_INVALID_SCHEMA, &HashMap::new())
+        .schema_name_case_insensitively(&connection, TEST_INVALID_SCHEMA)
         .await
         .unwrap_err();
     assert!(error.is_runtime_exception());
@@ -360,7 +299,7 @@ async fn test_do_get_schema_name_case_insensitively_sql_exception_thrown() {
 
 #[tokio::test]
 async fn test_table_name_case_insensitively() {
-    let helper = TestableHelper::new(TEST_SOURCE_TYPE);
+    let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
     counting_query(&connection, "table_name", TEST_EXPECTED_TABLE);
     let config = mode(FederationSdkCasingMode::CaseInsensitiveSearch);
@@ -385,16 +324,11 @@ async fn test_table_name_case_insensitively() {
 
 #[tokio::test]
 async fn test_do_get_table_name_case_insensitively_sql_exception_thrown() {
-    let helper = TestableHelper::new(TEST_SOURCE_TYPE);
+    let helper = testable_helper(TEST_SOURCE_TYPE);
     let connection = FakeConnection::new();
     connection.on_query(|_| Err(SqlException::new("DB error")));
     let error = helper
-        .do_get_table_name_case_insensitively(
-            &connection,
-            TEST_INVALID_SCHEMA,
-            TEST_INVALID_TABLE,
-            &HashMap::new(),
-        )
+        .table_name_case_insensitively(&connection, TEST_INVALID_SCHEMA, TEST_INVALID_TABLE)
         .await
         .unwrap_err();
     assert!(error.is_runtime_exception());

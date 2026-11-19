@@ -27,7 +27,7 @@ use super::jdbc_arrow_type_converter::jdbc_to_arrow_type;
 use super::jdbc_record_handler::{missing_factory, ConnectionSource};
 use super::jdbc_util;
 use crate::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
-use crate::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
+use crate::resolver::JdbcCaseResolver;
 use crate::sql::{DatabaseMetaData, JdbcConnection, ResultSet, ResultSetMetaData};
 use crate::validate::close_after;
 
@@ -149,7 +149,7 @@ pub trait MetadataDialect: Send + Sync + Sized + 'static {
 pub struct JdbcMetadataHandler<D> {
     context: MetadataContext,
     connection: ConnectionSource,
-    case_resolver: Arc<dyn JdbcCaseResolver>,
+    case_resolver: JdbcCaseResolver,
     dialect: D,
 }
 
@@ -157,7 +157,7 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
     pub fn new(
         context: MetadataContext,
         connection: ConnectionSource,
-        case_resolver: Arc<dyn JdbcCaseResolver>,
+        case_resolver: JdbcCaseResolver,
         dialect: D,
     ) -> JdbcMetadataHandler<D> {
         JdbcMetadataHandler {
@@ -176,8 +176,8 @@ impl<D: MetadataDialect> JdbcMetadataHandler<D> {
         &self.connection
     }
 
-    pub fn case_resolver(&self) -> &dyn JdbcCaseResolver {
-        self.case_resolver.as_ref()
+    pub fn case_resolver(&self) -> &JdbcCaseResolver {
+        &self.case_resolver
     }
 
     pub fn config_options(&self) -> &HashMap<String, String> {

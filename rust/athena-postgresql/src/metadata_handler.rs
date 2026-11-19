@@ -31,7 +31,7 @@ use indexmap::IndexMap;
 
 use crate::constants;
 use crate::driver::PgDriver;
-use crate::resolver::PostGreSqlJdbcCaseResolver;
+use crate::resolver::postgresql_case_resolver;
 
 const MATERIALIZED_VIEWS: &str = "Materialized Views";
 const PARTITION_SCHEMA_NAME: &str = "child_schema";
@@ -127,7 +127,7 @@ impl PostGreSqlMetadataDialect {
                 config,
                 factory: connection_factory,
             },
-            Arc::new(PostGreSqlJdbcCaseResolver::new(constants::POSTGRES_NAME)),
+            postgresql_case_resolver(constants::POSTGRES_NAME),
             PostGreSqlMetadataDialect,
         )
     }

@@ -1,5 +1,6 @@
 mod snowflake_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -23,9 +24,9 @@ use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat
 use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
 use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
-use athena_jdbc::resolver::DefaultJdbcCaseResolver;
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
-use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
+use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::sql::SNOWFLAKE_SQL_EXCEPTION;
 use athena_snowflake::{
     create_credentials_provider, create_snowflake_credentials_provider, snowflake_constants,
@@ -97,7 +98,11 @@ fn fixture_with(lister: FakeS3Lister, config_options: HashMap<String, String>) -
         .config_options(config_options)
         .build()
         .unwrap();
-    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
+    let case_resolver = JdbcCaseResolver::new(
+        config.engine(),
+        FederationSdkCasingMode::None,
+        FederationSdkCasingMode::None,
+    );
     let handler = SnowflakeMetadataDialect::handler(
         context,
         config,
@@ -129,9 +134,10 @@ fn casing_fixture(mode: &str) -> Fixture {
         context,
         config,
         factory,
-        Arc::new(SnowflakeJdbcCaseResolver::new(
+        snowflake_case_resolver(
             snowflake_constants::SNOWFLAKE_NAME,
-        )),
+            FederationSdkCasingMode::None,
+        ),
         None,
     );
     Fixture {

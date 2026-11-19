@@ -1,5 +1,6 @@
 mod jdbc_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ use athena_jdbc::manager::{
     jdbc_util, ConnectionSource, JdbcMetadataHandler, JdbcRecordHandler, MetadataDialect,
     RecordDialect, SplitQuery,
 };
-use athena_jdbc::resolver::DefaultJdbcCaseResolver;
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement, SqlException};
 use jdbc_support::{FakeConnection, FakeConnectionFactory, Fakes, ResultSetData};
 
@@ -100,7 +101,11 @@ fn metadata_handler_map(
                     config: config.clone(),
                     factory: Arc::new(FakeConnectionFactory::default()),
                 },
-                Arc::new(DefaultJdbcCaseResolver::new(FAKE_DATABASE)),
+                JdbcCaseResolver::new(
+                    FAKE_DATABASE,
+                    FederationSdkCasingMode::None,
+                    FederationSdkCasingMode::None,
+                ),
                 FakeDatabaseMetadataDialect,
             )))
         },

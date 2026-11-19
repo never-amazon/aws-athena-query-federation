@@ -1,5 +1,6 @@
 mod snowflake_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -20,7 +21,7 @@ use athena_jdbc::connection::{
 };
 use athena_jdbc::sql::{JdbcConnection, RowSource, SqlException, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
-use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
+use athena_snowflake::resolver::snowflake_case_resolver;
 use athena_snowflake::sql::{
     SnowflakeColumn, SnowflakeColumnType, SnowflakeConnection, SnowflakeDriver, SnowflakeExecutor,
     SnowflakeQueryResult,
@@ -372,9 +373,10 @@ fn lambda() -> Lambda {
         metadata_context,
         config.clone(),
         factory.clone(),
-        Arc::new(SnowflakeJdbcCaseResolver::new(
+        snowflake_case_resolver(
             snowflake_constants::SNOWFLAKE_NAME,
-        )),
+            FederationSdkCasingMode::None,
+        ),
         None,
     );
     let record_clients = fakes.clients();

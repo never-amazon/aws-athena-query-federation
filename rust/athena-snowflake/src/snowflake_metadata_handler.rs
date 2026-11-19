@@ -1,3 +1,4 @@
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -38,12 +39,12 @@ use athena_jdbc::manager::{
     JdbcMetadataHandler, MetadataDialect, PreparedStatementBuilder, TABLES_AND_VIEWS,
 };
 use athena_jdbc::qpt::{JDBC_QUERY_PASSTHROUGH, QUERY};
-use athena_jdbc::resolver::{JdbcCaseResolver, JdbcCaseResolverExt};
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{JdbcConnection, ResultSetMetaData, SqlException};
 use indexmap::IndexMap;
 
 use crate::connection::SnowflakeConnectionFactory;
-use crate::resolver::SnowflakeJdbcCaseResolver;
+use crate::resolver::snowflake_case_resolver;
 use crate::s3_export::{S3ObjectLister, S3ObjectSummary, S3Uri};
 use crate::snowflake_constants::{self, is_blank};
 use crate::snowflake_credentials_provider::SnowflakeCredentialsProvider;
@@ -175,7 +176,7 @@ impl SnowflakeMetadataDialect {
         context: MetadataContext,
         config: DatabaseConnectionConfig,
         connection_factory: Arc<dyn JdbcConnectionFactory>,
-        case_resolver: Arc<dyn JdbcCaseResolver>,
+        case_resolver: JdbcCaseResolver,
         amazon_s3: Option<Arc<dyn S3ObjectLister>>,
     ) -> SnowflakeMetadataHandler {
         JdbcMetadataHandler::new(
@@ -206,9 +207,10 @@ impl SnowflakeMetadataDialect {
             context,
             config,
             factory,
-            Arc::new(SnowflakeJdbcCaseResolver::new(
+            snowflake_case_resolver(
                 snowflake_constants::SNOWFLAKE_NAME,
-            )),
+                FederationSdkCasingMode::None,
+            ),
             amazon_s3,
         ))
     }

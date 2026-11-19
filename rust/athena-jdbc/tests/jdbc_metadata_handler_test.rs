@@ -1,5 +1,6 @@
 mod jdbc_support;
 
+use athena_federation_sdk::resolver::FederationSdkCasingMode;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};
 use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
-use athena_jdbc::resolver::DefaultJdbcCaseResolver;
+use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{
     ColumnMetadata, PreparedStatement, ResultSetMetaData, SqlException, SqlValue, Types,
 };
@@ -100,7 +101,11 @@ fn setup() -> Fixture {
         "testSecret",
     )
     .unwrap();
-    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
+    let case_resolver = JdbcCaseResolver::new(
+        config.engine(),
+        FederationSdkCasingMode::None,
+        FederationSdkCasingMode::None,
+    );
     let factory_arc: Arc<dyn JdbcConnectionFactory> = Arc::new(factory.clone());
     let handler = JdbcMetadataHandler::new(
         metadata_context(),
@@ -250,7 +255,11 @@ async fn close_delegates_to_jdbc_connection_factory() {
 
 #[tokio::test]
 async fn close_with_null_factory_is_no_op() {
-    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new("fakedatabase"));
+    let case_resolver = JdbcCaseResolver::new(
+        "fakedatabase",
+        FederationSdkCasingMode::None,
+        FederationSdkCasingMode::None,
+    );
     let handler = JdbcMetadataHandler::new(
         metadata_context(),
         ConnectionSource::Delegating,
