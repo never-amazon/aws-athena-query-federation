@@ -71,7 +71,7 @@ fn java_to_string(error: &FederationError) -> String {
     }
 }
 
-pub type Result<T> = std::result::Result<T, FederationError>;
+pub type Result<T, E = FederationError> = std::result::Result<T, E>;
 
 impl FederationError {
     pub fn connector(

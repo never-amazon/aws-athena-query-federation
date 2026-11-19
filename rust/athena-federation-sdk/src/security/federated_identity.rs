@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FederatedIdentity {
     arn: Option<String>,
@@ -72,5 +74,41 @@ impl fmt::Display for FederatedIdentity {
             self.arn.as_deref().unwrap_or("null"),
             self.account.as_deref().unwrap_or("null")
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FasToken {
+    #[serde(rename = "accessToken")]
+    access: String,
+    #[serde(rename = "secretToken")]
+    secret: String,
+    #[serde(rename = "securityToken")]
+    security: String,
+}
+
+impl FasToken {
+    pub fn new(
+        access_token: impl Into<String>,
+        secret_token: impl Into<String>,
+        security_token: impl Into<String>,
+    ) -> FasToken {
+        FasToken {
+            access: access_token.into(),
+            secret: secret_token.into(),
+            security: security_token.into(),
+        }
+    }
+
+    pub fn access_token(&self) -> &str {
+        &self.access
+    }
+
+    pub fn secret_token(&self) -> &str {
+        &self.secret
+    }
+
+    pub fn security_token(&self) -> &str {
+        &self.security
     }
 }
