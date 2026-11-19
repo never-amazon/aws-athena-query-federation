@@ -41,7 +41,7 @@ fn test_empty_set() {
     assert!(equatables.is_none());
     assert!(!equatables.is_all());
     assert!(!equatables.is_single_value());
-    assert!(equatables.is_white_list());
+    assert!(equatables.is_allow_list());
     assert_eq!(equatables.values().row_count(), 0);
     assert_eq!(equatables.complement(&h.a).unwrap(), h.all());
     assert!(!contains(&equatables, 0));
@@ -56,7 +56,7 @@ fn test_entire_set() {
     assert!(!equatables.is_none());
     assert!(equatables.is_all());
     assert!(!equatables.is_single_value());
-    assert!(!equatables.is_white_list());
+    assert!(!equatables.is_allow_list());
     assert_eq!(equatables.values().row_count(), 0);
     assert_eq!(equatables.complement(&h.a).unwrap(), h.none());
     assert!(contains(&equatables, 0));
@@ -72,7 +72,7 @@ fn test_single_value() {
     assert!(!equatables.is_none());
     assert!(!equatables.is_all());
     assert!(equatables.is_single_value());
-    assert!(equatables.is_white_list());
+    assert!(equatables.is_allow_list());
     assert_eq!(equatables.get_single_value().unwrap(), Value::Int(10));
     assert_eq!(equatables.complement(&h.a).unwrap(), complement);
     assert!(!contains(&equatables, 0));
@@ -83,7 +83,7 @@ fn test_single_value() {
     assert!(!complement.is_none());
     assert!(!complement.is_all());
     assert!(!complement.is_single_value());
-    assert!(!complement.is_white_list());
+    assert!(!complement.is_allow_list());
     assert_eq!(complement.get_value(0), Value::Int(10), "{complement}");
     assert_eq!(complement.complement(&h.a).unwrap(), equatables);
     assert!(contains(&complement, 0));
@@ -100,7 +100,7 @@ fn test_multiple_values() {
     assert!(!equatables.is_none());
     assert!(!equatables.is_all());
     assert!(!equatables.is_single_value());
-    assert!(equatables.is_white_list());
+    assert!(equatables.is_allow_list());
     assert_eq!(equatables.complement(&h.a).unwrap(), complement);
     assert!(!contains(&equatables, 0));
     assert!(contains(&equatables, 1));
@@ -112,7 +112,7 @@ fn test_multiple_values() {
     assert!(!complement.is_none());
     assert!(!complement.is_all());
     assert!(!complement.is_single_value());
-    assert!(!complement.is_white_list());
+    assert!(!complement.is_allow_list());
     assert_eq!(complement.complement(&h.a).unwrap(), equatables);
     assert!(contains(&complement, 0));
     assert!(!contains(&complement, 1));

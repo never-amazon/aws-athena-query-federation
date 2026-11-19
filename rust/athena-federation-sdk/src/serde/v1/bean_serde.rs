@@ -274,7 +274,7 @@ fn serialize_value_set(value_set: &ValueSet, jgen: &mut JsonGenerator) -> Result
             write_type(jgen, "equatable")?;
             jgen.write_field_name("valueBlock")?;
             serialize_block(Some(v.value_block()), jgen)?;
-            jgen.write_boolean_field("whiteList", v.is_white_list())?;
+            jgen.write_boolean_field("whiteList", v.is_allow_list())?;
             jgen.write_boolean_field("nullAllowed", v.is_null_allowed())?;
             jgen.write_field_name("values")?;
             serialize_block(Some(v.values()), jgen)?;
