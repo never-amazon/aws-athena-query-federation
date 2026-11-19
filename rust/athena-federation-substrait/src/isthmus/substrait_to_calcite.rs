@@ -1,7 +1,7 @@
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use super::expression_converter::{sort_direction, ExpressionConverter};
+use super::expression_converter::sort_direction;
 use super::function_mappings::function_name;
 use super::type_converter::{is_nullable, named_struct_to_calcite, to_calcite};
 use crate::calcite::rel::{AggregateCall, JoinType, RelFieldCollation, RelNode, SetOpKind};
@@ -31,13 +31,13 @@ pub(crate) struct OuterFrame {
 }
 
 pub(crate) struct SubstraitToCalcite {
-    system: RelDataTypeSystem,
-    rex_builder: RexBuilder,
+    pub(super) system: RelDataTypeSystem,
+    pub(super) rex_builder: RexBuilder,
     rel_builder: RelBuilder,
-    functions: HashMap<u32, String>,
-    outer: RefCell<Vec<OuterFrame>>,
-    used_correl: RefCell<Vec<usize>>,
-    next_correl: Cell<usize>,
+    pub(super) functions: HashMap<u32, Rc<str>>,
+    outer: Vec<OuterFrame>,
+    used_correl: Vec<usize>,
+    next_correl: usize,
 }
 
 fn expression_row_type(node: &RelNode) -> RelDataType {
@@ -113,7 +113,7 @@ impl SubstraitToCalcite {
         let mut functions = HashMap::new();
         for ext in &plan.extensions {
             if let Some(MappingType::ExtensionFunction(f)) = &ext.mapping_type {
-                functions.insert(f.function_anchor, function_name(&f.name).to_string());
+                functions.insert(f.function_anchor, Rc::from(function_name(&f.name)));
             }
         }
         SubstraitToCalcite {
@@ -121,32 +121,31 @@ impl SubstraitToCalcite {
             rex_builder,
             rel_builder: RelBuilder::new(RexBuilder::new(RelDataTypeSystem::Default)),
             functions,
-            outer: RefCell::new(Vec::new()),
-            used_correl: RefCell::new(Vec::new()),
-            next_correl: Cell::new(0),
+            outer: Vec::new(),
+            used_correl: Vec::new(),
+            next_correl: 0,
         }
     }
 
     pub(crate) fn convert_sub_query(
-        &self,
+        &mut self,
         rel: &Rel,
         outer_row_type: &RelDataType,
     ) -> Result<RelNode> {
-        self.outer.borrow_mut().push(OuterFrame {
+        self.outer.push(OuterFrame {
             row_type: outer_row_type.clone(),
             correl: None,
         });
         let converted = self.convert(rel);
-        let frame = self.outer.borrow_mut().pop();
+        let frame = self.outer.pop();
         if let Some(id) = frame.and_then(|f| f.correl) {
-            self.used_correl.borrow_mut().push(id);
+            self.used_correl.push(id);
         }
         converted
     }
 
-    pub(crate) fn outer_field(&self, steps_out: u32, index: usize) -> Result<RexNode> {
-        let mut frames = self.outer.borrow_mut();
-        let len = frames.len();
+    pub(crate) fn outer_field(&mut self, steps_out: u32, index: usize) -> Result<RexNode> {
+        let len = self.outer.len();
         let position = usize::try_from(steps_out)
             .ok()
             .filter(|s| *s >= 1 && *s <= len)
@@ -156,7 +155,7 @@ impl SubstraitToCalcite {
                     "No outer row type found for steps out {steps_out}"
                 ))
             })?;
-        let frame = &mut frames[position];
+        let frame = &mut self.outer[position];
         let fields = frame.row_type.field_list();
         let ty = fields.get(index).map(|f| f.ty().clone()).ok_or_else(|| {
             SubstraitError::IndexOutOfBounds(format!(
@@ -167,25 +166,16 @@ impl SubstraitToCalcite {
         let correl = if let Some(c) = frame.correl {
             c
         } else {
-            let c = self.next_correl.get();
-            self.next_correl.set(c + 1);
+            let c = self.next_correl;
+            self.next_correl += 1;
             frame.correl = Some(c);
             c
         };
         Ok(RexNode::CorrelField { correl, index, ty })
     }
 
-    fn expressions(&self) -> ExpressionConverter<'_> {
-        ExpressionConverter {
-            system: self.system,
-            rex_builder: self.rex_builder,
-            functions: &self.functions,
-            rels: self,
-        }
-    }
-
     pub(crate) fn convert_plan(plan: &Plan, dialect: &SqlDialect) -> Result<RelNode> {
-        let converter = SubstraitToCalcite::new(plan, dialect);
+        let mut converter = SubstraitToCalcite::new(plan, dialect);
         let mut roots = Vec::with_capacity(plan.relations.len());
         for plan_rel in &plan.relations {
             let input = match &plan_rel.rel_type {
@@ -199,7 +189,7 @@ impl SubstraitToCalcite {
         })
     }
 
-    pub(crate) fn convert(&self, rel: &Rel) -> Result<RelNode> {
+    pub(crate) fn convert(&mut self, rel: &Rel) -> Result<RelNode> {
         match &rel.rel_type {
             Some(RelType::Read(r)) => self.read(r),
             Some(RelType::Filter(f)) => self.filter(f),
@@ -243,7 +233,7 @@ impl SubstraitToCalcite {
         }
     }
 
-    fn apply_remap(&self, node: RelNode, remap: Option<Vec<i32>>) -> Result<RelNode> {
+    fn apply_remap(&mut self, node: RelNode, remap: Option<Vec<i32>>) -> Result<RelNode> {
         let Some(indices) = remap else {
             return Ok(node);
         };
@@ -271,7 +261,7 @@ impl SubstraitToCalcite {
         deprecated,
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
-    fn read(&self, r: &ReadRel) -> Result<RelNode> {
+    fn read(&mut self, r: &ReadRel) -> Result<RelNode> {
         let names = r
             .base_schema
             .as_ref()
@@ -290,11 +280,10 @@ impl SubstraitToCalcite {
             }
             Some(ReadType::VirtualTable(v)) => {
                 let mut tuples = Vec::with_capacity(v.values.len());
-                let ex = self.expressions();
                 for row in &v.values {
                     let mut tuple: Vec<RexLiteral> = Vec::with_capacity(row.fields.len());
                     for l in &row.fields {
-                        match ex.literal(l)? {
+                        match self.literal(l)? {
                             RexNode::Literal(lit) => tuple.push(lit),
                             _ => {
                                 return Err(SubstraitError::Unsupported("VirtualTableScan only supports literal values, found: org.apache.calcite.rex.RexCall".into()))
@@ -316,15 +305,15 @@ impl SubstraitToCalcite {
         self.apply_remap(node, remap_of(r.common.as_ref()))
     }
 
-    fn filter(&self, f: &FilterRel) -> Result<RelNode> {
+    fn filter(&mut self, f: &FilterRel) -> Result<RelNode> {
         let input = self.convert(input_of(f.input.as_deref())?)?;
         let condition = f.condition.as_deref().ok_or_else(|| {
             SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
         })?;
         let input_type = expression_row_type(&input);
-        let before = self.used_correl.borrow().len();
-        let converted = self.expressions().convert(condition, &input_type);
-        let variables_set: Vec<usize> = self.used_correl.borrow_mut().split_off(before);
+        let before = self.used_correl.len();
+        let converted = self.rex(condition, &input_type);
+        let variables_set = self.used_correl.split_off(before);
         let rex = converted?;
         let node = self
             .rel_builder
@@ -332,7 +321,7 @@ impl SubstraitToCalcite {
         self.apply_remap(node, remap_of(f.common.as_ref()))
     }
 
-    fn join(&self, j: &JoinRel) -> Result<RelNode> {
+    fn join(&mut self, j: &JoinRel) -> Result<RelNode> {
         let left = self.convert(input_of(j.left.as_deref())?)?;
         let right = self.convert(input_of(j.right.as_deref())?)?;
         let join_type = match ProtoJoinType::try_from(j.r#type) {
@@ -363,19 +352,19 @@ impl SubstraitToCalcite {
             JoinType::Inner,
         );
         let condition = match j.expression.as_deref() {
-            Some(e) => self.expressions().convert(e, &input_type)?,
+            Some(e) => self.rex(e, &input_type)?,
             None => self.rex_builder.make_bool_literal(true),
         };
         let mut node = self.rel_builder.join(left, right, join_type, &condition);
         if let Some(post) = j.post_join_filter.as_deref() {
             let row_type = node.row_type().clone();
-            let rex = self.expressions().convert(post, &row_type)?;
+            let rex = self.rex(post, &row_type)?;
             node = self.rel_builder.filter(node, vec![rex]);
         }
         self.apply_remap(node, remap_of(j.common.as_ref()))
     }
 
-    fn set(&self, s: &SetRel) -> Result<RelNode> {
+    fn set(&mut self, s: &SetRel) -> Result<RelNode> {
         let mut inputs = Vec::with_capacity(s.inputs.len());
         for input in &s.inputs {
             inputs.push(self.convert(input)?);
@@ -399,7 +388,7 @@ impl SubstraitToCalcite {
         self.apply_remap(node, remap_of(s.common.as_ref()))
     }
 
-    fn project(&self, p: &ProjectRel) -> Result<RelNode> {
+    fn project(&mut self, p: &ProjectRel) -> Result<RelNode> {
         let child = self.convert(input_of(p.input.as_deref())?)?;
         let row_type = expression_row_type(&child);
         let mut exprs: Vec<RexNode> = child
@@ -409,9 +398,8 @@ impl SubstraitToCalcite {
             .enumerate()
             .map(|(i, f)| RexBuilder::make_input_ref(i, f.ty().clone()))
             .collect();
-        let ex = self.expressions();
         for e in &p.expressions {
-            exprs.push(ex.convert(e, &row_type)?);
+            exprs.push(self.rex(e, &row_type)?);
         }
         let node = self
             .rel_builder
@@ -423,7 +411,7 @@ impl SubstraitToCalcite {
         deprecated,
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
-    fn fetch(&self, f: &FetchRel) -> Result<RelNode> {
+    fn fetch(&mut self, f: &FetchRel) -> Result<RelNode> {
         let child = self.convert(input_of(f.input.as_deref())?)?;
         let offset = match &f.offset_mode {
             Some(OffsetMode::Offset(o)) => *o,
@@ -451,15 +439,14 @@ impl SubstraitToCalcite {
         self.apply_remap(node, remap_of(f.common.as_ref()))
     }
 
-    fn sort(&self, s: &SortRel) -> Result<RelNode> {
+    fn sort(&mut self, s: &SortRel) -> Result<RelNode> {
         let child = self.convert(input_of(s.input.as_deref())?)?;
-        let ex = self.expressions();
         let mut keys = Vec::with_capacity(s.sorts.len());
         for field in &s.sorts {
             let expr = field.expr.as_ref().ok_or_else(|| {
                 SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
             })?;
-            let rex = ex.convert(expr, &expression_row_type(&child))?;
+            let rex = self.rex(expr, &expression_row_type(&child))?;
             let (direction, null_direction) = sort_direction(field)?.ok_or_else(|| {
                 SubstraitError::Unsupported(
                     "Unexpected Expression.SortDirection: Clustered!".into(),
@@ -528,7 +515,7 @@ impl SubstraitToCalcite {
         deprecated,
         reason = "reads deprecated Substrait proto fields that the Java converter still reads"
     )]
-    fn aggregate(&self, a: &AggregateRel) -> Result<RelNode> {
+    fn aggregate(&mut self, a: &AggregateRel) -> Result<RelNode> {
         let child = self.convert(input_of(a.input.as_deref())?)?;
         let original: Vec<&[Expression]> = a
             .groupings
@@ -550,13 +537,12 @@ impl SubstraitToCalcite {
             None => (&a.measures, original),
         };
         let row_type = expression_row_type(&child);
-        let ex = self.expressions();
         let mut group_exprs: Vec<RexNode> = Vec::new();
         let mut group_lists: Vec<Vec<RexNode>> = Vec::with_capacity(groupings.len());
         for g in &groupings {
             let mut list = Vec::with_capacity(g.len());
             for e in *g {
-                let rex = ex.convert(e, &row_type)?;
+                let rex = self.rex(e, &row_type)?;
                 if !group_exprs.contains(&rex) {
                     group_exprs.push(rex.clone());
                 }
@@ -566,7 +552,7 @@ impl SubstraitToCalcite {
         }
         let mut calls = Vec::with_capacity(measures.len());
         for m in measures {
-            calls.push(self.aggregate_call(&ex, m, &row_type)?);
+            calls.push(self.aggregate_call(m, &row_type)?);
         }
         let node = self
             .rel_builder
@@ -599,7 +585,7 @@ impl SubstraitToCalcite {
     }
 
     fn project_aggregate_inputs(
-        &self,
+        &mut self,
         child: RelNode,
         measures: &mut [Measure],
         groupings: &[&[Expression]],
@@ -607,10 +593,9 @@ impl SubstraitToCalcite {
         let child_type = expression_row_type(&child);
         let mut new_expressions: Vec<RexNode> = Vec::new();
         let mut offset = child_type.field_count();
-        let ex = self.expressions();
         let mut project_out =
             |e: &Expression, new_expressions: &mut Vec<RexNode>| -> Result<Expression> {
-                new_expressions.push(ex.convert(e, &child_type)?);
+                new_expressions.push(self.rex(e, &child_type)?);
                 let r = Self::field_ref_expression(offset);
                 offset += 1;
                 Ok(r)
@@ -670,18 +655,13 @@ impl SubstraitToCalcite {
         Ok((projected, new_groupings))
     }
 
-    fn aggregate_call(
-        &self,
-        ex: &ExpressionConverter<'_>,
-        m: &Measure,
-        row_type: &RelDataType,
-    ) -> Result<AggregateCall> {
+    fn aggregate_call(&mut self, m: &Measure, row_type: &RelDataType) -> Result<AggregateCall> {
         let f = m
             .measure
             .as_ref()
             .ok_or_else(|| SubstraitError::IllegalArgument("Unknown function id. Make sure that the function id provided was shared in the extensions section of the plan.".into()))?;
-        let (decl, op) = ex.aggregate_operator_for(f.function_reference)?;
-        let args = ex.convert_arguments(decl, &f.arguments, row_type)?;
+        let (decl, op) = self.aggregate_operator_for(f.function_reference)?;
+        let args = self.convert_arguments(&decl, &f.arguments, row_type)?;
         let mut arg_index = Vec::with_capacity(args.len());
         for a in &args {
             match a.input_ref_index() {
@@ -709,7 +689,7 @@ impl SubstraitToCalcite {
             .ok_or_else(|| SubstraitError::Unsupported("Unsupported type: KIND_NOT_SET".into()))?;
         let return_type = to_calcite(self.system, output)?;
         let filter_arg = match &m.filter {
-            Some(e) => match ex.convert(e, row_type)?.input_ref_index() {
+            Some(e) => match self.rex(e, row_type)?.input_ref_index() {
                 Some(i) => Some(i),
                 None => {
                     return Err(SubstraitError::ClassCast {
@@ -726,7 +706,7 @@ impl SubstraitToCalcite {
                 SubstraitError::IllegalArgument("Unknown type: REXTYPE_NOT_SET".into())
             })?;
             let index =
-                ex.convert(e, row_type)?
+                self.rex(e, row_type)?
                     .input_ref_index()
                     .ok_or(SubstraitError::ClassCast {
                         from: REX_CALL,
