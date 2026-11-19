@@ -438,7 +438,7 @@ impl SnowflakeMetadataDialect {
                 let location_reader = partitions
                     .get_field_reader(snowflake_constants::BLOCK_PARTITION_COLUMN_NAME)
                     .ok_or_else(missing_field_reader)?;
-                location_reader.set_position(cur_partition);
+                let location_reader = location_reader.at(cur_partition);
                 location_reader.read_text()
             };
             let mut builder = handler.context().split_builder(request).await?;

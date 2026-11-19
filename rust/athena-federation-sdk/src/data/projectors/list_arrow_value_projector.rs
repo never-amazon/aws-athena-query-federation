@@ -26,12 +26,12 @@ impl<'a> ListArrowValueProjector<'a> {
     }
 
     pub fn do_project(&self) -> Result<Value> {
+        self.project_at(self.list_reader)
+    }
+
+    fn project_at(&self, list_reader: FieldReader<'a>) -> Result<Value> {
         let mut list = Vec::new();
-        while self.list_reader.next() {
-            let sub_reader = self
-                .list_reader
-                .reader()
-                .ok_or_else(|| FederationError::illegal_state("list reader has no child reader"))?;
+        for sub_reader in list_reader.elements() {
             if !sub_reader.is_set() {
                 list.push(Value::Null);
                 continue;
@@ -42,10 +42,10 @@ impl<'a> ListArrowValueProjector<'a> {
     }
 
     pub fn project(&self, pos: usize) -> Result<Value> {
-        self.list_reader.set_position(pos);
-        if !self.list_reader.is_set() {
+        let list_reader = self.list_reader.at(pos);
+        if !list_reader.is_set() {
             return Ok(Value::Null);
         }
-        self.do_project()
+        self.project_at(list_reader)
     }
 }

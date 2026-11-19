@@ -478,7 +478,7 @@ fn values_of(block: &Block) -> Vec<Value> {
     let field_reader: &FieldReader<'_> = &readers[0];
     (0..block.row_count())
         .map(|pos| {
-            field_reader.set_position(pos);
+            let field_reader = field_reader.at(pos);
             field_reader.read_object()
         })
         .collect()
@@ -530,8 +530,7 @@ fn invocation_with_float4_type() {
     let block = process(&s, 20, ArgType::Float, "test_float4", &[ArgType::Float]);
     let readers = block.field_readers();
     for pos in 0..20 {
-        readers[0].set_position(pos);
-        let val = readers[0].read_float().unwrap();
+        let val = readers[0].at(pos).read_float().unwrap();
         let expected = test_float4(f32::from(i16::try_from(pos).unwrap()) + 100.1);
         assert!((expected - val).abs() < 0.0001, "{expected} {val}");
     }
@@ -737,10 +736,10 @@ fn test_invocation_with_null_value() {
     assert_eq!(20, block.row_count());
     let readers = block.field_readers();
     for pos in 0..20 {
-        readers[0].set_position(pos);
-        assert!(readers[0].is_set());
+        let reader = readers[0].at(pos);
+        assert!(reader.is_set());
         let expected = test_scalar_function_with_null_value(None);
-        assert_eq!(Some(expected), readers[0].read_boolean());
+        assert_eq!(Some(expected), reader.read_boolean());
     }
 }
 

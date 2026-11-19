@@ -622,8 +622,8 @@ impl KmsClient for FakeKms {
         Ok(vec![7u8; 32])
     }
 
-    async fn generate_random(&self, number_of_bytes: i32) -> Result<Vec<u8>, AwsServiceError> {
-        Ok(vec![3u8; usize::try_from(number_of_bytes).unwrap()])
+    async fn generate_random(&self, number_of_bytes: usize) -> Result<Vec<u8>, AwsServiceError> {
+        Ok(vec![3u8; number_of_bytes])
     }
 }
 

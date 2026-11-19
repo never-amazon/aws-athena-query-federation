@@ -52,14 +52,16 @@ impl<'a> PartitionPage<'a> {
         })
     }
 
-    pub(crate) fn limit_within(&self, constraint_limit: i64) -> String {
-        if constraint_limit <= 0 {
+    pub(crate) fn limit_within(&self, constraint_limit: Option<u64>) -> String {
+        let Some(constraint_limit) = constraint_limit else {
             return self.limit.to_string();
+        };
+        match self.limit.parse::<i64>() {
+            Ok(limit) if !u64::try_from(limit).is_ok_and(|l| l >= constraint_limit) => {
+                limit.to_string()
+            }
+            _ => constraint_limit.to_string(),
         }
-        self.limit
-            .parse::<i64>()
-            .map_or(constraint_limit, |limit| limit.min(constraint_limit))
-            .to_string()
     }
 }
 

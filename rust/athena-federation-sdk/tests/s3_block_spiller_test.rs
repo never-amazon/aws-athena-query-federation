@@ -1,6 +1,7 @@
 use athena_federation_sdk::data::block_utils;
 use athena_federation_sdk::exceptions::JavaThrowable;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::{DataType, Schema};
@@ -120,7 +121,6 @@ fn spill_location() -> SpillLocation {
             .with_prefix(PREFIX)
             .with_query_id(REQUEST_ID)
             .with_split_id(SPLIT_ID)
-            .with_is_directory(true)
             .build(),
     )
 }
@@ -155,13 +155,10 @@ async fn setup() -> Setup {
     let allocator = Arc::new(BlockAllocatorImpl::new());
     let mock_s3 = Arc::new(MockS3::default());
     let schema = two_column_schema();
-    let spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
-        .with_request_id(REQUEST_ID)
-        .with_spill_location(spill_location())
-        .with_request_id(REQUEST_ID)
-        .build()
-        .unwrap();
+    let spill_config = SpillConfig {
+        encryption_key: Some(KeySource::Local.create(None).await.unwrap()),
+        ..SpillConfig::new(spill_location(), REQUEST_ID)
+    };
     let block_writer = S3BlockSpiller::new(
         mock_s3.clone(),
         spill_config.clone(),
@@ -186,17 +183,14 @@ async fn setup() -> Setup {
     }
 }
 
-async fn async_spill_config(max_block_bytes: i64, num_spill_threads: i32) -> SpillConfig {
-    SpillConfig::new_builder()
-        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
-        .with_request_id(REQUEST_ID)
-        .with_spill_location(spill_location())
-        .with_request_id(REQUEST_ID)
-        .with_max_block_bytes(max_block_bytes)
-        .with_max_inline_block_bytes(0)
-        .with_num_spill_threads(num_spill_threads)
-        .build()
-        .unwrap()
+async fn async_spill_config(max_block_bytes: i64, spill_threads: usize) -> SpillConfig {
+    SpillConfig {
+        encryption_key: Some(KeySource::Local.create(None).await.unwrap()),
+        max_block_bytes,
+        max_inline_block_bytes: 0,
+        spill_threads: NonZeroUsize::new(spill_threads),
+        ..SpillConfig::new(spill_location(), REQUEST_ID)
+    }
 }
 
 fn header(request: &PutObjectRequest, name: &str) -> Option<String> {
@@ -234,7 +228,7 @@ async fn spill_test() {
         .block_writer
         .read(
             &block_location2,
-            s.spill_config.encryption_key(),
+            s.spill_config.encryption_key.as_ref(),
             s.expected.schema().clone(),
         )
         .await
@@ -380,15 +374,13 @@ async fn get_spill_locations_throws_on_async_s3_error() {
 #[tokio::test]
 async fn get_spill_locations_rethrows_sync_final_spill_error() {
     let s = setup().await;
-    let sync_spill_config = SpillConfig::new_builder()
-        .with_encryption_key(Some(KeySource::Local.create(None).await.unwrap()))
-        .with_request_id(REQUEST_ID)
-        .with_spill_location(spill_location())
-        .with_max_block_bytes(1_000_000)
-        .with_max_inline_block_bytes(0)
-        .with_num_spill_threads(0)
-        .build()
-        .unwrap();
+    let sync_spill_config = SpillConfig {
+        encryption_key: Some(KeySource::Local.create(None).await.unwrap()),
+        max_block_bytes: 1_000_000,
+        max_inline_block_bytes: 0,
+        spill_threads: None,
+        ..SpillConfig::new(spill_location(), REQUEST_ID)
+    };
     let sync_spiller = S3BlockSpiller::new(
         s.mock_s3.clone(),
         sync_spill_config,
@@ -526,7 +518,7 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
     let allocator = Arc::new(BlockAllocatorImpl::new());
     let store = Arc::new(KeyedS3::default());
     let spill_config = async_spill_config(1, 4).await;
-    let encryption_key = spill_config.encryption_key().cloned();
+    let encryption_key = spill_config.encryption_key.clone();
     let spiller = S3BlockSpiller::new(
         store.clone(),
         spill_config,

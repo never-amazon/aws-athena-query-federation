@@ -1,8 +1,7 @@
 use crate::domain::table_name::TableName;
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::len_to_long;
-
-pub const UNLIMITED_PAGE_SIZE_VALUE: i32 = -1;
+use crate::metadata::UNLIMITED_PAGE_SIZE_VALUE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListTablesPage {

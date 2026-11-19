@@ -84,8 +84,8 @@ pub fn append_order_by_limit_offset(
         } else {
             format!(" {order_by_clause}")
         };
-        if constraints.limit() > 0 {
-            return format!("{order_by} LIMIT {}", constraints.limit());
+        if let Some(limit) = constraints.limit() {
+            return format!("{order_by} LIMIT {limit}");
         }
         return order_by;
     };

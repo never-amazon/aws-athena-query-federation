@@ -157,7 +157,7 @@ fn column_values(block: &Block, column: &str) -> Vec<String> {
     let reader = block.get_field_reader(column).unwrap();
     (0..block.row_count())
         .filter_map(|row| {
-            reader.set_position(row);
+            let reader = reader.at(row);
             reader.read_text()
         })
         .collect()

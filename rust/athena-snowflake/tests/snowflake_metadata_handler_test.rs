@@ -486,7 +486,7 @@ async fn get_partitions_with_s3_export() {
     let partitions = response.partitions();
     assert!(partitions.row_count() > 0);
     let reader = partitions.get_field_reader(S3_COLUMN).unwrap();
-    reader.set_position(0);
+    let reader = reader.at(0);
     let bytes = reader.read_byte_array().unwrap();
     assert_eq!(layout_table_schema(), schema_from_bytes(&bytes).unwrap());
     assert!(f.connection.prepared_sql().is_empty());

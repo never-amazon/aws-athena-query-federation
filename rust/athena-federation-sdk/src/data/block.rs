@@ -7,6 +7,7 @@ use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
 use super::arrow_type_comparator::ArrowTypeComparator;
 use super::block_utils;
+use super::date_time_formatter_util::TzEncoding;
 use super::field_resolver::FieldResolver;
 use super::record_batch_serde::ArrowRecordBatch;
 use super::value::Value;
@@ -37,6 +38,12 @@ impl Block {
             vectors,
             row_count: 0,
             constraint_evaluator: Arc::new(ConstraintEvaluator::empty_evaluator()),
+        }
+    }
+
+    pub fn set_tz_encoding(&mut self, encoding: TzEncoding) {
+        for vector in &mut self.vectors {
+            vector.set_tz_encoding(encoding);
         }
     }
 
@@ -219,11 +226,11 @@ impl Block {
                 return false;
             };
             for i in 0..self.row_count {
-                this_reader.set_position(i);
+                let this_reader = this_reader.at(i);
                 let val = this_reader.read_object();
                 let mut matched = false;
                 for j in 0..that.row_count {
-                    that_reader.set_position(j);
+                    let that_reader = that_reader.at(j);
                     match ArrowTypeComparator::compare_reader(
                         &that_reader,
                         &val,
@@ -257,8 +264,8 @@ impl Block {
                 return Ok(false);
             };
             for i in 0..self.row_count {
-                this_reader.set_position(i);
-                that_reader.set_position(i);
+                let this_reader = this_reader.at(i);
+                let that_reader = that_reader.at(i);
                 match ArrowTypeComparator::compare_reader(
                     &this_reader,
                     &this_reader.read_object(),
@@ -298,7 +305,7 @@ impl fmt::Display for Block {
             let mut values = Vec::new();
             if let Some(reader) = self.get_field_reader(next.name()) {
                 for i in 0..rows_to_print {
-                    reader.set_position(i);
+                    let reader = reader.at(i);
                     values.push(
                         block_utils::field_to_string(&reader).unwrap_or_else(|e| e.to_string()),
                     );

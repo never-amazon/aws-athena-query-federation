@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 
 use arrow::datatypes::{DataType, TimeUnit};
 use bigdecimal::BigDecimal;
@@ -11,28 +11,27 @@ use athena_federation_sdk::data::*;
 use athena_federation_sdk::data::{decimal, timestamp_tz};
 use athena_federation_sdk::FederationError;
 
-static PACKING_LOCK: Mutex<()> = Mutex::new(());
-
 struct Setup {
     allocator: BlockAllocatorImpl,
-    _guard: MutexGuard<'static, ()>,
 }
 
 impl Drop for Setup {
     fn drop(&mut self) {
         self.allocator.close();
-        date_time_formatter_util::enable_timezone_packing();
     }
 }
 
 fn setup() -> Setup {
-    let guard = PACKING_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    date_time_formatter_util::enable_timezone_packing();
     Setup {
         allocator: BlockAllocatorImpl::new(),
-        _guard: guard,
+    }
+}
+
+fn encoding_for(time_unit: TimeUnit) -> TzEncoding {
+    if time_unit == TimeUnit::Microsecond {
+        TzEncoding::Unpacked
+    } else {
+        TzEncoding::Packed
     }
 }
 
@@ -67,9 +66,6 @@ fn assert_connector_error(result: athena_federation_sdk::Result<()>) {
 fn copy_rows() {
     let s = setup();
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
-        if time_unit == TimeUnit::Microsecond {
-            date_time_formatter_util::disable_timezone_packing();
-        }
         let schema = SchemaBuilder::new_builder()
             .add_field_with_type("col1", DataType::Int32)
             .add_field_with_type("col2", decimal(38, 9))
@@ -78,6 +74,7 @@ fn copy_rows() {
         let ldt = ldt_2020();
         let date = Value::Date(ldt.and_utc().timestamp_millis());
         let mut src = s.allocator.create_block(Arc::new(schema.clone()));
+        src.set_tz_encoding(encoding_for(time_unit));
         set(&mut src, "col1", 0, 10);
         set(&mut src, "col2", 0, BigDecimal::from(20));
         set(&mut src, "col3", 0, ldt);
@@ -90,6 +87,7 @@ fn copy_rows() {
         src.set_row_count(3);
 
         let mut dst = s.allocator.create_block(Arc::new(schema));
+        dst.set_tz_encoding(encoding_for(time_unit));
         assert_eq!(3, block_utils::copy_rows(&src, &mut dst, 0, 2).unwrap());
         assert_eq!(src, dst);
     }
@@ -99,9 +97,6 @@ fn copy_rows() {
 fn is_null_row() {
     let s = setup();
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
-        if time_unit == TimeUnit::Microsecond {
-            date_time_formatter_util::disable_timezone_packing();
-        }
         let schema = SchemaBuilder::new_builder()
             .add_field_with_type("col1", DataType::Int32)
             .add_field_with_type("col2", DataType::Int32)
@@ -109,6 +104,7 @@ fn is_null_row() {
             .build();
         let ldt = chrono::Utc::now().naive_utc();
         let mut block = s.allocator.create_block(Arc::new(schema));
+        block.set_tz_encoding(encoding_for(time_unit));
         set(&mut block, "col1", 0, 10);
         set(&mut block, "col2", 0, 20);
         set(&mut block, "col3", 0, ldt);
@@ -129,7 +125,6 @@ fn field_to_string() {
     for time_unit in [TimeUnit::Millisecond, TimeUnit::Microsecond] {
         let mut expected_string = "Block{rows=2, col1=[10, 11], col2=[2020-03-18T12:54:29Z[UTC], 2020-03-18T12:54:29-05:00], col3=[2020-03-18, 2019-12-29]}";
         if time_unit == TimeUnit::Microsecond {
-            date_time_formatter_util::disable_timezone_packing();
             expected_string = "Block{rows=2, col1=[10, 11], col2=[2020-03-18T12:54:29Z[UTC], 2020-03-18T17:54:29Z[UTC]], col3=[2020-03-18, 2019-12-29]}";
         }
         let schema = SchemaBuilder::new_builder()
@@ -139,6 +134,7 @@ fn field_to_string() {
             .build();
         let ldt = ldt_2020();
         let mut block = s.allocator.create_block(Arc::new(schema));
+        block.set_tz_encoding(encoding_for(time_unit));
         set(&mut block, "col1", 0, 10);
         set(&mut block, "col2", 0, ldt);
         set(

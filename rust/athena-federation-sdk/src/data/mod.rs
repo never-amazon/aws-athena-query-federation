@@ -4,6 +4,7 @@ pub(crate) mod block;
 pub(crate) mod block_allocator;
 pub(crate) mod block_spiller;
 pub mod block_utils;
+mod column;
 pub mod date_time_formatter_util;
 pub(crate) mod field_builder;
 pub(crate) mod field_resolver;
@@ -33,7 +34,7 @@ pub use block_utils::{
     to_big_decimal, to_exact_byte, to_exact_int, to_exact_long, to_exact_short,
     MAP_DATA_VECTOR_NAME, MAP_KEY_NAME, MAP_VALUE_NAME, UTC_ZONE_ID,
 };
-pub use date_time_formatter_util::{TimeStampMicroTzHolder, TimeStampMilliTzHolder};
+pub use date_time_formatter_util::{TimeStampMicroTzHolder, TimeStampMilliTzHolder, TzEncoding};
 pub use field_builder::FieldBuilder;
 pub use field_resolver::{DefaultFieldResolver, FieldResolver};
 pub use java_time::{

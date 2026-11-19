@@ -229,12 +229,12 @@ mod tests {
         assert!(r1);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         let reader = block.get_field_reader("name").unwrap();
-        reader.set_position(0);
+        let reader = reader.at(0);
         assert_eq!(reader.read_text(), Some("a".to_string()));
-        reader.set_position(1);
+        let reader = reader.at(1);
         assert!(!reader.is_set());
         let ids = block.get_field_reader("id").unwrap();
-        ids.set_position(1);
+        let ids = ids.at(1);
         assert_eq!(ids.read_integer(), Some(2));
     }
 

@@ -70,7 +70,7 @@ fn partition_text(partitions: &Block, field: &str, row: usize) -> Result<Option<
     let reader = partitions
         .get_field_reader(field)
         .ok_or_else(missing_field_reader)?;
-    reader.set_position(row);
+    let reader = reader.at(row);
     Ok(reader.read_text())
 }
 

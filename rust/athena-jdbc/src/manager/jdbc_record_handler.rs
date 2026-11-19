@@ -1,7 +1,7 @@
 use athena_federation_sdk::data::block_utils;
-use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
@@ -14,7 +14,7 @@ use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, FieldWrite
 use athena_federation_sdk::data::writers::GeneratedRowWriter;
 use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockSpiller, DefaultFieldResolver, FieldVector, MinorType,
-    PutObjectRequest, S3BlockSpiller, S3Client, Value,
+    PutObjectRequest, S3BlockSpiller, S3Client, TzEncoding, Value,
 };
 use athena_federation_sdk::domain::predicate::{
     ConstraintEvaluator, ConstraintProjector, Constraints,
@@ -447,17 +447,11 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
     }
 
     pub fn build_export_spill_config(&self, request: &ReadRecordsRequest) -> Result<SpillConfig> {
-        let mut builder = SpillConfig::new_builder();
-        if let Some(location) = request.split().spill_location() {
-            builder = builder.with_spill_location(location.clone());
-        }
-        builder
-            .with_max_block_bytes(self.context.spill_config(request)?.max_block_bytes())
-            .with_max_inline_block_bytes(0)
-            .with_request_id(request.query_id())
-            .with_encryption_key(request.split().encryption_key().cloned())
-            .with_num_spill_threads(2)
-            .build()
+        Ok(SpillConfig {
+            max_inline_block_bytes: 0,
+            spill_threads: NonZeroUsize::new(2),
+            ..self.context.spill_config(request)?
+        })
     }
 
     pub async fn resolve_scoped_s3_client(
@@ -562,10 +556,8 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
                     let row = result_set.take_current_row()?;
                     spiller
                         .write_rows(&mut |block: &mut Block, row_num: usize| -> Result<usize> {
-                            date_time_formatter_util::override_timezone_packing(false);
-                            let written = write_export_row(block, row_num, &row, column_count);
-                            date_time_formatter_util::clear_timezone_packing_override();
-                            written
+                            block.set_tz_encoding(TzEncoding::Unpacked);
+                            write_export_row(block, row_num, &row, column_count)
                         })
                         .await?;
                     rows_returned_from_database += 1;

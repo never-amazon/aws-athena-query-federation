@@ -18,7 +18,6 @@ impl<'a> SimpleArrowValueProjector<'a> {
     }
 
     pub fn project(&self, pos: usize) -> Result<Value> {
-        self.field_reader.set_position(pos);
-        (self.projection)(&self.field_reader)
+        (self.projection)(&self.field_reader.at(pos))
     }
 }

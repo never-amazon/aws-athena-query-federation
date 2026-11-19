@@ -66,12 +66,12 @@ impl Constraints {
         &self.expression
     }
 
-    pub fn limit(&self) -> i64 {
-        self.limit
+    pub fn limit(&self) -> Option<u64> {
+        u64::try_from(self.limit).ok().filter(|&limit| limit > 0)
     }
 
-    pub fn has_limit(&self) -> bool {
-        self.limit > DEFAULT_NO_LIMIT
+    pub fn wire_limit(&self) -> i64 {
+        self.limit
     }
 
     pub fn order_by_clause(&self) -> &[OrderByField] {

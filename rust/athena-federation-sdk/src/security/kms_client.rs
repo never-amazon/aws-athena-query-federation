@@ -15,7 +15,7 @@ pub trait KmsClient: Send + Sync {
         override_configuration: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Vec<u8>, AwsServiceError>;
 
-    async fn generate_random(&self, number_of_bytes: i32) -> Result<Vec<u8>, AwsServiceError>;
+    async fn generate_random(&self, number_of_bytes: usize) -> Result<Vec<u8>, AwsServiceError>;
 }
 
 #[async_trait]
@@ -39,10 +39,10 @@ impl KmsClient for aws_sdk_kms::Client {
             .unwrap_or_default())
     }
 
-    async fn generate_random(&self, number_of_bytes: i32) -> Result<Vec<u8>, AwsServiceError> {
+    async fn generate_random(&self, number_of_bytes: usize) -> Result<Vec<u8>, AwsServiceError> {
         let output = self
             .generate_random()
-            .number_of_bytes(number_of_bytes)
+            .number_of_bytes(i32::try_from(number_of_bytes).unwrap_or(i32::MAX))
             .send()
             .await
             .map_err(|e| AwsServiceError::from_sdk_error(AwsService::Kms, &e))?;

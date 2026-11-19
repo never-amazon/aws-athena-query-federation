@@ -106,7 +106,6 @@ async fn setup() -> Setup {
         .with_prefix(PREFIX)
         .with_query_id(REQUEST_ID)
         .with_split_id(SPLIT_ID)
-        .with_is_directory(false)
         .build();
     let mut expected = allocator.create_block(schema.clone());
     set(&mut expected, "col1", 0, 100);

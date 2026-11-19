@@ -12,7 +12,7 @@ use num_traits::{FromPrimitive, ToPrimitive};
 
 use super::block::Block;
 use super::block_allocator::BlockAllocator;
-use super::date_time_formatter_util;
+use super::date_time_formatter_util::{self, TzEncoding};
 use super::field_resolver::FieldResolver;
 use super::java_format::{big_decimal_to_string, bytes_to_hex, double_to_string, float_to_string};
 use super::java_time::{
@@ -279,6 +279,26 @@ pub fn set_value(vector: &mut FieldVector, pos: usize, value: &Value) -> Result<
     }
 }
 
+fn tz_timestamp_value(
+    field: &Field,
+    minor: MinorType,
+    value: &Value,
+    encoding: TzEncoding,
+) -> Result<i64> {
+    let tz = timestamp_timezone(field.data_type());
+    if minor == MinorType::TIMESTAMPMILLITZ {
+        Ok(
+            date_time_formatter_util::timestamp_milli_tz_holder_from_object(value, tz, encoding)?
+                .value,
+        )
+    } else {
+        Ok(
+            date_time_formatter_util::timestamp_micro_tz_holder_from_object(value, tz, encoding)?
+                .value,
+        )
+    }
+}
+
 fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Result<()> {
     if value.is_null() {
         return set_null_value(vector, pos);
@@ -290,14 +310,12 @@ fn set_value_inner(vector: &mut FieldVector, pos: usize, value: &Value) -> Resul
             if let Value::Long(v) = value {
                 Value::Long(*v)
             } else {
-                let tz = timestamp_timezone(field.data_type());
-                Value::Long(if minor == MinorType::TIMESTAMPMILLITZ {
-                    date_time_formatter_util::timestamp_milli_tz_holder_from_object(value, tz)?
-                        .value
-                } else {
-                    date_time_formatter_util::timestamp_micro_tz_holder_from_object(value, tz)?
-                        .value
-                })
+                Value::Long(tz_timestamp_value(
+                    field,
+                    minor,
+                    value,
+                    vector.tz_encoding(),
+                )?)
             }
         }
         MinorType::DATEMILLI => {
@@ -417,7 +435,7 @@ pub fn row_to_string(block: &Block, row: usize) -> Result<String> {
     }
     let mut sb = String::new();
     for reader in block.field_readers() {
-        reader.set_position(row);
+        let reader = reader.at(row);
         if !sb.is_empty() {
             sb.push_str(", ");
         }
@@ -450,8 +468,12 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         }
         MinorType::TIMESTAMPMICROTZ | MinorType::TIMESTAMPMILLITZ => {
             let v = reader.read_long().ok_or_else(npe)?;
-            date_time_formatter_util::construct_zoned_date_time(v, reader.field().data_type())?
-                .to_string()
+            date_time_formatter_util::construct_zoned_date_time(
+                v,
+                reader.field().data_type(),
+                reader.vector().tz_encoding(),
+            )?
+            .to_string()
         }
         MinorType::DATEMILLI
         | MinorType::FLOAT8
@@ -491,11 +513,10 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         }
         MinorType::LIST => {
             let mut sb = String::from("{");
-            while reader.next() {
+            for child in reader.elements() {
                 if sb.len() > 1 {
                     sb.push(',');
                 }
-                let child = reader.reader().ok_or_else(npe)?;
                 sb.push_str(&field_to_string(&child)?);
             }
             sb.push('}');
@@ -503,8 +524,7 @@ pub fn field_to_string(reader: &FieldReader<'_>) -> Result<String> {
         }
         MinorType::MAP => {
             let mut sb = String::new();
-            while reader.next() {
-                let child = reader.reader().ok_or_else(npe)?;
+            for child in reader.elements() {
                 sb.push_str(&field_to_string(&child)?);
             }
             sb
@@ -542,7 +562,7 @@ pub fn copy_rows(
             let dst = dst_block.get_field_vector_mut(&name).ok_or_else(|| {
                 FederationError::null_pointer(format!("No vector found for field {name}"))
             })?;
-            src.set_position(i);
+            let src = src.at(i);
             set_value(dst, dst_offset, &src.read_object())?;
         }
     }
@@ -561,7 +581,7 @@ pub fn is_null_row(block: &Block, row: usize) -> Result<bool> {
         )));
     }
     for src in block.field_readers() {
-        src.set_position(row);
+        let src = src.at(row);
         if src.is_set() {
             return Ok(false);
         }
@@ -762,7 +782,7 @@ fn write_simple_value_inner(
         vector.set_null(pos);
         return Ok(true);
     }
-    match simple_stored_value(field, minor, value)? {
+    match simple_stored_value(field, minor, value, vector.tz_encoding())? {
         Some(stored) => {
             vector.set(pos, &stored)?;
             Ok(true)
@@ -771,19 +791,15 @@ fn write_simple_value_inner(
     }
 }
 
-fn simple_stored_value(field: &Field, minor: MinorType, value: &Value) -> Result<Option<Value>> {
+fn simple_stored_value(
+    field: &Field,
+    minor: MinorType,
+    value: &Value,
+    encoding: TzEncoding,
+) -> Result<Option<Value>> {
     Ok(Some(match minor {
-        MinorType::TIMESTAMPMILLITZ => {
-            let tz = timestamp_timezone(field.data_type());
-            Value::Long(
-                date_time_formatter_util::timestamp_milli_tz_holder_from_object(value, tz)?.value,
-            )
-        }
-        MinorType::TIMESTAMPMICROTZ => {
-            let tz = timestamp_timezone(field.data_type());
-            Value::Long(
-                date_time_formatter_util::timestamp_micro_tz_holder_from_object(value, tz)?.value,
-            )
+        MinorType::TIMESTAMPMILLITZ | MinorType::TIMESTAMPMICROTZ => {
+            Value::Long(tz_timestamp_value(field, minor, value, encoding)?)
         }
         MinorType::DATEMILLI => match value {
             Value::Date(ms) => Value::Long(*ms),

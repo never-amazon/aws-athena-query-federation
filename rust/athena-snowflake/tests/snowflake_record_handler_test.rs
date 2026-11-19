@@ -126,7 +126,6 @@ fn spill_location() -> S3SpillLocation {
         .with_prefix("prefix")
         .with_query_id("spill-query")
         .with_split_id("spill-split")
-        .with_is_directory(true)
         .build()
 }
 

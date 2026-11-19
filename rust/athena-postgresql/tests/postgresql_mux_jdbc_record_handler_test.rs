@@ -172,19 +172,15 @@ fn request(catalog: &str) -> ReadRecordsRequest {
 
 fn spiller(fakes: &Fakes) -> S3BlockSpiller {
     let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
-    let spill_config = SpillConfig::new_builder()
-        .with_spill_location(
-            S3SpillLocation::new_builder()
-                .with_bucket("bucket")
-                .with_query_id("queryId")
-                .with_split_id("split")
-                .with_is_directory(true)
-                .build()
-                .into(),
-        )
-        .with_request_id("queryId")
-        .build()
-        .unwrap();
+    let spill_config = SpillConfig::new(
+        S3SpillLocation::new_builder()
+            .with_bucket("bucket")
+            .with_query_id("queryId")
+            .with_split_id("split")
+            .build()
+            .into(),
+        "queryId",
+    );
     S3BlockSpiller::new(
         Arc::new(fakes.s3.clone()),
         spill_config,

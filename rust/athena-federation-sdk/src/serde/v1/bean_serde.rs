@@ -370,7 +370,7 @@ fn serialize_constraints(constraints: &Constraints, jgen: &mut JsonGenerator) ->
         jgen.write_end_object()?;
     }
     jgen.write_end_array()?;
-    jgen.write_number_field_i64("limit", constraints.limit())?;
+    jgen.write_number_field_i64("limit", constraints.wire_limit())?;
     write_string_map_bean(
         jgen,
         "queryPassthroughArguments",

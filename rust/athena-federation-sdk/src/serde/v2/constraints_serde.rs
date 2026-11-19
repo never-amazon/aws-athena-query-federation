@@ -57,7 +57,7 @@ pub fn do_serialize(
         crate::serde::v4::order_by_field_serde_v4::serialize(Some(order_by_field), jgen)?;
     }
     jgen.write_end_array()?;
-    jgen.write_number_field_i64(LIMIT_FIELD, constraints.limit())?;
+    jgen.write_number_field_i64(LIMIT_FIELD, constraints.wire_limit())?;
     if version >= SerdeVersion::V5 {
         write_string_map(
             jgen,
