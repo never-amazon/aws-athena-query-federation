@@ -2,16 +2,16 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::array::ArrayRef;
-use arrow::datatypes::SchemaRef;
+use arrow::datatypes::{Field, SchemaRef};
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 
-use super::arrow_type_comparator::ArrowTypeComparator;
-use super::block_utils;
-use super::date_time_formatter_util::TzEncoding;
-use super::field_resolver::FieldResolver;
-use super::record_batch_serde::ArrowRecordBatch;
-use super::value::Value;
-use super::vector::{FieldReader, FieldVector};
+use crate::data::arrow_type_comparator::ArrowTypeComparator;
+use crate::data::block_utils;
+use crate::data::date_time_formatter_util::TzEncoding;
+use crate::data::record_batch_serde::ArrowRecordBatch;
+use crate::data::types::{minor_type_of, MinorType};
+use crate::data::value::Value;
+use crate::data::vector::{FieldReader, FieldVector};
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::exceptions::{FederationError, Result};
 
@@ -314,5 +314,49 @@ impl fmt::Display for Block {
             write!(f, ", {}=[{}]", next.name(), values.join(", "))?;
         }
         write!(f, "}}")
+    }
+}
+
+pub trait FieldResolver {
+    fn get_field_value(&self, field: &Field, value: &Value) -> Result<Value>;
+
+    fn get_map_key(&self, _field: &Field, value: &Value) -> Result<Value> {
+        Ok(value.clone())
+    }
+
+    fn get_map_value(&self, _field: &Field, value: &Value) -> Result<Value> {
+        Ok(value.clone())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultFieldResolver;
+
+impl FieldResolver for DefaultFieldResolver {
+    fn get_field_value(&self, field: &Field, value: &Value) -> Result<Value> {
+        let minor_type = minor_type_of(field.data_type());
+        if let Value::Map(_) = value {
+            return Ok(value.map_get(field.name()).cloned().unwrap_or(Value::Null));
+        } else if minor_type == MinorType::List {
+            if let Value::List(_) = value {
+                return Ok(value.clone());
+            }
+            return Err(FederationError::class_cast(
+                value.java_class_name(),
+                "java.util.List",
+            ));
+        }
+        Err(FederationError::invalid_input(format!(
+            "Expected LIST type but found {minor_type}"
+        )))
+    }
+}
+
+impl<F> FieldResolver for F
+where
+    F: Fn(&Field, &Value) -> Result<Value>,
+{
+    fn get_field_value(&self, field: &Field, value: &Value) -> Result<Value> {
+        self(field, value)
     }
 }

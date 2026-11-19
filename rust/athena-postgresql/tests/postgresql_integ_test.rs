@@ -9,9 +9,7 @@ use athena_federation_sdk::data::{Block, BlockAllocator, BlockAllocatorImpl};
 use athena_federation_sdk::domain::predicate::{
     Constraints, Marker, Range, SortedRangeSet, ValueSet,
 };
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use athena_federation_sdk::handlers::{MetadataHandler, RecordHandler};
 use athena_federation_sdk::metadata::{GetTableRequest, ListSchemasRequest, ListTablesRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;

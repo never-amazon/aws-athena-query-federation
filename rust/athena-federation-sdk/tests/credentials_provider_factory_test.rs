@@ -1,4 +1,4 @@
-use athena_federation_sdk::credentials::credentials_constants;
+use athena_federation_sdk::credentials;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -48,8 +48,8 @@ struct TestOAuthProvider;
 
 impl OAuthFlow for TestOAuthProvider {
     fn is_oauth_configured(&self, secret_map: &HashMap<String, String>) -> Result<bool> {
-        Ok(secret_map.contains_key(credentials_constants::CLIENT_ID)
-            && secret_map.contains_key(credentials_constants::CLIENT_SECRET))
+        Ok(secret_map.contains_key(credentials::CLIENT_ID)
+            && secret_map.contains_key(credentials::CLIENT_SECRET))
     }
 
     fn build_token_request(&self, _secret_map: &HashMap<String, String>) -> Result<HttpRequest> {
@@ -78,8 +78,8 @@ fn setup(secret: Option<String>) -> Arc<CachableSecretsManager> {
 
 fn oauth_secret() -> String {
     serde_json::to_string(&HashMap::from([
-        (credentials_constants::CLIENT_ID, TEST_CLIENT_ID),
-        (credentials_constants::CLIENT_SECRET, TEST_CLIENT_SECRET),
+        (credentials::CLIENT_ID, TEST_CLIENT_ID),
+        (credentials::CLIENT_SECRET, TEST_CLIENT_SECRET),
     ]))
     .unwrap()
 }
@@ -106,8 +106,8 @@ async fn test_create_credential_provider_when_oauth_configured() {
 #[tokio::test]
 async fn test_create_credential_provider_when_username_password_configured() {
     let standard_secret = serde_json::to_string(&HashMap::from([
-        (credentials_constants::USERNAME, TEST_USERNAME),
-        (credentials_constants::PASSWORD, TEST_PASSWORD),
+        (credentials::USERNAME, TEST_USERNAME),
+        (credentials::PASSWORD, TEST_PASSWORD),
     ]))
     .unwrap();
     let cachable_secrets_manager = setup(Some(standard_secret));

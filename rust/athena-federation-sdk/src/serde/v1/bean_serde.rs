@@ -8,31 +8,23 @@ use indexmap::{IndexMap, IndexSet};
 use serde_json::Value as Json;
 
 use crate::data::{ArrowType, Block};
-use crate::domain::predicate::expression::{
-    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
-};
-use crate::domain::predicate::functions::FunctionName;
 use crate::domain::predicate::{
-    AllOrNoneValueSet, Constraints, Direction, EquatableValueSet, Marker, OrderByField, QueryPlan,
-    Range, SortedRangeSet, ValueSet,
+    AllOrNoneValueSet, ConstantExpression, Constraints, Direction, EquatableValueSet,
+    FederationExpression, FunctionCallExpression, FunctionName, Marker, OrderByField, QueryPlan,
+    Range, SortedRangeSet, ValueSet, VariableExpression,
 };
-use crate::domain::spill::{S3SpillLocation, SpillLocation};
-use crate::domain::split::Split;
-use crate::domain::table_name::TableName;
+use crate::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use crate::exceptions::{FederationError, Result};
 use crate::java_cast::double_to_long;
-use crate::metadata::optimizations::OptimizationSubType;
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
-    ListTablesResponse, MetadataHeader,
+    ListTablesResponse, MetadataHeader, OptimizationSubType,
 };
 use crate::records::{ReadRecordsRequest, ReadRecordsResponse, RemoteReadRecordsResponse};
-use crate::request::{
-    FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
-};
-use crate::security::EncryptionKey;
+use crate::request::{FederationRequest, FederationResponse, PingRequest, PingResponse};
+use crate::security::{EncryptionKey, FederatedIdentity};
 use crate::serde::base::{write_type, StringMapValue};
 use crate::serde::java_hash::java_hash_map_order;
 use crate::serde::json::{decode_base64, JsonGenerator, JsonParser};

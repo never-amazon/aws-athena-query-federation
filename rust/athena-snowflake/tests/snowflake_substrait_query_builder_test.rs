@@ -6,9 +6,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use indexmap::IndexMap;
 
 use athena_federation_sdk::domain::predicate::{Constraints, QueryPlan, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::domain::spill::{S3SpillLocation, SpillLocation};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{S3SpillLocation, SpillLocation, Split, TableName};
 use athena_jdbc::manager::SplitQuery;
 use athena_jdbc::sql::{PreparedStatement, SqlValue};
 use athena_snowflake::{query_string_builder, SnowflakeQueryStringBuilder};

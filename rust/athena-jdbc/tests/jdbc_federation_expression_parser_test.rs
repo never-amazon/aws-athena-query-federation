@@ -1,6 +1,5 @@
 use arrow::datatypes::DataType;
-use athena_federation_sdk::domain::predicate::expression::VariableExpression;
-use athena_federation_sdk::domain::predicate::functions::FunctionName;
+use athena_federation_sdk::domain::predicate::{FunctionName, VariableExpression};
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
 use athena_jdbc::manager::ExpressionParser;
 

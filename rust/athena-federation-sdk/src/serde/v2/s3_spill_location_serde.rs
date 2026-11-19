@@ -1,4 +1,4 @@
-use crate::domain::spill::{S3SpillLocation, SpillLocation};
+use crate::domain::{S3SpillLocation, SpillLocation};
 use crate::exceptions::Result;
 use crate::serde::base::{get_next_bool_field, get_next_string_field, require_non_null};
 use crate::serde::json::{JsonGenerator, JsonParser};

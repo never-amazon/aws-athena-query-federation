@@ -4,10 +4,10 @@ use std::sync::Arc;
 use arrow::datatypes::Schema;
 use athena_federation_sdk::data::BlockAllocatorImpl;
 use athena_federation_sdk::domain::predicate::{Constraints, DEFAULT_NO_LIMIT};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::request::{FederatedIdentity, FederationRequest};
+use athena_federation_sdk::request::FederationRequest;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use indexmap::IndexMap;
 

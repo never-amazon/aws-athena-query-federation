@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::resolver::{
     FederationSdkCasingMode, CASING_MODE_CONFIGURATION_KEY, DEFAULT_GLUE_CONNECTION,

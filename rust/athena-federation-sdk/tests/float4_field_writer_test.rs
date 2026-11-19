@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::DataType;
 
-use athena_federation_sdk::data::writers::extractors::Extractor;
-use athena_federation_sdk::data::writers::fieldwriters::{FieldWriter, ScalarFieldWriter};
+use athena_federation_sdk::data::writers::{Extractor, FieldWriter, ScalarFieldWriter};
 use athena_federation_sdk::data::{FieldVector, Value};
 use athena_federation_sdk::domain::predicate::ConstraintProjector;
 

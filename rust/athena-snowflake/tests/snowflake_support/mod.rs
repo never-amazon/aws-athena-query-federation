@@ -9,10 +9,11 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use athena_federation_sdk::credentials::CredentialsProvider;
-use athena_federation_sdk::data::{Block, BlockSpiller, RowWriter, SchemaBuilder};
-use athena_federation_sdk::data::{GetObjectRequest, PutObjectRequest, S3Client};
+use athena_federation_sdk::data::{
+    Block, BlockSpiller, GetObjectRequest, PutObjectRequest, RowWriter, S3Client, SchemaBuilder,
+};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
-use athena_federation_sdk::domain::spill::SpillLocation;
+use athena_federation_sdk::domain::SpillLocation;
 use athena_federation_sdk::handlers::AwsClients;
 use athena_federation_sdk::security::{
     AwsCrypto, AwsRequestOverrideConfiguration, AwsServiceError, KmsClient, KmsEncryptionProvider,

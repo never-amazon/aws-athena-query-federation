@@ -17,7 +17,7 @@ use regex::Regex;
 
 use super::metadata_handler::{require_identity, MetadataHandler};
 use crate::data::SchemaBuilder;
-use crate::domain::table_name::TableName;
+use crate::domain::TableName;
 use crate::exceptions::{
     AthenaConnectorException, FederationError, FederationSourceErrorCode, JavaCause, JavaThrowable,
     Result,

@@ -1,13 +1,11 @@
 use std::error::Error as StdError;
+use std::fmt;
 use std::sync::Arc;
 
 use arrow::error::ArrowError;
 use thiserror::Error;
 
-use super::athena_connector_exception::AthenaConnectorException;
-use super::error_details::FederationSourceErrorCode;
-use super::federation_throttle_exception::FederationThrottleException;
-use super::java_throwable::JavaThrowable;
+use crate::exceptions::JavaThrowable;
 
 #[derive(Debug, Error, Clone)]
 pub enum FederationError {
@@ -73,7 +71,7 @@ fn java_to_string(error: &FederationError) -> String {
     }
 }
 
-pub type Result<T> = std::result::Result<T, FederationError>;
+pub type Result<T, E = FederationError> = std::result::Result<T, E>;
 
 impl FederationError {
     pub fn connector(
@@ -211,5 +209,174 @@ impl From<std::io::Error> for FederationError {
             message: e.to_string(),
             source: Some(Arc::new(e)),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FederationSourceErrorCode {
+    AccessDeniedException,
+    EntityNotFoundException,
+    InvalidCredentialsException,
+    InvalidInputException,
+    InvalidResponseException,
+    OperationTimeoutException,
+    OperationNotSupportedException,
+    InternalServiceException,
+    PartialFailureException,
+    ThrottlingException,
+    UnknownToSdkVersion,
+}
+
+impl FederationSourceErrorCode {
+    pub fn from_http_status(status: u16) -> FederationSourceErrorCode {
+        match status {
+            400 | 409 => FederationSourceErrorCode::InvalidInputException,
+            401 => FederationSourceErrorCode::InvalidCredentialsException,
+            403 => FederationSourceErrorCode::AccessDeniedException,
+            404 => FederationSourceErrorCode::EntityNotFoundException,
+            408 | 504 => FederationSourceErrorCode::OperationTimeoutException,
+            429 => FederationSourceErrorCode::ThrottlingException,
+            500 | 502 | 503 => FederationSourceErrorCode::InternalServiceException,
+            501 => FederationSourceErrorCode::OperationNotSupportedException,
+            other => {
+                tracing::warn!("Unknown error code: {}", other);
+                FederationSourceErrorCode::InvalidInputException
+            }
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        use FederationSourceErrorCode::{
+            AccessDeniedException, EntityNotFoundException, InternalServiceException,
+            InvalidCredentialsException, InvalidInputException, InvalidResponseException,
+            OperationNotSupportedException, OperationTimeoutException, PartialFailureException,
+            ThrottlingException, UnknownToSdkVersion,
+        };
+        match self {
+            AccessDeniedException => "AccessDeniedException",
+            EntityNotFoundException => "EntityNotFoundException",
+            InvalidCredentialsException => "InvalidCredentialsException",
+            InvalidInputException => "InvalidInputException",
+            InvalidResponseException => "InvalidResponseException",
+            OperationTimeoutException => "OperationTimeoutException",
+            OperationNotSupportedException => "OperationNotSupportedException",
+            InternalServiceException => "InternalServiceException",
+            PartialFailureException => "PartialFailureException",
+            ThrottlingException => "ThrottlingException",
+            UnknownToSdkVersion => "UNKNOWN_TO_SDK_VERSION",
+        }
+    }
+}
+
+impl fmt::Display for FederationSourceErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, thiserror::Error)]
+#[error("{message}")]
+pub struct AthenaConnectorException {
+    pub message: String,
+    pub code: FederationSourceErrorCode,
+    pub details_message: Option<String>,
+    #[source]
+    pub cause: Option<Arc<dyn JavaThrowable>>,
+    pub response: Option<Arc<FederationError>>,
+}
+
+impl AthenaConnectorException {
+    pub fn new(code: FederationSourceErrorCode, message: impl Into<String>) -> Self {
+        AthenaConnectorException {
+            message: message.into(),
+            code,
+            details_message: None,
+            cause: None,
+            response: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_details_message(mut self, details_message: impl Into<String>) -> Self {
+        self.details_message = Some(details_message.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_cause(mut self, cause: impl JavaThrowable) -> Self {
+        self.cause = Some(Arc::new(cause));
+        self
+    }
+
+    #[must_use]
+    pub fn with_response(mut self, response: FederationError) -> Self {
+        self.response = Some(Arc::new(response));
+        self
+    }
+}
+
+impl fmt::Debug for AthenaConnectorException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AthenaConnectorException")
+            .field("message", &self.message)
+            .field("code", &self.code)
+            .field("details_message", &self.details_message)
+            .field(
+                "cause",
+                &self.cause.as_ref().map(std::string::ToString::to_string),
+            )
+            .field("has_response", &self.response.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct FederationThrottleException {
+    pub message: Option<String>,
+    pub cause: Option<Arc<dyn JavaThrowable>>,
+}
+
+impl FederationThrottleException {
+    pub fn new(message: impl Into<String>) -> Self {
+        FederationThrottleException {
+            message: Some(message.into()),
+            cause: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_cause(mut self, cause: impl JavaThrowable) -> Self {
+        self.cause = Some(Arc::new(cause));
+        self
+    }
+}
+
+impl fmt::Debug for FederationThrottleException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FederationThrottleException")
+            .field("message", &self.message)
+            .field(
+                "cause",
+                &self.cause.as_ref().map(std::string::ToString::to_string),
+            )
+            .finish()
+    }
+}
+
+impl fmt::Display for FederationThrottleException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            self.message
+                .as_deref()
+                .unwrap_or("FederationThrottleException"),
+        )
+    }
+}
+
+impl std::error::Error for FederationThrottleException {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.cause
+            .as_deref()
+            .map(|cause| cause as &(dyn std::error::Error + 'static))
     }
 }

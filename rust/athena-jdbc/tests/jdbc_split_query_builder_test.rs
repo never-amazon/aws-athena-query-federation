@@ -14,8 +14,7 @@ use athena_federation_sdk::domain::predicate::{
     Constraints, Direction, Marker, OrderByField, QueryPlan, Range, SortedRangeSet, ValueSet,
     DEFAULT_NO_LIMIT,
 };
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::Result;
 use athena_federation_substrait::SqlDialect;
 use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder, TypeAndValue};

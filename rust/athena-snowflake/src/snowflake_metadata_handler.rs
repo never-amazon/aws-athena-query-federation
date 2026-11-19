@@ -9,27 +9,20 @@ use athena_federation_sdk::credentials::CredentialsProvider;
 use athena_federation_sdk::data::{
     minor_type_of, ArrowType, Block, FieldBuilder, SchemaBuilder, SimpleBlockWriter,
 };
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::exceptions::JavaThrowable;
+use athena_federation_sdk::domain::{Split, TableName};
+use athena_federation_sdk::exceptions::{FederationSourceErrorCode, JavaThrowable};
 use athena_federation_sdk::handlers::{
     AwsClients, HandlerContext, MetadataContext, MetadataHandler,
 };
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    LimitPushdownSubType, TopNPushdownSubType,
-};
-use athena_federation_sdk::metadata::optimizations::{Capability, OptimizationSubType};
 use athena_federation_sdk::metadata::{
-    GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
-    GetSplitsResponse, GetTableLayoutRequest, ListTablesRequest, ListTablesResponse,
+    Capability, GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse,
+    GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, LimitPushdownSubType,
+    ListTablesRequest, ListTablesResponse, OptimizationSubType, TopNPushdownSubType,
+    UNLIMITED_PAGE_SIZE_VALUE,
 };
-use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
+use athena_federation_sdk::security::{AwsRequestOverrideConfiguration, FederatedIdentity};
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
-use athena_federation_sdk::util::{
-    calculate_next_token, validate_and_parse_pagination_arguments, UNLIMITED_PAGE_SIZE_VALUE,
-};
+use athena_federation_sdk::util::{calculate_next_token, validate_and_parse_pagination_arguments};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::close_after;
 use athena_jdbc::connection::{

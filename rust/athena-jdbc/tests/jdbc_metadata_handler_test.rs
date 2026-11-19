@@ -7,17 +7,14 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{FieldBuilder, SchemaBuilder, SimpleBlockWriter};
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
-use athena_federation_sdk::metadata::optimizations::querypassthrough::{
-    ENABLE_QUERY_PASSTHROUGH, SCHEMA_FUNCTION_NAME,
-};
 use athena_federation_sdk::metadata::{
     GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest, GetTableRequest,
-    ListSchemasRequest, ListTablesRequest,
+    ListSchemasRequest, ListTablesRequest, ENABLE_QUERY_PASSTHROUGH, SCHEMA_FUNCTION_NAME,
+    UNLIMITED_PAGE_SIZE_VALUE,
 };
-use athena_federation_sdk::request::FederatedIdentity;
-use athena_federation_sdk::util::UNLIMITED_PAGE_SIZE_VALUE;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};

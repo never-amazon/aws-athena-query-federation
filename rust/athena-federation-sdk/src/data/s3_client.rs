@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::primitives::ByteStream;
 
-use crate::domain::spill::HeadBucketClient;
+use crate::domain::HeadBucketClient;
 use crate::security::{
     send_with_override, AwsRequestOverrideConfiguration, AwsService, AwsServiceError,
 };

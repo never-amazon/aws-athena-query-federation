@@ -2,20 +2,18 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 
-use super::athena_exception_filter::is_athena_throttle;
-use super::aws_clients::AwsClients;
 use crate::connection::environment_constants;
 use crate::credentials::{CredentialsProvider, DefaultCredentialsProvider};
-use crate::data::spill_config::SpillConfig;
-use crate::data::S3Client;
+use crate::data::{S3Client, SpillConfig};
 use crate::exceptions::{FederationError, Result};
 use crate::records::ReadRecordsRequest;
 use crate::request::FederationRequest;
 use crate::security::{
-    AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, FederatedIdentity,
-    KmsEncryptionProvider,
+    AwsRequestOverrideConfiguration, AwsService, AwsServiceError, CachableSecretsManager,
+    FederatedIdentity, KmsClient, KmsEncryptionProvider, SecretsManagerClient,
 };
 use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
 
@@ -230,4 +228,33 @@ fn null_fas_option() -> FederationError {
     FederationError::null_pointer(
         "Cannot invoke \"String.getBytes(java.nio.charset.Charset)\" because \"src\" is null",
     )
+}
+
+#[derive(Clone)]
+pub struct AwsClients {
+    pub secrets_manager: Arc<dyn SecretsManagerClient>,
+    pub athena: Arc<dyn AthenaClient>,
+    pub s3: Arc<dyn S3Client>,
+    pub kms: Arc<dyn KmsClient>,
+    pub kms_encryption_provider: Arc<KmsEncryptionProvider>,
+}
+
+impl AwsClients {
+    pub async fn from_environment() -> Result<AwsClients> {
+        let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+        let kms = aws_sdk_kms::Client::new(&sdk_config);
+        Ok(AwsClients {
+            secrets_manager: Arc::new(aws_sdk_secretsmanager::Client::new(&sdk_config)),
+            athena: Arc::new(aws_sdk_athena::Client::new(&sdk_config)),
+            s3: Arc::new(aws_sdk_s3::Client::new(&sdk_config)),
+            kms: Arc::new(kms.clone()),
+            kms_encryption_provider: Arc::new(KmsEncryptionProvider::new(kms)?),
+        })
+    }
+}
+
+const TOO_MANY_REQUESTS_EXCEPTION: &str = "TooManyRequestsException";
+
+pub fn is_athena_throttle(ex: &AwsServiceError) -> bool {
+    ex.is_service_exception_of(AwsService::Athena) && ex.is_error_code(TOO_MANY_REQUESTS_EXCEPTION)
 }

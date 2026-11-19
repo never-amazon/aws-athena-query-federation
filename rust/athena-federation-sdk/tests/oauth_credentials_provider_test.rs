@@ -1,4 +1,4 @@
-use athena_federation_sdk::credentials::credentials_constants;
+use athena_federation_sdk::credentials;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -72,10 +72,10 @@ struct TestOAuthFlow;
 impl OAuthFlow for TestOAuthFlow {
     fn is_oauth_configured(&self, secret_map: &HashMap<String, String>) -> Result<bool> {
         Ok(secret_map
-            .get(credentials_constants::CLIENT_ID)
+            .get(credentials::CLIENT_ID)
             .is_some_and(|v| !v.is_empty())
             && secret_map
-                .get(credentials_constants::CLIENT_SECRET)
+                .get(credentials::CLIENT_SECRET)
                 .is_some_and(|v| !v.is_empty()))
     }
 
@@ -93,8 +93,8 @@ struct Setup {
 
 impl Setup {
     fn mock_secret_response(&mut self, secret_json: &str) {
-        if secret_json.contains(credentials_constants::CLIENT_ID)
-            || secret_json.contains(credentials_constants::ACCESS_TOKEN)
+        if secret_json.contains(credentials::CLIENT_ID)
+            || secret_json.contains(credentials::ACCESS_TOKEN)
         {
             let secret_map: HashMap<String, String> = serde_json::from_str(secret_json).unwrap();
             self.credentials_provider =
@@ -157,19 +157,19 @@ fn now() -> i64 {
 
 fn create_oauth_secret_json() -> String {
     serde_json::json!({
-        credentials_constants::CLIENT_ID: TEST_CLIENT_ID,
-        credentials_constants::CLIENT_SECRET: TEST_CLIENT_SECRET,
+        credentials::CLIENT_ID: TEST_CLIENT_ID,
+        credentials::CLIENT_SECRET: TEST_CLIENT_SECRET,
     })
     .to_string()
 }
 
 fn create_oauth_secret_json_with_token(access_token: &str, fetched_at: i64) -> String {
     serde_json::json!({
-        credentials_constants::CLIENT_ID: TEST_CLIENT_ID,
-        credentials_constants::CLIENT_SECRET: TEST_CLIENT_SECRET,
-        credentials_constants::ACCESS_TOKEN: access_token,
-        credentials_constants::EXPIRES_IN: "3600",
-        credentials_constants::FETCHED_AT: fetched_at.to_string(),
+        credentials::CLIENT_ID: TEST_CLIENT_ID,
+        credentials::CLIENT_SECRET: TEST_CLIENT_SECRET,
+        credentials::ACCESS_TOKEN: access_token,
+        credentials::EXPIRES_IN: "3600",
+        credentials::FETCHED_AT: fetched_at.to_string(),
     })
     .to_string()
 }
@@ -177,9 +177,9 @@ fn create_oauth_secret_json_with_token(access_token: &str, fetched_at: i64) -> S
 fn create_token_response() -> String {
     format!(
         "{{\"{}\":\"{}\",\"{}\":3600}}",
-        credentials_constants::ACCESS_TOKEN,
+        credentials::ACCESS_TOKEN,
         "new-access-token",
-        credentials_constants::EXPIRES_IN
+        credentials::EXPIRES_IN
     )
 }
 
@@ -208,7 +208,7 @@ async fn test_get_credential_map_when_valid_unexpired_token() {
     let credential_map = s.credentials_provider.get_credential_map().await.unwrap();
     assert_eq!(
         Some(&TEST_ACCESS_TOKEN.to_string()),
-        credential_map.get(credentials_constants::ACCESS_TOKEN_PROPERTY)
+        credential_map.get(credentials::ACCESS_TOKEN_PROPERTY)
     );
 }
 
@@ -223,7 +223,7 @@ async fn test_get_credential_map_when_expired_token() {
     let credential_map = s.credentials_provider.get_credential_map().await.unwrap();
     assert_eq!(
         Some(&"new-access-token".to_string()),
-        credential_map.get(credentials_constants::ACCESS_TOKEN_PROPERTY)
+        credential_map.get(credentials::ACCESS_TOKEN_PROPERTY)
     );
 }
 

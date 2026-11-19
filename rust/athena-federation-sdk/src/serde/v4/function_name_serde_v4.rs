@@ -1,4 +1,4 @@
-use crate::domain::predicate::functions::FunctionName;
+use crate::domain::predicate::FunctionName;
 use crate::exceptions::Result;
 use crate::serde::base::{
     deserialize_nullable, get_next_string_field, require_non_null, serialize_nullable,

@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use arrow::datatypes::Schema;
 
-use super::constraint_projector::ConstraintProjector;
-use super::constraints::Constraints;
-use super::marker::{Bound, Marker};
 use crate::data::{ArrowType, Value};
+use crate::domain::predicate::constraints::Constraints;
+use crate::domain::predicate::marker::{Bound, Marker};
 use crate::exceptions::Result;
 
 #[derive(Debug, Default)]
@@ -55,16 +54,16 @@ impl ConstraintEvaluator {
     }
 }
 
+pub type ConstraintProjector = Arc<dyn Fn(&Value) -> Result<bool> + Send + Sync>;
+
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use arrow::datatypes::DataType;
-    use indexmap::IndexMap;
-
     use super::*;
     use crate::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
     use crate::domain::predicate::{EquatableValueSet, ValueSet};
+    use arrow::datatypes::DataType;
+    use indexmap::IndexMap;
+    use std::sync::Arc;
 
     #[test]
     fn evaluator_filters_block_values() {

@@ -1,4 +1,11 @@
 pub mod predicate;
-pub mod spill;
-pub mod split;
-pub mod table_name;
+mod spill;
+mod split;
+mod table_name;
+
+pub use spill::{
+    BucketState, HeadBucketClient, S3SpillLocation, S3SpillLocationBuilder, SpillLocation,
+    SpillLocationVerifier,
+};
+pub use split::{Split, SplitBuilder};
+pub use table_name::TableName;

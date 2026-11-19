@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::domain::spill::SpillLocation;
+use crate::domain::SpillLocation;
 use crate::exceptions::{FederationError, Result};
 use crate::security::EncryptionKey;
 

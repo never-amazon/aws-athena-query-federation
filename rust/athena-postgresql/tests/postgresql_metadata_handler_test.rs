@@ -1,26 +1,21 @@
 #[path = "../../athena-jdbc/tests/jdbc_support/mod.rs"]
 mod jdbc_support;
 
-use athena_federation_sdk::data::block_utils;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
 use athena_federation_sdk::connection::environment_constants;
-use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
+use athena_federation_sdk::data::{block_utils, BlockAllocator, BlockAllocatorImpl, SchemaBuilder};
 use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType, HintsSubtype,
-};
-use athena_federation_sdk::metadata::optimizations::DataSourceOptimizations;
 use athena_federation_sdk::metadata::{
+    ComplexExpressionPushdownSubType, DataSourceOptimizations, FilterPushdownSubType,
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
-    ListTablesRequest,
+    HintsSubtype, ListTablesRequest,
 };
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::DatabaseConnectionConfig;

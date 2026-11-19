@@ -1,6 +1,6 @@
 use std::fmt;
 
-use athena_federation_sdk::domain::split::Split;
+use athena_federation_sdk::domain::Split;
 
 use crate::snowflake_constants;
 

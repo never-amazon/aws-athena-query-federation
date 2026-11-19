@@ -7,8 +7,7 @@ use athena_federation_sdk::data::{
     arrow_type_to_string, minor_type_of, ArrowType, MinorType, Value,
 };
 use athena_federation_sdk::domain::predicate::{Bound, Constraints, ValueSet};
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::{FederationError, Result};
 use athena_federation_substrait::{
@@ -922,7 +921,7 @@ mod tests {
     use athena_federation_sdk::data::java_format::big_decimal_to_string;
     use athena_federation_sdk::data::Value;
     use athena_federation_sdk::domain::predicate::Bound;
-    use athena_federation_sdk::domain::split::Split;
+    use athena_federation_sdk::domain::Split;
     use athena_federation_sdk::FederationError;
     use athena_federation_substrait::{
         DateString, SqlTypeName, SubstraitTypeAndValue, SubstraitValue, TimestampString,
@@ -930,7 +929,7 @@ mod tests {
 
     use super::{handle_data_types_for_prepared_statement, SplitDialect, SplitQueryBuilder};
     use crate::sql::{PreparedStatement, ResultSet, ResultSetMetaData, SqlValue};
-    use athena_federation_sdk::domain::table_name::TableName;
+    use athena_federation_sdk::domain::TableName;
 
     const JAVA_PROBE: &str =
         include_str!("../../tests/fixtures/split_query_builder_integration.tsv");

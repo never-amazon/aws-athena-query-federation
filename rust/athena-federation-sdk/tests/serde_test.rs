@@ -1,18 +1,18 @@
 mod serde_support;
 
-use athena_federation_sdk::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Schema};
-use athena_federation_sdk::data::{Block, BlockAllocatorImpl, SchemaBuilder, Value};
+use athena_federation_sdk::data::{block_utils, Block, BlockAllocatorImpl, SchemaBuilder, Value};
 use athena_federation_sdk::domain::predicate::{
     Constraints, Marker, Range, SortedRangeSet, ValueSet, DEFAULT_NO_LIMIT,
 };
 use athena_federation_sdk::metadata::GetTableLayoutRequest;
 use athena_federation_sdk::request::{
-    FederatedIdentity, FederationRequest, FederationResponse, PingRequest, PingResponse,
+    FederationRequest, FederationResponse, PingRequest, PingResponse,
 };
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use serde_support::*;
 
@@ -196,7 +196,7 @@ mod constraint_serialization_test {
             )),
             Some("queryId".to_string()),
             "default",
-            athena_federation_sdk::domain::table_name::TableName::new("schema1", "table1"),
+            athena_federation_sdk::domain::TableName::new("schema1", "table1"),
             Constraints::new(
                 constraints_map,
                 Vec::new(),

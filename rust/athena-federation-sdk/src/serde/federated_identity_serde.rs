@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::exceptions::{FederationError, Result};
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 use crate::serde::base::{
     get_next_string_array, get_next_string_field, get_next_string_map, nullable_map,
     read_string_map_entries, serialize_nullable, validate_object_start,

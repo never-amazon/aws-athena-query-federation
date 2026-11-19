@@ -1,5 +1,5 @@
 use crate::exceptions::Result;
-use crate::metadata::optimizations::OptimizationSubType;
+use crate::metadata::OptimizationSubType;
 use crate::serde::base::{
     deserialize_nullable, get_next_string_array, get_next_string_field, non_null_strings,
     require_non_null, serialize_nullable, write_string_array,

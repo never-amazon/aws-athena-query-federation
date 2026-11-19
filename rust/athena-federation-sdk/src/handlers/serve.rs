@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::federation_capabilities::CAPABILITIES;
-use super::metadata_handler::{self, MetadataHandler};
-use super::record_handler::{self, RecordHandler};
-use super::user_defined_function_handler::{self, UserDefinedFunctionHandler};
 use crate::data::{BlockAllocator, BlockAllocatorImpl};
 use crate::exceptions::{
     AthenaConnectorException, FederationError, FederationSourceErrorCode, JavaThrowable, Result,
 };
+use crate::handlers::metadata_handler::{self, MetadataHandler};
+use crate::handlers::record_handler::{self, RecordHandler};
+use crate::handlers::user_defined_function_handler::{self, UserDefinedFunctionHandler};
 use crate::lambda::{LambdaContext, RequestStreamHandler};
 use crate::request::{FederationRequest, PingRequest, PingResponse};
 use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
@@ -223,3 +222,5 @@ macro_rules! stream_handler {
 stream_handler!(MetadataStreamHandler, MetadataHandler);
 stream_handler!(RecordStreamHandler, RecordHandler);
 stream_handler!(UserDefinedFunctionStreamHandler, UserDefinedFunctionHandler);
+
+pub const CAPABILITIES: i32 = 24;

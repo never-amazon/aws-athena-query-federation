@@ -9,13 +9,14 @@ use arrow::datatypes::{DataType, Schema};
 use async_trait::async_trait;
 use athena_federation_sdk::data::{BlockAllocator, BlockAllocatorImpl, SchemaBuilder, Value};
 use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSet, ValueSet};
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::handlers::{
     HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
 use athena_federation_sdk::metadata::{GetSplitsRequest, GetTableLayoutRequest, GetTableRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::request::{FederatedIdentity, FederationResponse};
+use athena_federation_sdk::request::FederationResponse;
+use athena_federation_sdk::security::FederatedIdentity;
 use athena_jdbc::connection::{DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcProperties};
 use athena_jdbc::sql::{JdbcConnection, RowSource, SqlError, SqlValue, VecRowSource};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
@@ -423,7 +424,7 @@ async fn read_splits(
     lambda: &Lambda,
     table_name: &TableName,
     read_schema: &Schema,
-    splits: &[athena_federation_sdk::domain::split::Split],
+    splits: &[athena_federation_sdk::domain::Split],
     constraints: &Constraints,
 ) -> (usize, Vec<Vec<Value>>) {
     let mut rows = 0;

@@ -1,14 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::serde::java_hash::java_hash_map_order;
-
 use indexmap::IndexMap;
 
-use super::expression::FederationExpression;
-use super::order_by_field::OrderByField;
-use super::query_plan::QueryPlan;
-use super::value_set::ValueSet;
+use crate::domain::predicate::value_set::ValueSet;
+use crate::domain::predicate::FederationExpression;
+use crate::serde::java_hash::java_hash_map_order;
 
 pub const DEFAULT_NO_LIMIT: i64 = -1;
 
@@ -134,6 +131,127 @@ impl fmt::Display for Constraints {
             self.limit,
             qpt.join(", "),
             self.query_plan.as_ref().map_or_else(|| "null".into(), std::string::ToString::to_string)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    AscNullsFirst,
+    AscNullsLast,
+    DescNullsFirst,
+    DescNullsLast,
+}
+
+impl Direction {
+    pub const ALL: [Direction; 4] = [
+        Direction::AscNullsFirst,
+        Direction::AscNullsLast,
+        Direction::DescNullsFirst,
+        Direction::DescNullsLast,
+    ];
+
+    pub fn is_ascending(&self) -> bool {
+        matches!(self, Direction::AscNullsFirst | Direction::AscNullsLast)
+    }
+
+    pub fn is_nulls_first(&self) -> bool {
+        matches!(self, Direction::AscNullsFirst | Direction::DescNullsFirst)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Direction::AscNullsFirst => "ASC_NULLS_FIRST",
+            Direction::AscNullsLast => "ASC_NULLS_LAST",
+            Direction::DescNullsFirst => "DESC_NULLS_FIRST",
+            Direction::DescNullsLast => "DESC_NULLS_LAST",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Direction> {
+        Direction::ALL.into_iter().find(|d| d.as_str() == name)
+    }
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            if self.is_ascending() { "ASC" } else { "DESC" },
+            if self.is_nulls_first() {
+                "NULLS FIRST"
+            } else {
+                "NULLS LAST"
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OrderByField {
+    column_name: String,
+    direction: Direction,
+}
+
+impl OrderByField {
+    pub fn new(column_name: impl Into<String>, direction: Direction) -> OrderByField {
+        OrderByField {
+            column_name: column_name.into(),
+            direction,
+        }
+    }
+
+    pub fn column_name(&self) -> &str {
+        &self.column_name
+    }
+
+    pub fn direction(&self) -> Direction {
+        self.direction
+    }
+}
+
+impl fmt::Display for OrderByField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "OrderByField[columnName={}, direction={}]",
+            self.column_name,
+            self.direction.as_str()
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QueryPlan {
+    substrait_version: Option<String>,
+    substrait_plan: String,
+}
+
+impl QueryPlan {
+    pub fn new(substrait_version: Option<String>, substrait_plan: impl Into<String>) -> QueryPlan {
+        QueryPlan {
+            substrait_version,
+            substrait_plan: substrait_plan.into(),
+        }
+    }
+
+    pub fn substrait_version(&self) -> Option<&str> {
+        self.substrait_version.as_deref()
+    }
+
+    pub fn substrait_plan(&self) -> &str {
+        &self.substrait_plan
+    }
+}
+
+impl fmt::Display for QueryPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "QueryPlan{{substraitVersion={}, substraitPlan={}}}",
+            self.substrait_version.as_deref().unwrap_or("null"),
+            self.substrait_plan
         )
     }
 }

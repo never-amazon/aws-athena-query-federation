@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use athena_federation_sdk::domain::table_name::TableName;
+use athena_federation_sdk::domain::TableName;
 use athena_federation_sdk::{FederationError, Result};
 
 use crate::connection::{

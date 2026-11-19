@@ -1,6 +1,6 @@
 use crate::exceptions::Result;
 use crate::metadata::MetadataHeader;
-use crate::request::FederatedIdentity;
+use crate::security::FederatedIdentity;
 use crate::serde::base::{assert_field_name, get_next_string_field};
 use crate::serde::federated_identity_serde;
 use crate::serde::json::{JsonGenerator, JsonParser};

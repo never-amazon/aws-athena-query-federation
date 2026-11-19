@@ -1,0 +1,80 @@
+use crate::lambda::LambdaContext;
+use crate::named_enum::named_enum;
+use crate::security::FederatedIdentity;
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetadataHeader<'a> {
+    pub identity: Option<&'a FederatedIdentity>,
+    pub request_type: MetadataRequestType,
+    pub catalog_name: &'a str,
+    pub query_id: Option<&'a str>,
+    pub context: Option<&'a LambdaContext>,
+}
+
+macro_rules! impl_metadata_request {
+    ($t:ty, $kind:expr) => {
+        impl $t {
+            pub fn header(&self) -> $crate::metadata::MetadataHeader<'_> {
+                $crate::metadata::MetadataHeader {
+                    identity: self.identity.as_ref(),
+                    request_type: $kind,
+                    catalog_name: &self.catalog_name,
+                    query_id: self.query_id.as_deref(),
+                    context: self.context.as_ref(),
+                }
+            }
+
+            pub fn identity(&self) -> Option<&$crate::security::FederatedIdentity> {
+                self.identity.as_ref()
+            }
+
+            pub fn request_type(&self) -> $crate::metadata::MetadataRequestType {
+                $kind
+            }
+
+            pub fn catalog_name(&self) -> &str {
+                &self.catalog_name
+            }
+
+            pub fn query_id(&self) -> Option<&str> {
+                self.query_id.as_deref()
+            }
+
+            pub fn context(&self) -> Option<&$crate::lambda::LambdaContext> {
+                self.context.as_ref()
+            }
+
+            pub fn set_context(&mut self, context: Option<$crate::lambda::LambdaContext>) {
+                self.context = context;
+            }
+        }
+    };
+}
+
+named_enum! {
+    pub enum MetadataRequestType {
+        ListTables => "LIST_TABLES",
+        ListSchemas => "LIST_SCHEMAS",
+        GetTable => "GET_TABLE",
+        GetTableLayout => "GET_TABLE_LAYOUT",
+        GetSplits => "GET_SPLITS",
+        GetDatasourceCapabilities => "GET_DATASOURCE_CAPABILITIES",
+    }
+}
+
+macro_rules! impl_metadata_response {
+    ($t:ty, $kind:expr) => {
+        impl $t {
+            pub fn request_type(&self) -> $crate::metadata::MetadataRequestType {
+                $kind
+            }
+
+            pub fn catalog_name(&self) -> &str {
+                &self.catalog_name
+            }
+        }
+    };
+}
+
+pub(crate) use impl_metadata_request;
+pub(crate) use impl_metadata_response;

@@ -1,16 +1,11 @@
 use athena_federation_sdk::data::ArrowType;
-use athena_federation_sdk::domain::predicate::expression::{
-    ConstantExpression, FederationExpression, FunctionCallExpression, VariableExpression,
-    DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
+use athena_federation_sdk::domain::predicate::{
+    ConstantExpression, Constraints, FederationExpression, FunctionCallExpression, FunctionName,
+    OperatorType, StandardFunctions, VariableExpression, DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
 };
-use athena_federation_sdk::domain::predicate::functions::{
-    FunctionName, OperatorType, StandardFunctions,
+use athena_federation_sdk::metadata::{
+    Capability, ComplexExpressionPushdownSubType, FilterPushdownSubType,
 };
-use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::metadata::optimizations::pushdown::{
-    ComplexExpressionPushdownSubType, FilterPushdownSubType,
-};
-use athena_federation_sdk::metadata::optimizations::Capability;
 use athena_federation_sdk::{FederationError, Result};
 
 use super::type_and_value::TypeAndValue;

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use athena_federation_sdk::data::{Block, BlockSpiller, RowWriter};
 use athena_federation_sdk::domain::predicate::ConstraintEvaluator;
-use athena_federation_sdk::domain::spill::SpillLocation;
+use athena_federation_sdk::domain::SpillLocation;
 use athena_federation_sdk::exceptions::JavaThrowable;
 use athena_federation_sdk::{
     exceptions::{FederationSourceErrorCode, FederationThrottleException},
