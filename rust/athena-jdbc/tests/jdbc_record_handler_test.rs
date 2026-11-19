@@ -4,7 +4,7 @@ use athena_federation_sdk::data::date_time_formatter_util;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field};
 use async_trait::async_trait;
 use athena_federation_sdk::data::local_date_time_of_epoch_milli_utc;
 use athena_federation_sdk::data::spill_config::SpillConfig;
@@ -18,18 +18,16 @@ use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::handlers::{FederationRequestHandler, RecordHandler, RecordHandlerBase};
+use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::FederationResponse;
-use athena_federation_sdk::security::{
-    BlockCrypto, CachableSecretsManager, EncryptionKey, FederatedIdentity, KeySource,
-    KmsEncryptionProvider,
-};
+use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, FederatedIdentity, KeySource};
 use athena_federation_sdk::serde::schema_from_bytes;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
 use athena_jdbc::manager::{
-    JdbcRecordHandler, JdbcRecordHandlerBase, JdbcRecordHandlerExt, EXPORT_SCHEMA,
+    self, make_field_writer_factory, ConnectionSource, JdbcRecordHandler, RecordDialect,
+    SplitQuery, EXPORT_SCHEMA,
 };
 use athena_jdbc::qpt::QUERY;
 use athena_jdbc::sql::{
@@ -55,64 +53,17 @@ const TEST_VAL2: &str = "testVal2";
 const CONNECTION_STRING: &str = "fakedatabase://jdbc:fakedatabase://hostname/${testSecret}";
 const TEST_SQL: &str = "someSql";
 
-struct TestJdbcRecordHandler {
-    base: JdbcRecordHandlerBase,
+struct TestDialect {
     export_only: bool,
 }
 
-impl FederationRequestHandler for TestJdbcRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.record_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.record_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
-    }
-}
-
 #[async_trait]
-impl RecordHandler for TestJdbcRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        self.base.record_base()
-    }
-
-    async fn do_read_records(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ReadRecordsRequest,
-    ) -> Result<FederationResponse> {
-        self.jdbc_do_read_records(allocator, request).await
-    }
-
-    async fn read_with_constraint(
-        &self,
-        spiller: &dyn BlockSpiller,
-        request: &ReadRecordsRequest,
-        query_status_checker: &QueryStatusChecker,
-    ) -> Result<()> {
-        self.jdbc_read_with_constraint(spiller, request, query_status_checker)
-            .await
-    }
-}
-
-#[async_trait]
-impl JdbcRecordHandler for TestJdbcRecordHandler {
-    fn jdbc_record_base(&self) -> &JdbcRecordHandlerBase {
-        &self.base
-    }
-
+impl RecordDialect for TestDialect {
     async fn build_split_sql(
         &self,
+        _handler: &JdbcRecordHandler<Self>,
         jdbc_connection: &dyn JdbcConnection,
-        _catalog_name: &str,
-        _table_name: &TableName,
-        _schema: &Schema,
-        _constraints: &Constraints,
-        _split: &Split,
+        _query: &SplitQuery<'_>,
     ) -> Result<PreparedStatement> {
         if self.export_only {
             return Err(FederationError::UnsupportedOperation(
@@ -122,6 +73,8 @@ impl JdbcRecordHandler for TestJdbcRecordHandler {
         Ok(jdbc_connection.prepare_statement(TEST_SQL).await?)
     }
 }
+
+type TestJdbcRecordHandler = JdbcRecordHandler<TestDialect>;
 
 struct Setup {
     fakes: Fakes,
@@ -145,16 +98,18 @@ fn make_handler(
     factory: Option<FakeConnectionFactory>,
     export_only: bool,
 ) -> TestJdbcRecordHandler {
-    let record_base =
-        RecordHandlerBase::new("fakedatabase", fakes.clients(), HashMap::new()).unwrap();
-    let base = match factory {
+    let context = HandlerContext::new("fakedatabase", fakes.clients(), HashMap::new()).unwrap();
+    let connection = match factory {
         Some(factory) => {
             let factory: Arc<dyn JdbcConnectionFactory> = Arc::new(factory);
-            JdbcRecordHandlerBase::new(record_base, config(), factory)
+            ConnectionSource::Direct {
+                config: config(),
+                factory,
+            }
         }
-        None => JdbcRecordHandlerBase::new_without_connection(record_base),
+        None => ConnectionSource::Delegating,
     };
-    TestJdbcRecordHandler { base, export_only }
+    JdbcRecordHandler::new(context, connection, TestDialect { export_only })
 }
 
 fn set_up() -> Setup {
@@ -203,12 +158,8 @@ fn partition_map() -> HashMap<String, String> {
     )])
 }
 
-fn query_status_checker(fakes: &Fakes, handler: &TestJdbcRecordHandler) -> QueryStatusChecker {
-    QueryStatusChecker::new(
-        fakes.athena.clone(),
-        Arc::clone(handler.record_base().athena_invoker()),
-        TEST_QUERY_ID,
-    )
+fn query_status_checker(handler: &TestJdbcRecordHandler) -> QueryStatusChecker {
+    handler.context().query_status_checker(None, TEST_QUERY_ID)
 }
 
 #[tokio::test]
@@ -295,7 +246,7 @@ async fn read_with_constraint() {
         1024,
         1024,
     );
-    let checker = query_status_checker(&s.fakes, &s.handler);
+    let checker = query_status_checker(&s.handler);
 
     s.handler
         .read_with_constraint(&spiller, &request, &checker)
@@ -321,7 +272,6 @@ async fn read_with_constraint() {
 
 #[tokio::test]
 async fn make_extractor() {
-    let s = set_up();
     let metadata = ResultSetMetaData::new(vec![
         ColumnMetadata::new(TEST_COL1, Types::INTEGER),
         ColumnMetadata::new(TEST_COL2, Types::VARCHAR),
@@ -329,9 +279,7 @@ async fn make_extractor() {
     ]);
     let partition_map = partition_map();
     let make = |name: &str, data_type: DataType| {
-        s.handler
-            .make_extractor(&field(name, data_type), &metadata, &partition_map)
-            .unwrap()
+        manager::make_extractor(&field(name, data_type), &metadata, &partition_map).unwrap()
     };
 
     let actual_int = make(TEST_COL1, DataType::Int32);
@@ -405,12 +353,10 @@ struct Extractors {
     date_milli: Extractor<Row>,
 }
 
-fn all_extractors(handler: &TestJdbcRecordHandler, metadata: &ResultSetMetaData) -> Extractors {
+fn all_extractors(metadata: &ResultSetMetaData) -> Extractors {
     let partition_map = partition_map();
     let make = |name: &str, data_type: DataType| {
-        handler
-            .make_extractor(&field(name, data_type), metadata, &partition_map)
-            .unwrap()
+        manager::make_extractor(&field(name, data_type), metadata, &partition_map).unwrap()
     };
     Extractors {
         int: make("testCol1", DataType::Int32),
@@ -503,7 +449,6 @@ fn date_milli_value(e: &Extractor<Row>, context: &Row) -> Option<i64> {
 
 #[tokio::test]
 async fn test_make_extractor_without_null_values() {
-    let s = set_up();
     let metadata = extractor_metadata();
     let bytes = b"test".to_vec();
     let date = NaiveDate::from_ymd_opt(2025, 4, 22).unwrap();
@@ -525,7 +470,7 @@ async fn test_make_extractor_without_null_values() {
             SqlValue::Timestamp(time),
         ],
     );
-    let e = all_extractors(&s.handler, &metadata);
+    let e = all_extractors(&metadata);
 
     assert_eq!(Some(10), int_value(&e.int, &context));
     assert_eq!(
@@ -552,16 +497,13 @@ async fn test_make_extractor_without_null_values() {
 
 #[tokio::test]
 async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
-    let s = set_up();
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol12", Types::DATE)]);
-    let extractor = s
-        .handler
-        .make_extractor(
-            &field("testCol12", DataType::Date64),
-            &metadata,
-            &partition_map(),
-        )
-        .unwrap();
+    let extractor = manager::make_extractor(
+        &field("testCol12", DataType::Date64),
+        &metadata,
+        &partition_map(),
+    )
+    .unwrap();
     for (year, month, day) in [(1000, 1, 1), (1582, 10, 4), (1, 1, 1), (2025, 4, 22)] {
         let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
         let context = row(metadata.clone(), vec![SqlValue::Date(date)]);
@@ -576,12 +518,9 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
 
 #[tokio::test]
 async fn make_extractor_reads_dates_from_year_ten_thousand() {
-    let s = set_up();
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
     let extractor = |data_type| {
-        s.handler
-            .make_extractor(&field("testCol", data_type), &metadata, &partition_map())
-            .unwrap()
+        manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
     let (day_extractor, milli_extractor) =
         (extractor(DataType::Date32), extractor(DataType::Date64));
@@ -613,7 +552,7 @@ async fn make_extractor_reads_dates_from_year_ten_thousand() {
     }
 }
 
-fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<SqlValue>) -> Value {
+fn write_array(element: DataType, values: Vec<SqlValue>) -> Value {
     let mut schema_builder = SchemaBuilder::new_builder();
     schema_builder.add_list_field("values", element);
     let schema = Arc::new(schema_builder.build());
@@ -621,7 +560,7 @@ fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<S
     let context = row(metadata, vec![SqlValue::Array(values)]);
     let mut block = BlockAllocatorImpl::new().create_block(Arc::clone(&schema));
     let vector = block.get_field_vector_mut("values").unwrap();
-    let mut writer = handler.make_factory(schema.field(0))(vector, None, None).unwrap();
+    let mut writer = make_field_writer_factory(schema.field(0))(vector, None, None).unwrap();
     writer.write(vector, &context, 0).unwrap();
     block.set_row_count(1);
     block.get_field_vector("values").unwrap().get_object(0)
@@ -629,7 +568,6 @@ fn write_array(handler: &TestJdbcRecordHandler, element: DataType, values: Vec<S
 
 #[tokio::test]
 async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
-    let s = set_up();
     let dates = [
         ((1000, 1, 1), -354_280),
         ((1582, 10, 4), -141_428),
@@ -668,10 +606,7 @@ async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
             .map(|day| as_value(day, &|day| Value::Int(i32::try_from(day).unwrap())))
             .collect(),
     );
-    assert_eq!(
-        expected_days,
-        write_array(&s.handler, DataType::Date32, elements())
-    );
+    assert_eq!(expected_days, write_array(DataType::Date32, elements()));
     let expected_millis = Value::List(
         epoch_days()
             .into_iter()
@@ -688,15 +623,11 @@ async fn make_factory_reads_pre1582_array_dates_by_calendar_date() {
             })
             .collect(),
     );
-    assert_eq!(
-        expected_millis,
-        write_array(&s.handler, DataType::Date64, elements())
-    );
+    assert_eq!(expected_millis, write_array(DataType::Date64, elements()));
 }
 
 #[tokio::test]
 async fn make_factory_reads_array_dates_like_scalar_dates() {
-    let s = set_up();
     let dates = || {
         vec![
             SqlValue::java_sql_date(9_223_372_036_825_200_000, 106_751_991_166, "infinity"),
@@ -707,9 +638,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
     };
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", Types::DATE)]);
     let extractor = |data_type| {
-        s.handler
-            .make_extractor(&field("testCol", data_type), &metadata, &partition_map())
-            .unwrap()
+        manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
     let (day_extractor, milli_extractor) =
         (extractor(DataType::Date32), extractor(DataType::Date64));
@@ -720,10 +649,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
             .map(|date| Value::Int(date_day_value(&day_extractor, &scalar(date)).unwrap()))
             .collect(),
     );
-    assert_eq!(
-        expected_days,
-        write_array(&s.handler, DataType::Date32, dates())
-    );
+    assert_eq!(expected_days, write_array(DataType::Date32, dates()));
     let expected_millis = Value::List(
         dates()
             .into_iter()
@@ -734,15 +660,11 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
             })
             .collect(),
     );
-    assert_eq!(
-        expected_millis,
-        write_array(&s.handler, DataType::Date64, dates())
-    );
+    assert_eq!(expected_millis, write_array(DataType::Date64, dates()));
 }
 
 #[tokio::test]
 async fn make_factory_reads_array_timestamps_under_date_day_by_calendar_date() {
-    let s = set_up();
     let timestamp = |label: NaiveDateTime, java: NaiveDateTime| {
         SqlValue::java_timestamp(
             SqlValue::Timestamp(java),
@@ -780,13 +702,12 @@ async fn make_factory_reads_array_timestamps_under_date_day_by_calendar_date() {
             Value::Int(i32::MIN),
             day(2020, 6, 1),
         ]),
-        write_array(&s.handler, DataType::Date32, elements)
+        write_array(DataType::Date32, elements)
     );
 }
 
 #[tokio::test]
 async fn make_factory_reads_array_timestamps_through_get_timestamp_millis() {
-    let s = set_up();
     let timestamps = [
         NaiveDate::from_ymd_opt(1000, 1, 1)
             .unwrap()
@@ -830,16 +751,15 @@ async fn make_factory_reads_array_timestamps_through_get_timestamp_millis() {
             Value::Null,
             Value::LocalDateTime(timestamps[2]),
         ]),
-        write_array(&s.handler, DataType::Date64, elements)
+        write_array(DataType::Date64, elements)
     );
 }
 
 #[tokio::test]
 async fn test_make_extractor_with_null_values() {
-    let s = set_up();
     let metadata = extractor_metadata();
     let context = row(metadata.clone(), vec![SqlValue::Null; 12]);
-    let e = all_extractors(&s.handler, &metadata);
+    let e = all_extractors(&metadata);
 
     assert_eq!(None, int_value(&e.int, &context));
     assert_eq!(None, varchar_value(&e.varchar, &context));
@@ -857,12 +777,11 @@ async fn test_make_extractor_with_null_values() {
 
 #[tokio::test]
 async fn test_make_extractor_with_unsupported_type() {
-    let s = set_up();
     let unsupported_field = field(
         "testColUnsupported",
         DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
     );
-    let Err(e) = s.handler.make_extractor(
+    let Err(e) = manager::make_extractor(
         &unsupported_field,
         &ResultSetMetaData::new(Vec::new()),
         &partition_map(),
@@ -917,16 +836,13 @@ async fn test_build_query_passthrough_sql_with_exception() {
 
 #[tokio::test]
 async fn test_make_extractor_float8_with_sql_exception() {
-    let s = set_up();
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new(TEST_COL1, Types::DOUBLE)]);
-    let extractor = s
-        .handler
-        .make_extractor(
-            &field(TEST_COL1, DataType::Float64),
-            &metadata,
-            &HashMap::new(),
-        )
-        .unwrap();
+    let extractor = manager::make_extractor(
+        &field(TEST_COL1, DataType::Float64),
+        &metadata,
+        &HashMap::new(),
+    )
+    .unwrap();
     let context = row(metadata, vec![SqlValue::String("$25,000.50".to_string())]);
     let value = float8_value(&extractor, &context).unwrap();
     assert!((value - 25000.50).abs() < 0.01);
@@ -934,16 +850,13 @@ async fn test_make_extractor_float8_with_sql_exception() {
 
 #[tokio::test]
 async fn test_make_extractor_with_partition_values() {
-    let s = set_up();
     let metadata = ResultSetMetaData::new(Vec::new());
-    let extractor = s
-        .handler
-        .make_extractor(
-            &field(TEST_PARTITION_COL, DataType::Utf8),
-            &metadata,
-            &partition_map(),
-        )
-        .unwrap();
+    let extractor = manager::make_extractor(
+        &field(TEST_PARTITION_COL, DataType::Utf8),
+        &metadata,
+        &partition_map(),
+    )
+    .unwrap();
     assert_eq!(
         Some(TEST_PARTITION_VALUE.to_string()),
         varchar_value(&extractor, &row(metadata, Vec::new()))
@@ -955,6 +868,7 @@ async fn test_enable_case_sensitively_look_up_session() {
     let s = set_up();
     let result = s
         .handler
+        .dialect()
         .enable_case_sensitively_look_up_session(&FakeConnection::new())
         .await
         .unwrap();
@@ -966,6 +880,7 @@ async fn test_disable_case_sensitively_look_up_session() {
     let s = set_up();
     let result = s
         .handler
+        .dialect()
         .disable_case_sensitively_look_up_session(&FakeConnection::new())
         .await
         .unwrap();
@@ -1023,7 +938,7 @@ async fn run_export(
         100_000_000_000,
     );
     let allocator: Arc<dyn BlockAllocator> = Arc::new(BlockAllocatorImpl::new());
-    let response = handler.do_read_records(&allocator, &request).await.unwrap();
+    let response = handler.read_records(&allocator, &request).await.unwrap();
     let FederationResponse::RemoteReadRecords(response) = response else {
         panic!("expected a RemoteReadRecordsResponse, got {response:?}");
     };

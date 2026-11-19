@@ -40,6 +40,12 @@ pub struct BlockAllocatorImpl {
     is_closed: AtomicBool,
 }
 
+impl Drop for BlockAllocatorImpl {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 impl Default for BlockAllocatorImpl {
     fn default() -> Self {
         BlockAllocatorImpl::new()

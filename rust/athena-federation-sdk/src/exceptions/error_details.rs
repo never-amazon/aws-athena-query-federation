@@ -17,6 +17,23 @@ pub enum FederationSourceErrorCode {
 }
 
 impl FederationSourceErrorCode {
+    pub fn from_http_status(status: u16) -> FederationSourceErrorCode {
+        match status {
+            400 | 409 => FederationSourceErrorCode::InvalidInputException,
+            401 => FederationSourceErrorCode::InvalidCredentialsException,
+            403 => FederationSourceErrorCode::AccessDeniedException,
+            404 => FederationSourceErrorCode::EntityNotFoundException,
+            408 | 504 => FederationSourceErrorCode::OperationTimeoutException,
+            429 => FederationSourceErrorCode::ThrottlingException,
+            500 | 502 | 503 => FederationSourceErrorCode::InternalServiceException,
+            501 => FederationSourceErrorCode::OperationNotSupportedException,
+            other => {
+                tracing::warn!("Unknown error code: {}", other);
+                FederationSourceErrorCode::InvalidInputException
+            }
+        }
+    }
+
     pub fn values() -> &'static [FederationSourceErrorCode] {
         use FederationSourceErrorCode::{
             AccessDeniedException, EntityNotFoundException, InternalServiceException,

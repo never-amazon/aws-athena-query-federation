@@ -12,7 +12,10 @@ use athena_jdbc::manager::{
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
 use crate::driver::check_parameters;
-use crate::metadata_handler::PostGreSqlMetadataHandler;
+use crate::metadata_handler::{
+    get_char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME,
+    BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+};
 use crate::sql_dialect::PostgresqlSqlDialect;
 
 pub struct PostGreSqlQueryStringBuilder {
@@ -49,8 +52,7 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
         constraints: &Constraints,
         split: &Split,
     ) -> Result<PreparedStatement> {
-        let char_columns =
-            PostGreSqlMetadataHandler::get_char_columns(jdbc_connection, schema, table).await?;
+        let char_columns = get_char_columns(jdbc_connection, schema, table).await?;
         let column_names = table_schema
             .fields()
             .iter()
@@ -106,11 +108,9 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
     }
 
     fn get_split_table(&self, split: &Split) -> String {
-        let partition_schema_name =
-            split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME);
-        let partition_name =
-            split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME);
-        let all = Some(PostGreSqlMetadataHandler::ALL_PARTITIONS);
+        let partition_schema_name = split.get_property(BLOCK_PARTITION_SCHEMA_COLUMN_NAME);
+        let partition_name = split.get_property(BLOCK_PARTITION_COLUMN_NAME);
+        let all = Some(ALL_PARTITIONS);
         if partition_schema_name == all || partition_name == all {
             return String::new();
         }
@@ -122,12 +122,9 @@ impl JdbcSplitQueryBuilder for PostGreSqlQueryStringBuilder {
     }
 
     fn get_partition_where_clauses(&self, split: &Split) -> Vec<String> {
-        let all = Some(PostGreSqlMetadataHandler::ALL_PARTITIONS);
-        let partition_name =
-            split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_COLUMN_NAME);
-        if split.get_property(PostGreSqlMetadataHandler::BLOCK_PARTITION_SCHEMA_COLUMN_NAME) == all
-            && partition_name != all
-        {
+        let all = Some(ALL_PARTITIONS);
+        let partition_name = split.get_property(BLOCK_PARTITION_COLUMN_NAME);
+        if split.get_property(BLOCK_PARTITION_SCHEMA_COLUMN_NAME) == all && partition_name != all {
             return partition_name
                 .map(ToString::to_string)
                 .into_iter()

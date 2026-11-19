@@ -11,7 +11,7 @@ use athena_federation_sdk::data::{
 use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::exceptions::FederationSourceErrorCode;
-use athena_federation_sdk::handlers::{FederationRequestHandler, MetadataHandler};
+use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetTableLayoutRequest, GetTableRequest,
     ListSchemasRequest, ListTablesRequest,
@@ -22,10 +22,15 @@ use athena_federation_sdk::security::AwsRequestOverrideConfiguration;
 use athena_federation_sdk::serde::{schema_from_bytes, schema_to_bytes, IpcFormat};
 use athena_federation_sdk::FederationError;
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::JdbcMetadataHandler;
+use athena_jdbc::manager::{ConnectionSource, MetadataDialect};
+use athena_jdbc::resolver::DefaultJdbcCaseResolver;
 use athena_jdbc::sql::{ColumnMetadata, PreparedStatement, SqlException, SqlValue, Types};
+use athena_snowflake::resolver::SnowflakeJdbcCaseResolver;
 use athena_snowflake::sql::SNOWFLAKE_SQL_EXCEPTION;
-use athena_snowflake::{SnowflakeConstants, SnowflakeMetadataHandler};
+use athena_snowflake::{
+    create_credentials_provider, create_snowflake_credentials_provider, SnowflakeConstants,
+    SnowflakeMetadataDialect, SnowflakeMetadataHandler,
+};
 use indexmap::IndexMap;
 use snowflake_support::{
     FakeConnection, FakeConnectionFactory, FakeS3Lister, FakeSecretsManager, Fakes, ResultSetData,
@@ -87,14 +92,19 @@ struct Fixture {
 fn fixture_with(lister: FakeS3Lister, config_options: HashMap<String, String>) -> Fixture {
     let connection = FakeConnection::new();
     let factory = Arc::new(FakeConnectionFactory::new(connection.clone()));
-    let handler = SnowflakeMetadataHandler::with_s3_client(
-        fakes().clients(),
-        config(),
-        Arc::new(lister.clone()),
+    let config = config();
+    let context = MetadataContext::builder(config.engine(), fakes().clients())
+        .config_options(config_options)
+        .build()
+        .unwrap();
+    let case_resolver = Arc::new(DefaultJdbcCaseResolver::new(config.engine()));
+    let handler = SnowflakeMetadataDialect::handler(
+        context,
+        config,
         factory,
-        config_options,
-    )
-    .unwrap();
+        case_resolver,
+        Some(Arc::new(lister.clone())),
+    );
     Fixture {
         handler,
         connection,
@@ -110,13 +120,20 @@ fn fixture() -> Fixture {
 fn casing_fixture(mode: &str) -> Fixture {
     let connection = FakeConnection::new();
     let factory = Arc::new(FakeConnectionFactory::new(connection.clone()));
-    let handler = SnowflakeMetadataHandler::with_connection_factory(
-        fakes().clients(),
-        config(),
+    let config = config();
+    let context = MetadataContext::builder(config.engine(), fakes().clients())
+        .config_options(options_with(&[(CASING_MODE_CONFIGURATION_KEY, mode)]))
+        .build()
+        .unwrap();
+    let handler = SnowflakeMetadataDialect::handler(
+        context,
+        config,
         factory,
-        options_with(&[(CASING_MODE_CONFIGURATION_KEY, mode)]),
-    )
-    .unwrap();
+        Arc::new(SnowflakeJdbcCaseResolver::new(
+            SnowflakeConstants::SNOWFLAKE_NAME,
+        )),
+        None,
+    );
     Fixture {
         handler,
         connection,
@@ -343,10 +360,7 @@ async fn do_get_table_no_columns() {
     let f = fixture();
     let error = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &table_request(TableName::new("testSchema", "testTable")),
-        )
+        .get_table(&table_request(TableName::new("testSchema", "testTable")))
         .await
         .unwrap_err();
     assert_eq!(
@@ -364,10 +378,7 @@ async fn do_get_table_sql_exception() {
         .set_columns(Err(SqlException::new("columns failed")));
     let error = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &table_request(TableName::new("testSchema", "testTable")),
-        )
+        .get_table(&table_request(TableName::new("testSchema", "testTable")))
         .await
         .unwrap_err();
     let sql = SqlException::from_federation_error(&error).unwrap();
@@ -380,10 +391,7 @@ async fn do_get_table_exception() {
     let f = fixture();
     let error = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &table_request(TableName::new("testSchema", "test@schema")),
-        )
+        .get_table(&table_request(TableName::new("testSchema", "test@schema")))
         .await
         .unwrap_err();
     assert!(error.is_runtime_exception());
@@ -394,10 +402,7 @@ async fn do_get_table_no_columns_exception() {
     let f = fixture();
     let error = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &table_request(TableName::new("testSchema", "test@table")),
-        )
+        .get_table(&table_request(TableName::new("testSchema", "test@table")))
         .await
         .unwrap_err();
     assert!(error.is_runtime_exception());
@@ -415,7 +420,7 @@ async fn do_get_table() {
     let table = TableName::new("TESTSCHEMA", "TESTTABLE");
     let response = f
         .handler
-        .do_get_table(&f.allocator, &table_request(table.clone()))
+        .get_table(&table_request(table.clone()))
         .await
         .unwrap();
     assert_eq!(&expected_four_column_schema(), response.schema());
@@ -437,11 +442,7 @@ async fn do_list_schema_names() {
     )));
     f.connection.set_catalog(Some(CATALOG));
     let request = ListSchemasRequest::new(Some(identity()), Some("queryId".to_string()), CATALOG);
-    let response = f
-        .handler
-        .do_list_schema_names(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.list_schema_names(&request).await.unwrap();
     assert_eq!(2, response.schemas().len());
     assert!(response.schemas().iter().any(|s| s == "TESTSCHEMA"));
     assert!(response.schemas().iter().any(|s| s == "TESTSCHEMA2"));
@@ -460,7 +461,7 @@ async fn get_partitions() {
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     assert!(response.partitions().row_count() > 0);
@@ -477,7 +478,7 @@ async fn get_partitions_with_s3_export() {
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     let partitions = response.partitions();
@@ -522,11 +523,7 @@ async fn do_get_splits() {
         vec!["preparedStmt".to_string(), "queryId".to_string()],
         constraints(),
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(num_partitions, response.splits().len());
     for split in response.splits() {
         assert!(split.spill_location().is_some());
@@ -591,11 +588,7 @@ async fn do_get_splits_with_s3_export() {
         vec!["preparedStmt".to_string(), "queryId".to_string()],
         constraints(),
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(10, response.splits().len());
     for split in response.splits() {
         assert!(split.spill_location().is_some());
@@ -637,10 +630,7 @@ async fn do_get_splits_with_s3_export_keeps_format_text_in_query() {
         Vec::new(),
         qpt_constraints("SELECT * FROM t WHERE c = '%s'"),
     );
-    f.handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    f.handler.get_splits(&request).await.unwrap();
     let executed = f.connection.executed();
     let copy = executed
         .iter()
@@ -654,7 +644,7 @@ async fn do_get_splits_with_s3_export_keeps_format_text_in_query() {
 #[tokio::test]
 async fn test_get_partition_schema() {
     let f = fixture();
-    let schema = f.handler.get_partition_schema(CATALOG).unwrap();
+    let schema = f.handler.partition_schema(CATALOG).unwrap();
     assert_eq!(1, schema.fields().len());
     assert_eq!(PARTITION, schema.field(0).name());
     assert_eq!(&DataType::Utf8, schema.field(0).data_type());
@@ -687,11 +677,10 @@ async fn test_get_schema_with_data_types() {
     ])));
     let schema = f
         .handler
-        .get_schema(
+        .schema(
             &f.connection,
             &TableName::new("testSchema", "testTable"),
             &SchemaBuilder::new_builder().build(),
-            None,
         )
         .await
         .unwrap();
@@ -723,11 +712,10 @@ async fn test_get_schema_no_matching_columns() {
     f.connection.meta.set_columns(Ok(columns(Vec::new())));
     let error = f
         .handler
-        .get_schema(
+        .schema(
             &f.connection,
             &TableName::new("testSchema", "testTable"),
             &SchemaBuilder::new_builder().build(),
-            None,
         )
         .await
         .unwrap_err();
@@ -744,11 +732,10 @@ async fn test_get_schema_unsupported_types() {
     ])));
     let schema = f
         .handler
-        .get_schema(
+        .schema(
             &f.connection,
             &TableName::new("testSchema", "testTable"),
             &SchemaBuilder::new_builder().build(),
-            None,
         )
         .await
         .unwrap();
@@ -782,7 +769,7 @@ async fn test_get_partitions_for_view() {
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(1, response.partitions().row_count());
@@ -800,6 +787,7 @@ async fn test_getlist_exported_objects_s3_path() {
     );
     let result = f
         .handler
+        .dialect()
         .get_list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap();
@@ -817,6 +805,7 @@ async fn test_getlist_exported_objects_s3_exception() {
     let f = fixture_with(FakeS3Lister::failing("Access denied"), base_options());
     let error = f
         .handler
+        .dialect()
         .get_list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap_err();
@@ -838,7 +827,9 @@ async fn test_get_sf_storage_integration_name_from_config() {
     );
     assert_eq!(
         Some("TEST_INTEGRATION"),
-        f.handler.get_sf_storage_integration_name_from_config()
+        SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(
+            f.handler.config_options()
+        )
     );
 }
 
@@ -852,7 +843,7 @@ async fn test_get_data_source_capabilities() {
     );
     let response = f
         .handler
-        .do_get_data_source_capabilities(&f.allocator, &request)
+        .get_data_source_capabilities(&request)
         .await
         .unwrap();
     let capabilities = response.capabilities();
@@ -895,6 +886,7 @@ async fn test_get_storage_integration_s3_path_from_snow_flake() {
     });
     let result = f
         .handler
+        .dialect()
         .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap();
@@ -912,6 +904,7 @@ async fn test_get_storage_integration_s3_path_invalid_provider() {
     });
     let error = f
         .handler
+        .dialect()
         .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
@@ -933,6 +926,7 @@ async fn test_get_storage_integration_s3_path_multiple_paths() {
     });
     let error = f
         .handler
+        .dialect()
         .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
@@ -994,6 +988,7 @@ async fn test_get_paginated_tables() {
     });
     let tables = f
         .handler
+        .dialect()
         .get_paginated_tables(&f.connection, "testSchema", 0, 10)
         .await
         .unwrap();
@@ -1043,11 +1038,7 @@ async fn test_handle_s3_export_splits_empty_objects() {
         constraints(),
         None,
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(1, response.splits().len());
     let split = &response.splits()[0];
     assert_eq!(Some(""), split.get_property("s3ObjectKey"));
@@ -1102,11 +1093,7 @@ async fn test_handle_s3_export_splits_escapes_export_path_and_integration_name()
         constraints(),
         None,
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(1, response.splits().len());
     let executed: Vec<String> = f
         .connection
@@ -1139,14 +1126,29 @@ async fn test_get_sf_storage_integration_name_from_config_empty() {
     let f = fixture();
     assert_eq!(
         None,
-        f.handler.get_sf_storage_integration_name_from_config()
+        SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(
+            f.handler.config_options()
+        )
     );
 }
 
 #[tokio::test]
 async fn test_get_credential_provider_without_secret() {
     let f = fixture();
-    assert!(f.handler.get_credential_provider().await.unwrap().is_none());
+    assert!(f
+        .handler
+        .dialect()
+        .credentials_provider(
+            f.handler.context().handler(),
+            match f.handler.connection() {
+                ConnectionSource::Direct { config, .. } => config.secret(),
+                ConnectionSource::Delegating => None,
+            },
+            None
+        )
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
@@ -1162,6 +1164,7 @@ async fn test_get_storage_integration_properties() {
     });
     let properties = f
         .handler
+        .dialect()
         .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap()
@@ -1189,6 +1192,7 @@ async fn test_get_storage_integration_properties_not_found() {
     });
     let properties = f
         .handler
+        .dialect()
         .get_storage_integration_properties(&f.connection, "NONEXISTENT_INTEGRATION")
         .await
         .unwrap();
@@ -1203,6 +1207,7 @@ async fn test_get_storage_integration_properties_sql_exception() {
     });
     let error = f
         .handler
+        .dialect()
         .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
@@ -1217,13 +1222,10 @@ async fn test_do_get_table_with_annotation() {
     f.connection.set_catalog(Some(CATALOG));
     let response = f
         .handler
-        .do_get_table(
-            &f.allocator,
-            &table_request(TableName::new(
-                "testSchema",
-                "testTable@schemaCase=upper&tableCase=lower",
-            )),
-        )
+        .get_table(&table_request(TableName::new(
+            "testSchema",
+            "testTable@schemaCase=upper&tableCase=lower",
+        )))
         .await
         .unwrap();
     assert_eq!(&expected_four_column_schema(), response.schema());
@@ -1257,7 +1259,7 @@ async fn assert_view_check_binds_table_name(
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     assert!(response.partitions().row_count() > 0);
@@ -1306,11 +1308,7 @@ async fn test_get_splits_with_catalog_casing_filter() {
         Vec::new(),
         constraints(),
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(1, response.splits().len());
     let split = &response.splits()[0];
     assert_eq!(
@@ -1333,11 +1331,7 @@ async fn test_get_splits_without_catalog_casing_filter() {
         Vec::new(),
         constraints(),
     );
-    let response = f
-        .handler
-        .do_get_splits(&f.allocator, &request)
-        .await
-        .unwrap();
+    let response = f.handler.get_splits(&request).await.unwrap();
     assert_eq!(1, response.splits().len());
     assert_eq!(
         None,
@@ -1353,7 +1347,7 @@ async fn test_do_get_table_with_none_casing() {
     let table = TableName::new("TestSchema", "TestTable");
     let response = f
         .handler
-        .do_get_table(&f.allocator, &table_request(table.clone()))
+        .get_table(&table_request(table.clone()))
         .await
         .unwrap();
     assert_eq!(&expected_four_column_schema(), response.schema());
@@ -1379,7 +1373,7 @@ async fn get_partitions_table_above_large_threshold_skips_uniqueness_check() {
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     let prepared = f.connection.prepared_sql();
@@ -1406,7 +1400,7 @@ async fn get_partitions_table_below_threshold_applies_uniqueness_check_timeout()
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     let uniqueness = f
@@ -1451,7 +1445,7 @@ async fn get_partitions_uniqueness_check_times_out_falls_back_to_single_partitio
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(1, response.partitions().row_count());
@@ -1464,35 +1458,39 @@ async fn get_partitions_uniqueness_check_times_out_falls_back_to_single_partitio
 #[tokio::test]
 async fn create_credentials_provider_returns_provider_only_when_secret_present() {
     let f = fixture();
-    assert!(f
-        .handler
-        .create_snowflake_credentials_provider(Some("testSecret"), None)
-        .is_some());
-    assert!(f
-        .handler
-        .create_snowflake_credentials_provider(Some(""), None)
-        .is_none());
-    assert!(f
-        .handler
-        .create_snowflake_credentials_provider(None, None)
-        .is_none());
+    assert!(create_snowflake_credentials_provider(
+        f.handler.context().handler(),
+        Some("testSecret"),
+        None
+    )
+    .is_some());
+    assert!(
+        create_snowflake_credentials_provider(f.handler.context().handler(), Some(""), None)
+            .is_none()
+    );
+    assert!(
+        create_snowflake_credentials_provider(f.handler.context().handler(), None, None).is_none()
+    );
 }
 
 #[tokio::test]
 async fn create_credentials_provider_passes_request_override_configuration() {
     let f = fixture();
     let override_config = AwsRequestOverrideConfiguration::builder().build();
-    let provider = f
-        .handler
-        .create_snowflake_credentials_provider(Some("testSecret"), Some(&override_config))
-        .unwrap();
+    let provider = create_snowflake_credentials_provider(
+        f.handler.context().handler(),
+        Some("testSecret"),
+        Some(&override_config),
+    )
+    .unwrap();
     assert_eq!("testSecret", provider.oauth_secret_name());
     assert!(provider.request_override_configuration().is_some());
-    let boxed = f
-        .handler
-        .create_credentials_provider("testSecret", Some(&override_config))
-        .await
-        .unwrap();
+    let boxed = create_credentials_provider(
+        f.handler.context().handler(),
+        "testSecret",
+        Some(&override_config),
+    )
+    .unwrap();
     assert!(boxed
         .as_any()
         .is::<athena_snowflake::SnowflakeCredentialsProvider>());
@@ -1529,16 +1527,12 @@ async fn export_split_error_mapping() {
         splits_request(identity(), partitions, Vec::new(), constraints())
     };
     let existing = failing_copy("Files already existing at the unload destination");
-    let response = existing
-        .handler
-        .do_get_splits(&existing.allocator, &make_request())
-        .await
-        .unwrap();
+    let response = existing.handler.get_splits(&make_request()).await.unwrap();
     assert_eq!(1, response.splits().len());
     let denied = failing_copy("Insufficient privileges");
     let error = denied
         .handler
-        .do_get_splits(&denied.allocator, &make_request())
+        .get_splits(&make_request())
         .await
         .unwrap_err();
     assert_eq!(
@@ -1555,7 +1549,7 @@ async fn export_split_error_mapping() {
     );
     let error = missing
         .handler
-        .do_get_splits(&missing.allocator, &make_request())
+        .get_splits(&make_request())
         .await
         .unwrap_err();
     assert_eq!(
@@ -1575,7 +1569,7 @@ async fn export_split_error_mapping() {
         });
     let error = not_found
         .handler
-        .do_get_splits(&not_found.allocator, &make_request())
+        .get_splits(&make_request())
         .await
         .unwrap_err();
     assert_eq!(
@@ -1593,11 +1587,10 @@ async fn get_schema_maps_snowflake_errors_to_access_denied() {
     )));
     let error = f
         .handler
-        .get_schema(
+        .schema(
             &f.connection,
             &TableName::new("testSchema", "testTable"),
             &SchemaBuilder::new_builder().build(),
-            None,
         )
         .await
         .unwrap_err();
@@ -1647,7 +1640,7 @@ async fn get_partitions_escapes_quotes_in_primary_key_and_table_identifiers() {
     );
     let response = f
         .handler
-        .do_get_table_layout(&f.allocator, &request)
+        .get_table_layout(f.allocator.as_ref(), &request)
         .await
         .unwrap();
     let executed: Vec<String> = f

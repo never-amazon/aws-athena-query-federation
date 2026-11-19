@@ -15,7 +15,7 @@ use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 
 use super::metadata_handler::{require_identity, MetadataHandler};
-use crate::data::{BlockAllocator, SchemaBuilder};
+use crate::data::SchemaBuilder;
 use crate::domain::table_name::TableName;
 use crate::exceptions::{
     AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
@@ -98,7 +98,7 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     fn get_catalog(&self, request: &dyn MetadataRequest) -> Result<Option<String>> {
         if let Some(catalog) = self
-            .metadata_base()
+            .context()
             .config_options()
             .get(CATALOG_NAME_ENV_OVERRIDE)
         {
@@ -118,13 +118,14 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     async fn do_list_schema_names_with_filter(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         request: &ListSchemasRequest,
         filter: Option<&(dyn for<'d> Fn(&'d Database) -> bool + Sync)>,
     ) -> Result<ListSchemasResponse> {
         let identity = require_identity(request.identity())?;
         let override_config = self
-            .get_request_override_config_with_config_options(Some(identity.config_options()))
+            .context()
+            .handler()
+            .request_override_config(Some(identity.config_options()))
             .await?;
         let glue = self
             .aws_glue()
@@ -160,7 +161,6 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     async fn do_list_tables_with_filter(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         request: &ListTablesRequest,
         filter: Option<&(dyn for<'t> Fn(&'t Table) -> bool + Sync)>,
     ) -> Result<ListTablesResponse> {
@@ -169,7 +169,9 @@ pub trait GlueMetadataHandler: MetadataHandler {
         let mut page_size = request.page_size();
         let identity = require_identity(request.identity())?;
         let override_config = self
-            .get_request_override_config_with_config_options(Some(identity.config_options()))
+            .context()
+            .handler()
+            .request_override_config(Some(identity.config_options()))
             .await?;
         let glue = self
             .aws_glue()
@@ -221,14 +223,15 @@ pub trait GlueMetadataHandler: MetadataHandler {
 
     async fn do_get_table_with_filter(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         request: &GetTableRequest,
         filter: Option<&(dyn for<'t> Fn(&'t Table) -> bool + Sync)>,
     ) -> Result<GetTableResponse> {
         let table_name = request.table_name();
         let identity = require_identity(request.identity())?;
         let override_config = self
-            .get_request_override_config_with_config_options(Some(identity.config_options()))
+            .context()
+            .handler()
+            .request_override_config(Some(identity.config_options()))
             .await?;
         let glue = self
             .aws_glue()

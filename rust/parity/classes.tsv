@@ -109,10 +109,10 @@ com.amazonaws.athena.connector.lambda.exceptions.FederationThrottleException	ath
 com.amazonaws.athena.connector.lambda.handlers.AthenaExceptionFilter	athena-federation-sdk/src/handlers/athena_exception_filter.rs::is_athena_throttle	merged	the single-method filter class becomes a predicate function
 com.amazonaws.athena.connector.lambda.handlers.CompositeHandler	athena-federation-sdk/src/handlers/composite_handler.rs::CompositeHandler	ported	
 com.amazonaws.athena.connector.lambda.handlers.FederationCapabilities	athena-federation-sdk/src/handlers/federation_capabilities.rs::CAPABILITIES	merged	constant holder class; its one constant is CAPABILITIES
-com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-federation-sdk/src/handlers/federation_request_handler.rs::FederationRequestHandler	ported	
+com.amazonaws.athena.connector.lambda.handlers.FederationRequestHandler	athena-federation-sdk/src/handlers/handler_context.rs::HandlerContext	merged	the shared request helpers live on the HandlerContext struct that every handler holds
 com.amazonaws.athena.connector.lambda.handlers.GlueMetadataHandler	athena-federation-sdk/src/handlers/glue_metadata_handler.rs::GlueMetadataHandler	ported	abstract class becomes a trait over MetadataHandler
-com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation-sdk/src/handlers/metadata_handler.rs::MetadataHandler	ported	abstract class becomes a trait; final methods live in MetadataHandlerExt and fields in MetadataHandlerBase
-com.amazonaws.athena.connector.lambda.handlers.RecordHandler	athena-federation-sdk/src/handlers/record_handler.rs::RecordHandler	ported	abstract class becomes a trait; final methods live in RecordHandlerExt and fields in RecordHandlerBase
+com.amazonaws.athena.connector.lambda.handlers.MetadataHandler	athena-federation-sdk/src/handlers/metadata_handler.rs::MetadataHandler	ported	abstract class becomes a hook trait; its fields live in MetadataContext and request dispatch lives in serve.rs
+com.amazonaws.athena.connector.lambda.handlers.RecordHandler	athena-federation-sdk/src/handlers/record_handler.rs::RecordHandler	ported	abstract class becomes a hook trait; its fields live in HandlerContext and request dispatch lives in serve.rs
 com.amazonaws.athena.connector.lambda.handlers.SerDeVersion	athena-federation-sdk/src/serde/mod.rs::SerdeVersion	merged	constant holder class; the version constants become the SerdeVersion enum
 com.amazonaws.athena.connector.lambda.handlers.UserDefinedFunctionHandler	athena-federation-sdk/src/handlers/user_defined_function_handler.rs::UserDefinedFunctionHandler	ported	abstract class becomes a trait; reflection lookup becomes the UdfMethods registry
 com.amazonaws.athena.connector.lambda.metadata.GetDataSourceCapabilitiesRequest	athena-federation-sdk/src/metadata/get_data_source_capabilities_request.rs::GetDataSourceCapabilitiesRequest	ported	
@@ -267,7 +267,7 @@ com.amazonaws.athena.connector.substrait.util.LimitAndSortHelper	-	not_ported	no
 com.amazonaws.athena.connector.util.PaginatedRequestIterator	athena-federation-sdk/src/util/paginated_request_iterator.rs::PaginatedRequestIterator	ported	
 com.amazonaws.athena.connector.util.PaginationHelper	athena-federation-sdk/src/util/pagination_helper.rs::manual_pagination	merged	the static-method class becomes free functions in the pagination_helper module
 com.amazonaws.athena.connectors.jdbc.JdbcEnvironmentProperties	athena-jdbc/src/jdbc_environment_properties.rs::JdbcEnvironmentProperties	ported	
-com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcCompositeHandler	athena-jdbc/src/multiplexing_jdbc_composite_handler.rs::MultiplexingJdbcCompositeHandler	ported	
+com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcCompositeHandler	athena-jdbc/src/multiplexing_jdbc_composite_handler.rs::multiplexing_composite_handler	merged	the constructor is a function that picks the multiplexing or single handlers and returns a CompositeHandler
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcMetadataHandler	athena-jdbc/src/multiplexing_jdbc_metadata_handler.rs::MultiplexingJdbcMetadataHandler	ported	
 com.amazonaws.athena.connectors.jdbc.MultiplexingJdbcRecordHandler	athena-jdbc/src/multiplexing_jdbc_record_handler.rs::MultiplexingJdbcRecordHandler	ported	
 com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig	athena-jdbc/src/connection/database_connection_config.rs::DatabaseConnectionConfig	ported	
@@ -281,9 +281,9 @@ com.amazonaws.athena.connectors.jdbc.manager.JDBCUtil	athena-jdbc/src/manager/jd
 com.amazonaws.athena.connectors.jdbc.manager.JdbcArrowTypeConverter	athena-jdbc/src/manager/jdbc_arrow_type_converter.rs::JdbcArrowTypeConverter	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcFederationExpressionParser	athena-jdbc/src/manager/jdbc_federation_expression_parser.rs::JdbcFederationExpressionParser	ported	
 com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandler	athena-jdbc/src/manager/jdbc_metadata_handler.rs::JdbcMetadataHandler	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandlerFactory	athena-jdbc/src/manager/jdbc_metadata_handler_factory.rs::JdbcMetadataHandlerFactory	ported	
+com.amazonaws.athena.connectors.jdbc.manager.JdbcMetadataHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
 com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandler	athena-jdbc/src/manager/jdbc_record_handler.rs::JdbcRecordHandler	ported	
-com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdbc/src/manager/jdbc_record_handler_factory.rs::JdbcRecordHandlerFactory	ported	
+com.amazonaws.athena.connectors.jdbc.manager.JdbcRecordHandlerFactory	athena-jdbc/src/manager/jdbc_util.rs::handler_map	merged	the factory is the closure passed to JdbcUtil::handler_map
 com.amazonaws.athena.connectors.jdbc.manager.JdbcSplitQueryBuilder	athena-jdbc/src/manager/jdbc_split_query_builder.rs::JdbcSplitQueryBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.PreparedStatementBuilder	athena-jdbc/src/manager/prepared_statement_builder.rs::PreparedStatementBuilder	ported	
 com.amazonaws.athena.connectors.jdbc.manager.TypeAndValue	athena-jdbc/src/manager/type_and_value.rs::TypeAndValue	ported	
@@ -295,28 +295,28 @@ com.amazonaws.athena.connectors.jdbc.splits.SplitInfo	athena-jdbc/src/splits/spl
 com.amazonaws.athena.connectors.jdbc.splits.SplitRange	athena-jdbc/src/splits/split_range.rs::SplitRange	ported	
 com.amazonaws.athena.connectors.jdbc.splits.Splitter	athena-jdbc/src/splits/splitter.rs::Splitter	ported	
 com.amazonaws.athena.connectors.jdbc.splits.SplitterFactory	athena-jdbc/src/splits/splitter_factory.rs::SplitterFactory	ported	
-com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::PostGreSqlCompositeHandler	ported	
+com.amazonaws.athena.connectors.postgresql.PostGreSqlCompositeHandler	athena-postgresql/src/composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlConstants	athena-postgresql/src/constants.rs::PostGreSqlConstants	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlEnvironmentProperties	athena-postgresql/src/environment_properties.rs::PostGreSqlEnvironmentProperties	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlMetadataHandler	athena-postgresql/src/metadata_handler.rs::PostGreSqlMetadataHandler	ported	
-com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxCompositeHandler	athena-postgresql/src/mux_composite_handler.rs::PostGreSqlMuxCompositeHandler	ported	
-com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-postgresql/src/mux_metadata_handler.rs::PostGreSqlMuxMetadataHandler	ported	constructors return the athena-jdbc MultiplexingJdbcMetadataHandler; the package-private factory is PostGreSqlMetadataHandlerFactory in the same file
-com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxRecordHandler	athena-postgresql/src/mux_record_handler.rs::PostGreSqlMuxRecordHandler	ported	constructors return the athena-jdbc MultiplexingJdbcRecordHandler; the package-private factory is PostGreSqlRecordHandlerFactory in the same file
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxCompositeHandler	athena-postgresql/src/mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxMetadataHandler	athena-postgresql/src/mux_metadata_handler.rs::PostGreSqlMuxMetadataHandler	ported	type alias for the athena-jdbc MultiplexingJdbcMetadataHandler over PostGreSqlMetadataHandler
+com.amazonaws.athena.connectors.postgresql.PostGreSqlMuxRecordHandler	athena-postgresql/src/mux_record_handler.rs::PostGreSqlMuxRecordHandler	ported	type alias for the athena-jdbc MultiplexingJdbcRecordHandler over PostGreSqlRecordHandler
 com.amazonaws.athena.connectors.postgresql.PostGreSqlQueryStringBuilder	athena-postgresql/src/query_string_builder.rs::PostGreSqlQueryStringBuilder	ported	
 com.amazonaws.athena.connectors.postgresql.PostGreSqlRecordHandler	athena-postgresql/src/record_handler.rs::PostGreSqlRecordHandler	ported	
-com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.postgresql.PostgreSqlFederationExpressionParser	athena-postgresql/src/federation_expression_parser.rs::PostgreSqlFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
 com.amazonaws.athena.connectors.postgresql.PostgresqlSqlDialect	athena-postgresql/src/sql_dialect.rs::PostgresqlSqlDialect	ported	
 com.amazonaws.athena.connectors.postgresql.resolver.PostGreSqlJDBCCaseResolver	athena-postgresql/src/resolver/postgresql_jdbc_case_resolver.rs::PostGreSqlJdbcCaseResolver	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::SnowflakeCompositeHandler	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeCompositeHandler	athena-snowflake/src/snowflake_composite_handler.rs::composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler
 com.amazonaws.athena.connectors.snowflake.SnowflakeConstants	athena-snowflake/src/snowflake_constants.rs::SnowflakeConstants	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeCredentialsProvider	athena-snowflake/src/snowflake_credentials_provider.rs::SnowflakeCredentialsProvider	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeDialect	athena-snowflake/src/snowflake_dialect.rs::SnowflakeDialect	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeEnvironmentProperties	athena-snowflake/src/snowflake_environment_properties.rs::SnowflakeEnvironmentProperties	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	
+com.amazonaws.athena.connectors.snowflake.SnowflakeFederationExpressionParser	athena-snowflake/src/snowflake_federation_expression_parser.rs::SnowflakeFederationExpressionParser	ported	type alias for the shared athena-jdbc StandardFederationExpressionParser
 com.amazonaws.athena.connectors.snowflake.SnowflakeMetadataHandler	athena-snowflake/src/snowflake_metadata_handler.rs::SnowflakeMetadataHandler	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::SnowflakeMuxCompositeHandler	ported	
-com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-snowflake/src/snowflake_mux_metadata_handler.rs::SnowflakeMuxMetadataHandler	ported	SnowflakeMetadataHandlerFactory lives in the same file
-com.amazonaws.athena.connectors.snowflake.SnowflakeMuxRecordHandler	athena-snowflake/src/snowflake_mux_record_handler.rs::SnowflakeMuxRecordHandler	ported	SnowflakeMuxRecordHandlerFactory lives in the same file
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxCompositeHandler	athena-snowflake/src/snowflake_mux_composite_handler.rs::mux_composite_handler_from_environment	merged	the constructor is a function that returns a CompositeHandler; it also holds the delegate factory closures
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxMetadataHandler	athena-snowflake/src/snowflake_mux_metadata_handler.rs::SnowflakeMuxMetadataHandler	ported	type alias for the athena-jdbc MultiplexingJdbcMetadataHandler over SnowflakeMetadataHandler
+com.amazonaws.athena.connectors.snowflake.SnowflakeMuxRecordHandler	athena-snowflake/src/snowflake_mux_record_handler.rs::SnowflakeMuxRecordHandler	ported	type alias for the athena-jdbc MultiplexingJdbcRecordHandler over SnowflakeRecordHandler
 com.amazonaws.athena.connectors.snowflake.SnowflakeQueryStringBuilder	athena-snowflake/src/snowflake_query_string_builder.rs::SnowflakeQueryStringBuilder	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeRecordHandler	athena-snowflake/src/snowflake_record_handler.rs::SnowflakeRecordHandler	ported	
 com.amazonaws.athena.connectors.snowflake.SnowflakeUtils	-	not_ported	installCaCertificate and setupNativeEnvironmentVariables write the JDK cacerts store and env vars for the Arrow JDBC native path; the Rust client uses rustls with the operating system certificate store

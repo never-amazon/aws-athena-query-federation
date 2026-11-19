@@ -5,13 +5,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use athena_federation_sdk::data::{
-    BlockAllocator, BlockAllocatorImpl, MinorType, SchemaBuilder, SimpleBlockWriter,
-};
+use athena_federation_sdk::data::{MinorType, SchemaBuilder, SimpleBlockWriter};
 use athena_federation_sdk::domain::table_name::TableName;
 use athena_federation_sdk::handlers::{
-    get_source_table_name, populate_source_table_name_if_available, FederationRequestHandler,
-    GlueMetadataHandler, MetadataHandler, MetadataHandlerBase, COLUMN_NAME_MAPPING_PROPERTY,
+    get_source_table_name, populate_source_table_name_if_available, GlueMetadataHandler,
+    MetadataContext, MetadataHandler, COLUMN_NAME_MAPPING_PROPERTY,
     DATETIME_FORMAT_MAPPING_PROPERTY, DATETIME_FORMAT_MAPPING_PROPERTY_NORMALIZED,
     GET_TABLES_REQUEST_MAX_RESULTS, SOURCE_TABLE_PROPERTY,
 };
@@ -23,8 +21,7 @@ use athena_federation_sdk::metadata::{
     MetadataRequest, UNLIMITED_PAGE_SIZE_VALUE,
 };
 use athena_federation_sdk::security::{
-    AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, FederatedIdentity,
-    KeySource, KmsEncryptionProvider,
+    AwsRequestOverrideConfiguration, AwsServiceError, FederatedIdentity, KeySource,
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use aws_sdk_glue::operation::get_databases::{GetDatabasesInput, GetDatabasesOutput};
@@ -147,18 +144,8 @@ impl GlueClient for FakeGlue {
 }
 
 struct TestGlueHandler {
-    base: MetadataHandlerBase,
+    context: MetadataContext,
     glue: Arc<dyn GlueClient>,
-}
-
-impl FederationRequestHandler for TestGlueHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.kms_encryption_provider()
-    }
 }
 
 fn unsupported() -> FederationError {
@@ -167,35 +154,20 @@ fn unsupported() -> FederationError {
 
 #[async_trait]
 impl MetadataHandler for TestGlueHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        &self.base
+    fn context(&self) -> &MetadataContext {
+        &self.context
     }
 
-    async fn do_list_schema_names(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse> {
-        self.do_list_schema_names_with_filter(allocator, request, None)
-            .await
+    async fn list_schema_names(&self, request: &ListSchemasRequest) -> Result<ListSchemasResponse> {
+        self.do_list_schema_names_with_filter(request, None).await
     }
 
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
-        self.do_list_tables_with_filter(allocator, request, None)
-            .await
+    async fn list_tables(&self, request: &ListTablesRequest) -> Result<ListTablesResponse> {
+        self.do_list_tables_with_filter(request, None).await
     }
 
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
-        self.do_get_table_with_filter(allocator, request, None)
-            .await
+    async fn get_table(&self, request: &GetTableRequest) -> Result<GetTableResponse> {
+        self.do_get_table_with_filter(request, None).await
     }
 
     async fn get_partitions(
@@ -207,11 +179,7 @@ impl MetadataHandler for TestGlueHandler {
         Err(unsupported())
     }
 
-    async fn do_get_splits(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        _request: &GetSplitsRequest,
-    ) -> Result<GetSplitsResponse> {
+    async fn get_splits(&self, _request: &GetSplitsRequest) -> Result<GetSplitsResponse> {
         Err(unsupported())
     }
 }
@@ -225,7 +193,6 @@ impl GlueMetadataHandler for TestGlueHandler {
 struct Setup {
     handler: TestGlueHandler,
     glue: Arc<FakeGlue>,
-    allocator: Arc<dyn BlockAllocator>,
 }
 
 fn set_up_with(databases: Vec<Database>) -> Setup {
@@ -237,7 +204,7 @@ fn set_up_with(databases: Vec<Database>) -> Setup {
 
 fn set_up_with_glue(glue: FakeGlue) -> Setup {
     let glue = Arc::new(glue);
-    let base = MetadataHandlerBase::builder("glue-test", Fakes::new().clients())
+    let context = MetadataContext::builder("glue-test", Fakes::new().clients())
         .config_options(HashMap::new())
         .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(Some("spill-bucket".into()))
@@ -247,11 +214,10 @@ fn set_up_with_glue(glue: FakeGlue) -> Setup {
     let dyn_glue: Arc<dyn GlueClient> = glue.clone();
     Setup {
         handler: TestGlueHandler {
-            base,
+            context,
             glue: dyn_glue,
         },
         glue,
-        allocator: Arc::new(BlockAllocatorImpl::new()),
     }
 }
 
@@ -302,11 +268,7 @@ async fn do_list_schema_names() {
     ];
     let s = set_up_with(databases.clone());
     let req = ListSchemasRequest::new(Some(fake_identity()), Some(QUERY_ID.into()), CATALOG);
-    let res = s
-        .handler
-        .do_list_schema_names(&s.allocator, &req)
-        .await
-        .unwrap();
+    let res = s.handler.list_schema_names(&req).await.unwrap();
     let expected: Vec<String> = databases.iter().map(|d| d.name().to_string()).collect();
     assert_eq!(expected, res.schemas());
 }
@@ -319,11 +281,7 @@ async fn do_list_schema_names_stops_on_empty_next_token() {
         ..FakeGlue::default()
     });
     let req = ListSchemasRequest::new(Some(fake_identity()), Some(QUERY_ID.into()), CATALOG);
-    let res = s
-        .handler
-        .do_list_schema_names(&s.allocator, &req)
-        .await
-        .unwrap();
+    let res = s.handler.list_schema_names(&req).await.unwrap();
     assert_eq!(["db1".to_string()].as_slice(), res.schemas());
     assert_eq!(1, s.glue.database_calls.load(Ordering::SeqCst));
 }
@@ -332,7 +290,7 @@ async fn do_list_schema_names_stops_on_empty_next_token() {
 async fn do_list_tables_with_unlimited_page_size() {
     let s = set_up();
     let req = list_tables_request(None, UNLIMITED_PAGE_SIZE_VALUE);
-    let actual_response = s.handler.do_list_tables(&s.allocator, &req).await.unwrap();
+    let actual_response = s.handler.list_tables(&req).await.unwrap();
     assert_eq!(full_list_response(), actual_response, "Lists do not match.");
 }
 
@@ -340,7 +298,7 @@ async fn do_list_tables_with_unlimited_page_size() {
 async fn do_list_tables_with_large_page_size() {
     let s = set_up();
     let req = list_tables_request(None, GET_TABLES_REQUEST_MAX_RESULTS + 50);
-    let actual_response = s.handler.do_list_tables(&s.allocator, &req).await.unwrap();
+    let actual_response = s.handler.list_tables(&req).await.unwrap();
     assert_eq!(full_list_response(), actual_response, "Lists do not match.");
 }
 
@@ -357,7 +315,7 @@ async fn do_list_tables_with_pagination() {
         ],
         Some("table4".into()),
     );
-    let actual_response = s.handler.do_list_tables(&s.allocator, &req).await.unwrap();
+    let actual_response = s.handler.list_tables(&req).await.unwrap();
     assert_eq!(expected_response, actual_response, "Lists do not match.");
 
     let req = list_tables_request(actual_response.next_token(), 3);
@@ -369,7 +327,7 @@ async fn do_list_tables_with_pagination() {
         ],
         None,
     );
-    let actual_response = s.handler.do_list_tables(&s.allocator, &req).await.unwrap();
+    let actual_response = s.handler.list_tables(&req).await.unwrap();
     assert_eq!(expected_response, actual_response, "Lists do not match.");
 }
 
@@ -377,7 +335,7 @@ async fn do_list_tables_with_pagination() {
 async fn do_list_tables_orders_tables_like_java_hash_set() {
     let s = set_up();
     let req = list_tables_request(None, UNLIMITED_PAGE_SIZE_VALUE);
-    let actual_response = s.handler.do_list_tables(&s.allocator, &req).await.unwrap();
+    let actual_response = s.handler.list_tables(&req).await.unwrap();
     let names: Vec<&str> = actual_response
         .tables()
         .iter()
@@ -425,11 +383,7 @@ async fn do_get_table() {
         .unwrap();
     *s.glue.table.lock().unwrap() = Some(return_table);
 
-    let res = s
-        .handler
-        .do_get_table(&s.allocator, &get_table_request())
-        .await
-        .unwrap();
+    let res = s.handler.get_table(&get_table_request()).await.unwrap();
 
     let schema = res.schema();
     assert_eq!(8, schema.fields().len());
@@ -553,11 +507,7 @@ async fn do_get_table_empty_comment() {
         .unwrap();
     *s.glue.table.lock().unwrap() = Some(result_table);
 
-    let res = s
-        .handler
-        .do_get_table(&s.allocator, &get_table_request())
-        .await
-        .unwrap();
+    let res = s.handler.get_table(&get_table_request()).await.unwrap();
 
     assert!(res.schema().field_with_name("col1").is_ok());
     assert_eq!(MinorType::INT, minor_type(&res, "col1"));

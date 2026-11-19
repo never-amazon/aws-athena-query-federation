@@ -1,91 +1,75 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use athena_federation_sdk::handlers::{
-    AwsClients, CompositeHandler, MetadataHandler, RecordHandler,
+    AwsClients, CompositeHandler, HandlerContext, MetadataContext, MetadataHandler, RecordHandler,
 };
-use athena_federation_sdk::lambda::{LambdaContext, RequestStreamHandler};
 use athena_federation_sdk::Result;
-use athena_jdbc::MultiplexingJdbcCompositeHandler;
+use athena_jdbc::{
+    multiplexing_composite_handler, MultiplexingJdbcMetadataHandler, RecordMultiplexer,
+};
 
-use crate::snowflake_metadata_handler::SnowflakeMetadataHandler;
-use crate::snowflake_mux_metadata_handler::SnowflakeMuxMetadataHandler;
-use crate::snowflake_mux_record_handler::SnowflakeMuxRecordHandler;
-use crate::snowflake_record_handler::SnowflakeRecordHandler;
+use crate::snowflake_constants::SnowflakeConstants;
+use crate::snowflake_metadata_handler::SnowflakeMetadataDialect;
+use crate::snowflake_record_handler::SnowflakeRecordDialect;
 
-pub struct SnowflakeMuxCompositeHandler {
-    composite_handler: CompositeHandler,
-}
-
-impl SnowflakeMuxCompositeHandler {
-    pub async fn from_environment() -> Result<SnowflakeMuxCompositeHandler> {
-        let clients = AwsClients::from_environment().await?;
-        SnowflakeMuxCompositeHandler::new(clients, std::env::vars().collect()).await
-    }
-
-    pub async fn new(
-        clients: AwsClients,
-        environment: HashMap<String, String>,
-    ) -> Result<SnowflakeMuxCompositeHandler> {
-        let mux_metadata_clients = clients.clone();
-        let mux_record_clients = clients.clone();
-        let metadata_clients = clients.clone();
-        let record_clients = clients;
-        let handler = MultiplexingJdbcCompositeHandler::new_with_environment(
-            environment,
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn MetadataHandler> = Arc::new(
-                    SnowflakeMuxMetadataHandler::from_config_options(
-                        mux_metadata_clients,
-                        config_options,
-                    )
-                    .await?,
-                );
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn RecordHandler> = Arc::new(
-                    SnowflakeMuxRecordHandler::from_config_options(
-                        mux_record_clients,
-                        config_options,
-                    )
-                    .await?,
-                );
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn MetadataHandler> = Arc::new(
-                    SnowflakeMetadataHandler::from_config_options(metadata_clients, config_options)
-                        .await?,
-                );
-                Ok(handler)
-            },
-            async move |config_options: HashMap<String, String>| {
-                let handler: Arc<dyn RecordHandler> = Arc::new(
-                    SnowflakeRecordHandler::from_config_options(record_clients, config_options)?,
-                );
-                Ok(handler)
-            },
-        )
-        .await?;
-        Ok(SnowflakeMuxCompositeHandler {
-            composite_handler: handler.into_composite_handler(),
-        })
-    }
-
-    pub fn composite_handler(&self) -> &CompositeHandler {
-        &self.composite_handler
-    }
-}
-
-#[async_trait]
-impl RequestStreamHandler for SnowflakeMuxCompositeHandler {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>> {
-        self.composite_handler.handle_request(input, context).await
-    }
+pub async fn mux_composite_handler_from_environment() -> Result<CompositeHandler> {
+    let clients = AwsClients::from_environment().await?;
+    let record_clients = clients.clone();
+    multiplexing_composite_handler(
+        std::env::vars().collect(),
+        async move |multiplexed, config_options| {
+            let handler: Arc<dyn MetadataHandler> = if multiplexed {
+                let context =
+                    MetadataContext::builder(SnowflakeConstants::SNOWFLAKE_NAME, clients.clone())
+                        .config_options(config_options.clone())
+                        .build()?;
+                Arc::new(MultiplexingJdbcMetadataHandler::from_config(
+                    context,
+                    SnowflakeConstants::SNOWFLAKE_NAME,
+                    &config_options,
+                    |config| {
+                        Ok(Arc::new(SnowflakeMetadataDialect::from_config(
+                            clients.clone(),
+                            config.clone(),
+                            config_options.clone(),
+                            None,
+                        )?))
+                    },
+                )?)
+            } else {
+                Arc::new(
+                    SnowflakeMetadataDialect::from_config_options(clients, config_options).await?,
+                )
+            };
+            Ok(handler)
+        },
+        async move |multiplexed, config_options| {
+            let handler: Arc<dyn RecordHandler> = if multiplexed {
+                let context = HandlerContext::new(
+                    SnowflakeConstants::SNOWFLAKE_NAME,
+                    record_clients.clone(),
+                    config_options.clone(),
+                )?;
+                Arc::new(RecordMultiplexer::handler_from_config(
+                    context,
+                    SnowflakeConstants::SNOWFLAKE_NAME,
+                    &config_options,
+                    |config| {
+                        Ok(Arc::new(SnowflakeRecordDialect::from_config(
+                            record_clients.clone(),
+                            config.clone(),
+                            config_options.clone(),
+                        )?))
+                    },
+                )?)
+            } else {
+                Arc::new(SnowflakeRecordDialect::from_config_options(
+                    record_clients,
+                    config_options,
+                )?)
+            };
+            Ok(handler)
+        },
+    )
+    .await
 }

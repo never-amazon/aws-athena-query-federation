@@ -1,4 +1,3 @@
-use crate::data::block_utils;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,35 +6,30 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use tokio::sync::Mutex;
 
-use super::athena_exception_filter::is_athena_throttle;
 use super::aws_clients::AwsClients;
-use super::federation_capabilities::CAPABILITIES;
-use super::federation_request_handler::{ConfigOptions, FederationRequestHandler};
+use super::handler_context::{ConfigOptions, HandlerContext};
 use crate::connection::environment_constants;
+use crate::data::block_utils;
 use crate::data::types::java_field_to_string;
 use crate::data::{
-    BlockAllocator, BlockAllocatorImpl, S3Client, S3HeadBucketClient, SchemaBuilder,
-    SimpleBlockWriter, SupportedTypes,
+    BlockAllocator, S3HeadBucketClient, SchemaBuilder, SimpleBlockWriter, SupportedTypes,
 };
 use crate::domain::predicate::ConstraintEvaluator;
 use crate::domain::spill::{S3SpillLocation, SpillLocation, SpillLocationVerifier};
-use crate::exceptions::{
-    AthenaConnectorException, ErrorDetails, FederationError, FederationSourceErrorCode, Result,
-};
-use crate::lambda::LambdaContext;
+use crate::domain::split::{Split, SplitBuilder};
+use crate::exceptions::{FederationError, Result};
 use crate::metadata::{
     GetDataSourceCapabilitiesRequest, GetDataSourceCapabilitiesResponse, GetSplitsRequest,
     GetSplitsResponse, GetTableLayoutRequest, GetTableLayoutResponse, GetTableRequest,
     GetTableResponse, ListSchemasRequest, ListSchemasResponse, ListTablesRequest,
     ListTablesResponse, MetadataRequest,
 };
-use crate::request::{FederationRequest, PingRequest, PingResponse};
+use crate::request::{FederationRequest, FederationResponse};
 use crate::security::{
-    AwsRequestOverrideConfiguration, AwsServiceError, CachableSecretsManager, EncryptionKey,
-    FederatedIdentity, KeySource, KmsEncryptionProvider,
+    AwsRequestOverrideConfiguration, EncryptionKey, FederatedIdentity, KeySource,
 };
-use crate::serde::{ObjectMapper, SerdeVersion, SERDE_VERSION};
-use crate::{AthenaClient, QueryStatusChecker, ThrottleConfig, ThrottlingInvoker};
+use crate::serde::ObjectMapper;
+use crate::QueryStatusChecker;
 
 pub const PARTITION_ID_COL: &str = "partitionId";
 const DISABLE_ENCRYPTION: &str = "true";
@@ -45,21 +39,15 @@ pub const SPILL_PREFIX_ENV: &str = "spill_prefix";
 pub const KMS_KEY_ID_ENV: &str = "kms_key_id";
 pub const DISABLE_SPILL_ENCRYPTION: &str = "disable_spill_encryption";
 
-pub struct MetadataHandlerBase {
-    config_options: HashMap<String, String>,
-    secrets_manager: CachableSecretsManager,
-    athena: Arc<dyn AthenaClient>,
-    s3_client: Arc<dyn S3Client>,
-    athena_invoker: Arc<ThrottlingInvoker<AwsServiceError>>,
+pub struct MetadataContext {
+    handler: HandlerContext,
     encryption_key_factory: Option<KeySource>,
     spill_bucket: Option<String>,
     spill_prefix: Option<String>,
-    source_type: String,
     verifier: Mutex<SpillLocationVerifier<S3HeadBucketClient>>,
-    kms_encryption_provider: Arc<KmsEncryptionProvider>,
 }
 
-pub struct MetadataHandlerBaseBuilder {
+pub struct MetadataContextBuilder {
     source_type: String,
     clients: AwsClients,
     config_options: HashMap<String, String>,
@@ -82,7 +70,7 @@ impl<T> Setting<T> {
     }
 }
 
-impl MetadataHandlerBaseBuilder {
+impl MetadataContextBuilder {
     #[must_use]
     pub fn config_options(mut self, config_options: HashMap<String, String>) -> Self {
         self.config_options = config_options;
@@ -107,7 +95,7 @@ impl MetadataHandlerBaseBuilder {
         self
     }
 
-    pub fn build(self) -> Result<MetadataHandlerBase> {
+    pub fn build(self) -> Result<MetadataContext> {
         let config_options = self.config_options;
         let spill_bucket = self
             .spill_bucket
@@ -123,25 +111,14 @@ impl MetadataHandlerBaseBuilder {
         let encryption_key_factory = self
             .encryption_key_factory
             .unwrap_or_else(|| default_encryption_key_factory(&config_options, &self.clients));
-        let athena_invoker = ThrottlingInvoker::new(
-            ThrottleConfig::from_config_options(&config_options)?,
-            is_athena_throttle,
-            None,
-        )?;
-        Ok(MetadataHandlerBase {
-            secrets_manager: CachableSecretsManager::new(self.clients.secrets_manager),
-            athena: self.clients.athena,
-            verifier: Mutex::new(SpillLocationVerifier::new(S3HeadBucketClient::new(
-                Arc::clone(&self.clients.s3),
-            ))),
-            s3_client: self.clients.s3,
-            athena_invoker: Arc::new(athena_invoker),
+        let verifier =
+            SpillLocationVerifier::new(S3HeadBucketClient::new(Arc::clone(&self.clients.s3)));
+        Ok(MetadataContext {
+            handler: HandlerContext::new(self.source_type, self.clients, config_options)?,
             encryption_key_factory,
             spill_bucket,
             spill_prefix,
-            source_type: self.source_type,
-            kms_encryption_provider: self.clients.kms_encryption_provider,
-            config_options,
+            verifier: Mutex::new(verifier),
         })
     }
 }
@@ -167,12 +144,9 @@ fn default_encryption_key_factory(
     Some(factory)
 }
 
-impl MetadataHandlerBase {
-    pub fn builder(
-        source_type: impl Into<String>,
-        clients: AwsClients,
-    ) -> MetadataHandlerBaseBuilder {
-        MetadataHandlerBaseBuilder {
+impl MetadataContext {
+    pub fn builder(source_type: impl Into<String>, clients: AwsClients) -> MetadataContextBuilder {
+        MetadataContextBuilder {
             source_type: source_type.into(),
             clients,
             config_options: HashMap::new(),
@@ -185,34 +159,18 @@ impl MetadataHandlerBase {
     pub async fn from_environment(
         source_type: impl Into<String>,
         config_options: HashMap<String, String>,
-    ) -> Result<MetadataHandlerBase> {
-        MetadataHandlerBase::builder(source_type, AwsClients::from_environment().await?)
+    ) -> Result<MetadataContext> {
+        MetadataContext::builder(source_type, AwsClients::from_environment().await?)
             .config_options(config_options)
             .build()
     }
 
+    pub fn handler(&self) -> &HandlerContext {
+        &self.handler
+    }
+
     pub fn config_options(&self) -> &HashMap<String, String> {
-        &self.config_options
-    }
-
-    pub fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        &self.secrets_manager
-    }
-
-    pub fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        &self.kms_encryption_provider
-    }
-
-    pub fn athena(&self) -> &Arc<dyn AthenaClient> {
-        &self.athena
-    }
-
-    pub fn s3_client(&self) -> &Arc<dyn S3Client> {
-        &self.s3_client
-    }
-
-    pub fn athena_invoker(&self) -> &Arc<ThrottlingInvoker<AwsServiceError>> {
-        &self.athena_invoker
+        self.handler.config_options()
     }
 
     pub fn encryption_key_factory(&self) -> Option<&KeySource> {
@@ -227,82 +185,21 @@ impl MetadataHandlerBase {
         self.spill_prefix.as_deref()
     }
 
-    pub fn source_type(&self) -> &str {
-        &self.source_type
-    }
-
-    pub async fn set_verifier(&self, verifier: SpillLocationVerifier<S3HeadBucketClient>) {
-        *self.verifier.lock().await = verifier;
-    }
-}
-
-pub(crate) fn require_identity(identity: Option<&FederatedIdentity>) -> Result<&FederatedIdentity> {
-    identity.ok_or_else(|| {
-        FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getConfigOptions()\" because \"federatedIdentity\" is null")
-    })
-}
-
-pub(crate) fn java_class_of_request(request: &FederationRequest) -> String {
-    let package = match request {
-        FederationRequest::Ping(_) => "request",
-        FederationRequest::ReadRecords(_) => "records",
-        FederationRequest::UserDefinedFunction(_) => "udf",
-        _ => "metadata",
-    };
-    format!(
-        "class com.amazonaws.athena.connector.lambda.{package}.{}",
-        request.type_name()
-    )
-}
-
-fn find_field<'a>(schema: &'a Schema, name: &str) -> Result<&'a Field> {
-    schema.field_with_name(name).map_err(|_| {
-        let fields: Vec<String> = schema
-            .fields()
-            .iter()
-            .map(|f| java_field_to_string(f))
-            .collect();
-        FederationError::IllegalArgument(format!(
-            "field {name} not found in [{}]",
-            fields.join(", ")
-        ))
-    })
-}
-
-fn is_blank(value: Option<&str>) -> bool {
-    value.is_none_or(|v| v.trim().is_empty())
-}
-
-#[async_trait]
-pub trait MetadataHandler: FederationRequestHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase;
-
-    async fn make_encryption_key(&self) -> Result<Option<EncryptionKey>> {
-        match self.metadata_base().encryption_key_factory() {
-            Some(factory) => factory.create(None).await.map(Some),
-            None => Ok(None),
-        }
-    }
-
-    async fn make_encryption_key_with_aws_request_override_configuration(
+    pub async fn make_encryption_key(
         &self,
-        aws_request_override_configuration: Option<&AwsRequestOverrideConfiguration>,
+        override_config: Option<&AwsRequestOverrideConfiguration>,
     ) -> Result<Option<EncryptionKey>> {
-        match self.metadata_base().encryption_key_factory() {
-            Some(factory) => factory
-                .create(aws_request_override_configuration)
-                .await
-                .map(Some),
+        match &self.encryption_key_factory {
+            Some(factory) => factory.create(override_config).await.map(Some),
             None => Ok(None),
         }
     }
 
-    fn make_spill_location(&self, request: &dyn MetadataRequest) -> Result<SpillLocation> {
-        let base = self.metadata_base();
+    pub fn make_spill_location(&self, request: &dyn MetadataRequest) -> Result<SpillLocation> {
         let identity_options = require_identity(request.identity())?.config_options();
         let config_options: HashMap<String, String> = if identity_options.is_empty() {
             tracing::warn!("configOptions is empty from federation. Use default configOptions.");
-            base.config_options().clone()
+            self.config_options().clone()
         } else {
             identity_options
                 .iter()
@@ -310,12 +207,12 @@ pub trait MetadataHandler: FederationRequestHandler {
                 .collect()
         };
         let prefix = if is_blank(config_options.get(SPILL_PREFIX_ENV).map(String::as_str)) {
-            base.spill_prefix().map(str::to_string)
+            self.spill_prefix.clone()
         } else {
             config_options.get(SPILL_PREFIX_ENV).cloned()
         };
         let bucket = if is_blank(config_options.get(SPILL_BUCKET_ENV).map(String::as_str)) {
-            base.spill_bucket().map(str::to_string)
+            self.spill_bucket.clone()
         } else {
             config_options.get(SPILL_BUCKET_ENV).cloned()
         };
@@ -343,87 +240,78 @@ pub trait MetadataHandler: FederationRequestHandler {
         Ok(SpillLocation::S3(builder.build()))
     }
 
-    async fn do_list_schema_names(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListSchemasRequest,
-    ) -> Result<ListSchemasResponse>;
+    pub async fn split_builder(&self, request: &GetSplitsRequest) -> Result<SplitBuilder> {
+        let spill_location = self.make_spill_location(request)?;
+        let override_config = self
+            .handler
+            .identity_override_config(request.identity())
+            .await?;
+        let encryption_key = self.make_encryption_key(override_config.as_ref()).await?;
+        Ok(Split::new_builder(Some(spill_location), encryption_key))
+    }
 
-    async fn do_list_tables(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse>;
+    async fn check_spill_bucket(&self, identity: &FederatedIdentity) -> Result<()> {
+        let options: &ConfigOptions = identity.config_options();
+        let mut verifier = self.verifier.lock().await;
+        if options
+            .get(environment_constants::FAS_TOKEN)
+            .is_some_and(Option::is_some)
+        {
+            let override_config = self.handler.request_override_config(Some(options)).await?;
+            let s3 = self.handler.s3_client(override_config.as_ref());
+            *verifier = SpillLocationVerifier::new(S3HeadBucketClient::new(s3));
+        }
+        verifier.check_bucket_auth_z(self.spill_bucket()).await
+    }
+}
 
-    async fn do_get_query_passthrough_schema(
+pub(crate) fn require_identity(identity: Option<&FederatedIdentity>) -> Result<&FederatedIdentity> {
+    identity.ok_or_else(|| {
+        FederationError::null_pointer("Cannot invoke \"com.amazonaws.athena.connector.lambda.security.FederatedIdentity.getConfigOptions()\" because \"federatedIdentity\" is null")
+    })
+}
+
+fn find_field<'a>(schema: &'a Schema, name: &str) -> Result<&'a Field> {
+    schema.field_with_name(name).map_err(|_| {
+        let fields: Vec<String> = schema
+            .fields()
+            .iter()
+            .map(|f| java_field_to_string(f))
+            .collect();
+        FederationError::IllegalArgument(format!(
+            "field {name} not found in [{}]",
+            fields.join(", ")
+        ))
+    })
+}
+
+fn is_blank(value: Option<&str>) -> bool {
+    value.is_none_or(|v| v.trim().is_empty())
+}
+
+#[async_trait]
+pub trait MetadataHandler: Send + Sync {
+    fn context(&self) -> &MetadataContext;
+
+    async fn list_schema_names(&self, request: &ListSchemasRequest) -> Result<ListSchemasResponse>;
+
+    async fn list_tables(&self, request: &ListTablesRequest) -> Result<ListTablesResponse>;
+
+    async fn get_query_passthrough_schema(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         _request: &GetTableRequest,
     ) -> Result<GetTableResponse> {
         Err(FederationError::not_supported("Not implemented"))
     }
 
-    async fn do_get_table(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse>;
+    async fn get_table(&self, request: &GetTableRequest) -> Result<GetTableResponse>;
 
-    async fn do_get_table_layout(
+    async fn get_table_layout(
         &self,
-        allocator: &Arc<dyn BlockAllocator>,
+        allocator: &dyn BlockAllocator,
         request: &GetTableLayoutRequest,
     ) -> Result<GetTableLayoutResponse> {
-        let mut constraint_schema = SchemaBuilder::new_builder();
-        let mut partition_schema_builder = SchemaBuilder::new_builder();
-        for next_part_col in request.partition_cols() {
-            let partition_col = find_field(request.schema(), next_part_col)?;
-            partition_schema_builder
-                .add_field_with_type(next_part_col, partition_col.data_type().clone());
-            constraint_schema.add_field_with_type(next_part_col, partition_col.data_type().clone());
-        }
-        self.enhance_partition_schema(&mut partition_schema_builder, request);
-        let partition_schema = partition_schema_builder.build();
-        if partition_schema.fields().is_empty() && partition_schema.metadata().is_empty() {
-            let partitions = block_utils::new_block(
-                allocator.as_ref(),
-                PARTITION_ID_COL,
-                &DataType::Int32,
-                [1i32],
-            )?;
-            return Ok(GetTableLayoutResponse::new(
-                request.catalog_name(),
-                request.table_name().clone(),
-                partitions,
-            ));
-        }
-        let identity = require_identity(request.identity())?;
-        let override_config = self
-            .get_request_override_config_with_config_options(Some(identity.config_options()))
-            .await?;
-        let base = self.metadata_base();
-        let constraint_evaluator = Arc::new(ConstraintEvaluator::new(
-            &constraint_schema.build(),
-            request.constraints().clone(),
-        ));
-        let query_status_checker = QueryStatusChecker::new(
-            self.get_athena_client(override_config.as_ref(), base.athena()),
-            Arc::clone(base.athena_invoker()),
-            request.query_id().unwrap_or_default(),
-        );
-        let mut partitions = allocator.create_block(Arc::new(partition_schema_builder.build()));
-        partitions.constrain(Some(constraint_evaluator));
-        let mut block_writer = SimpleBlockWriter::new(&mut partitions);
-        let result = self
-            .get_partitions(&mut block_writer, request, &query_status_checker)
-            .await;
-        drop(query_status_checker);
-        result?;
-        Ok(GetTableLayoutResponse::new(
-            request.catalog_name(),
-            request.table_name().clone(),
-            partitions,
-        ))
+        table_layout(self, allocator, request).await
     }
 
     fn enhance_partition_schema(
@@ -440,15 +328,10 @@ pub trait MetadataHandler: FederationRequestHandler {
         query_status_checker: &QueryStatusChecker,
     ) -> Result<()>;
 
-    async fn do_get_splits(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &GetSplitsRequest,
-    ) -> Result<GetSplitsResponse>;
+    async fn get_splits(&self, request: &GetSplitsRequest) -> Result<GetSplitsResponse>;
 
-    async fn do_get_data_source_capabilities(
+    async fn get_data_source_capabilities(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         request: &GetDataSourceCapabilitiesRequest,
     ) -> Result<GetDataSourceCapabilitiesResponse> {
         Ok(GetDataSourceCapabilitiesResponse::new(
@@ -456,174 +339,110 @@ pub trait MetadataHandler: FederationRequestHandler {
             IndexMap::new(),
         ))
     }
+}
 
-    async fn do_ping(&self, request: &PingRequest) -> PingResponse {
-        let response = PingResponse::new(
+pub async fn table_layout<H: MetadataHandler + ?Sized>(
+    handler: &H,
+    allocator: &dyn BlockAllocator,
+    request: &GetTableLayoutRequest,
+) -> Result<GetTableLayoutResponse> {
+    let mut constraint_schema = SchemaBuilder::new_builder();
+    let mut partition_schema_builder = SchemaBuilder::new_builder();
+    for next_part_col in request.partition_cols() {
+        let partition_col = find_field(request.schema(), next_part_col)?;
+        partition_schema_builder
+            .add_field_with_type(next_part_col, partition_col.data_type().clone());
+        constraint_schema.add_field_with_type(next_part_col, partition_col.data_type().clone());
+    }
+    handler.enhance_partition_schema(&mut partition_schema_builder, request);
+    let partition_schema = partition_schema_builder.build();
+    if partition_schema.fields().is_empty() && partition_schema.metadata().is_empty() {
+        let partitions =
+            block_utils::new_block(allocator, PARTITION_ID_COL, &DataType::Int32, [1i32])?;
+        return Ok(GetTableLayoutResponse::new(
             request.catalog_name(),
-            request.query_id(),
-            Some(self.metadata_base().source_type().to_string()),
-            CAPABILITIES,
-            SERDE_VERSION,
-        );
-        if let Err(ex) = self.on_ping(request).await {
-            tracing::warn!(
-                "doPing: encountered an exception while delegating onPing. {}",
-                ex
-            );
-        }
-        response
+            request.table_name().clone(),
+            partitions,
+        ));
     }
-
-    async fn on_ping(&self, _request: &PingRequest) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-pub trait MetadataHandlerExt: MetadataHandler {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>>;
-
-    async fn do_handle_request(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        object_mapper: &ObjectMapper,
-        request: &FederationRequest,
-    ) -> Result<Vec<u8>>;
-}
-
-#[async_trait]
-impl<T: MetadataHandler + ?Sized> MetadataHandlerExt for T {
-    async fn handle_request(
-        &self,
-        input: &[u8],
-        context: Option<&LambdaContext>,
-    ) -> Result<Vec<u8>> {
-        let block_allocator = Arc::new(BlockAllocatorImpl::new());
-        let allocator: Arc<dyn BlockAllocator> = block_allocator.clone();
-        let result = async {
-            let object_mapper = ObjectMapper::new(SerdeVersion::CURRENT, Arc::clone(&allocator));
-            let mut raw_req = object_mapper.read_request(input)?;
-            if let FederationRequest::Ping(ping) = &raw_req {
-                let response = self.do_ping(ping).await;
-                return object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes);
-            }
-            if !raw_req.is_metadata_request() {
-                return Err(FederationError::invalid_input(format!(
-                    "Expected a MetadataRequest but found {}",
-                    java_class_of_request(&raw_req)
-                )));
-            }
-            raw_req.set_context(context.cloned());
-            self.do_handle_request(&allocator, &object_mapper, &raw_req)
-                .await
-        }
+    let identity = require_identity(request.identity())?;
+    let cx = handler.context().handler();
+    let override_config = cx
+        .request_override_config(Some(identity.config_options()))
+        .await?;
+    let constraint_evaluator = Arc::new(ConstraintEvaluator::new(
+        &constraint_schema.build(),
+        request.constraints().clone(),
+    ));
+    let query_status_checker = cx.query_status_checker(
+        override_config.as_ref(),
+        request.query_id().unwrap_or_default(),
+    );
+    let mut partitions = allocator.create_block(Arc::new(partition_schema_builder.build()));
+    partitions.constrain(Some(constraint_evaluator));
+    let mut block_writer = SimpleBlockWriter::new(&mut partitions);
+    let result = handler
+        .get_partitions(&mut block_writer, request, &query_status_checker)
         .await;
-        block_allocator.close();
-        result.map_err(|ex| {
-            tracing::warn!("handleRequest: Completed with an exception. {}", ex);
-            if ex.is_runtime_exception() {
-                ex
-            } else {
-                let message = ex.to_string();
-                FederationError::AthenaConnector(AthenaConnectorException::with_response(
-                    Arc::new(ex),
-                    message,
-                    ErrorDetails::of(FederationSourceErrorCode::InternalServiceException),
-                ))
-            }
-        })
-    }
+    drop(query_status_checker);
+    result?;
+    Ok(GetTableLayoutResponse::new(
+        request.catalog_name(),
+        request.table_name().clone(),
+        partitions,
+    ))
+}
 
-    async fn do_handle_request(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        object_mapper: &ObjectMapper,
-        request: &FederationRequest,
-    ) -> Result<Vec<u8>> {
-        tracing::info!("doHandleRequest: request[{}]", request);
-        match request {
-            FederationRequest::ListSchemas(req) => {
-                let response = self.do_list_schema_names(allocator, req).await?;
-                tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            FederationRequest::ListTables(req) => {
-                let response = self.do_list_tables(allocator, req).await?;
-                tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            FederationRequest::GetTable(req) => {
-                tracing::info!(
-                    "resolveDoGetTableImplementation: resolving implementation - isQueryPassthrough[{}]",
-                    req.is_query_passthrough()
-                );
-                let response = if req.is_query_passthrough() {
-                    self.do_get_query_passthrough_schema(allocator, req).await?
-                } else {
-                    self.do_get_table(allocator, req).await?
-                };
-                tracing::info!("doHandleRequest: response[{}]", response);
-                assert_types(response.schema())?;
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            FederationRequest::GetTableLayout(req) => {
-                let response = self.do_get_table_layout(allocator, req).await?;
-                tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            FederationRequest::GetSplits(req) => {
-                let base = self.metadata_base();
-                let identity = require_identity(req.identity())?;
-                let options: &ConfigOptions = identity.config_options();
-                if options
-                    .get(environment_constants::FAS_TOKEN)
-                    .is_some_and(Option::is_some)
-                {
-                    let override_config = self
-                        .get_request_override_config_with_config_options(Some(options))
-                        .await?;
-                    let s3 = self.get_s3_client(override_config.as_ref(), base.s3_client());
-                    base.set_verifier(SpillLocationVerifier::new(S3HeadBucketClient::new(s3)))
-                        .await;
-                }
-                base.verifier
-                    .lock()
-                    .await
-                    .check_bucket_auth_z(base.spill_bucket())
-                    .await?;
-                let response = self.do_get_splits(allocator, req).await?;
-                tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            FederationRequest::GetDataSourceCapabilities(req) => {
-                let response = self.do_get_data_source_capabilities(allocator, req).await?;
-                tracing::info!("doHandleRequest: response[{}]", response);
-                object_mapper
-                    .write_response(&response.into())
-                    .map(String::into_bytes)
-            }
-            other => Err(FederationError::invalid_input(format!(
+pub(crate) async fn dispatch<H: MetadataHandler + ?Sized>(
+    handler: &H,
+    allocator: &dyn BlockAllocator,
+    object_mapper: &ObjectMapper,
+    request: &FederationRequest,
+) -> Result<Vec<u8>> {
+    tracing::info!("doHandleRequest: request[{}]", request);
+    let response: FederationResponse = match request {
+        FederationRequest::ListSchemas(req) => handler.list_schema_names(req).await?.into(),
+        FederationRequest::ListTables(req) => handler.list_tables(req).await?.into(),
+        FederationRequest::GetTable(req) => {
+            tracing::info!(
+                "resolveDoGetTableImplementation: resolving implementation - isQueryPassthrough[{}]",
+                req.is_query_passthrough()
+            );
+            let response = if req.is_query_passthrough() {
+                handler.get_query_passthrough_schema(req).await?
+            } else {
+                handler.get_table(req).await?
+            };
+            tracing::info!("doHandleRequest: response[{}]", response);
+            assert_types(response.schema())?;
+            return object_mapper
+                .write_response(&response.into())
+                .map(String::into_bytes);
+        }
+        FederationRequest::GetTableLayout(req) => {
+            handler.get_table_layout(allocator, req).await?.into()
+        }
+        FederationRequest::GetSplits(req) => {
+            handler
+                .context()
+                .check_spill_bucket(require_identity(req.identity())?)
+                .await?;
+            handler.get_splits(req).await?.into()
+        }
+        FederationRequest::GetDataSourceCapabilities(req) => {
+            handler.get_data_source_capabilities(req).await?.into()
+        }
+        other => {
+            return Err(FederationError::invalid_input(format!(
                 "Unknown request type {}",
                 other.type_name()
-            ))),
+            )))
         }
-    }
+    };
+    tracing::info!("doHandleRequest: response[{}]", response);
+    object_mapper
+        .write_response(&response)
+        .map(String::into_bytes)
 }
 
 fn assert_types(schema: &Schema) -> Result<()> {

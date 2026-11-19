@@ -1,6 +1,6 @@
 use athena_federation_sdk::{FederationError, Result};
 
-use crate::sql::JdbcConnection;
+use crate::sql::{JdbcConnection, SqlException};
 
 pub(crate) fn not_blank<'a>(value: Option<&'a str>, message: &str) -> Result<&'a str> {
     match value {
@@ -35,14 +35,18 @@ pub(crate) fn null_pointer(message: impl Into<String>) -> FederationError {
     FederationError::null_pointer(message)
 }
 
-pub(crate) async fn close_after<T>(
-    connection: &dyn JdbcConnection,
-    result: Result<T>,
-) -> Result<T> {
+pub async fn close_after<T>(connection: &dyn JdbcConnection, result: Result<T>) -> Result<T> {
     let closed = connection.close().await;
     match (result, closed) {
         (Err(e), _) => Err(e),
         (Ok(_), Err(e)) => Err(e.into()),
         (Ok(v), Ok(())) => Ok(v),
+    }
+}
+
+pub fn internal_service_error(error: FederationError) -> FederationError {
+    match SqlException::from_federation_error(&error) {
+        Some(sql) => FederationError::internal(sql.message()),
+        None => error,
     }
 }

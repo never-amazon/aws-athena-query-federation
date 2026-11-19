@@ -7,7 +7,7 @@ use athena_federation_sdk::data::{
     Block, BlockAllocator, BlockAllocatorImpl, DefaultFieldResolver, FieldReader, Value,
 };
 use athena_federation_sdk::handlers::{
-    JavaType, UdfMethod, UdfMethods, UserDefinedFunctionHandler, UserDefinedFunctionHandlerExt,
+    process_function, JavaType, UdfMethod, UdfMethods, UserDefinedFunctionHandler,
     UserDefinedFunctionStreamHandler,
 };
 use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
@@ -320,15 +320,15 @@ impl UserDefinedFunctionHandler for TestUserDefinedFunctionHandler {
 }
 
 struct Setup {
-    handler: TestUserDefinedFunctionHandler,
+    handler: Arc<TestUserDefinedFunctionHandler>,
     allocator: Arc<dyn BlockAllocator>,
 }
 
 fn set_up() -> Setup {
     Setup {
-        handler: TestUserDefinedFunctionHandler {
+        handler: Arc::new(TestUserDefinedFunctionHandler {
             methods: udf_methods(),
-        },
+        }),
         allocator: Arc::new(BlockAllocatorImpl::new()),
     }
 }
@@ -465,7 +465,7 @@ fn process(
     argument_types: &[ArgType],
 ) -> Block {
     let request = create_udf_request(s, row_count, return_type, method_name, true, argument_types);
-    let response = s.handler.process_function(&s.allocator, &request).unwrap();
+    let response = process_function(s.handler.as_ref(), s.allocator.as_ref(), &request).unwrap();
     let block = response.records().clone();
     assert_eq!(1, block.field_readers().len());
     assert_eq!(row_count, block.row_count());
@@ -670,10 +670,7 @@ fn first_row_write_failure_wins_over_later_invoke_failure() {
         "decbad",
         UserDefinedFunctionType::Scalar,
     );
-    let err = s
-        .handler
-        .process_function(&s.allocator, &request)
-        .unwrap_err();
+    let err = process_function(s.handler.as_ref(), s.allocator.as_ref(), &request).unwrap_err();
     assert_eq!(
         "java.lang.UnsupportedOperationException",
         err.java_class_name()
@@ -733,7 +730,7 @@ fn test_invocation_with_null_value() {
         false,
         &[ArgType::Integer],
     );
-    let response = s.handler.process_function(&s.allocator, &request).unwrap();
+    let response = process_function(s.handler.as_ref(), s.allocator.as_ref(), &request).unwrap();
     let block = response.records();
     assert_eq!(1, block.field_readers().len());
     assert_eq!(20, block.row_count());
@@ -756,8 +753,7 @@ async fn test_request_type_validation() {
         .write_request(&federation_request)
         .map(String::into_bytes)
         .unwrap();
-    let err = s
-        .handler
+    let err = UserDefinedFunctionStreamHandler::new(s.handler)
         .handle_request(&input_data, None)
         .await
         .unwrap_err();
@@ -780,7 +776,10 @@ async fn ping_handle_request() {
         .write_request(&ping_request)
         .map(String::into_bytes)
         .unwrap();
-    let output = s.handler.handle_request(&input, None).await.unwrap();
+    let output = UserDefinedFunctionStreamHandler::new(Arc::clone(&s.handler))
+        .handle_request(&input, None)
+        .await
+        .unwrap();
     let response = object_mapper.read_response(&output).unwrap();
     assert!(matches!(response, FederationResponse::Ping(_)));
 }
@@ -796,7 +795,10 @@ async fn udf_handle_request() {
         .write_request(&request)
         .map(String::into_bytes)
         .unwrap();
-    let output = s.handler.handle_request(&input, None).await.unwrap();
+    let output = UserDefinedFunctionStreamHandler::new(Arc::clone(&s.handler))
+        .handle_request(&input, None)
+        .await
+        .unwrap();
     let base_response = object_mapper.read_response(&output).unwrap();
     assert!(matches!(
         base_response,
@@ -816,7 +818,10 @@ async fn zero_argument_udf_handle_request() {
         .write_request(&request)
         .map(String::into_bytes)
         .unwrap();
-    let output = s.handler.handle_request(&input, None).await.unwrap();
+    let output = UserDefinedFunctionStreamHandler::new(Arc::clone(&s.handler))
+        .handle_request(&input, None)
+        .await
+        .unwrap();
     let FederationResponse::UserDefinedFunction(response) =
         object_mapper.read_response(&output).unwrap()
     else {
@@ -838,10 +843,7 @@ fn test_method_not_found() {
         true,
         &[ArgType::Integer, ArgType::Integer],
     );
-    let err = s
-        .handler
-        .process_function(&s.allocator, &request)
-        .unwrap_err();
+    let err = process_function(s.handler.as_ref(), s.allocator.as_ref(), &request).unwrap_err();
     assert!(
         matches!(err, FederationError::AthenaConnector(_)),
         "{err:?}"

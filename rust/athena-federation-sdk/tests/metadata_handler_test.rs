@@ -11,10 +11,7 @@ use athena_federation_sdk::domain::predicate::Constraints;
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{
-    FederationRequestHandler, MetadataHandler, MetadataHandlerBase, MetadataHandlerExt,
-    MetadataStreamHandler,
-};
+use athena_federation_sdk::handlers::{MetadataContext, MetadataHandler, MetadataStreamHandler};
 use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::{
     GetDataSourceCapabilitiesRequest, GetSplitsRequest, GetSplitsResponse, GetTableLayoutRequest,
@@ -23,9 +20,7 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
-use athena_federation_sdk::security::{
-    CachableSecretsManager, FederatedIdentity, KeySource, KmsEncryptionProvider,
-};
+use athena_federation_sdk::security::{FederatedIdentity, KeySource};
 use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::{Fakes, RecordingAllocator};
@@ -37,28 +32,17 @@ const TABLE_NAME: &str = "testTable";
 const PARTITION_COL: &str = "partition_col";
 
 struct TestHandler {
-    base: MetadataHandlerBase,
-}
-
-impl FederationRequestHandler for TestHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.kms_encryption_provider()
-    }
+    context: MetadataContext,
 }
 
 #[async_trait]
 impl MetadataHandler for TestHandler {
-    fn metadata_base(&self) -> &MetadataHandlerBase {
-        &self.base
+    fn context(&self) -> &MetadataContext {
+        &self.context
     }
 
-    async fn do_list_schema_names(
+    async fn list_schema_names(
         &self,
-        _allocator: &Arc<dyn BlockAllocator>,
         _request: &ListSchemasRequest,
     ) -> Result<ListSchemasResponse> {
         Ok(ListSchemasResponse::new(
@@ -67,11 +51,7 @@ impl MetadataHandler for TestHandler {
         ))
     }
 
-    async fn do_list_tables(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        request: &ListTablesRequest,
-    ) -> Result<ListTablesResponse> {
+    async fn list_tables(&self, request: &ListTablesRequest) -> Result<ListTablesResponse> {
         let schema_name = request.schema_name().unwrap_or_default();
         if schema_name == "throw_io" {
             return Err(std::io::Error::other("io boom").into());
@@ -87,11 +67,7 @@ impl MetadataHandler for TestHandler {
         ))
     }
 
-    async fn do_get_table(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        request: &GetTableRequest,
-    ) -> Result<GetTableResponse> {
+    async fn get_table(&self, request: &GetTableRequest) -> Result<GetTableResponse> {
         let schema = SchemaBuilder::new_builder()
             .add_string_field("id")
             .add_int_field("age")
@@ -116,17 +92,13 @@ impl MetadataHandler for TestHandler {
         })
     }
 
-    async fn do_get_splits(
-        &self,
-        _allocator: &Arc<dyn BlockAllocator>,
-        _request: &GetSplitsRequest,
-    ) -> Result<GetSplitsResponse> {
+    async fn get_splits(&self, _request: &GetSplitsRequest) -> Result<GetSplitsResponse> {
         Err(FederationError::UnsupportedOperation(String::new()))
     }
 }
 
 struct Setup {
-    handler: TestHandler,
+    handler: Arc<TestHandler>,
     block_allocator: Arc<dyn BlockAllocator>,
 }
 
@@ -135,7 +107,7 @@ fn set_up() -> Setup {
         ("spill_bucket".to_string(), "bucket".to_string()),
         ("spill_prefix".to_string(), "prefix".to_string()),
     ]);
-    let base = MetadataHandlerBase::builder("test", Fakes::new().clients())
+    let context = MetadataContext::builder("test", Fakes::new().clients())
         .config_options(config_options)
         .encryption_key_factory(Some(KeySource::Local))
         .spill_bucket(Some("bucket".into()))
@@ -143,7 +115,7 @@ fn set_up() -> Setup {
         .build()
         .unwrap();
     Setup {
-        handler: TestHandler { base },
+        handler: Arc::new(TestHandler { context }),
         block_allocator: Arc::new(BlockAllocatorImpl::new()),
     }
 }
@@ -173,7 +145,9 @@ async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<Federat
     let input = object_mapper
         .write_request(&request)
         .map(String::into_bytes)?;
-    let output = setup.handler.handle_request(&input, None).await?;
+    let output = MetadataStreamHandler::new(Arc::clone(&setup.handler))
+        .handle_request(&input, None)
+        .await?;
     object_mapper.read_response(&output)
 }
 
@@ -183,7 +157,7 @@ async fn do_get_table_layout() {
     let request = layout_request(SchemaBuilder::new_builder().build(), &[]);
     let response = s
         .handler
-        .do_get_table_layout(&s.block_allocator, &request)
+        .get_table_layout(s.block_allocator.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(1, response.partitions().row_count());
@@ -205,7 +179,7 @@ async fn do_get_table_layout_with_constraints() {
     let spy_allocator: Arc<dyn BlockAllocator> = recording.clone();
     let response = s
         .handler
-        .do_get_table_layout(&spy_allocator, &request)
+        .get_table_layout(spy_allocator.as_ref(), &request)
         .await
         .unwrap();
     assert_eq!(1, response.partitions().row_count());
@@ -274,7 +248,7 @@ async fn do_get_table_layout_with_missing_partition_column() {
     );
     let err = s
         .handler
-        .do_get_table_layout(&s.block_allocator, &request)
+        .get_table_layout(s.block_allocator.as_ref(), &request)
         .await
         .unwrap_err();
     assert_eq!(
@@ -298,7 +272,7 @@ async fn java_field_not_found_message_lists_children_and_nullability() {
     let s = set_up();
     let err = s
         .handler
-        .do_get_table_layout(&s.block_allocator, &request)
+        .get_table_layout(s.block_allocator.as_ref(), &request)
         .await
         .unwrap_err();
     assert_eq!(

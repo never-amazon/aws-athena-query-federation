@@ -108,3 +108,45 @@ impl<T: JdbcFederationExpressionParser + ?Sized> JdbcFederationExpressionParserE
         Ok(format!("({clause})"))
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StandardFederationExpressionParser {
+    quote_char: String,
+}
+
+impl StandardFederationExpressionParser {
+    pub fn new(quote_char: impl Into<String>) -> StandardFederationExpressionParser {
+        StandardFederationExpressionParser {
+            quote_char: quote_char.into(),
+        }
+    }
+}
+
+impl FederationExpressionParser for StandardFederationExpressionParser {
+    fn map_function_to_data_source_syntax(
+        &self,
+        function_name: &FunctionName,
+        arrow_type: &ArrowType,
+        arguments: &[String],
+    ) -> Result<String> {
+        self.jdbc_map_function_to_data_source_syntax(function_name, arrow_type, arguments)
+    }
+
+    fn parse_variable_expression(&self, variable_expression: &VariableExpression) -> String {
+        self.jdbc_parse_variable_expression(variable_expression)
+    }
+}
+
+impl JdbcFederationExpressionParser for StandardFederationExpressionParser {
+    fn quote_char(&self) -> &str {
+        &self.quote_char
+    }
+
+    fn write_array_constructor_clause(
+        &self,
+        _arrow_type: &ArrowType,
+        arguments: &[String],
+    ) -> Result<String> {
+        Ok(arguments.join(", "))
+    }
+}

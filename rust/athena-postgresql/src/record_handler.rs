@@ -3,50 +3,71 @@ use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
-use athena_federation_sdk::data::{ArrowType, BlockAllocator, BlockSpiller, SupportedTypes};
-use athena_federation_sdk::domain::predicate::Constraints;
-use athena_federation_sdk::domain::split::Split;
-use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{
-    AwsClients, FederationRequestHandler, RecordHandler, RecordHandlerBase,
-};
-use athena_federation_sdk::records::ReadRecordsRequest;
-use athena_federation_sdk::request::FederationResponse;
-use athena_federation_sdk::security::{CachableSecretsManager, KmsEncryptionProvider};
-use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
+use athena_federation_sdk::data::{ArrowType, SupportedTypes};
+use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
+use athena_federation_sdk::{FederationError, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::internal_service_error;
 use athena_jdbc::manager::{
-    get_arrow_type_from_jdbc_type, JdbcArrowTypeConverter, JdbcRecordHandler,
-    JdbcRecordHandlerBase, JdbcRecordHandlerExt, JdbcSplitQueryBuilder, JdbcUtil,
+    get_arrow_type_from_jdbc_type, ConnectionSource, JdbcArrowTypeConverter, JdbcRecordHandler,
+    JdbcSplitQueryBuilder, JdbcUtil, RecordDialect, SplitQuery,
 };
-use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, SqlException, Types};
+use athena_jdbc::sql::{JdbcConnection, PreparedStatement, ResultSetMetaData, Types};
 
 use crate::constants::PostGreSqlConstants;
 use crate::federation_expression_parser::PostgreSqlFederationExpressionParser;
-use crate::metadata_handler::PostGreSqlMetadataHandler;
+use crate::metadata_handler::PostGreSqlMetadataDialect;
 use crate::query_string_builder::PostGreSqlQueryStringBuilder;
 
 const FETCH_SIZE: i32 = 1000;
 
-pub struct PostGreSqlRecordHandler {
-    base: JdbcRecordHandlerBase,
-    jdbc_split_query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+pub struct PostGreSqlRecordDialect {
+    query_builder: Arc<dyn JdbcSplitQueryBuilder>,
 }
 
-fn internal_service_error(error: FederationError) -> FederationError {
-    match SqlException::from_federation_error(&error) {
-        Some(sql) => FederationError::internal(sql.message()),
-        None => error,
-    }
-}
+pub type PostGreSqlRecordHandler = JdbcRecordHandler<PostGreSqlRecordDialect>;
 
-impl PostGreSqlRecordHandler {
-    pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
-        Arc::new(PostGreSqlQueryStringBuilder::new(
+pub fn default_query_builder() -> Arc<dyn JdbcSplitQueryBuilder> {
+    Arc::new(PostGreSqlQueryStringBuilder::new(
+        PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
+        Arc::new(PostgreSqlFederationExpressionParser::new(
             PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-            Arc::new(PostgreSqlFederationExpressionParser::new(
-                PostGreSqlConstants::POSTGRES_QUOTE_CHARACTER,
-            )),
+        )),
+    ))
+}
+
+impl PostGreSqlRecordDialect {
+    pub fn handler(
+        context: HandlerContext,
+        config: DatabaseConnectionConfig,
+        connection_factory: Arc<dyn JdbcConnectionFactory>,
+        query_builder: Arc<dyn JdbcSplitQueryBuilder>,
+    ) -> PostGreSqlRecordHandler {
+        JdbcRecordHandler::new(
+            context,
+            ConnectionSource::Direct {
+                config,
+                factory: connection_factory,
+            },
+            PostGreSqlRecordDialect { query_builder },
+        )
+    }
+
+    pub fn from_config(
+        clients: AwsClients,
+        config: DatabaseConnectionConfig,
+        config_options: HashMap<String, String>,
+    ) -> Result<PostGreSqlRecordHandler> {
+        let factory = Arc::new(PostGreSqlMetadataDialect::connection_factory(
+            &config,
+            &config_options,
+        )?);
+        let context = HandlerContext::new(config.engine(), clients, config_options)?;
+        Ok(PostGreSqlRecordDialect::handler(
+            context,
+            config,
+            factory,
+            default_query_builder(),
         ))
     }
 
@@ -58,135 +79,59 @@ impl PostGreSqlRecordHandler {
             PostGreSqlConstants::POSTGRES_NAME,
             &config_options,
         )?;
-        PostGreSqlRecordHandler::new(clients, config, config_options)
+        PostGreSqlRecordDialect::from_config(clients, config, config_options)
     }
+}
 
-    pub fn new(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        config_options: HashMap<String, String>,
-    ) -> Result<PostGreSqlRecordHandler> {
-        let factory = Arc::new(PostGreSqlMetadataHandler::connection_factory(
-            &config,
-            &config_options,
-        )?);
-        PostGreSqlRecordHandler::with_query_builder(
-            clients,
-            config,
-            factory,
-            PostGreSqlRecordHandler::default_query_builder(),
-            config_options,
-        )
+fn export_arrow_type(
+    config_options: &HashMap<String, String>,
+    metadata: &ResultSetMetaData,
+    column: usize,
+) -> Result<ArrowType> {
+    let column_type = metadata.column_type(column)?;
+    let precision = metadata.precision(column)?;
+    let scale = metadata.scale(column)?;
+    if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
+        return Ok(
+            JdbcArrowTypeConverter::to_arrow_type(Types::NUMERIC, 0, 0, config_options)?
+                .unwrap_or(DataType::Utf8),
+        );
     }
-
-    pub fn with_query_builder(
-        clients: AwsClients,
-        config: DatabaseConnectionConfig,
-        jdbc_connection_factory: Arc<dyn JdbcConnectionFactory>,
-        jdbc_split_query_builder: Arc<dyn JdbcSplitQueryBuilder>,
-        config_options: HashMap<String, String>,
-    ) -> Result<PostGreSqlRecordHandler> {
-        let record_base = RecordHandlerBase::new(config.engine(), clients, config_options)?;
-        Ok(PostGreSqlRecordHandler {
-            base: JdbcRecordHandlerBase::new(record_base, config, jdbc_connection_factory),
-            jdbc_split_query_builder,
-        })
-    }
-
-    fn export_arrow_type(&self, metadata: &ResultSetMetaData, column: usize) -> Result<ArrowType> {
-        let column_type = metadata.column_type(column)?;
-        let precision = metadata.precision(column)?;
-        let scale = metadata.scale(column)?;
-        if column_type == Types::NUMERIC && precision == 0 && scale <= 0 {
-            return Ok(JdbcArrowTypeConverter::to_arrow_type(
-                Types::NUMERIC,
-                0,
-                0,
-                self.base.config_options(),
-            )?
-            .unwrap_or(DataType::Utf8));
-        }
-        match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {
+    match get_arrow_type_from_jdbc_type(column_type, precision, scale, Some("UTC")) {
+        Ok(arrow_type)
+            if SupportedTypes::is_supported_arrow_type(&arrow_type)
+                && !matches!(arrow_type, DataType::List(_)) =>
+        {
             Ok(arrow_type)
-                if SupportedTypes::is_supported_arrow_type(&arrow_type)
-                    && !matches!(arrow_type, DataType::List(_)) =>
-            {
-                Ok(arrow_type)
-            }
-            Ok(_) | Err(FederationError::UnsupportedOperation(_)) => Ok(DataType::Utf8),
-            Err(other) => Err(other),
         }
-    }
-}
-
-impl FederationRequestHandler for PostGreSqlRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.record_base().cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.record_base().kms_encryption_provider()
-    }
-
-    fn database_connection_secret(&self) -> Option<&str> {
-        self.jdbc_database_connection_secret()
+        Ok(_) | Err(FederationError::UnsupportedOperation(_)) => Ok(DataType::Utf8),
+        Err(other) => Err(other),
     }
 }
 
 #[async_trait]
-impl RecordHandler for PostGreSqlRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        self.base.record_base()
-    }
-
-    async fn do_read_records(
-        &self,
-        allocator: &Arc<dyn BlockAllocator>,
-        request: &ReadRecordsRequest,
-    ) -> Result<FederationResponse> {
-        self.jdbc_do_read_records(allocator, request).await
-    }
-
-    async fn read_with_constraint(
-        &self,
-        spiller: &dyn BlockSpiller,
-        request: &ReadRecordsRequest,
-        query_status_checker: &QueryStatusChecker,
-    ) -> Result<()> {
-        self.jdbc_read_with_constraint(spiller, request, query_status_checker)
-            .await
-    }
-}
-
-#[async_trait]
-impl JdbcRecordHandler for PostGreSqlRecordHandler {
-    fn jdbc_record_base(&self) -> &JdbcRecordHandlerBase {
-        &self.base
-    }
-
+impl RecordDialect for PostGreSqlRecordDialect {
     async fn build_split_sql(
         &self,
-        jdbc_connection: &dyn JdbcConnection,
-        _catalog_name: &str,
-        table_name: &TableName,
-        schema: &Schema,
-        constraints: &Constraints,
-        split: &Split,
+        handler: &PostGreSqlRecordHandler,
+        connection: &dyn JdbcConnection,
+        query: &SplitQuery<'_>,
     ) -> Result<PreparedStatement> {
         let result = async {
-            let mut prepared_statement = if constraints.is_query_pass_through() {
-                self.build_query_passthrough_sql(jdbc_connection, constraints)
+            let mut prepared_statement = if query.constraints.is_query_pass_through() {
+                handler
+                    .build_query_passthrough_sql(connection, query.constraints)
                     .await?
             } else {
-                self.jdbc_split_query_builder
+                self.query_builder
                     .build_sql(
-                        jdbc_connection,
+                        connection,
                         "",
-                        table_name.schema_name(),
-                        table_name.table_name(),
-                        schema,
-                        constraints,
-                        split,
+                        query.table_name.schema_name(),
+                        query.table_name.table_name(),
+                        query.schema,
+                        query.constraints,
+                        query.split,
                     )
                     .await?
             };
@@ -207,12 +152,16 @@ impl JdbcRecordHandler for PostGreSqlRecordHandler {
         Ok(prepared_statement)
     }
 
-    fn derive_export_schema(&self, metadata: &ResultSetMetaData) -> Result<Schema> {
+    fn derive_export_schema(
+        &self,
+        handler: &PostGreSqlRecordHandler,
+        metadata: &ResultSetMetaData,
+    ) -> Result<Schema> {
         let mut fields = Vec::with_capacity(metadata.column_count());
         for column in 1..=metadata.column_count() {
             fields.push(Field::new(
                 metadata.column_label(column)?,
-                self.export_arrow_type(metadata, column)?,
+                export_arrow_type(handler.config_options(), metadata, column)?,
                 true,
             ));
         }

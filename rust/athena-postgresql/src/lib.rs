@@ -12,16 +12,22 @@ mod record_handler;
 mod resolver;
 mod sql_dialect;
 
-pub use composite_handler::PostGreSqlCompositeHandler;
+pub use composite_handler::composite_handler_from_environment;
 pub use constants::PostGreSqlConstants;
 pub use driver::{PgConnection, PgDatabaseMetaData, PgDriver, POSTGRESQL_DRIVER_CLASS};
 pub use environment_properties::PostGreSqlEnvironmentProperties;
 pub use federation_expression_parser::PostgreSqlFederationExpressionParser;
-pub use metadata_handler::PostGreSqlMetadataHandler;
-pub use mux_composite_handler::PostGreSqlMuxCompositeHandler;
-pub use mux_metadata_handler::{PostGreSqlMetadataHandlerFactory, PostGreSqlMuxMetadataHandler};
-pub use mux_record_handler::{PostGreSqlMuxRecordHandler, PostGreSqlRecordHandlerFactory};
+pub use metadata_handler::{
+    escape_identifier, get_char_columns, get_split_clauses, is_valid_split_column, jdbc_properties,
+    wrap_name_with_escaped_character, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler,
+    ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME, BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
+    DEFAULT_NUM_SPLITS, GET_PARTITIONS_QUERY, JDBC_PROPERTIES, LIST_PAGINATED_TABLES_QUERY,
+    NON_DEFAULT_COLLATE, SQL_SPLITS_STRING,
+};
+pub use mux_composite_handler::mux_composite_handler_from_environment;
+pub use mux_metadata_handler::PostGreSqlMuxMetadataHandler;
+pub use mux_record_handler::PostGreSqlMuxRecordHandler;
 pub use query_string_builder::PostGreSqlQueryStringBuilder;
-pub use record_handler::PostGreSqlRecordHandler;
+pub use record_handler::{default_query_builder, PostGreSqlRecordDialect, PostGreSqlRecordHandler};
 pub use resolver::PostGreSqlJdbcCaseResolver;
 pub use sql_dialect::PostgresqlSqlDialect;

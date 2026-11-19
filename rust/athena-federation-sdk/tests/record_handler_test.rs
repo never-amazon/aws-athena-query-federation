@@ -13,17 +13,12 @@ use athena_federation_sdk::domain::predicate::{Constraints, Range, SortedRangeSe
 use athena_federation_sdk::domain::spill::S3SpillLocation;
 use athena_federation_sdk::domain::split::Split;
 use athena_federation_sdk::domain::table_name::TableName;
-use athena_federation_sdk::handlers::{
-    FederationRequestHandler, RecordHandler, RecordHandlerBase, RecordHandlerExt,
-    RecordStreamHandler,
-};
+use athena_federation_sdk::handlers::{HandlerContext, RecordHandler, RecordStreamHandler};
 use athena_federation_sdk::lambda::{LambdaError, RequestStreamHandler};
 use athena_federation_sdk::metadata::{GetDataSourceCapabilitiesRequest, ListSchemasRequest};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::request::{FederationRequest, FederationResponse, PingRequest};
-use athena_federation_sdk::security::{
-    CachableSecretsManager, FederatedIdentity, KeySource, KmsEncryptionProvider,
-};
+use athena_federation_sdk::security::{FederatedIdentity, KeySource};
 use athena_federation_sdk::serde::{ObjectMapper, SerdeVersion};
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use handler_support::Fakes;
@@ -33,23 +28,13 @@ const CATALOG: &str = "catalog";
 const QUERY_ID: &str = "queryId";
 
 struct TestRecordHandler {
-    base: RecordHandlerBase,
-}
-
-impl FederationRequestHandler for TestRecordHandler {
-    fn cachable_secrets_manager(&self) -> &CachableSecretsManager {
-        self.base.cachable_secrets_manager()
-    }
-
-    fn kms_encryption_provider(&self) -> &KmsEncryptionProvider {
-        self.base.kms_encryption_provider()
-    }
+    context: HandlerContext,
 }
 
 #[async_trait]
 impl RecordHandler for TestRecordHandler {
-    fn record_base(&self) -> &RecordHandlerBase {
-        &self.base
+    fn context(&self) -> &HandlerContext {
+        &self.context
     }
 
     async fn read_with_constraint(
@@ -64,7 +49,7 @@ impl RecordHandler for TestRecordHandler {
 
 struct Setup {
     fakes: Fakes,
-    handler: TestRecordHandler,
+    handler: Arc<TestRecordHandler>,
     block_allocator: Arc<dyn BlockAllocator>,
 }
 
@@ -74,10 +59,10 @@ fn set_up() -> Setup {
         ("spill_bucket".to_string(), "bucket".to_string()),
         ("spill_prefix".to_string(), "prefix".to_string()),
     ]);
-    let base = RecordHandlerBase::new("test", fakes.clients(), config_options).unwrap();
+    let context = HandlerContext::new("test", fakes.clients(), config_options).unwrap();
     Setup {
         fakes,
-        handler: TestRecordHandler { base },
+        handler: Arc::new(TestRecordHandler { context }),
         block_allocator: Arc::new(BlockAllocatorImpl::new()),
     }
 }
@@ -92,7 +77,9 @@ async fn round_trip(setup: &Setup, request: FederationRequest) -> Result<Federat
     let input = object_mapper
         .write_request(&request)
         .map(String::into_bytes)?;
-    let output = setup.handler.handle_request(&input, None).await?;
+    let output = RecordStreamHandler::new(Arc::clone(&setup.handler))
+        .handle_request(&input, None)
+        .await?;
     object_mapper.read_response(&output)
 }
 
@@ -114,8 +101,7 @@ async fn handle_request() {
 #[tokio::test]
 async fn handle_request_catch_block() {
     let s = set_up();
-    let err = s
-        .handler
+    let err = RecordStreamHandler::new(s.handler)
         .handle_request(b"invalid json", None)
         .await
         .unwrap_err();
@@ -183,7 +169,7 @@ async fn do_read_records_spill() {
 
     let raw_response = s
         .handler
-        .do_read_records(&s.block_allocator, &request)
+        .read_records(&s.block_allocator, &request)
         .await
         .unwrap();
     let FederationResponse::RemoteReadRecords(response) = raw_response else {
