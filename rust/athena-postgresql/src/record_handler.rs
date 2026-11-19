@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use athena_federation_sdk::data::{minor_type_of, ArrowType};
 use athena_federation_sdk::handlers::{AwsClients, HandlerContext};
 use athena_federation_sdk::{FederationError, Result};
+use athena_jdbc::arrow_type::{get_arrow_type_from_jdbc_type, jdbc_to_arrow_type};
+use athena_jdbc::connection::single_database_config_from_env;
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
+use athena_jdbc::handler::{ConnectionSource, JdbcRecordHandler, RecordDialect};
 use athena_jdbc::internal_service_error;
-use athena_jdbc::manager::{
-    get_arrow_type_from_jdbc_type, jdbc_to_arrow_type, jdbc_util, ConnectionSource,
-    JdbcRecordHandler, RecordDialect, SplitQuery,
-};
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{
     ColumnMetadata, JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData,
 };
@@ -63,8 +63,7 @@ impl PostGreSqlRecordDialect {
         clients: AwsClients,
         config_options: HashMap<String, String>,
     ) -> Result<PostGreSqlRecordHandler> {
-        let config =
-            jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
+        let config = single_database_config_from_env(constants::POSTGRES_NAME, &config_options)?;
         PostGreSqlRecordDialect::from_config(clients, config, config_options)
     }
 }

@@ -7,7 +7,7 @@ use athena_federation_sdk::domain::predicate::{
     StandardFunctions, VariableExpression, DEFAULT_CONSTANT_EXPRESSION_BLOCK_NAME,
     DEFAULT_NO_LIMIT,
 };
-use athena_jdbc::manager::{ExpressionParser, TypeAndValue};
+use athena_jdbc::query::{ExpressionParser, TypeAndValue};
 use indexmap::IndexMap;
 
 const ADD: StandardFunctions = StandardFunctions::Add;

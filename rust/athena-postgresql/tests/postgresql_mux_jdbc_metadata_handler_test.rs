@@ -19,8 +19,8 @@ use athena_federation_sdk::metadata::{
 };
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::MetadataDelegate;
-use athena_jdbc::MultiplexingJdbcMetadataHandler;
+use athena_jdbc::handler::MetadataDelegate;
+use athena_jdbc::handler::MultiplexingJdbcMetadataHandler;
 use indexmap::{IndexMap, IndexSet};
 use jdbc_support::{addr, FakeConnection, FakeConnectionFactory, Fakes};
 

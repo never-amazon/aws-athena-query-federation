@@ -12,10 +12,10 @@ use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionInfo, JdbcConnectionFactory, JdbcProperties,
 };
 use athena_jdbc::sql::{JdbcConnection, SqlError};
+use athena_snowflake::auth::{SnowflakeAuthUtils, SnowflakePrivateKey};
 use athena_snowflake::connection::SnowflakeConnectionFactory;
-use athena_snowflake::snowflake_constants;
+use athena_snowflake::constants;
 use athena_snowflake::sql::{SnowflakeAuth, SnowflakeDriver};
-use athena_snowflake::utils::{SnowflakeAuthUtils, SnowflakePrivateKey};
 use snowflake_support::FakeConnection;
 
 const TESTUSER: &str = "testuser";
@@ -145,7 +145,7 @@ impl RecordingDriver {
 #[async_trait]
 impl SnowflakeDriver for RecordingDriver {
     fn driver_class_name(&self) -> &str {
-        snowflake_constants::SNOWFLAKE_DRIVER_CLASS
+        constants::SNOWFLAKE_DRIVER_CLASS
     }
 
     async fn connect(
@@ -212,8 +212,8 @@ fn factory_for(
         DatabaseConnectionConfig::new("default", "snowflake", connection_string).unwrap(),
         Some(properties),
         DatabaseConnectionInfo::new(
-            snowflake_constants::SNOWFLAKE_DRIVER_CLASS,
-            i32::from(snowflake_constants::SNOWFLAKE_DEFAULT_PORT),
+            constants::SNOWFLAKE_DRIVER_CLASS,
+            i32::from(constants::SNOWFLAKE_DEFAULT_PORT),
         )
         .unwrap(),
         None,
@@ -264,8 +264,8 @@ async fn test_get_connection_with_null_credentials_provider() {
 async fn test_get_connection_with_key_pair_auth() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     let connection = factory(&driver)
         .get_connection(Some(&provider))
@@ -279,11 +279,11 @@ async fn test_get_connection_with_key_pair_auth() {
     assert_eq!(valid_key(), calls[0].private_key);
     assert_eq!(
         Some(&TESTUSER.to_string()),
-        calls[0].properties.get(snowflake_constants::USER)
+        calls[0].properties.get(constants::USER)
     );
     assert_eq!(
         Some(&"snowflake_jwt".to_string()),
-        calls[0].properties.get(snowflake_constants::AUTHENTICATOR)
+        calls[0].properties.get(constants::AUTHENTICATOR)
     );
     assert!(driver.pooled_calls().is_empty());
 }
@@ -292,8 +292,8 @@ async fn test_get_connection_with_key_pair_auth() {
 async fn test_get_connection_with_key_pair_auth_using_username_field() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     let connection = factory(&driver)
         .get_connection(Some(&provider))
@@ -305,7 +305,7 @@ async fn test_get_connection_with_key_pair_auth_using_username_field() {
     assert_eq!(1, calls.len());
     assert_eq!(
         Some(&TESTUSER.to_string()),
-        calls[0].properties.get(snowflake_constants::USER)
+        calls[0].properties.get(constants::USER)
     );
     assert!(driver.pooled_calls().is_empty());
 }
@@ -314,8 +314,8 @@ async fn test_get_connection_with_key_pair_auth_using_username_field() {
 async fn test_get_connection_with_password_auth() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     let connection = factory(&driver)
         .get_connection(Some(&provider))
@@ -328,7 +328,7 @@ async fn test_get_connection_with_password_auth() {
     assert_eq!(CONNECTION_STRING, calls[0].0);
     assert_eq!(
         Some(&TESTPASSWORD.to_string()),
-        calls[0].1.get(snowflake_constants::PASSWORD)
+        calls[0].1.get(constants::PASSWORD)
     );
     assert!(driver.key_pair_calls().is_empty());
 }
@@ -337,8 +337,8 @@ async fn test_get_connection_with_password_auth() {
 async fn test_get_connection_with_o_auth_auth() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::AUTH_CODE, "test-auth-code"),
+        (constants::USER, TESTUSER),
+        (constants::AUTH_CODE, "test-auth-code"),
     ]);
     let connection = factory(&driver)
         .get_connection(Some(&provider))
@@ -350,7 +350,7 @@ async fn test_get_connection_with_o_auth_auth() {
     assert_eq!(1, calls.len());
     assert_eq!(
         Some(&"test-auth-code".to_string()),
-        calls[0].1.get(snowflake_constants::AUTH_CODE)
+        calls[0].1.get(constants::AUTH_CODE)
     );
     assert!(driver.key_pair_calls().is_empty());
 }
@@ -359,9 +359,9 @@ async fn test_get_connection_with_o_auth_auth() {
 async fn test_get_connection_with_key_pair_auth_and_private_key_creation_exception() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
+        (constants::USER, TESTUSER),
         (
-            snowflake_constants::PEM_PRIVATE_KEY,
+            constants::PEM_PRIVATE_KEY,
             "-----BEGIN PRIVATE KEY-----\nnot-a-private-key\n-----END PRIVATE KEY-----",
         ),
     ]);
@@ -380,8 +380,8 @@ async fn test_get_connection_with_key_pair_auth_and_generic_exception() {
     let driver = RecordingDriver::new();
     *driver.key_pair_error.lock().unwrap() = Some(SqlError::new("Generic error"));
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     let error = factory(&driver)
         .get_connection(Some(&provider))
@@ -395,8 +395,8 @@ async fn test_get_connection_with_key_pair_auth_and_generic_exception() {
 #[tokio::test]
 async fn test_build_connection_string_with_secret_placeholders() {
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
 
     let driver = RecordingDriver::new();
@@ -446,10 +446,8 @@ async fn test_get_connection_with_key_pair_auth_and_missing_username() {
     let error = factory.get_connection(Some(&empty)).await.err().unwrap();
     assert_illegal_argument(&error, "Credentials cannot be null or empty");
 
-    let provider = MapCredentialsProvider::new(&[(
-        snowflake_constants::PEM_PRIVATE_KEY,
-        VALID_PRIVATE_KEY_PEM,
-    )]);
+    let provider =
+        MapCredentialsProvider::new(&[(constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM)]);
     let error = factory.get_connection(Some(&provider)).await.err().unwrap();
     assert_key_pair_failure(&error, "null");
     assert!(driver.key_pair_calls().is_empty());
@@ -468,8 +466,8 @@ async fn test_get_connection_with_key_pair_auth_and_missing_private_key() {
     assert!(driver.pooled_calls().is_empty());
 
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, " "),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, " "),
     ]);
     factory.get_connection(Some(&provider)).await.unwrap();
     assert!(driver.key_pair_calls().is_empty());
@@ -480,12 +478,9 @@ async fn test_get_connection_with_key_pair_auth_and_missing_private_key() {
 async fn test_get_connection_with_encrypted_key_pair_auth() {
     let driver = RecordingDriver::new();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (
-            snowflake_constants::PEM_PRIVATE_KEY,
-            ENCRYPTED_PRIVATE_KEY_PEM_PBES2,
-        ),
-        (snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, ENCRYPTED_PRIVATE_KEY_PEM_PBES2),
+        (constants::PEM_PRIVATE_KEY_PASSPHRASE, PASSPHRASE),
     ]);
     let connection = factory(&driver)
         .get_connection(Some(&provider))
@@ -498,16 +493,16 @@ async fn test_get_connection_with_encrypted_key_pair_auth() {
     assert_eq!(valid_key(), calls[0].private_key);
     assert!(!calls[0]
         .properties
-        .contains_key(snowflake_constants::PEM_PRIVATE_KEY_PASSPHRASE));
+        .contains_key(constants::PEM_PRIVATE_KEY_PASSPHRASE));
 }
 
 #[tokio::test]
 async fn get_connection_password_auth_uses_pool_not_driver_manager() {
     let driver = RecordingDriver::unreachable_host();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USERNAME, TESTUSER),
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USERNAME, TESTUSER),
+        (constants::USER, TESTUSER),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     let error = factory(&driver)
         .get_connection(Some(&provider))
@@ -523,8 +518,8 @@ async fn get_connection_password_auth_uses_pool_not_driver_manager() {
 async fn get_connection_oauth_auth_uses_pool_not_driver_manager() {
     let driver = RecordingDriver::unreachable_host();
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::AUTH_CODE, "test-auth-code"),
+        (constants::USER, TESTUSER),
+        (constants::AUTH_CODE, "test-auth-code"),
         ("token", "some-oauth-token"),
     ]);
     let error = factory(&driver)
@@ -553,12 +548,12 @@ async fn get_connection_key_pair_after_password_does_not_send_earlier_password()
     let driver = RecordingDriver::unreachable_host();
     let factory = factory(&driver);
     let password_provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, "otheruser"),
-        (snowflake_constants::PASSWORD, TESTPASSWORD),
+        (constants::USER, "otheruser"),
+        (constants::PASSWORD, TESTPASSWORD),
     ]);
     let key_pair_provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
 
     assert!(factory
@@ -567,10 +562,7 @@ async fn get_connection_key_pair_after_password_does_not_send_earlier_password()
         .is_err());
     assert_eq!(
         Some(&TESTPASSWORD.to_string()),
-        factory
-            .generic()
-            .jdbc_properties()
-            .get(snowflake_constants::PASSWORD)
+        factory.generic().jdbc_properties().get(constants::PASSWORD)
     );
     factory
         .get_connection(Some(&key_pair_provider))
@@ -580,11 +572,8 @@ async fn get_connection_key_pair_after_password_does_not_send_earlier_password()
     let calls = driver.key_pair_calls();
     assert_eq!(1, calls.len());
     let properties = &calls[0].properties;
-    assert!(!properties.contains_key(snowflake_constants::PASSWORD));
-    assert_eq!(
-        Some(&TESTUSER.to_string()),
-        properties.get(snowflake_constants::USER)
-    );
+    assert!(!properties.contains_key(constants::PASSWORD));
+    assert_eq!(Some(&TESTUSER.to_string()), properties.get(constants::USER));
     assert_eq!(
         Some(&"test.value".to_string()),
         properties.get("test.property")
@@ -611,8 +600,8 @@ async fn key_pair_failure_keeps_the_java_cause() {
     let driver = RecordingDriver::new();
     *driver.key_pair_error.lock().unwrap() = Some(SqlError::snowflake("Generic error"));
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
-        (snowflake_constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
+        (constants::USER, TESTUSER),
+        (constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM),
     ]);
     let error = factory(&driver)
         .get_connection(Some(&provider))
@@ -627,10 +616,8 @@ async fn key_pair_failure_keeps_the_java_cause() {
         key_pair_causes(&error)
     );
 
-    let provider = MapCredentialsProvider::new(&[(
-        snowflake_constants::PEM_PRIVATE_KEY,
-        VALID_PRIVATE_KEY_PEM,
-    )]);
+    let provider =
+        MapCredentialsProvider::new(&[(constants::PEM_PRIVATE_KEY, VALID_PRIVATE_KEY_PEM)]);
     let error = factory(&driver)
         .get_connection(Some(&provider))
         .await
@@ -642,9 +629,9 @@ async fn key_pair_failure_keeps_the_java_cause() {
     );
 
     let provider = MapCredentialsProvider::new(&[
-        (snowflake_constants::USER, TESTUSER),
+        (constants::USER, TESTUSER),
         (
-            snowflake_constants::PEM_PRIVATE_KEY,
+            constants::PEM_PRIVATE_KEY,
             "-----BEGIN PRIVATE KEY-----\nnot-a-private-key\n-----END PRIVATE KEY-----",
         ),
     ]);

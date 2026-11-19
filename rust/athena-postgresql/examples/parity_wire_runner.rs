@@ -13,11 +13,11 @@ use athena_federation_sdk::security::{
     KmsEncryptionProvider, SecretsManagerClient,
 };
 use athena_federation_sdk::{AthenaClient, FederationError};
+use athena_jdbc::connection::single_database_config_from_env;
 use athena_jdbc::connection::{
     DatabaseConnectionConfig, DatabaseConnectionConfigBuilder, DEFAULT_CONNECTION_STRING_PROPERTY,
 };
-use athena_jdbc::manager::jdbc_util;
-use athena_jdbc::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
+use athena_jdbc::handler::{MultiplexingJdbcMetadataHandler, RecordMultiplexer};
 use athena_postgresql::{
     constants, PostGreSqlMetadataDialect, PostGreSqlMetadataHandler, PostGreSqlMuxMetadataHandler,
     PostGreSqlMuxRecordHandler, PostGreSqlRecordDialect, PostGreSqlRecordHandler,
@@ -281,7 +281,7 @@ fn single_handler(
     clients: &AwsClients,
     config: &HashMap<String, String>,
 ) -> athena_federation_sdk::Result<CompositeHandler> {
-    let db_config = jdbc_util::single_database_config_from_env(constants::POSTGRES_NAME, config)?;
+    let db_config = single_database_config_from_env(constants::POSTGRES_NAME, config)?;
     let metadata = metadata_handler(clients, &db_config, config)?;
     let record = record_handler(clients, &db_config, config)?;
     Ok(CompositeHandler::new(

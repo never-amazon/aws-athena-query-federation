@@ -17,9 +17,10 @@ use athena_federation_sdk::handlers::{HandlerContext, RecordHandler};
 use athena_federation_sdk::records::ReadRecordsRequest;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::DatabaseConnectionConfig;
-use athena_jdbc::manager::{RecordDelegate, SplitQuery};
+use athena_jdbc::handler::RecordDelegate;
+use athena_jdbc::handler::{MultiplexingJdbcRecordHandler, RecordMultiplexer};
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
-use athena_jdbc::{MultiplexingJdbcRecordHandler, RecordMultiplexer};
 use indexmap::IndexMap;
 use jdbc_support::{addr, FakeConnection, FakeConnectionFactory, Fakes};
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use athena_federation_sdk::connection::environment_constants;
 use athena_snowflake::{
-    connection_properties_to_environment, snowflake_constants, snowflake_parameters,
+    connection_properties_to_environment, constants, snowflake_parameters,
     SNOWFLAKE_CONNECTION_STRING,
 };
 
@@ -24,7 +24,7 @@ const HOST: &str = environment_constants::HOST;
 const PORT: &str = environment_constants::PORT;
 const DEFAULT: &str = environment_constants::DEFAULT;
 const GLUE: &str = environment_constants::DEFAULT_GLUE_CONNECTION;
-const USER: &str = snowflake_constants::USER;
+const USER: &str = constants::USER;
 
 fn map(entries: &[(&str, &str)]) -> HashMap<String, String> {
     entries

@@ -21,11 +21,12 @@ use athena_federation_sdk::security::{BlockCrypto, EncryptionKey, FederatedIdent
 use athena_federation_sdk::serde::schema_from_bytes;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use athena_jdbc::manager::{
-    self, make_field_writer_factory, ConnectionSource, JdbcRecordHandler, RecordDialect,
-    SplitQuery, EXPORT_SCHEMA,
+use athena_jdbc::handler;
+use athena_jdbc::handler::{
+    make_field_writer_factory, ConnectionSource, JdbcRecordHandler, RecordDialect, EXPORT_SCHEMA,
 };
-use athena_jdbc::qpt::QUERY;
+use athena_jdbc::query::passthrough::QUERY;
+use athena_jdbc::query::SplitQuery;
 use athena_jdbc::sql::{
     ColumnMetadata, JdbcConnection, JdbcType, PreparedStatement, ResultSetMetaData, Row, SqlValue,
 };
@@ -272,7 +273,7 @@ async fn make_extractor() {
     ]);
     let partition_map = partition_map();
     let make = |name: &str, data_type: DataType| {
-        manager::make_extractor(&field(name, data_type), &metadata, &partition_map).unwrap()
+        handler::make_extractor(&field(name, data_type), &metadata, &partition_map).unwrap()
     };
 
     let actual_int = make(TEST_COL1, DataType::Int32);
@@ -349,7 +350,7 @@ struct Extractors {
 fn all_extractors(metadata: &ResultSetMetaData) -> Extractors {
     let partition_map = partition_map();
     let make = |name: &str, data_type: DataType| {
-        manager::make_extractor(&field(name, data_type), metadata, &partition_map).unwrap()
+        handler::make_extractor(&field(name, data_type), metadata, &partition_map).unwrap()
     };
     Extractors {
         int: make("testCol1", DataType::Int32),
@@ -491,7 +492,7 @@ async fn test_make_extractor_without_null_values() {
 #[tokio::test]
 async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol12", JdbcType::Date)]);
-    let extractor = manager::make_extractor(
+    let extractor = handler::make_extractor(
         &field("testCol12", DataType::Date64),
         &metadata,
         &partition_map(),
@@ -513,7 +514,7 @@ async fn make_extractor_reads_date_as_timestamp_by_calendar_date() {
 async fn make_extractor_reads_dates_from_year_ten_thousand() {
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", JdbcType::Date)]);
     let extractor = |data_type| {
-        manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
+        handler::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
     let (day_extractor, milli_extractor) =
         (extractor(DataType::Date32), extractor(DataType::Date64));
@@ -631,7 +632,7 @@ async fn make_factory_reads_array_dates_like_scalar_dates() {
     };
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new("testCol", JdbcType::Date)]);
     let extractor = |data_type| {
-        manager::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
+        handler::make_extractor(&field("testCol", data_type), &metadata, &partition_map()).unwrap()
     };
     let (day_extractor, milli_extractor) =
         (extractor(DataType::Date32), extractor(DataType::Date64));
@@ -774,7 +775,7 @@ async fn test_make_extractor_with_unsupported_type() {
         "testColUnsupported",
         DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
     );
-    let Err(e) = manager::make_extractor(
+    let Err(e) = handler::make_extractor(
         &unsupported_field,
         &ResultSetMetaData::new(Vec::new()),
         &partition_map(),
@@ -830,7 +831,7 @@ async fn test_build_query_passthrough_sql_with_exception() {
 #[tokio::test]
 async fn test_make_extractor_float8_with_sql_exception() {
     let metadata = ResultSetMetaData::new(vec![ColumnMetadata::new(TEST_COL1, JdbcType::Double)]);
-    let extractor = manager::make_extractor(
+    let extractor = handler::make_extractor(
         &field(TEST_COL1, DataType::Float64),
         &metadata,
         &HashMap::new(),
@@ -844,7 +845,7 @@ async fn test_make_extractor_float8_with_sql_exception() {
 #[tokio::test]
 async fn test_make_extractor_with_partition_values() {
     let metadata = ResultSetMetaData::new(Vec::new());
-    let extractor = manager::make_extractor(
+    let extractor = handler::make_extractor(
         &field(TEST_PARTITION_COL, DataType::Utf8),
         &metadata,
         &partition_map(),

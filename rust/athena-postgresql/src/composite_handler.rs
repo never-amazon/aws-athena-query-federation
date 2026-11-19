@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::sync::Arc;
 
 use athena_federation_sdk::connection::EnvironmentProperties;
 use athena_federation_sdk::handlers::{AwsClients, CompositeHandler};
 use athena_federation_sdk::Result;
+use athena_jdbc::connection::ConnectionStringFormat;
 
-use crate::environment_properties::connection_properties_to_environment;
 use crate::metadata_handler::PostGreSqlMetadataDialect;
 use crate::record_handler::PostGreSqlRecordDialect;
 
@@ -28,4 +30,13 @@ pub async fn composite_handler_from_environment() -> Result<CompositeHandler> {
         )?),
         None,
     ))
+}
+
+pub const POSTGRESQL_CONNECTION_STRING: ConnectionStringFormat =
+    ConnectionStringFormat::new("postgres://jdbc:postgresql://");
+
+pub fn connection_properties_to_environment<S: BuildHasher>(
+    connection_properties: &HashMap<String, String, S>,
+) -> HashMap<String, String> {
+    POSTGRESQL_CONNECTION_STRING.connection_properties_to_environment(connection_properties)
 }

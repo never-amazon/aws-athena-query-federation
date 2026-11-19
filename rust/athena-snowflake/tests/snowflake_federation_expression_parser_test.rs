@@ -5,7 +5,7 @@ use athena_federation_sdk::domain::predicate::{
     VariableExpression,
 };
 use athena_federation_sdk::FederationError;
-use athena_jdbc::manager::ExpressionParser;
+use athena_jdbc::query::ExpressionParser;
 
 const QUOTE_CHAR_DOUBLE: &str = "\"";
 const QUOTE_CHAR_BACKTICK: &str = "`";

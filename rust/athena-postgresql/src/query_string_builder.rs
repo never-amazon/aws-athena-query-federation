@@ -1,7 +1,7 @@
 use athena_federation_sdk::domain::{Split, TableName};
 use athena_federation_sdk::Result;
 use athena_federation_substrait::SqlDialect;
-use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder};
+use athena_jdbc::query::{SplitDialect, SplitQuery, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
 use crate::constants;

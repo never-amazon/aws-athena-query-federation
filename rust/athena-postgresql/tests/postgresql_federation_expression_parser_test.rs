@@ -1,6 +1,6 @@
 use arrow::datatypes::DataType;
 use athena_federation_sdk::data::ArrowType;
-use athena_jdbc::manager::ExpressionParser;
+use athena_jdbc::query::ExpressionParser;
 
 fn write(_arrow_type: &ArrowType, arguments: &[&str]) -> String {
     let parser = ExpressionParser::new("\"");

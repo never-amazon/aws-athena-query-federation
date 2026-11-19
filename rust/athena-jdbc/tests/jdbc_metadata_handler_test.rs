@@ -17,8 +17,8 @@ use athena_federation_sdk::metadata::{
 use athena_federation_sdk::security::FederatedIdentity;
 use athena_federation_sdk::{FederationError, QueryStatusChecker, Result};
 use athena_jdbc::connection::{DatabaseConnectionConfig, JdbcConnectionFactory};
-use athena_jdbc::manager::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};
-use athena_jdbc::qpt::{NAME, QUERY, SCHEMA_NAME};
+use athena_jdbc::handler::{ConnectionSource, JdbcMetadataHandler, MetadataDialect};
+use athena_jdbc::query::passthrough::{NAME, QUERY, SCHEMA_NAME};
 use athena_jdbc::resolver::JdbcCaseResolver;
 use athena_jdbc::sql::{
     ColumnInfo, ColumnMetadata, JdbcType, PreparedStatement, ResultSetMetaData, SchemaEntry,
