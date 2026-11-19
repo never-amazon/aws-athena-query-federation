@@ -1,15 +1,15 @@
 java_class	rust_path	status	note
-com.amazonaws.athena.connector.credentials.Credentials	athena-federation-sdk/src/credentials/credentials.rs::Credentials	ported	
-com.amazonaws.athena.connector.credentials.CredentialsConstants	athena-federation-sdk/src/credentials/mod.rs::credentials_constants	ported	constant holder class; its constants are module-level consts
-com.amazonaws.athena.connector.credentials.CredentialsProvider	athena-federation-sdk/src/credentials/credentials_provider.rs::CredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-federation-sdk/src/credentials/credentials_provider_factory.rs::create_credential_provider	merged	static factory class; its one method is a module function that takes the optional override configuration
-com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account_credentials_provider.rs::get_cross_account_credentials_if_present	merged	static helper class; its one method is a module function
-com.amazonaws.athena.connector.credentials.DefaultCredentials	athena-federation-sdk/src/credentials/default_credentials.rs::DefaultCredentials	ported	
-com.amazonaws.athena.connector.credentials.DefaultCredentialsProvider	athena-federation-sdk/src/credentials/default_credentials_provider.rs::DefaultCredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	merged	OAuthCredentialsProvider::new takes the secret name, secret map and clients in one step, so there is no separate initialize phase
-com.amazonaws.athena.connector.credentials.OAuthAccessTokenCredentials	athena-federation-sdk/src/credentials/oauth_access_token_credentials.rs::OAuthAccessTokenCredentials	ported	
-com.amazonaws.athena.connector.credentials.OAuthCredentialsProvider	athena-federation-sdk/src/credentials/oauth_credentials_provider.rs::OAuthCredentialsProvider	ported	
-com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-federation-sdk/src/credentials/static_credentials_provider.rs::StaticCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.Credentials	athena-federation-sdk/src/credentials/mod.rs::Credentials	ported	
+com.amazonaws.athena.connector.credentials.CredentialsConstants	athena-federation-sdk/src/credentials/mod.rs::USERNAME	ported	constant holder class; its constants are module-level consts
+com.amazonaws.athena.connector.credentials.CredentialsProvider	athena-federation-sdk/src/credentials/mod.rs::CredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.CredentialsProviderFactory	athena-federation-sdk/src/credentials/provider.rs::create_credential_provider	merged	static factory class; its one method is a module function that takes the optional override configuration
+com.amazonaws.athena.connector.credentials.CrossAccountCredentialsProvider	athena-federation-sdk/src/credentials/cross_account.rs::get_cross_account_credentials_if_present	merged	static helper class; its one method is a module function
+com.amazonaws.athena.connector.credentials.DefaultCredentials	athena-federation-sdk/src/credentials/mod.rs::DefaultCredentials	ported	
+com.amazonaws.athena.connector.credentials.DefaultCredentialsProvider	athena-federation-sdk/src/credentials/provider.rs::DefaultCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.InitializableCredentialsProvider	athena-federation-sdk/src/credentials/oauth.rs::OAuthCredentialsProvider	merged	OAuthCredentialsProvider::new takes the secret name, secret map and clients in one step, so there is no separate initialize phase
+com.amazonaws.athena.connector.credentials.OAuthAccessTokenCredentials	athena-federation-sdk/src/credentials/mod.rs::OAuthAccessTokenCredentials	ported	
+com.amazonaws.athena.connector.credentials.OAuthCredentialsProvider	athena-federation-sdk/src/credentials/oauth.rs::OAuthCredentialsProvider	ported	
+com.amazonaws.athena.connector.credentials.StaticCredentialsProvider	athena-federation-sdk/src/credentials/provider.rs::StaticCredentialsProvider	ported	
 com.amazonaws.athena.connector.lambda.CollectionsUtils	athena-federation-sdk/src/metadata/mod.rs::collections_equals	merged	the only method, equals, is the crate-private collections_equals used by the response PartialEq impls
 com.amazonaws.athena.connector.lambda.QueryStatusChecker	athena-federation-sdk/src/query_status_checker.rs::QueryStatusChecker	ported	
 com.amazonaws.athena.connector.lambda.ThrottlingInvoker	athena-federation-sdk/src/throttling_invoker.rs::ThrottlingInvoker	ported	

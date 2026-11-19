@@ -6,11 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 
-use super::credentials::Credentials;
-use super::credentials_constants;
-use super::credentials_provider::CredentialsProvider;
-use super::http_client::{HttpClient, HttpClientError, HttpRequest};
-use super::oauth_access_token_credentials::OAuthAccessTokenCredentials;
+use super::Credentials;
+use super::CredentialsProvider;
+use super::OAuthAccessTokenCredentials;
+use super::{HttpClient, HttpClientError, HttpRequest};
+use super::{ACCESS_TOKEN, EXPIRES_IN, FETCHED_AT};
 use crate::exceptions::{FederationError, FederationSourceErrorCode, Result};
 use crate::java_cast::double_to_long;
 use crate::security::{AwsService, AwsServiceError, CachableSecretsManager};
@@ -107,17 +107,9 @@ impl OAuthCredentialsProvider {
     }
 
     fn cached_access_token(snapshot: &HashMap<String, String>) -> Result<Option<String>> {
-        if let Some(cached) = snapshot.get(credentials_constants::ACCESS_TOKEN) {
-            let expires_in = parse_long(
-                snapshot
-                    .get(credentials_constants::EXPIRES_IN)
-                    .map_or("0", String::as_str),
-            )?;
-            let fetched_at = parse_long(
-                snapshot
-                    .get(credentials_constants::FETCHED_AT)
-                    .map_or("0", String::as_str),
-            )?;
+        if let Some(cached) = snapshot.get(ACCESS_TOKEN) {
+            let expires_in = parse_long(snapshot.get(EXPIRES_IN).map_or("0", String::as_str))?;
+            let fetched_at = parse_long(snapshot.get(FETCHED_AT).map_or("0", String::as_str))?;
             if now_seconds() - fetched_at < expires_in - 60 {
                 tracing::debug!("Access token still valid");
                 return Ok(Some(cached.clone()));
@@ -187,18 +179,9 @@ impl OAuthCredentialsProvider {
     ) -> Result<()> {
         let secret_string = {
             let mut secret_map = self.lock_secret_map();
-            secret_map.insert(
-                credentials_constants::ACCESS_TOKEN.to_string(),
-                access_token.to_string(),
-            );
-            secret_map.insert(
-                credentials_constants::EXPIRES_IN.to_string(),
-                expires_in.to_string(),
-            );
-            secret_map.insert(
-                credentials_constants::FETCHED_AT.to_string(),
-                fetched_at.to_string(),
-            );
+            secret_map.insert(ACCESS_TOKEN.to_string(), access_token.to_string());
+            secret_map.insert(EXPIRES_IN.to_string(), expires_in.to_string());
+            secret_map.insert(FETCHED_AT.to_string(), fetched_at.to_string());
             serde_json::to_string(&*secret_map).map_err(|e| {
                 connector_error(
                     FederationSourceErrorCode::InvalidResponseException,
@@ -240,8 +223,8 @@ impl OAuthCredentialsProvider {
         }
         let token_response = self.fetch_token_response(&snapshot).await?;
         let (Some(access_token_node), Some(expires_in_node)) = (
-            token_response.get(credentials_constants::ACCESS_TOKEN),
-            token_response.get(credentials_constants::EXPIRES_IN),
+            token_response.get(ACCESS_TOKEN),
+            token_response.get(EXPIRES_IN),
         ) else {
             return Err(connector_error(
                 FederationSourceErrorCode::InvalidResponseException,

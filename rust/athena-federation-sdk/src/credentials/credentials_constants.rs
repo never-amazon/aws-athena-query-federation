@@ -1,9 +1,0 @@
-pub const USERNAME: &str = "username";
-pub const USER: &str = "user";
-pub const PASSWORD: &str = "password";
-pub const ACCESS_TOKEN: &str = "access_token";
-pub const EXPIRES_IN: &str = "expires_in";
-pub const FETCHED_AT: &str = "fetched_at";
-pub const CLIENT_ID: &str = "client_id";
-pub const CLIENT_SECRET: &str = "client_secret";
-pub const ACCESS_TOKEN_PROPERTY: &str = "accessToken";
