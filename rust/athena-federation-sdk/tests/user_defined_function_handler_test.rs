@@ -283,7 +283,7 @@ fn with_complex_methods(methods: UdfMethods) -> UdfMethods {
                 Value::Decimal(x) if x.sign() == bigdecimal::num_bigint::Sign::Plus => {
                     Ok(Value::Decimal(BigDecimal::from_str("1E40").unwrap()))
                 }
-                _ => Err(FederationError::Runtime("after".into())),
+                _ => Err(FederationError::runtime("after")),
             },
         ))
         .with_method(UdfMethod::new(

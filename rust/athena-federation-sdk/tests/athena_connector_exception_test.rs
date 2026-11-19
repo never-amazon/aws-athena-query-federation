@@ -20,7 +20,7 @@ fn assert_details(exception: &AthenaConnectorException) {
 
 #[test]
 fn constructor_with_response_message_and_error_details_should_set_fields_correctly() {
-    let exception = set_up().with_response(FederationError::Runtime(TEST_RESPONSE.to_string()));
+    let exception = set_up().with_response(FederationError::runtime(TEST_RESPONSE.to_string()));
     assert_eq!(
         ERROR_MESSAGE, exception.message,
         "Error message should match"
@@ -58,8 +58,8 @@ fn constructor_with_message_and_error_details_should_set_fields_correctly() {
 #[test]
 fn constructor_with_response_message_cause_and_error_details_should_set_fields_correctly() {
     let exception = set_up()
-        .with_response(FederationError::Runtime(TEST_RESPONSE.to_string()))
-        .with_cause(FederationError::Runtime("Test Cause".to_string()));
+        .with_response(FederationError::runtime(TEST_RESPONSE.to_string()))
+        .with_cause(FederationError::runtime("Test Cause"));
     assert_eq!(
         ERROR_MESSAGE, exception.message,
         "Error message should match"

@@ -401,8 +401,8 @@ fn build_calcite_sql(
 ) -> Result<(String, Vec<SubstraitTypeAndValue>)> {
     let sql_node = plan::to_sql_node(base64_encoded_plan, sql_dialect)?;
     if sql_node.as_select().is_none() {
-        return Err(FederationError::Runtime(
-            "Unsupported Query Type. Only SELECT Query is supported.".to_string(),
+        return Err(FederationError::runtime(
+            "Unsupported Query Type. Only SELECT Query is supported.",
         ));
     }
     let table_schema = plan::table_schema(base64_encoded_plan, sql_dialect)?;

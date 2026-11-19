@@ -182,7 +182,7 @@ pub async fn get_char_columns(
 
 pub fn escape_identifier(input: &str) -> Result<String> {
     if input.contains('\0') {
-        return Err(FederationError::Runtime(format!(
+        return Err(FederationError::runtime(format!(
             "Unable to escape SQL identifier: {NUL_IDENTIFIER_MESSAGE}"
         )));
     }
@@ -526,7 +526,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
                         make_split(handler, request, schema_text.clone(), split_clause).await?,
                     );
                     if splits.len() >= MAX_SPLITS_PER_REQUEST {
-                        return Err(FederationError::Runtime(format!(
+                        return Err(FederationError::runtime(format!(
                             "Max splits supported with splitter {MAX_SPLITS_PER_REQUEST}"
                         )));
                     }

@@ -33,12 +33,18 @@ pub enum FederationError {
     NumberFormat(String),
     #[error("{0}")]
     Arrow(#[source] Arc<ArrowError>),
-    #[error("{0}")]
-    Io(String),
-    #[error("{0}")]
-    IoError(#[source] Arc<std::io::Error>),
-    #[error("{0}")]
-    Runtime(String),
+    #[error("{message}")]
+    Io {
+        message: String,
+        #[source]
+        source: Option<Arc<std::io::Error>>,
+    },
+    #[error("{message}")]
+    Runtime {
+        message: String,
+        #[source]
+        source: Option<Arc<dyn StdError + Send + Sync>>,
+    },
     #[error("{}", .0.get_message().unwrap_or_default())]
     AwsService(crate::security::AwsServiceError),
     #[error("{message}")]
@@ -116,6 +122,30 @@ impl FederationError {
         FederationError::IllegalState(message.into())
     }
 
+    pub fn io(message: impl Into<String>) -> FederationError {
+        FederationError::Io {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn runtime(message: impl Into<String>) -> FederationError {
+        FederationError::Runtime {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn runtime_from(
+        message: impl Into<String>,
+        source: impl StdError + Send + Sync + 'static,
+    ) -> FederationError {
+        FederationError::Runtime {
+            message: message.into(),
+            source: Some(Arc::new(source)),
+        }
+    }
+
     pub fn external(error: impl JavaThrowable) -> FederationError {
         FederationError::External(Arc::new(error))
     }
@@ -175,6 +205,9 @@ impl From<ArrowError> for FederationError {
 
 impl From<std::io::Error> for FederationError {
     fn from(e: std::io::Error) -> Self {
-        FederationError::IoError(Arc::new(e))
+        FederationError::Io {
+            message: e.to_string(),
+            source: Some(Arc::new(e)),
+        }
     }
 }

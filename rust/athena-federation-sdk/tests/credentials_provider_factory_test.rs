@@ -61,7 +61,7 @@ struct InvalidOAuthProvider;
 
 impl OAuthFlow for InvalidOAuthProvider {
     fn is_oauth_configured(&self, _secret_map: &HashMap<String, String>) -> Result<bool> {
-        Err(FederationError::Runtime("Test exception".into()))
+        Err(FederationError::runtime("Test exception"))
     }
 
     fn build_token_request(&self, _secret_map: &HashMap<String, String>) -> Result<HttpRequest> {

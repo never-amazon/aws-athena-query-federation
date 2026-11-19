@@ -15,7 +15,7 @@ fn connector_with_response(response: FederationError) -> FederationError {
 
 fn wrap_io(err: FederationError) -> FederationError {
     match err {
-        FederationError::Io(_) | FederationError::IoError(_) => connector_with_response(err),
+        FederationError::Io { .. } => connector_with_response(err),
         FederationError::Arrow(e) => {
             connector_with_response(FederationError::from(std::io::Error::other(e)))
         }

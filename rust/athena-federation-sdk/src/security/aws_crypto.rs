@@ -26,7 +26,7 @@ pub struct EsdkAwsCrypto {
 }
 
 fn esdk_error(e: impl std::fmt::Debug) -> FederationError {
-    FederationError::Runtime(format!("{e:?}"))
+    FederationError::runtime(format!("{e:?}"))
 }
 
 impl EsdkAwsCrypto {

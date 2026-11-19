@@ -229,8 +229,8 @@ fn deserialize_union(jparser: &mut JsonParser<'_>) -> Result<ArrowType> {
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for ARRAY",
                 ))
             }
             Some(_) => type_ids.push(jparser.get_value_as_int()?),

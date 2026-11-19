@@ -810,7 +810,7 @@ async fn test_getlist_exported_objects_s3_exception() {
         .get_list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap_err();
-    assert!(matches!(error, FederationError::Runtime(_)));
+    assert!(matches!(error, FederationError::Runtime { .. }));
     assert_eq!(
         "Failed to list objects in bucket test-bucket with prefix queryId123",
         error.to_string()

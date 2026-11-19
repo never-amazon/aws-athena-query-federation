@@ -270,7 +270,7 @@ impl SnowflakeMetadataDialect {
                     "Failed to list objects in bucket {s3_export_bucket_name} with prefix {prefix}"
                 );
                 tracing::error!("{}: {}", error_message, e);
-                FederationError::Runtime(error_message)
+                FederationError::runtime_from(error_message, e)
             })
     }
 
@@ -564,7 +564,7 @@ impl SnowflakeMetadataDialect {
                 "S3 URI should not be empty for Snowflake S3 Export",
             ));
         };
-        let no_value = || FederationError::Runtime("No value present".to_string());
+        let no_value = || FederationError::runtime("No value present");
         let bucket = s3_uri.bucket().ok_or_else(no_value)?;
         let key = s3_uri.key().ok_or_else(no_value)?;
         let s3_object_summaries = self.get_list_exported_objects(bucket, key).await?;

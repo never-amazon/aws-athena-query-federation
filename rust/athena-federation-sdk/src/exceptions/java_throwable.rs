@@ -76,9 +76,9 @@ impl JavaThrowable for FederationError {
             FederationError::Arithmetic(_) => "java.lang.ArithmeticException",
             FederationError::IndexOutOfBounds(_) => "java.lang.IndexOutOfBoundsException",
             FederationError::NumberFormat(_) => "java.lang.NumberFormatException",
-            FederationError::Io(_) | FederationError::IoError(_) => IO_EXCEPTION,
+            FederationError::Io { .. } => IO_EXCEPTION,
             FederationError::Arrow(_)
-            | FederationError::Runtime(_)
+            | FederationError::Runtime { .. }
             | FederationError::RuntimeWithCause { .. }
             | FederationError::Other(_)
             | FederationError::RuntimeWrapper { .. } => RUNTIME_EXCEPTION,
@@ -105,7 +105,9 @@ impl JavaThrowable for FederationError {
             }
             FederationError::External(e) => e.java_cause(),
             FederationError::Other(e) => foreign_source(e.as_ref()),
-            FederationError::IoError(e) => foreign_source(e.as_ref()),
+            FederationError::Io {
+                source: Some(e), ..
+            } => foreign_source(e.as_ref()),
             FederationError::Arrow(e) => foreign_source(e.as_ref()),
             FederationError::AthenaConnector(e) => e.cause.as_deref().map(JavaCause::Throwable),
             FederationError::Throttle(e) => e.cause.as_deref().map(JavaCause::Throwable),
@@ -115,7 +117,7 @@ impl JavaThrowable for FederationError {
 
     fn is_runtime_exception(&self) -> bool {
         match self {
-            FederationError::Io(_) | FederationError::IoError(_) => false,
+            FederationError::Io { .. } => false,
             FederationError::External(e) => e.is_runtime_exception(),
             _ => true,
         }

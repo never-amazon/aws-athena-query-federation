@@ -247,8 +247,9 @@ impl SnowflakeCredentialsProvider {
         };
         if let Err(e) = save.await {
             tracing::error!("Failed to save updated secret: {e}");
-            return Err(FederationError::Runtime(
-                "Failed to save updated secret: ".to_string(),
+            return Err(FederationError::runtime_with_cause(
+                "Failed to save updated secret: ",
+                e,
             ));
         }
         Ok(access_token)

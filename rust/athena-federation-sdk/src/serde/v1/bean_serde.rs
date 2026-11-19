@@ -69,13 +69,13 @@ pub const RESPONSE_SUB_TYPES: &[&str] = &[
 ];
 
 fn io(message: impl Into<String>) -> FederationError {
-    FederationError::Io(message.into())
+    FederationError::io(message.into())
 }
 
 fn to_io(e: FederationError) -> FederationError {
     match e {
-        FederationError::Io(_) => e,
-        other => FederationError::Io(other.to_string()),
+        FederationError::Io { .. } => e,
+        other => FederationError::io(other.to_string()),
     }
 }
 

@@ -394,7 +394,7 @@ fn struct_resolver(seed: usize) -> impl Fn(&Field, &Value) -> Result<Value> {
             "nestedStruct" => Value::Opaque(OpaqueValue::new(())),
             "value" => Value::Int(int(seed)),
             other => {
-                return Err(FederationError::Runtime(format!(
+                return Err(FederationError::runtime(format!(
                     "Unexpected field {other}"
                 )))
             }

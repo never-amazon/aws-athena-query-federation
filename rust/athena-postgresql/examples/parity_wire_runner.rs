@@ -171,8 +171,8 @@ impl AwsCrypto for Stub {
         _ciphertext: &[u8],
     ) -> athena_federation_sdk::Result<Vec<u8>> {
         self.state.record("kms.decrypt");
-        Err(FederationError::Runtime(
-            "KMS stub does not implement decrypt".to_string(),
+        Err(FederationError::runtime(
+            "KMS stub does not implement decrypt",
         ))
     }
 }

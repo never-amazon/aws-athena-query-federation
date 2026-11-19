@@ -24,8 +24,8 @@ fn simple_type<T>() -> String {
 
 fn wrap_as_io(e: FederationError) -> FederationError {
     match e {
-        FederationError::Io(_) => e,
-        other => FederationError::Io(other.to_string()),
+        FederationError::Io { .. } => e,
+        other => FederationError::io(other.to_string()),
     }
 }
 
@@ -148,7 +148,7 @@ impl ObjectMapper {
     fn init_for_reading<'a>(input: &'a [u8], type_label: &str) -> Result<JsonParser<'a>> {
         let mut jparser = JsonParser::new(input);
         match jparser.next_token()? {
-            None => Err(FederationError::Io(format!(
+            None => Err(FederationError::io(format!(
                 "No content to map due to end-of-input for {type_label}"
             ))),
             Some(JsonToken::ValueNull) => Err(FederationError::null_pointer(format!(

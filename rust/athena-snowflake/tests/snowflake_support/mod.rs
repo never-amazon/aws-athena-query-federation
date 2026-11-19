@@ -480,7 +480,7 @@ impl JdbcConnectionFactory for FakeConnectionFactory {
     async fn close(&self) -> athena_federation_sdk::Result<()> {
         self.close_calls.fetch_add(1, Ordering::SeqCst);
         match self.close_error.lock().unwrap().clone() {
-            Some(message) => Err(athena_federation_sdk::FederationError::Runtime(message)),
+            Some(message) => Err(athena_federation_sdk::FederationError::runtime(message)),
             None => Ok(()),
         }
     }
@@ -793,7 +793,7 @@ impl ExportReader for FakeExportReader {
             .unwrap()
             .push((uri.to_string(), schema.clone()));
         if let Some(message) = self.error.lock().unwrap().clone() {
-            return Err(athena_federation_sdk::FederationError::Runtime(message));
+            return Err(athena_federation_sdk::FederationError::runtime(message));
         }
         let batches = self.batches.lock().unwrap().clone();
         Ok(Box::new(batches.into_iter().map(Ok)))

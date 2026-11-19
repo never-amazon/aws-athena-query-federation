@@ -413,9 +413,11 @@ fn test_handle_exception_kms_exception_transformed_to_athena_connector_exception
 
 #[test]
 fn test_handle_exception_non_kms_exception_not_transformed() {
-    let runtime_exception = FederationError::Runtime("Generic error".into());
+    let runtime_exception = FederationError::runtime("Generic error");
     let result = CompositeHandler::handle_exception(runtime_exception);
-    assert!(matches!(&result, FederationError::Runtime(m) if m == "Generic error"));
+    assert!(
+        matches!(&result, FederationError::Runtime { message, .. } if message == "Generic error")
+    );
 }
 
 #[test]

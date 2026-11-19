@@ -206,7 +206,7 @@ impl MetadataDelegate for RecordingHandler {
     async fn close(&self) -> Result<()> {
         self.record("close", "", &[]);
         match &self.close_error {
-            Some(message) => Err(FederationError::Runtime(message.clone())),
+            Some(message) => Err(FederationError::runtime(message.clone())),
             None => Ok(()),
         }
     }

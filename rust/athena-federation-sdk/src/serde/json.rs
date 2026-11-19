@@ -113,7 +113,7 @@ pub struct JsonParser<'a> {
 }
 
 fn parse_error(message: impl Into<String>) -> FederationError {
-    FederationError::Io(message.into())
+    FederationError::io(message.into())
 }
 
 impl<'a> JsonParser<'a> {
@@ -787,7 +787,7 @@ impl JsonGenerator {
         let ctx = self
             .contexts
             .last_mut()
-            .ok_or_else(|| FederationError::Io("Generator closed".into()))?;
+            .ok_or_else(|| FederationError::io("Generator closed"))?;
         match ctx.kind {
             GenKind::Root => {
                 if ctx.count > 0 {
@@ -806,7 +806,7 @@ impl JsonGenerator {
             }
             GenKind::Object => {
                 if !ctx.expect_value {
-                    return Err(FederationError::Io(format!(
+                    return Err(FederationError::io(format!(
                         "Can not write {what}, expecting field name (context: Object)"
                     )));
                 }
@@ -832,11 +832,9 @@ impl JsonGenerator {
         let ctx = self
             .contexts
             .pop()
-            .ok_or_else(|| FederationError::Io("Current context not Object".into()))?;
+            .ok_or_else(|| FederationError::io("Current context not Object"))?;
         if ctx.kind != GenKind::Object {
-            return Err(FederationError::Io(
-                "Current context not Object but Array".into(),
-            ));
+            return Err(FederationError::io("Current context not Object but Array"));
         }
         self.nesting -= 1;
         if self.pretty {
@@ -865,11 +863,9 @@ impl JsonGenerator {
         let ctx = self
             .contexts
             .pop()
-            .ok_or_else(|| FederationError::Io("Current context not Array".into()))?;
+            .ok_or_else(|| FederationError::io("Current context not Array"))?;
         if ctx.kind != GenKind::Array {
-            return Err(FederationError::Io(
-                "Current context not Array but Object".into(),
-            ));
+            return Err(FederationError::io("Current context not Array but Object"));
         }
         if self.pretty {
             self.out.push(' ');
@@ -883,10 +879,10 @@ impl JsonGenerator {
             let ctx = self
                 .contexts
                 .last_mut()
-                .ok_or_else(|| FederationError::Io("Generator closed".into()))?;
+                .ok_or_else(|| FederationError::io("Generator closed"))?;
             if ctx.kind != GenKind::Object || ctx.expect_value {
-                return Err(FederationError::Io(
-                    "Can not write a field name, expecting a value".into(),
+                return Err(FederationError::io(
+                    "Can not write a field name, expecting a value",
                 ));
             }
             ctx.expect_value = true;

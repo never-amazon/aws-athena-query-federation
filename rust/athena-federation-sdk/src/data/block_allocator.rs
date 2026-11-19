@@ -78,7 +78,7 @@ impl BlockAllocatorImpl {
     fn reserve(&self, bytes: usize) -> Result<()> {
         let current = self.usage.load(Ordering::SeqCst);
         if current.saturating_add(bytes) > MEMORY_LIMIT {
-            return Err(FederationError::Runtime(format!(
+            return Err(FederationError::runtime(format!(
                 "Unable to allocate buffer of size {bytes} due to memory limit. Current allocation: {current}"
             )));
         }

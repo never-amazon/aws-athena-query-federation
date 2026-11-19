@@ -101,7 +101,7 @@ impl RecordDelegate for FakeJdbcRecordHandler {
     async fn close(&self) -> Result<()> {
         self.calls.close.fetch_add(1, Ordering::SeqCst);
         match &self.close_error {
-            Some(message) => Err(FederationError::Runtime(message.clone())),
+            Some(message) => Err(FederationError::runtime(message.clone())),
             None => Ok(()),
         }
     }

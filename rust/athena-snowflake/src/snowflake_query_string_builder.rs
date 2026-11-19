@@ -198,7 +198,7 @@ fn sql_literal(type_and_value: &TypeAndValue) -> Result<String> {
             let date = NaiveDate::from_ymd_opt(1970, 1, 1)
                 .and_then(|epoch| epoch.checked_add_signed(chrono::Duration::days(days)))
                 .ok_or_else(|| {
-                    FederationError::Runtime(format!("Invalid value for EpochDay: {days}"))
+                    FederationError::runtime(format!("Invalid value for EpochDay: {days}"))
                 })?;
             format!("DATE {}", quote(&date.format("%Y-%m-%d").to_string()))
         }
@@ -225,7 +225,7 @@ fn instant_text(millis: i64) -> Result<String> {
     DateTime::from_timestamp_millis(millis)
         .map(|instant| instant.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
         .ok_or_else(|| {
-            FederationError::Runtime(format!(
+            FederationError::runtime(format!(
                 "Instant exceeds minimum or maximum instant: {millis}"
             ))
         })

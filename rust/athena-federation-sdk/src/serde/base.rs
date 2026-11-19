@@ -140,8 +140,8 @@ pub fn get_next_string_array(
         match jparser.next_token()? {
             Some(JsonToken::EndArray) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for ARRAY".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for ARRAY",
                 ))
             }
             Some(_) => result.push(jparser.get_value_as_string()),
@@ -167,8 +167,8 @@ pub fn read_string_map_entries(
         match jparser.next_token()? {
             Some(JsonToken::EndObject) => break,
             None => {
-                return Err(FederationError::Io(
-                    "Unexpected end-of-input: expected close marker for OBJECT".into(),
+                return Err(FederationError::io(
+                    "Unexpected end-of-input: expected close marker for OBJECT",
                 ))
             }
             Some(_) => {

@@ -20,7 +20,7 @@ fn test_with_error_message() {
 #[test]
 fn test_with_error_message_and_throwable() {
     let actual = FederationThrottleException::new(ERROR_MESSAGE)
-        .with_cause(FederationError::Runtime("Throwable".to_string()));
+        .with_cause(FederationError::runtime("Throwable"));
     assert_eq!(Some(ERROR_MESSAGE), actual.message.as_deref());
     assert_eq!(
         Some("Throwable".to_string()),
