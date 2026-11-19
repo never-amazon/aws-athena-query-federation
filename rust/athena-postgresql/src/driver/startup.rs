@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use athena_jdbc::sql::SqlError;
 use bytes::BytesMut;
 use postgres_protocol::message::frontend;
+use socket2::SockRef;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -45,15 +46,17 @@ fn remaining(limit: Option<Duration>, started: Instant) -> Option<Duration> {
 
 async fn open_tcp(
     host: &HostSpec,
-    connect_timeout: Option<Duration>,
+    settings: &ConnectSettings,
+    started: Instant,
 ) -> Result<TcpStream, StartupError> {
     let stream = within(
-        connect_timeout,
+        remaining(settings.connect_timeout, started),
         "connect timed out",
         TcpStream::connect((host.host.as_str(), host.port)),
     )
     .await?;
     stream.set_nodelay(true)?;
+    SockRef::from(&stream).set_keepalive(settings.tcp_keep_alive)?;
     Ok(stream)
 }
 
@@ -121,9 +124,7 @@ async fn enable_ssl(
         b'N' => Ok(PgSocket::Plain(stream)),
         b'E' => {
             drop(stream);
-            Ok(PgSocket::Plain(
-                open_tcp(host, remaining(settings.connect_timeout, started)).await?,
-            ))
+            Ok(PgSocket::Plain(open_tcp(host, settings, started).await?))
         }
         _ => Err(StartupError::Sql(psql(
             "An error occurred while setting up the SSL connection.",
@@ -137,6 +138,7 @@ fn session_options(settings: &ConnectSettings) -> SessionOptions {
         string_type_unspecified: settings.string_type_unspecified,
         log_server_error_detail: settings.log_server_error_detail,
         socket_timeout: settings.socket_timeout,
+        zone: settings.zone(),
     }
 }
 
@@ -147,7 +149,7 @@ async fn try_connect(
     started: Instant,
 ) -> Result<Session, StartupError> {
     let user = settings.user.clone().unwrap_or_default();
-    let stream = open_tcp(host, remaining(settings.connect_timeout, started)).await?;
+    let stream = open_tcp(host, settings, started).await?;
     let socket = enable_ssl(stream, host, mode, settings, started).await?;
     let mut session = Session::new(Wire::new(socket), session_options(settings));
     let mut params: Vec<(&str, &str)> = vec![
@@ -294,4 +296,35 @@ pub(crate) async fn send_cancel(target: &CancelTarget) -> io::Result<()> {
         Ok(())
     };
     within(target.timeout, "cancel timed out", work).await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::driver::url::parse_url;
+
+    async fn keepalive_after_open(url_suffix: &str) -> bool {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let settings = parse_url(
+            &format!("jdbc:postgresql://127.0.0.1:{port}/db{url_suffix}"),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let stream = open_tcp(&settings.hosts[0], &settings, Instant::now())
+            .await
+            .unwrap();
+        SockRef::from(&stream).keepalive().unwrap()
+    }
+
+    #[tokio::test]
+    async fn tcp_keep_alive_reaches_the_socket() {
+        assert!(keepalive_after_open("?tcpKeepAlive=true").await);
+        assert!(!keepalive_after_open("?tcpKeepAlive=false").await);
+        assert!(!keepalive_after_open("").await);
+    }
 }

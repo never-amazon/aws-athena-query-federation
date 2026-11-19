@@ -790,7 +790,7 @@ async fn test_getlist_exported_objects_s3_path() {
     let result = f
         .handler
         .dialect()
-        .get_list_exported_objects("test-bucket", "queryId123")
+        .list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap();
     assert_eq!(2, result.len());
@@ -808,7 +808,7 @@ async fn test_getlist_exported_objects_s3_exception() {
     let error = f
         .handler
         .dialect()
-        .get_list_exported_objects("test-bucket", "queryId123")
+        .list_exported_objects("test-bucket", "queryId123")
         .await
         .unwrap_err();
     assert!(matches!(error, FederationError::Runtime { .. }));
@@ -829,9 +829,7 @@ async fn test_get_sf_storage_integration_name_from_config() {
     );
     assert_eq!(
         Some("TEST_INTEGRATION"),
-        SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(
-            f.handler.config_options()
-        )
+        SnowflakeMetadataDialect::configured_storage_integration_name(f.handler.config_options())
     );
 }
 
@@ -889,7 +887,7 @@ async fn test_get_storage_integration_s3_path_from_snow_flake() {
     let result = f
         .handler
         .dialect()
-        .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
+        .storage_integration_s3_path(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap();
     assert_eq!("s3://test-bucket/path", result);
@@ -907,7 +905,7 @@ async fn test_get_storage_integration_s3_path_invalid_provider() {
     let error = f
         .handler
         .dialect()
-        .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
+        .storage_integration_s3_path(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
     assert!(matches!(error, FederationError::IllegalArgument(_)));
@@ -929,7 +927,7 @@ async fn test_get_storage_integration_s3_path_multiple_paths() {
     let error = f
         .handler
         .dialect()
-        .get_storage_integration_s3_path_from_snow_flake(&f.connection, "TEST_INTEGRATION")
+        .storage_integration_s3_path(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
     assert!(matches!(error, FederationError::IllegalArgument(_)));
@@ -991,7 +989,7 @@ async fn test_get_paginated_tables() {
     let tables = f
         .handler
         .dialect()
-        .get_paginated_tables(&f.connection, "testSchema", 0, 10)
+        .paginated_tables(&f.connection, "testSchema", 0, 10)
         .await
         .unwrap();
     assert_eq!(2, tables.len());
@@ -1128,9 +1126,7 @@ async fn test_get_sf_storage_integration_name_from_config_empty() {
     let f = fixture();
     assert_eq!(
         None,
-        SnowflakeMetadataDialect::get_sf_storage_integration_name_from_config(
-            f.handler.config_options()
-        )
+        SnowflakeMetadataDialect::configured_storage_integration_name(f.handler.config_options())
     );
 }
 
@@ -1167,7 +1163,7 @@ async fn test_get_storage_integration_properties() {
     let properties = f
         .handler
         .dialect()
-        .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
+        .storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap()
         .unwrap();
@@ -1195,7 +1191,7 @@ async fn test_get_storage_integration_properties_not_found() {
     let properties = f
         .handler
         .dialect()
-        .get_storage_integration_properties(&f.connection, "NONEXISTENT_INTEGRATION")
+        .storage_integration_properties(&f.connection, "NONEXISTENT_INTEGRATION")
         .await
         .unwrap();
     assert!(properties.is_none());
@@ -1209,7 +1205,7 @@ async fn test_get_storage_integration_properties_sql_exception() {
     let error = f
         .handler
         .dialect()
-        .get_storage_integration_properties(&f.connection, "TEST_INTEGRATION")
+        .storage_integration_properties(&f.connection, "TEST_INTEGRATION")
         .await
         .unwrap_err();
     let sql = SqlError::from_federation_error(&error).unwrap();

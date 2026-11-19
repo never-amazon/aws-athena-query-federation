@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use athena_federation_sdk::data::java_format::big_decimal_to_string;
+use athena_federation_sdk::data::ZoneId;
 use athena_jdbc::sql::{Driver, SqlError, SqlValue};
 use bigdecimal::BigDecimal;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
@@ -35,17 +36,17 @@ fn infinity_millis(text: &str) -> Option<i64> {
     }
 }
 
-fn java_timestamp(text: &str, zoned: bool) -> Option<SqlValue> {
+fn java_timestamp(text: &str, zone: Option<&ZoneId>) -> Option<SqlValue> {
     if let Some(millis) = infinity_millis(text) {
         return Some(
-            SqlValue::java_date_millis(millis, proleptic_epoch_day(millis, zoned), text)
+            SqlValue::java_date_millis(millis, proleptic_epoch_day(millis, zone), text)
                 .with_driver(Driver::Postgres),
         );
     }
     let parsed = parse_backend_timestamp(text)?;
     let millis = parsed.java_millis()?;
     let epoch_millis = parsed.epoch_millis();
-    let epoch_day = proleptic_epoch_day(epoch_millis.unwrap_or(millis), zoned);
+    let epoch_day = proleptic_epoch_day(epoch_millis.unwrap_or(millis), zone);
     Some(
         match (millis_to_naive(millis, parsed.nanos), epoch_millis) {
             (Some(ts), Some(epoch_millis)) => {
@@ -135,14 +136,14 @@ impl Decoder {
         }
     }
 
-    pub(crate) fn decode(&self, raw: Option<&[u8]>) -> SqlValue {
+    pub(crate) fn decode(&self, raw: Option<&[u8]>, zone: &ZoneId) -> SqlValue {
         let Some(raw) = raw else {
             return SqlValue::Null;
         };
-        self.decode_text(String::from_utf8_lossy(raw))
+        self.decode_text(String::from_utf8_lossy(raw), zone)
     }
 
-    fn decode_text(&self, text: Cow<'_, str>) -> SqlValue {
+    fn decode_text(&self, text: Cow<'_, str>, zone: &ZoneId) -> SqlValue {
         let unparsed = |text: Cow<'_, str>| SqlValue::String(text.into_owned());
         match self {
             Decoder::Text => match trim_money(&text) {
@@ -183,13 +184,13 @@ impl Decoder {
             },
             Decoder::Date => java_date(&text).unwrap_or_else(|| invalid_date_time(text)),
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text, *self == Decoder::TimestampTz)
+                java_timestamp(&text, (*self == Decoder::TimestampTz).then_some(zone))
                     .unwrap_or_else(|| invalid_date_time(text))
             }
             Decoder::Bytea => decode_bytea(&text).map_or_else(|| unparsed(text), SqlValue::Bytes),
             Decoder::Array { element, delimiter } => match parse_array(&text, *delimiter) {
                 Some(items) => rendered(
-                    SqlValue::Array(element.decode_items(items)),
+                    SqlValue::Array(element.decode_items(items, zone)),
                     text.into_owned(),
                 ),
                 None => unparsed(text),
@@ -197,28 +198,28 @@ impl Decoder {
         }
     }
 
-    fn decode_items(&self, items: Vec<ArrayItem>) -> Vec<SqlValue> {
+    fn decode_items(&self, items: Vec<ArrayItem>, zone: &ZoneId) -> Vec<SqlValue> {
         items
             .into_iter()
             .map(|item| match item {
                 ArrayItem::Null => SqlValue::Null,
-                ArrayItem::Value(text) => self.decode_element(text),
-                ArrayItem::Nested(nested) => SqlValue::Array(self.decode_items(nested)),
+                ArrayItem::Value(text) => self.decode_element(text, zone),
+                ArrayItem::Nested(nested) => SqlValue::Array(self.decode_items(nested, zone)),
             })
             .collect()
     }
 
-    fn decode_element(&self, text: String) -> SqlValue {
+    fn decode_element(&self, text: String, zone: &ZoneId) -> SqlValue {
         match self {
             Decoder::Date => java_date(&text).unwrap_or(SqlValue::String(text)),
             Decoder::Numeric if BigDecimal::from_str(&text).is_err() => {
                 SqlValue::invalid_element("BigDecimal", text).with_driver(Driver::Postgres)
             }
             Decoder::Timestamp | Decoder::TimestampTz => {
-                java_timestamp(&text, *self == Decoder::TimestampTz)
+                java_timestamp(&text, (*self == Decoder::TimestampTz).then_some(zone))
                     .unwrap_or(SqlValue::String(text))
             }
-            _ => match self.decode_text(Cow::Owned(text)) {
+            _ => match self.decode_text(Cow::Owned(text), zone) {
                 SqlValue::Rendered { value, .. } => *value,
                 other => other,
             },
@@ -505,14 +506,14 @@ mod tests {
 
     #[test]
     fn booleans_keep_the_server_text() {
-        let value = Decoder::Bool.decode(Some(b"t"));
+        let value = Decoder::Bool.decode(Some(b"t"), &ZoneId::utc());
         assert_eq!(value.to_boolean().unwrap(), Some(true));
         assert_eq!(value.to_java_string().as_deref(), Some("t"));
     }
 
     #[test]
     fn timestamps_with_time_zone_parse_short_offsets() {
-        let value = Decoder::TimestampTz.decode(Some(b"2000-01-02 12:59:00+00"));
+        let value = Decoder::TimestampTz.decode(Some(b"2000-01-02 12:59:00+00"), &ZoneId::utc());
         assert_eq!(
             value.to_timestamp().unwrap().unwrap().to_string(),
             "2000-01-02 12:59:00"
@@ -521,7 +522,8 @@ mod tests {
             value.to_java_string().as_deref(),
             Some("2000-01-02 12:59:00+00")
         );
-        let shifted = Decoder::TimestampTz.decode(Some(b"2000-01-01 05:30:00+05:30"));
+        let shifted =
+            Decoder::TimestampTz.decode(Some(b"2000-01-01 05:30:00+05:30"), &ZoneId::utc());
         assert_eq!(
             shifted.to_timestamp().unwrap().unwrap().to_string(),
             "2000-01-01 00:00:00"
@@ -551,7 +553,7 @@ mod tests {
     #[test]
     fn int_arrays_decode_to_typed_elements_and_keep_text() {
         let decoder = Decoder::for_type(&cache(), 1007);
-        let value = decoder.decode(Some(b"{7,8,9}"));
+        let value = decoder.decode(Some(b"{7,8,9}"), &ZoneId::utc());
         assert_eq!(
             value.to_array().unwrap().unwrap(),
             vec![
@@ -578,13 +580,13 @@ mod tests {
 
     #[test]
     fn numeric_keeps_plain_text_when_java_would_use_an_exponent() {
-        let value = Decoder::Numeric.decode(Some(b"0.0000001"));
+        let value = Decoder::Numeric.decode(Some(b"0.0000001"), &ZoneId::utc());
         assert_eq!(value.to_java_string().as_deref(), Some("0.0000001"));
         assert_eq!(
             value.to_big_decimal().unwrap().unwrap(),
             BigDecimal::from_str("0.0000001").unwrap()
         );
-        let plain = Decoder::Numeric.decode(Some(b"86.4199"));
+        let plain = Decoder::Numeric.decode(Some(b"86.4199"), &ZoneId::utc());
         assert!(matches!(plain, SqlValue::Decimal(_)));
         assert_eq!(plain.to_long().unwrap(), Some(86));
     }
@@ -727,6 +729,12 @@ mod tests {
     #[ignore = "timestamptz_dateday_uses_the_default_zone runs it with TZ=America/Los_Angeles"]
     fn timestamptz_dateday_in_los_angeles() {
         assert_eq!(Ok("America/Los_Angeles"), std::env::var("TZ").as_deref());
+        let zone = super::super::url::parse_url(
+            "jdbc:postgresql://localhost/db",
+            &std::collections::HashMap::new(),
+        )
+        .unwrap()
+        .zone();
         let day = |y, m, d| {
             NaiveDate::from_ymd_opt(y, m, d)
                 .unwrap()
@@ -742,13 +750,13 @@ mod tests {
         for (text, zoned, unzoned) in cases {
             assert_eq!(
                 zoned,
-                epoch_day(&Decoder::TimestampTz.decode(Some(text.as_bytes()))),
+                epoch_day(&Decoder::TimestampTz.decode(Some(text.as_bytes()), &zone)),
                 "{text}"
             );
             let local = text.trim_end_matches("+00");
             assert_eq!(
                 unzoned,
-                epoch_day(&Decoder::Timestamp.decode(Some(local.as_bytes()))),
+                epoch_day(&Decoder::Timestamp.decode(Some(local.as_bytes()), &zone)),
                 "{text}"
             );
         }
@@ -763,7 +771,7 @@ mod tests {
     }
 
     fn array_value(oid: u32, text: &str) -> athena_federation_sdk::data::Value {
-        let value = Decoder::for_type(&cache(), oid).decode(Some(text.as_bytes()));
+        let value = Decoder::for_type(&cache(), oid).decode(Some(text.as_bytes()), &ZoneId::utc());
         athena_federation_sdk::data::Value::List(
             value
                 .to_array()
@@ -777,20 +785,23 @@ mod tests {
 
     #[test]
     fn dates_decode_to_the_java_sql_date_pgjdbc_produces() {
-        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        let day =
+            |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes()), &ZoneId::utc()));
         assert_eq!(day("0001-01-01 BC"), -719_528);
         assert_eq!(day("infinity"), 106_751_991_166);
         assert_eq!(day("-infinity"), -106_749_799_148);
         assert_eq!(day("10000-01-01"), 2_932_897);
         assert_eq!(day("1582-10-04"), -141_438);
         assert_eq!(day("9999-12-31"), 2_932_896);
-        let value = Decoder::Date.decode(Some(b"infinity"));
+        let value = Decoder::Date.decode(Some(b"infinity"), &ZoneId::utc());
         assert_eq!(value.to_java_string().as_deref(), Some("infinity"));
     }
 
     #[test]
     fn timestamps_decode_to_the_proleptic_day() {
-        let day = |decoder: Decoder, text: &str| epoch_day(&decoder.decode(Some(text.as_bytes())));
+        let day = |decoder: Decoder, text: &str| {
+            epoch_day(&decoder.decode(Some(text.as_bytes()), &ZoneId::utc()))
+        };
         let expected = |y, m, d| {
             NaiveDate::from_ymd_opt(y, m, d)
                 .unwrap()
@@ -836,14 +847,15 @@ mod tests {
             "0044-03-15 17:53:28+05:53:28 BC",
             "0044-03-15 04:07:02-07:52:58 BC",
         ] {
-            let value = Decoder::TimestampTz.decode(Some(text.as_bytes()));
+            let value = Decoder::TimestampTz.decode(Some(text.as_bytes()), &ZoneId::utc());
             assert_eq!(millis_of(&value), -63_517_780_800_000, "{text}");
         }
     }
 
     #[test]
     fn bc_dates_decode_on_the_proleptic_calendar() {
-        let day = |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes())));
+        let day =
+            |text: &str| epoch_day(&Decoder::Date.decode(Some(text.as_bytes()), &ZoneId::utc()));
         for (text, (year, month, date)) in [
             ("0001-01-01 BC", (0, 1, 1)),
             ("0001-02-29 BC", (0, 2, 29)),
@@ -863,7 +875,7 @@ mod tests {
     fn get_timestamp_millis_reads_pre1582_timestamps_as_proleptic_millis() {
         let epoch = |decoder: Decoder, text: &str| {
             decoder
-                .decode(Some(text.as_bytes()))
+                .decode(Some(text.as_bytes()), &ZoneId::utc())
                 .to_epoch_millis()
                 .unwrap()
                 .unwrap()
@@ -898,7 +910,7 @@ mod tests {
         assert_eq!(
             Some(-30_609_748_800_000),
             Decoder::Timestamp
-                .decode(Some(b"1000-01-01 12:00:00"))
+                .decode(Some(b"1000-01-01 12:00:00"), &ZoneId::utc())
                 .to_timestamp_millis()
                 .unwrap()
         );
@@ -906,17 +918,20 @@ mod tests {
 
     #[test]
     fn timestamps_decode_to_java_sql_timestamp_millis() {
-        let ts = |text: &str| millis(&Decoder::Timestamp.decode(Some(text.as_bytes())));
+        let ts =
+            |text: &str| millis(&Decoder::Timestamp.decode(Some(text.as_bytes()), &ZoneId::utc()));
         assert_eq!(ts("1000-01-01 12:00:00"), -30_609_748_800_000);
         assert_eq!(ts("0044-03-15 12:00:00 BC"), -63_517_953_600_000);
         assert_eq!(ts("1582-10-04 23:59:59.999"), -12_219_292_800_001);
         assert_eq!(ts("10000-01-01 00:00:00"), 253_402_300_800_000);
         assert_eq!(ts("infinity"), 9_223_372_036_825_200_000);
-        let tz = |text: &str| millis(&Decoder::TimestampTz.decode(Some(text.as_bytes())));
+        let tz = |text: &str| {
+            millis(&Decoder::TimestampTz.decode(Some(text.as_bytes()), &ZoneId::utc()))
+        };
         assert_eq!(tz("-infinity"), -9_223_372_036_832_400_000);
         assert_eq!(tz("0001-01-01 00:00:00+00 BC"), -719_530 * 86_400_000);
         assert_eq!(tz("1900-01-01 00:00:00-04:56:02"), -2_208_971_038_000);
-        let infinite = Decoder::Timestamp.decode(Some(b"infinity"));
+        let infinite = Decoder::Timestamp.decode(Some(b"infinity"), &ZoneId::utc());
         assert_eq!(
             infinite.to_timestamp().unwrap_err().message(),
             "Bad value for type timestamp : infinity"
@@ -957,7 +972,7 @@ mod tests {
     fn malformed_date_time_text_fails_like_the_java_connector() {
         for text in MALFORMED_DATE_TIME_TEXT {
             for decoder in [Decoder::Timestamp, Decoder::TimestampTz, Decoder::Date] {
-                let value = decoder.decode(Some(text.as_bytes()));
+                let value = decoder.decode(Some(text.as_bytes()), &ZoneId::utc());
                 let expected = format!("Bad value for type timestamp/date/time: {text}");
                 for error in [
                     value.to_timestamp().unwrap_err(),
@@ -980,7 +995,7 @@ mod tests {
         let malformed = "2147483647-01-01 00:00:00";
         for decoder in [Decoder::Date, Decoder::Timestamp, Decoder::TimestampTz] {
             let error = decoder
-                .decode(Some(malformed.as_bytes()))
+                .decode(Some(malformed.as_bytes()), &ZoneId::utc())
                 .to_timestamp_millis()
                 .unwrap_err();
             assert_eq!(
@@ -989,15 +1004,21 @@ mod tests {
             );
             assert!(matches!(error, SqlError::Postgres { .. }));
             assert!(decoder
-                .decode(Some(b"2020-01-01 00:00:00"))
+                .decode(Some(b"2020-01-01 00:00:00"), &ZoneId::utc())
                 .to_timestamp_millis()
                 .is_ok());
-            assert_eq!(None, decoder.decode(None).to_timestamp_millis().unwrap());
+            assert_eq!(
+                None,
+                decoder
+                    .decode(None, &ZoneId::utc())
+                    .to_timestamp_millis()
+                    .unwrap()
+            );
         }
         assert_eq!(
             Some(malformed.to_string()),
             Decoder::Text
-                .decode(Some(malformed.as_bytes()))
+                .decode(Some(malformed.as_bytes()), &ZoneId::utc())
                 .to_java_string()
         );
     }
@@ -1005,7 +1026,7 @@ mod tests {
     #[test]
     fn lenient_date_time_text_keeps_the_pgjdbc_value() {
         for (text, millis) in ACCEPTED_DATE_TIME_TEXT {
-            let value = Decoder::Timestamp.decode(Some(text.as_bytes()));
+            let value = Decoder::Timestamp.decode(Some(text.as_bytes()), &ZoneId::utc());
             assert_eq!(Some(millis), value.to_timestamp_millis().unwrap(), "{text}");
         }
     }
@@ -1029,12 +1050,12 @@ mod tests {
 
     #[test]
     fn numeric_nan_fails_like_pgjdbc() {
-        let nan = Decoder::Numeric.decode(Some(b"NaN"));
+        let nan = Decoder::Numeric.decode(Some(b"NaN"), &ZoneId::utc());
         let error = nan.to_big_decimal().unwrap_err();
         assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
         assert_eq!(error.java_class_name(), "org.postgresql.util.PSQLException");
         assert!(nan.to_double().unwrap().unwrap().is_nan());
-        let array = Decoder::for_type(&cache(), 1231).decode(Some(b"{1.5,NaN}"));
+        let array = Decoder::for_type(&cache(), 1231).decode(Some(b"{1.5,NaN}"), &ZoneId::utc());
         let error = array.to_array().unwrap_err();
         assert_eq!(error.message(), "Bad value for type BigDecimal : NaN");
         assert_eq!(error.java_class_name(), "org.postgresql.util.PSQLException");
@@ -1042,19 +1063,22 @@ mod tests {
 
     #[test]
     fn money_text_is_trimmed_for_numeric_getters() {
-        let money = Decoder::Text.decode(Some(b"$1,001.50"));
+        let money = Decoder::Text.decode(Some(b"$1,001.50"), &ZoneId::utc());
         assert_eq!(money.to_java_string().as_deref(), Some("$1,001.50"));
         assert!(money.to_double().is_err());
-        let money = Decoder::Text.decode(Some(b"-$1.50"));
+        let money = Decoder::Text.decode(Some(b"-$1.50"), &ZoneId::utc());
         assert_eq!(money.to_double().unwrap(), Some(-1.5));
         assert_eq!(
             money.to_big_decimal().unwrap().unwrap().to_string(),
             "-1.50"
         );
-        let money = Decoder::Text.decode(Some(b"($2.25)"));
+        let money = Decoder::Text.decode(Some(b"($2.25)"), &ZoneId::utc());
         assert_eq!(money.to_double().unwrap(), Some(-2.25));
         assert_eq!(
-            Decoder::Text.decode(Some(b"$")).to_java_string().as_deref(),
+            Decoder::Text
+                .decode(Some(b"$"), &ZoneId::utc())
+                .to_java_string()
+                .as_deref(),
             Some("$")
         );
     }

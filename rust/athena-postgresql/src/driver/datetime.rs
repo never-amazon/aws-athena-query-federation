@@ -1,9 +1,5 @@
-use std::sync::LazyLock;
-
 use athena_federation_sdk::data::ZoneId;
 use chrono::{DateTime, NaiveDateTime};
-
-use super::url::default_time_zone;
 
 pub(crate) const DATE_POSITIVE_INFINITY: i64 = 9_223_372_036_825_200_000;
 pub(crate) const DATE_NEGATIVE_INFINITY: i64 = -9_223_372_036_832_400_000;
@@ -12,9 +8,6 @@ const MILLIS_PER_DAY: i64 = 86_400_000;
 const UNIX_EPOCH_JDN: i64 = 2_440_588;
 const GREGORIAN_CUTOVER_DAY: i64 = -141_427;
 const MAX_FRACTION_DIGITS: usize = 9;
-
-static DEFAULT_ZONE: LazyLock<ZoneId> =
-    LazyLock::new(|| ZoneId::of(&default_time_zone()).unwrap_or_else(|_| ZoneId::utc()));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ParsedTimestamp {
@@ -260,11 +253,10 @@ pub(crate) fn java_sql_date_epoch_day(millis: i64) -> i64 {
     gregorian_epoch_day(year, month, day)
 }
 
-pub(crate) fn proleptic_epoch_day(epoch_millis: i64, zoned: bool) -> i64 {
-    if zoned {
-        zone_epoch_day(epoch_millis, &DEFAULT_ZONE)
-    } else {
-        epoch_millis.div_euclid(MILLIS_PER_DAY)
+pub(crate) fn proleptic_epoch_day(epoch_millis: i64, zone: Option<&ZoneId>) -> i64 {
+    match zone {
+        Some(zone) => zone_epoch_day(epoch_millis, zone),
+        None => epoch_millis.div_euclid(MILLIS_PER_DAY),
     }
 }
 

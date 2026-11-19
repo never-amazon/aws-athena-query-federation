@@ -213,7 +213,7 @@ fn factory_for(
         Some(properties),
         DatabaseConnectionInfo::new(
             snowflake_constants::SNOWFLAKE_DRIVER_CLASS,
-            snowflake_constants::SNOWFLAKE_DEFAULT_PORT,
+            i32::from(snowflake_constants::SNOWFLAKE_DEFAULT_PORT),
         )
         .unwrap(),
         None,

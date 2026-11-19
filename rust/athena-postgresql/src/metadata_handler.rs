@@ -43,14 +43,12 @@ const MATERIALIZED_VIEWS_QUERY: &str = "select matviewname as \"TABLE_NAME\", sc
 const CHAR_COLUMNS_QUERY: &str = "SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND data_type = 'character'";
 const NUL_IDENTIFIER_MESSAGE: &str = "Zero bytes may not occur in identifiers.";
 
-pub const JDBC_PROPERTIES: [(&str, &str); 1] = [("databaseTerm", "SCHEMA")];
 pub const GET_PARTITIONS_QUERY: &str = "SELECT nmsp_child.nspname AS child_schema, child.relname AS child FROM pg_inherits JOIN pg_class parent ON pg_inherits.inhparent = parent.oid JOIN pg_class child ON pg_inherits.inhrelid = child.oid JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace JOIN pg_namespace nmsp_child ON nmsp_child.oid = child.relnamespace where nmsp_parent.nspname = ? AND parent.relname = ?";
 pub const BLOCK_PARTITION_COLUMN_NAME: &str = "partition_name";
 pub const BLOCK_PARTITION_SCHEMA_COLUMN_NAME: &str = "partition_schema_name";
 pub const ALL_PARTITIONS: &str = "*";
 pub const LIST_PAGINATED_TABLES_QUERY: &str = "SELECT a.\"TABLE_NAME\", a.\"TABLE_SCHEM\" FROM ((SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ?) UNION (SELECT matviewname as \"TABLE_NAME\", schemaname as \"TABLE_SCHEM\" from pg_catalog.pg_matviews mv where has_table_privilege(format('%I.%I', mv.schemaname, mv.matviewname), 'select') and schemaname = ?)) AS a ORDER BY a.\"TABLE_NAME\" LIMIT ? OFFSET ?";
 pub const NON_DEFAULT_COLLATE: &str = "non_default_collate";
-pub const SQL_SPLITS_STRING: &str = "select min(%s), max(%s) from %s.%s";
 pub const DEFAULT_NUM_SPLITS: i32 = 20;
 
 fn number_format(text: &str) -> FederationError {
@@ -87,11 +85,8 @@ pub struct PostGreSqlMetadataDialect;
 
 pub type PostGreSqlMetadataHandler = JdbcMetadataHandler<PostGreSqlMetadataDialect>;
 
-pub fn jdbc_properties() -> JdbcProperties {
-    JDBC_PROPERTIES
-        .iter()
-        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-        .collect()
+fn jdbc_properties() -> JdbcProperties {
+    JdbcProperties::from([("databaseTerm".to_string(), "SCHEMA".to_string())])
 }
 
 impl PostGreSqlMetadataDialect {
@@ -104,7 +99,7 @@ impl PostGreSqlMetadataDialect {
             Some(jdbc_properties()),
             DatabaseConnectionInfo::new(
                 constants::POSTGRESQL_DRIVER_CLASS,
-                constants::POSTGRESQL_DEFAULT_PORT,
+                i32::from(constants::POSTGRESQL_DEFAULT_PORT),
             )?,
             Some(config_options),
             Arc::new(PgDriver),
@@ -154,7 +149,7 @@ impl PostGreSqlMetadataDialect {
     }
 }
 
-pub async fn get_char_columns(
+pub async fn char_columns(
     connection: &dyn JdbcConnection,
     schema: &str,
     table: &str,
@@ -179,15 +174,15 @@ pub fn escape_identifier(input: &str) -> Result<String> {
     Ok(format!("\"{}\"", input.replace('"', "\"\"")))
 }
 
-pub fn is_valid_split_column(column_name: Option<&str>) -> bool {
-    column_name.is_some_and(|name| !name.is_empty() && !name.chars().any(char::is_control))
+pub fn is_valid_split_column(column_name: &str) -> bool {
+    !column_name.is_empty() && !column_name.chars().any(char::is_control)
 }
 
 pub fn wrap_name_with_escaped_character(input: &str) -> String {
     format!("\"{}\"", input.replace('"', "\"\""))
 }
 
-async fn get_materialized_views(
+async fn materialized_views(
     connection: &dyn JdbcConnection,
     database_name: &str,
 ) -> std::result::Result<Vec<TableName>, SqlError> {
@@ -203,7 +198,7 @@ async fn get_materialized_views(
     jdbc_util::table_metadata(connection, &statement, MATERIALIZED_VIEWS).await
 }
 
-async fn get_paginated_results(
+async fn paginated_results(
     connection: &dyn JdbcConnection,
     database_name: Option<&str>,
     token: i32,
@@ -281,7 +276,7 @@ async fn split_clauses_from(
     let Some(primary_key_column) = primary_key_column else {
         return Ok(split_clauses);
     };
-    if !is_valid_split_column(Some(&primary_key_column)) {
+    if !is_valid_split_column(&primary_key_column) {
         tracing::warn!(
             "Primary key column name is not a valid split identifier for table {}.{}. Skipping split generation.",
             table_name.schema_name(),
@@ -330,7 +325,7 @@ async fn split_clauses_from(
     Ok(split_clauses)
 }
 
-pub async fn get_split_clauses(
+pub async fn split_clauses(
     handler: &PostGreSqlMetadataHandler,
     table_name: &TableName,
     request: Option<&GetSplitsRequest>,
@@ -494,7 +489,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
             let all = ALL_PARTITIONS;
             if schema_text == all && partition == all {
                 for split_clause in
-                    get_split_clauses(handler, request.table_name(), Some(request)).await
+                    split_clauses(handler, request.table_name(), Some(request)).await
                 {
                     splits.push(
                         make_split(handler, request, schema_text.clone(), split_clause).await?,
@@ -561,8 +556,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
             page_size
         );
         let paginated_tables =
-            get_paginated_results(connection, list_tables_request.schema_name(), t, page_size)
-                .await?;
+            paginated_results(connection, list_tables_request.schema_name(), t, page_size).await?;
         let next = t.wrapping_add(page_size);
         tracing::info!(
             "{} tables returned. Next token is {}",
@@ -590,7 +584,7 @@ impl MetadataDialect for PostGreSqlMetadataDialect {
         database_name: &str,
     ) -> Result<Vec<TableName>> {
         let mut list = jdbc_util::tables(connection, database_name).await?;
-        list.extend(get_materialized_views(connection, database_name).await?);
+        list.extend(materialized_views(connection, database_name).await?);
         Ok(list)
     }
 

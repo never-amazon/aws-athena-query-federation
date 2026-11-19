@@ -4,9 +4,9 @@ use std::time::Duration;
 
 pub const SNOWFLAKE_NAME: &str = "snowflake";
 pub const SNOWFLAKE_DRIVER_CLASS: &str = "net.snowflake.client.api.driver.SnowflakeDriver";
-pub const SNOWFLAKE_DEFAULT_PORT: i32 = 1025;
-pub const MAX_PARTITION_COUNT: i32 = 50;
-pub const SINGLE_SPLIT_LIMIT_COUNT: i32 = 10000;
+pub const SNOWFLAKE_DEFAULT_PORT: u16 = 1025;
+pub const MAX_PARTITION_COUNT: u32 = 50;
+pub const SINGLE_SPLIT_LIMIT_COUNT: u32 = 10000;
 pub const LARGE_TABLE_THRESHOLD: i64 = 100_000_000;
 pub const UNIQUENESS_CHECK_TIMEOUT: Duration = Duration::from_mins(2);
 pub const DOUBLE_QUOTE_CHAR: &str = "\"";
@@ -38,17 +38,23 @@ pub const PASSWORD_UPPERCASE: &str = "PASSWORD";
 pub const USER: &str = "user";
 pub const SNOWFLAKE_ENABLE_S3_EXPORT: &str = "snowflake_enable_s3_export";
 pub const STORAGE_INTEGRATION_CONFIG_KEY: &str = "snowflake_storage_integration_name";
-pub const DESCRIBE_STORAGE_INTEGRATION_TEMPLATE: &str = "DESC STORAGE INTEGRATION %s";
 pub const STORAGE_INTEGRATION_PROPERTY_KEY: &str = "property";
 pub const STORAGE_INTEGRATION_PROPERTY_VALUE_KEY: &str = "property_value";
 pub const STORAGE_INTEGRATION_BUCKET_KEY: &str = "STORAGE_ALLOWED_LOCATIONS";
 pub const STORAGE_INTEGRATION_STORAGE_PROVIDER_KEY: &str = "STORAGE_PROVIDER";
 pub const COUNT_RECORDS_QUERY: &str = "SELECT row_count\nFROM   information_schema.tables\nWHERE  table_type = 'BASE TABLE'\nAND table_schema= ?\nAND TABLE_NAME = ? ";
 pub const SHOW_PRIMARY_KEYS_QUERY: &str = "SHOW PRIMARY KEYS IN ";
-pub const COPY_INTO_QUERY_TEMPLATE: &str = "COPY INTO %s FROM (%s) STORAGE_INTEGRATION = %s HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800";
 pub const LIST_PAGINATED_TABLES_QUERY: &str = "SELECT table_name as \"TABLE_NAME\", table_schema as \"TABLE_SCHEM\" FROM information_schema.tables WHERE table_schema = ? ORDER BY TABLE_NAME LIMIT ? OFFSET ?";
 pub const VIEW_CHECK_QUERY: &str =
     "SELECT * FROM information_schema.views WHERE table_schema = ? AND table_name = ?";
+
+pub fn describe_storage_integration_query(integration: &str) -> String {
+    format!("DESC STORAGE INTEGRATION {integration}")
+}
+
+pub fn copy_into_query(target: &str, query: &str, integration: &str) -> String {
+    format!("COPY INTO {target} FROM ({query}) STORAGE_INTEGRATION = {integration} HEADER = TRUE FILE_FORMAT = (TYPE = 'PARQUET', COMPRESSION = 'SNAPPY') MAX_FILE_SIZE = 52428800")
+}
 
 pub fn jdbc_properties() -> HashMap<String, String> {
     HashMap::from([

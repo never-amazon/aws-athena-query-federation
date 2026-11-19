@@ -98,6 +98,38 @@ pub fn construct_s3_uri(bucket: &str, key: &str) -> String {
 
 pub type BatchIterator = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
+pub(crate) struct BlockingBatches {
+    reader: Option<BatchIterator>,
+}
+
+impl BlockingBatches {
+    pub(crate) fn new(reader: BatchIterator) -> BlockingBatches {
+        BlockingBatches {
+            reader: Some(reader),
+        }
+    }
+
+    pub(crate) async fn next(&mut self) -> Result<Option<RecordBatch>> {
+        let Some(mut reader) = self.reader.take() else {
+            return Ok(None);
+        };
+        let joined = tokio::task::spawn_blocking(move || {
+            let batch = reader.next();
+            (batch, reader)
+        })
+        .await;
+        let (batch, reader) = match joined {
+            Ok(decoded) => decoded,
+            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+            Err(e) => return Err(FederationError::internal(e.to_string())),
+        };
+        if batch.is_some() {
+            self.reader = Some(reader);
+        }
+        batch.transpose()
+    }
+}
+
 #[async_trait]
 pub trait ExportReader: Send + Sync {
     async fn inspect_parquet_schema(&self, uri: &str) -> Result<Schema>;
@@ -165,5 +197,38 @@ impl ExportReader for S3ParquetExportReader {
             .build()
             .map_err(parquet_error)?;
         Ok(Box::new(reader.map(|batch| batch.map_err(parquet_error))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::thread::ThreadId;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn blocking_batches_decode_off_the_runtime_thread() {
+        let decode_threads: Arc<Mutex<Vec<ThreadId>>> = Arc::default();
+        let recorder = Arc::clone(&decode_threads);
+        let mut remaining = 2;
+        let reader: BatchIterator = Box::new(std::iter::from_fn(move || {
+            recorder.lock().unwrap().push(std::thread::current().id());
+            (remaining > 0).then(|| {
+                remaining -= 1;
+                Ok(RecordBatch::new_empty(Arc::new(Schema::empty())))
+            })
+        }));
+        let mut batches = BlockingBatches::new(reader);
+        let mut count = 0;
+        while batches.next().await.unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(2, count);
+        assert!(batches.next().await.unwrap().is_none());
+        let runtime_thread = std::thread::current().id();
+        let decode_threads = decode_threads.lock().unwrap();
+        assert_eq!(3, decode_threads.len());
+        assert!(decode_threads.iter().all(|id| *id != runtime_thread));
     }
 }

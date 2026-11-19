@@ -63,7 +63,7 @@ pub async fn read_records<H: RecordHandler + ?Sized>(
         Arc::clone(allocator),
         Arc::clone(&schema),
         evaluator,
-        cx.config_options().clone(),
+        cx.config_options(),
     )?;
     let query_status_checker =
         cx.query_status_checker(override_config.as_ref(), request.query_id());

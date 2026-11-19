@@ -196,7 +196,7 @@ fn spiller(fakes: &Fakes) -> S3BlockSpiller {
         allocator,
         Arc::new(Schema::empty()),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap()
 }

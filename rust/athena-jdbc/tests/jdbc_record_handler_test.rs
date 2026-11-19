@@ -229,7 +229,7 @@ async fn read_with_constraint() {
         Arc::clone(&allocator),
         Arc::new(field_schema.clone()),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     let request = ReadRecordsRequest::new(

@@ -19,6 +19,7 @@ postgres-protocol = { workspace = true }
 rustls = { workspace = true }
 rustls-pki-types = { workspace = true }
 sha2 = { workspace = true }
+socket2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["net", "io-util", "sync", "time", "fs", "rt-multi-thread", "macros"] }
 tokio-rustls = { workspace = true }
