@@ -17,22 +17,15 @@ named_enum! {
     }
 }
 
-impl FederationSdkCasingMode {
-    pub fn value_of(name: &str) -> Result<FederationSdkCasingMode> {
-        FederationSdkCasingMode::from_name(name)
-            .ok_or_else(|| {
-                FederationError::IllegalArgument(format!(
-                    "No enum constant com.amazonaws.athena.connector.lambda.resolver.CaseResolver.FederationSDKCasingMode.{name}"
-                ))
-            })
-    }
-}
-
 impl FromStr for FederationSdkCasingMode {
     type Err = FederationError;
 
-    fn from_str(s: &str) -> Result<Self> {
-        FederationSdkCasingMode::value_of(s)
+    fn from_str(name: &str) -> Result<Self> {
+        FederationSdkCasingMode::from_name(name).ok_or_else(|| {
+            FederationError::IllegalArgument(format!(
+                "No enum constant com.amazonaws.athena.connector.lambda.resolver.CaseResolver.FederationSDKCasingMode.{name}"
+            ))
+        })
     }
 }
 
@@ -76,18 +69,22 @@ impl CaseResolver {
             );
             return Ok(mode);
         };
-        match FederationSdkCasingMode::value_of(&configured.to_uppercase()) {
+        match configured.to_uppercase().parse::<FederationSdkCasingMode>() {
             Ok(mode) => {
                 tracing::debug!("CASING MODE enable: {}", mode);
                 Ok(mode)
             }
             Err(e) => {
                 tracing::error!(
-                    "Invalid input for:{}, source type:{}, input value:{}, valid values:{:?}",
+                    "Invalid input for:{}, source type:{}, input value:{}, valid values:[{}]",
                     CASING_MODE_CONFIGURATION_KEY,
                     self.source_type,
                     configured,
                     FederationSdkCasingMode::ALL
+                        .iter()
+                        .map(|m| m.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
                 Err(e)
             }
