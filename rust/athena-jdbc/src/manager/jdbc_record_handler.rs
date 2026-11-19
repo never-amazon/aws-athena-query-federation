@@ -551,7 +551,7 @@ impl<D: RecordDialect> JdbcRecordHandler<D> {
                 Arc::clone(allocator),
                 Arc::new(derived_schema.clone()),
                 evaluator,
-                self.config_options().clone(),
+                self.config_options(),
             )?;
             let written = async {
                 let column_count = derived_schema.fields().len();

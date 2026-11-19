@@ -42,7 +42,7 @@ struct SpillWriter {
     amazon_s3: Arc<dyn S3Client>,
     block_crypto: BlockCrypto,
     spill_config: SpillConfig,
-    config_options: HashMap<String, String>,
+    put_request_headers: Option<String>,
     spill_number: AtomicI64,
     total_bytes_spilled: AtomicI64,
     async_exception: Mutex<Option<FederationError>>,
@@ -52,8 +52,8 @@ struct SpillWriter {
 impl SpillWriter {
     fn get_request_headers_from_env(&self) -> Vec<(String, String)> {
         let Some(headers_from_env_str) = self
-            .config_options
-            .get(SPILL_PUT_REQUEST_HEADERS_ENV)
+            .put_request_headers
+            .as_deref()
             .filter(|s| !s.is_empty())
         else {
             return Vec::new();
@@ -196,12 +196,12 @@ impl S3BlockSpiller {
         allocator: Arc<dyn BlockAllocator>,
         schema: SchemaRef,
         constraint_evaluator: Arc<ConstraintEvaluator>,
-        config_options: HashMap<String, String>,
+        config_options: &HashMap<String, String>,
     ) -> Result<S3BlockSpiller> {
         let block_crypto = BlockCrypto::for_key(spill_config.encryption_key.clone());
         let async_spill_pool = spill_config
             .spill_threads
-            .map(|threads| Self::make_async_spill_pool(threads.get(), &config_options))
+            .map(|threads| Self::make_async_spill_pool(threads.get(), config_options))
             .transpose()?;
         let mut in_progress_block = allocator.create_block(schema.clone());
         in_progress_block.constrain(Some(constraint_evaluator.clone()));
@@ -210,7 +210,7 @@ impl S3BlockSpiller {
                 amazon_s3,
                 block_crypto,
                 spill_config,
-                config_options,
+                put_request_headers: config_options.get(SPILL_PUT_REQUEST_HEADERS_ENV).cloned(),
                 spill_number: AtomicI64::new(0),
                 total_bytes_spilled: AtomicI64::new(0),
                 async_exception: Mutex::new(None),

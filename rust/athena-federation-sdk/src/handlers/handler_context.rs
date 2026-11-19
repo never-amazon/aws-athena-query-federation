@@ -27,6 +27,7 @@ const NUM_SPILL_THREADS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 pub struct HandlerContext {
     source_type: String,
     config_options: HashMap<String, String>,
+    max_block_size: Option<std::result::Result<i64, String>>,
     secrets_manager: CachableSecretsManager,
     kms_encryption_provider: Arc<KmsEncryptionProvider>,
     athena: Arc<dyn AthenaClient>,
@@ -45,9 +46,13 @@ impl HandlerContext {
             is_athena_throttle,
             None,
         )?;
+        let max_block_size = config_options
+            .get(MAX_BLOCK_SIZE_BYTES)
+            .map(|value| value.parse::<i64>().map_err(|_| value.clone()));
         Ok(HandlerContext {
             source_type: source_type.into(),
             config_options,
+            max_block_size,
             secrets_manager: CachableSecretsManager::new(clients.secrets_manager),
             kms_encryption_provider: clients.kms_encryption_provider,
             athena: clients.athena,
@@ -197,12 +202,15 @@ impl HandlerContext {
     }
 
     pub fn spill_config(&self, request: &ReadRecordsRequest) -> Result<SpillConfig> {
-        let mut max_block_size = request.max_block_size();
-        if let Some(value) = self.config_options.get(MAX_BLOCK_SIZE_BYTES) {
-            max_block_size = value.parse::<i64>().map_err(|_| {
-                FederationError::NumberFormat(format!("For input string: \"{value}\""))
-            })?;
-        }
+        let max_block_size = match &self.max_block_size {
+            None => request.max_block_size(),
+            Some(Ok(bytes)) => *bytes,
+            Some(Err(value)) => {
+                return Err(FederationError::NumberFormat(format!(
+                    "For input string: \"{value}\""
+                )))
+            }
+        };
         let spill_location = request
             .split()
             .spill_location()

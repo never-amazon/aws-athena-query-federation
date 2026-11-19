@@ -89,7 +89,7 @@ impl Setup {
         self.block_writer.close().await;
     }
 
-    fn create_block_spiller(&self, config_options: HashMap<String, String>) -> S3BlockSpiller {
+    fn create_block_spiller(&self, config_options: &HashMap<String, String>) -> S3BlockSpiller {
         S3BlockSpiller::new(
             self.mock_s3.clone(),
             self.spill_config.clone(),
@@ -105,7 +105,7 @@ impl Setup {
         &self,
         config_options: HashMap<String, String>,
     ) -> PutObjectRequest {
-        let block_writer = self.create_block_spiller(config_options);
+        let block_writer = self.create_block_spiller(&config_options);
         block_writer.write(self.expected.clone()).await.unwrap();
         assert_eq!(1, self.mock_s3.put_count());
         let captured_request = self.mock_s3.last_put();
@@ -165,7 +165,7 @@ async fn setup() -> Setup {
         allocator.clone(),
         schema.clone(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     let mut expected = allocator.create_block(schema);
@@ -349,7 +349,7 @@ async fn get_spill_locations_throws_on_async_s3_error() {
         s.allocator.clone(),
         one_column_schema(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     *s.mock_s3.put_error.lock().unwrap() = Some(AwsServiceError::new("Access Denied"));
@@ -387,7 +387,7 @@ async fn get_spill_locations_rethrows_sync_final_spill_error() {
         s.allocator.clone(),
         one_column_schema(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     let s3_error = AwsServiceError::new("The specified bucket is not valid.");
@@ -420,7 +420,7 @@ async fn spilled_throws_on_async_s3_error() {
         s.allocator.clone(),
         two_column_schema(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
     *s.mock_s3.put_error.lock().unwrap() = Some(AwsServiceError::new("Access Denied"));
@@ -455,7 +455,7 @@ async fn get_spill_locations_succeeds_when_s3_write_succeeds() {
         s.allocator.clone(),
         one_column_schema(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
 
@@ -525,7 +525,7 @@ async fn async_spill_numbers_follow_block_order_on_multi_thread_runtime() {
         allocator.clone(),
         one_column_schema(),
         Arc::new(ConstraintEvaluator::empty_evaluator()),
-        HashMap::new(),
+        &HashMap::new(),
     )
     .unwrap();
 

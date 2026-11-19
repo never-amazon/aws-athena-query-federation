@@ -246,7 +246,7 @@ impl SnowflakeRecordDialect {
             Arc::clone(allocator),
             Arc::new(derived_schema.clone()),
             evaluator,
-            handler.config_options().clone(),
+            handler.config_options(),
         )?;
         let written = async {
             handler
