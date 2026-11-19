@@ -6,7 +6,7 @@ use athena_jdbc::manager::{SplitDialect, SplitQuery, SplitQueryBuilder};
 use athena_jdbc::sql::{JdbcConnection, PreparedStatement};
 
 use crate::constants;
-use crate::driver::check_parameters;
+use crate::driver::validate_parameters;
 use crate::metadata_handler::{
     get_char_columns, ALL_PARTITIONS, BLOCK_PARTITION_COLUMN_NAME,
     BLOCK_PARTITION_SCHEMA_COLUMN_NAME,
@@ -50,7 +50,7 @@ pub async fn build_sql(
     let statement = builder
         .prepare_statement_with_sql(jdbc_connection, query, &column_names)
         .await?;
-    check_parameters(statement.parameters())?;
+    validate_parameters(statement.parameters())?;
     Ok(statement)
 }
 

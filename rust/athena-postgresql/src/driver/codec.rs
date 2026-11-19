@@ -446,7 +446,7 @@ fn timestamp_text(timestamp: &NaiveDateTime) -> Result<String, SqlError> {
     ))
 }
 
-pub(crate) fn check_parameters(parameters: &[SqlValue]) -> Result<(), SqlError> {
+pub(crate) fn validate_parameters(parameters: &[SqlValue]) -> Result<(), SqlError> {
     for parameter in parameters {
         encode_parameter(parameter, false)?;
     }
@@ -693,12 +693,14 @@ mod tests {
                 error.message(),
                 "{value}"
             );
-            assert!(check_parameters(&[SqlValue::Integer(1), SqlValue::Timestamp(value)]).is_err());
+            assert!(
+                validate_parameters(&[SqlValue::Integer(1), SqlValue::Timestamp(value)]).is_err()
+            );
         }
-        assert!(
-            check_parameters(&[SqlValue::Timestamp("-4713-11-24T00:00:00".parse().unwrap())])
-                .is_ok()
-        );
+        assert!(validate_parameters(&[SqlValue::Timestamp(
+            "-4713-11-24T00:00:00".parse().unwrap()
+        )])
+        .is_ok());
     }
 
     fn epoch_day(value: &SqlValue) -> i64 {

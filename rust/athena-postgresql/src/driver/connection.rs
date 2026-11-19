@@ -178,8 +178,7 @@ fn check_parameters(native: &NativeSql, statement: &PreparedStatement) -> Result
 
 impl PgConnection {
     pub async fn connect(url: &str, properties: &JdbcProperties) -> Result<PgConnection, SqlError> {
-        let info: HashMap<String, String> = properties.clone();
-        let settings = parse_url(url, &info)?;
+        let settings = parse_url(url, properties)?;
         let (session, host) = connect(&settings).await?;
         let cancel = session.backend_key().map(|key| CancelTarget {
             host,
